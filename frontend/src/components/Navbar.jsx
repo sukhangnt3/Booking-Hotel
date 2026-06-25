@@ -1,6 +1,10 @@
 import React from "react";
 
-const Navbar = () => {
+const Navbar = ({ user, setUser, onLoginClick }) => {
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setUser(null); // Đăng xuất, xóa user
+  };
   return (
     <nav className="bg-[#005cb8] text-white px-8 py-3 flex items-center justify-between font-sans shadow-sm">
       {/* Bên trái: Logo / Tên thương hiệu */}
@@ -15,15 +19,12 @@ const Navbar = () => {
           Đăng khách sạn của bạn
         </button>
 
-        {/* Nút Đăng nhập */}
-        <button className="bg-white text-[#005cb8] px-4 py-2 rounded-md hover:bg-gray-100 transition-all duration-200">
-          Đăng nhập
+        {/* Nút Đăng nhập.đăng ký */}
+        <button onClick={onLoginClick} className="bg-white text-[#005cb8] px-4 py-2 rounded-md hover:bg-gray-100 transition-all duration-200">
+          Đăng nhập/đăng ký
         </button>
 
-        {/* Nút Đăng ký */}
-        <button className="bg-white text-[#005cb8] px-4 py-2 rounded-md hover:bg-gray-100 transition-all duration-200">
-          Đăng ký
-        </button>
+      
       </div>
     </nav>
   );
