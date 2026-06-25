@@ -1,143 +1,124 @@
-import React, { useState } from 'react';
-import Register from './Register';
+import React, { useState } from "react";
 
-const Login = ({ isOpen, onClose }) => {
-  const [authMode, setAuthMode] = useState('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+const Login = ({ setUser, onClose }) => {
+  const [isLogin, setIsLogin] = useState(true); // true: Login, false: Register
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState(""); 
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
 
-  if (!isOpen) return null;
-
-  const switchMode = (mode) => {
-    setAuthMode(mode);
-    setErrorMessage('');
-  };
-
-  const handleLoginSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
-    setErrorMessage('');
+
+    // KIỂM TRA MẬT KHẨU NHẬP LẠI (Chỉ check khi Đăng ký)
+    if (!isLogin && password !== confirmPassword) {
+      alert("Mật khẩu nhập lại không trùng khớp! Vui lòng kiểm tra lại.");
+      return; // Dừng lại, không gửi API nữa
+    }
+
+    const endpoint = isLogin ? "/api/login" : "/api/register";
+    const payload = isLogin ? { email, password } : { name, email, password, phone };
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      const response = await fetch(`http://localhost:5000${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Tên đăng nhập hoặc mật khẩu không đúng.');
 
-      alert('🎉 Đăng nhập thành công!');
-      if (data.token) localStorage.setItem('token', data.token);
-      onClose();
-    } catch (error) {
-      setErrorMessage(error.message);
-    } finally {
-      setIsLoading(false);
+      if (response.ok) {
+        if (isLogin) {
+          localStorage.setItem("token", data.token);
+          setUser(data.user);
+          onClose();
+        } else {
+          alert("Đăng ký thành công! Hãy đăng nhập.");
+          setIsLogin(true); // Chuyển về màn hình đăng nhập
+          // Xóa trắng dữ liệu mật khẩu cũ cho an toàn
+          setPassword("");
+          setConfirmPassword("");
+        }
+      } else {
+        alert(data.message || "Có lỗi xảy ra");
+      }
+    } catch (err) {
+      console.error("Lỗi kết nối Backend:", err);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-[460px] rounded-2xl bg-[#f0f4f9] p-8 shadow-2xl">
-        
-        {/* Nút đóng bằng chữ X thuần túy */}
-        <button 
-          onClick={onClose} 
-          className="absolute right-5 top-5 text-gray-400 hover:text-gray-700 font-bold cursor-pointer text-xl"
-        >
-          &times;
-        </button>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-[440px] relative font-sans">
+        {/* Nút X để đóng form */}
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
 
-        {errorMessage && (
-          <div className="mb-4 text-xs text-red-600 bg-red-50 p-2 rounded-lg text-center border border-red-100">
-            {errorMessage}
+        <h2 className="text-2xl font-bold text-center mb-6 text-gray-800">
+          {isLogin ? "Đăng nhập" : "Đăng ký"}
+        </h2>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {!isLogin && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Họ tên</label>
+              <input type="text" placeholder="Họ và tên" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg outline-none focus:border-[#005cb8]" />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Email {!isLogin && "*"}</label>
+            <input type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg outline-none focus:border-[#005cb8]" />
           </div>
-        )}
 
-        {authMode === 'login' ? (
-          <form onSubmit={handleLoginSubmit} className="bg-white rounded-xl shadow-sm p-6 border border-gray-200/60">
-            <h2 className="text-2xl font-bold text-gray-800 text-center mb-6">Đăng nhập</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  required
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">Mật khẩu {!isLogin && "*"}</label>
+            <input type="password" placeholder="Mật khẩu" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg outline-none focus:border-[#005cb8]" />
+          </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Mật khẩu</label>
-                <input
-                  type="password"
-                  placeholder="Mật khẩu"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center justify-between text-xs pt-1">
-                <a href="#" className="text-blue-600 hover:underline">Quên mật khẩu</a>
-                <div className="text-gray-600">
-                  Chưa có tài khoản?{' '}
-                  <button 
-                    type="button" 
-                    onClick={() => switchMode('register')} 
-                    className="text-blue-600 hover:underline font-medium cursor-pointer"
-                  >
-                    Đăng ký
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-[#1A62B6] hover:bg-blue-700 text-white rounded-lg py-2.5 text-sm font-semibold mt-4 cursor-pointer disabled:bg-blue-400"
-              >
-                {isLoading ? 'Đang xử lý...' : 'Đăng nhập'}
-              </button>
+          {/* Ô NHẬP LẠI MẬT KHẨU (Chỉ hiển thị khi !isLogin) */}
+          {!isLogin && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Nhập lại mật khẩu *</label>
+              <input 
+                type="password" 
+                placeholder="Nhập lại mật khẩu" 
+                required 
+                value={confirmPassword} 
+                onChange={(e) => setConfirmPassword(e.target.value)} 
+                className={`w-full px-4 py-2.5 border rounded-lg outline-none focus:border-[#005cb8] ${
+                  confirmPassword && password !== confirmPassword ? "border-red-400 bg-red-50" : "border-gray-200"
+                }`} 
+              />
+              {/* Thông báo đỏ nhỏ dưới ô input nếu gõ sai */}
+              {confirmPassword && password !== confirmPassword && (
+                <p className="text-red-500 text-xs mt-1">Mật khẩu không khớp!</p>
+              )}
             </div>
-          </form>
-        ) : (
-          <Register onSwitchToLogin={() => switchMode('login')} />
-        )}
+          )}
 
-        {/* Các nút mạng xã hội dạng chữ thuần */}
-        {authMode === 'login' && (
-          <>
-            <div className="relative my-6 text-center">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
-              <span className="relative bg-[#f0f4f9] px-4 text-xs text-gray-400 font-medium">hoặc</span>
+          {!isLogin && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Điện thoại</label>
+              <input type="tel" placeholder="Điện thoại" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg outline-none focus:border-[#005cb8]" />
             </div>
+          )}
 
-            <div className="space-y-2">
-              <button type="button" className="w-full bg-[#4285F4] hover:bg-blue-600 text-white font-semibold rounded-xl py-2.5 text-sm cursor-pointer">
-                Tiếp tục với Google
-              </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" className="bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl py-2 text-sm hover:bg-gray-50 cursor-pointer">
-                  Apple
-                </button>
-                <button type="button" className="bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl py-2 text-sm hover:bg-gray-50 cursor-pointer">
-                  Facebook
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+          <div className="flex justify-between items-center text-xs pt-1">
+            {isLogin ? (
+              <>
+                <a href="#forgot" className="text-[#005cb8] hover:underline">Quên mật khẩu</a>
+                <span className="text-gray-500">Chưa có tài khoản ? <span onClick={() => setIsLogin(false)} className="text-[#005cb8] font-semibold cursor-pointer hover:underline">Đăng ký</span></span>
+              </>
+            ) : (
+              <span className="text-gray-500 w-full text-right">Đã có tài khoản? <span onClick={() => { setIsLogin(true); setConfirmPassword(""); }} className="text-[#005cb8] font-semibold cursor-pointer hover:underline">Đăng nhập</span></span>
+            )}
+          </div>
 
+          <button type="submit" className="w-full py-3 bg-[#005cb8] text-white font-bold rounded-lg hover:bg-[#004ba0] transition-colors duration-200 mt-2">
+            {isLogin ? "Đăng nhập" : "Đăng ký"}
+          </button>
+        </form>
       </div>
     </div>
   );
