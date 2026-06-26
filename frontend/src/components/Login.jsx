@@ -18,7 +18,7 @@ const Login = ({ setUser, onClose }) => {
     }
 
     const endpoint = isLogin ? "/api/login" : "/api/register";
-    const payload = isLogin ? { email, password } : { name, email, password, phone };
+    const payload = isLogin ? { email, password } : { full_Name, email, password, phone };
 
     try {
       const response = await fetch(`http://localhost:5000${endpoint}`, {
