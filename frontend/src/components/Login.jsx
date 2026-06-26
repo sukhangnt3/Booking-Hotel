@@ -5,7 +5,7 @@ const Login = ({ setUser, onClose }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState(""); 
-  const [full_Name, setFullName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
 
   const handleSubmit = async (e) => {
@@ -18,7 +18,7 @@ const Login = ({ setUser, onClose }) => {
     }
 
     const endpoint = isLogin ? "/api/login" : "/api/register";
-    const payload = isLogin ? { email, password } : { full_Name, email, password, phone };
+    const payload = isLogin ? { email, password } : { fullName, email, password, phone };
 
     try {
       const response = await fetch(`http://localhost:5000${endpoint}`, {
@@ -62,7 +62,7 @@ const Login = ({ setUser, onClose }) => {
           {!isLogin && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Họ tên</label>
-              <input type="text" placeholder="Họ và tên" value={full_Name} onChange={(e) => setFullName(e.target.value)} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg outline-none focus:border-[#005cb8]" />
+              <input type="text" placeholder="Họ và tên" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg outline-none focus:border-[#005cb8]" />
             </div>
           )}
 
