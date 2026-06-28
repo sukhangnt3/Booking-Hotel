@@ -1,27 +1,39 @@
 import React, { useState } from "react";
-import Navbar from "./components/Navbar";
-import Login from "./components/Login";
+import GuestLayout from "./components/layout/GuestLayout";
+import LoginForm from "./components/auth/LoginForm";
+import RegisterForm from "./components/auth/RegisterForm";
 
 function App() {
   const [user, setUser] = useState(null);
-  const [showLogin, setShowLogin] = useState(false); // Quản lý ẩn hiện form Login
+  const [authMode, setAuthMode] = useState(null); // 'login' | 'register' | null
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Truyền hàm mở login vào Navbar */}
-      <Navbar user={user} setUser={setUser} onLoginClick={() => setShowLogin(true)} />
+    <GuestLayout 
+      user={user} 
+      onAuthClick={(mode) => setAuthMode(mode)} 
+      onLogout={() => setUser(null)}
+    >
+      {/* Nội dung danh sách phòng chính trên website */}
+      <div className="py-4">
+        <h2 className="text-2xl font-bold text-gray-800">Các chỗ nghỉ nổi bật</h2>
+        <p className="text-gray-500 text-sm mt-1">Lựa chọn hàng đầu của chúng tôi dành cho chuyến đi của bạn</p>
+      </div>
 
-      {/* Nội dung chính của trang web */}
-      <main className="p-8 text-center">
-        <h1 className="text-3xl font-bold text-gray-800 mt-10">Chào mừng đến với Hotel Booking</h1>
-        <p className="text-gray-600 mt-2">Tìm kiếm và đặt phòng khách sạn giá tốt nhất.</p>
-      </main>
-
-      {/* Nếu showLogin bằng true thì mới hiển thị Form đè lên giao diện */}
-      {showLogin && (
-        <Login setUser={setUser} onClose={() => setShowLogin(false)} />
+      {authMode === "login" && (
+        <LoginForm 
+          onClose={() => setAuthMode(null)} 
+          onSwitchToRegister={() => setAuthMode("register")}
+          onLoginSuccess={(userData) => setUser(userData)}
+        />
       )}
-    </div>
+
+      {authMode === "register" && (
+        <RegisterForm 
+          onClose={() => setAuthMode(null)} 
+          onSwitchToLogin={() => setAuthMode("login")}
+        />
+      )}
+    </GuestLayout>
   );
 }
 
