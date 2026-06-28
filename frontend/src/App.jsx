@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import GuestLayout from "./components/layout/GuestLayout";
 import LoginForm from "./components/auth/LoginForm";
 import RegisterForm from "./components/auth/RegisterForm";
@@ -7,11 +7,47 @@ function App() {
   const [user, setUser] = useState(null);
   const [authMode, setAuthMode] = useState(null); // 'login' | 'register' | null
 
+  // 🔄 TỰ ĐỘNG KHÔI PHỤC ĐĂNG NHẬP BẰNG FETCH KHI F5
+  useEffect(() => {
+    const checkLoggedIn = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      try {
+        // Gọi API lấy profile bằng fetch
+        const response = await fetch("http://localhost:5000/api/auth/profile", {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          setUser(data.user); // Nạp lại user nếu token hợp lệ
+        } else {
+          localStorage.removeItem("token"); // Token giả/hết hạn thì xóa đi
+        }
+      } catch (error) {
+        console.error("Lỗi kết nối API xác thực:", error);
+      }
+    };
+
+    checkLoggedIn();
+  }, []);
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem("token");
+  };
+
   return (
     <GuestLayout 
       user={user} 
       onAuthClick={(mode) => setAuthMode(mode)} 
-      onLogout={() => setUser(null)}
+      onLogout={handleLogout}
     >
       {/* Nội dung danh sách phòng chính trên website */}
       <div className="py-4">
