@@ -1,8 +1,14 @@
 const express = require("express");
-const { listHotels } = require("../controllers/hotel.controller");
+const {
+  getHotelById,
+  listHotelRooms,
+  listHotels,
+} = require("../controllers/hotel.controller");
 
 const router = express.Router();
 
 router.get("/", listHotels);
+router.get("/:id", getHotelById);
+router.get("/:id/rooms", listHotelRooms);
 
 module.exports = router;
