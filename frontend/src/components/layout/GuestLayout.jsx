@@ -1,20 +1,17 @@
-import React from "react";
-import Header from "./Header";
+import React from 'react';
+import { Outlet } from 'react-router-dom'; // Thư viện giúp render trang con
+import Header from './Header';
 
-const GuestLayout = ({ user, onAuthClick, onLogout, children }) => {
+const GuestLayout = () => {
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 font-sans">
-      {/* Gọi Header chung duy nhất quản lý cả Thanh tìm kiếm */}
-      <Header user={user} onAuthClick={onAuthClick} onLogout={onLogout} />
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* 1. Header luôn nằm cố định ở trên cùng */}
+      <Header />
 
-      {/* Vùng hiển thị nội dung chính bên dưới */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-8 py-8">
-        {children}
+      {/* 2. Phần ruột (Body) thay đổi linh hoạt theo trang */}
+      <main className="flex-1 w-full">
+        <Outlet /> 
       </main>
-
-      <footer className="py-4 text-center text-sm text-gray-400 border-t border-gray-200 bg-white">
-        © 2026 Hotel Booking. All rights reserved.
-      </footer>
     </div>
   );
 };
