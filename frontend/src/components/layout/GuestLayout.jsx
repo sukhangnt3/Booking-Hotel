@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom'; // Thư viện giúp render trang con
 import Header from './Header';
+import Footer from './Footer';
 
 const GuestLayout = () => {
   return (
@@ -12,6 +13,8 @@ const GuestLayout = () => {
       <main className="flex-1 w-full">
         <Outlet /> 
       </main>
+      {/* 3. Footer xuất hiện cố định ở mọi trang dưới chân */}
+      <Footer />
     </div>
   );
 };
