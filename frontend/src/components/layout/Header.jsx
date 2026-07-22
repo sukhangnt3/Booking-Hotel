@@ -4,7 +4,6 @@ import { Button } from '../ui';
 import HotelFilter from '../hotel/HotelFilter';
 import LoginForm from '../auth/LoginForm';
 import RegisterForm from '../auth/RegisterForm';
-
 const Header = () => {
   // Quản lý trạng thái mở Modal: null (đóng) | 'LOGIN' (mở form Đăng nhập) | 'REGISTER' (mở form Đăng ký)
   const [authModal, setAuthModal] = useState(null);
