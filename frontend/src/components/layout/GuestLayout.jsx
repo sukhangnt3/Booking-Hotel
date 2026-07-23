@@ -1,19 +1,19 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom'; // Thư viện giúp render trang con
+import { Outlet } from 'react-router-dom';
 import Header from './Header';
 import Footer from './Footer';
 
 const GuestLayout = () => {
   return (
-    <div className="min-h-screen bg-white flex flex-col">
-      {/* 1. Header luôn nằm cố định ở trên cùng */}
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      {/* Header cũ của bạn sẽ hiển thị ở MỌI trang */}
       <Header />
 
-      {/* 2. Phần ruột (Body) thay đổi linh hoạt theo trang */}
-      <main className="flex-1 w-full">
-        <Outlet /> 
+      {/* Outlet là nơi chứa nội dung thay đổi của từng trang (HomePage, HotelListPage...) */}
+      <main className="flex-1">
+        <Outlet />
       </main>
-      {/* 3. Footer xuất hiện cố định ở mọi trang dưới chân */}
+
       <Footer />
     </div>
   );

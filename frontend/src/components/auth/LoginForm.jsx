@@ -1,77 +1,105 @@
-import React, { useState } from "react";
-import Input from "../ui/Input";
+import React, { useState } from 'react';
+import authService from '../../services/authService';
 
-const LoginForm = ({ onClose, onSwitchToRegister, onLoginSuccess }) => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  
-  // 🚨 Thêm trạng thái để quản lý và hiển thị thông báo lỗi từ Backend
-  const [error, setError] = useState("");
+const LoginForm = ({ isOpen, onClose, onSwitchToRegister }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(""); // Xóa thông báo lỗi cũ trước khi bấm gửi lại
+    setLoading(true);
+    setError('');
 
     try {
-      // 🚀 Gửi tài khoản/mật khẩu sang Backend bằng fetch
-      const response = await fetch("http://localhost:5000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json(); // Đọc dữ liệu JSON trả về
-
-      if (response.ok) {
-        // --- TRƯỜNG HỢP 1: ĐĂNG NHẬP THÀNH CÔNG ---
-        // 1. Lưu JWT Token vào bộ nhớ trình duyệt để giữ trạng thái đăng nhập
-        localStorage.setItem("token", data.token);
-
-        // 2. Đẩy thông tin user thực tế từ database (data.user) lên App.jsx
-        onLoginSuccess(data.user);
-
-        // 3. Đóng modal đăng nhập lại
-        onClose();
-      } else {
-        // --- TRƯỜNG HỢP 2: THẤT BẠI (Sai mật khẩu, tài khoản không tồn tại...) ---
-        // Lấy câu báo lỗi từ Backend trả về, nếu không có thì hiện câu mặc định
-        setError(data.message || "Email hoặc mật khẩu không chính xác!");
+      const res = await authService.login(email, password);
+      if (res.token) {
+        localStorage.setItem('token', res.token);
       }
+      alert('Đăng nhập thành công!');
+      onClose();
+      window.location.reload();
     } catch (err) {
-      // --- TRƯỜNG HỢP 3: LỖI KẾT NỐI (Mất mạng, Server backend chưa bật) ---
-      setError("Không thể kết nối đến máy chủ Backend. Vui lòng thử lại sau!");
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fade-in">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-[420px] relative font-sans text-gray-800">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-lg">✕</button>
-        <h2 className="text-2xl font-bold text-center mb-6">Đăng nhập</h2>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-8 w-full max-w-[420px] shadow-2xl relative text-gray-800">
         
-        <form onSubmit={handleSubmit} className="space-y-4">
-          
-          {/* 🔥 HIỂN THỊ DÒNG CHỮ BÁO LỖI MÀU ĐỎ NẾU ĐĂNG NHẬP THẤT BẠI */}
-          {error && (
-            <div className="p-3 bg-red-50 text-red-600 rounded-lg text-xs font-semibold border border-red-200">
-              ⚠️ {error}
-            </div>
-          )}
+        {/* Nút đóng X */}
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+          ✕
+        </button>
 
-          <Input label="Email" type="email" placeholder="Email" required value={email} onChange={e => setEmail(e.target.value)} />
-          <Input label="Mật khẩu" type="password" placeholder="Mật khẩu" required value={password} onChange={e => setPassword(e.target.value)} />
-          
-          <div className="flex justify-between items-center text-xs pt-1">
-            <a href="#forgot" className="text-[#005cb8] hover:underline">Quên mật khẩu</a>
-            <span className="text-gray-500">Chưa có tài khoản? <span onClick={onSwitchToRegister} className="text-[#005cb8] font-semibold cursor-pointer hover:underline">Đăng ký</span></span>
+        <h2 className="text-2xl font-bold text-center text-gray-900 mb-6">
+          Đăng nhập
+        </h2>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-xs p-2.5 rounded-md mb-4 text-center">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Email */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              required
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#166534]"
+            />
           </div>
 
-          <button type="submit" className="w-full py-2.5 bg-[#005cb8] text-white font-bold rounded-lg hover:bg-[#004ba0] transition-colors duration-200">
-            Đăng nhập
+          {/* Mật khẩu */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Mật khẩu</label>
+            <input
+              type="password"
+              required
+              placeholder="Mật khẩu"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#166534]"
+            />
+          </div>
+
+          {/* Dòng link hỗ trợ */}
+          <div className="flex items-center justify-between text-xs mt-1">
+            <a href="#" className="text-blue-600 hover:underline">Quên mật khẩu</a>
+            <div>
+              Chưa có tài khoản ?{' '}
+              <button
+                type="button"
+                onClick={onSwitchToRegister}
+                className="text-blue-600 font-medium hover:underline"
+              >
+                Đăng ký
+              </button>
+            </div>
+          </div>
+
+          {/* Nút submit */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#1d61c8] hover:bg-[#164ea5] text-white font-medium py-2.5 rounded-lg text-sm transition-colors mt-3 disabled:bg-gray-400"
+          >
+            {loading ? 'Đang xử lý...' : 'Đăng nhập'}
           </button>
         </form>
+
       </div>
     </div>
   );
