@@ -18,13 +18,18 @@ function formatHotel(hotel) {
     address: hotel.address,
     city: hotel.city,
     description: hotel.description,
+    image: hotel.thumbnail,
     starRating: hotel.star_rating,
+    star_rating: hotel.star_rating,
     averageRating: Number(hotel.average_rating || 0),
+    average_rating: Number(hotel.average_rating || 0),
     reviewCount: hotel.review_count,
+    review_count: hotel.review_count,
     phone: hotel.phone,
     email: hotel.email,
     thumbnail: hotel.thumbnail,
     minPrice: hotel.min_price === null ? null : Number(hotel.min_price),
+    min_price: hotel.min_price === null ? null : Number(hotel.min_price),
   };
 }
 

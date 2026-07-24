@@ -1,29 +1,68 @@
 const pool = require("../config/database");
 const { formatHotel, formatRoom } = require("../utils/formatters");
 
-async function listHotels(req, res, next) {
-  const destination = (req.query.destination || req.query.city || req.query.q || "")
+function getSearchTerm(req) {
+  return (req.query.destination || req.query.city || req.query.q || "")
     .toString()
     .trim();
+}
 
-  try {
-    const params = [];
-    const where = [
-      "h.deleted_at IS NULL",
-      "h.status = 'approved'",
-    ];
+function parseStarFilters(value) {
+  if (!value) return [];
 
-    if (destination) {
-      params.push(`%${destination}%`);
-      where.push(`(
-        h.name ILIKE $${params.length}
-        OR h.city ILIKE $${params.length}
-        OR h.address ILIKE $${params.length}
-      )`);
-    }
+  return String(value)
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isInteger(item) && item >= 1 && item <= 5);
+}
 
-    const result = await pool.query(
-      `SELECT
+function parsePositiveNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function buildHotelQuery({ destination, maxPrice, stars, sortBy, limit = 30 }) {
+  const params = [];
+  const where = [
+    "h.deleted_at IS NULL",
+    "h.status = 'approved'",
+  ];
+  const having = [];
+
+  if (destination) {
+    params.push(`%${destination}%`);
+    where.push(`(
+      h.name ILIKE $${params.length}
+      OR h.city ILIKE $${params.length}
+      OR h.address ILIKE $${params.length}
+    )`);
+  }
+
+  if (stars.length > 0) {
+    params.push(stars);
+    where.push(`h.star_rating = ANY($${params.length}::int[])`);
+  }
+
+  if (maxPrice) {
+    params.push(maxPrice);
+    having.push(`MIN(r.base_price) <= $${params.length}`);
+  }
+
+  let orderBy = "h.average_rating DESC, h.review_count DESC, h.created_at DESC";
+  if (sortBy === "price_asc") {
+    orderBy = "MIN(r.base_price) ASC NULLS LAST, h.average_rating DESC, h.review_count DESC";
+  } else if (sortBy === "price_desc") {
+    orderBy = "MIN(r.base_price) DESC NULLS LAST, h.average_rating DESC, h.review_count DESC";
+  } else if (sortBy === "rating") {
+    orderBy = "h.average_rating DESC, h.review_count DESC, h.created_at DESC";
+  }
+
+  params.push(limit);
+
+  return {
+    text: `SELECT
          h.id,
          h.name,
          h.address,
@@ -46,16 +85,88 @@ async function listHotels(req, res, next) {
         AND r.deleted_at IS NULL
        WHERE ${where.join(" AND ")}
        GROUP BY h.id, thumb.path
-       ORDER BY h.average_rating DESC, h.created_at DESC
-       LIMIT 30`,
-      params,
-    );
+       ${having.length > 0 ? `HAVING ${having.join(" AND ")}` : ""}
+       ORDER BY ${orderBy}
+       LIMIT $${params.length}`,
+    params,
+  };
+}
+
+async function listHotels(req, res, next) {
+  const destination = getSearchTerm(req);
+
+  try {
+    const query = buildHotelQuery({
+      destination,
+      maxPrice: null,
+      stars: [],
+      sortBy: "popular",
+      limit: 30,
+    });
+
+    const result = await pool.query(query.text, query.params);
 
     return res.json({
       hotels: result.rows.map(formatHotel),
       total: result.rowCount,
       destination,
     });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function searchHotels(req, res, next) {
+  const destination = getSearchTerm(req);
+  const maxPrice = parsePositiveNumber(req.query.maxPrice);
+  const stars = parseStarFilters(req.query.stars);
+  const sortBy = (req.query.sortBy || "popular").toString();
+
+  try {
+    const query = buildHotelQuery({
+      destination,
+      maxPrice,
+      stars,
+      sortBy,
+      limit: 30,
+    });
+
+    const result = await pool.query(query.text, query.params);
+
+    return res.json(result.rows.map(formatHotel));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function listDestinationSuggestions(req, res, next) {
+  const keyword = getSearchTerm(req);
+
+  try {
+    const params = [];
+    const where = ["h.deleted_at IS NULL", "h.status = 'approved'", "h.city IS NOT NULL", "h.city <> ''"];
+
+    if (keyword) {
+      params.push(`%${keyword}%`);
+      where.push(`(
+        h.city ILIKE $${params.length}
+        OR h.name ILIKE $${params.length}
+        OR h.address ILIKE $${params.length}
+      )`);
+    }
+
+    const result = await pool.query(
+      `SELECT DISTINCT
+         h.city AS name,
+         'Việt Nam' AS region
+       FROM hotel h
+       WHERE ${where.join(" AND ")}
+       ORDER BY h.city ASC
+       LIMIT 10`,
+      params,
+    );
+
+    return res.json(result.rows);
   } catch (error) {
     return next(error);
   }
@@ -153,6 +264,8 @@ async function listHotelRooms(req, res, next) {
 
 module.exports = {
   listHotels,
+  searchHotels,
+  listDestinationSuggestions,
   getHotelById,
   listHotelRooms,
 };
