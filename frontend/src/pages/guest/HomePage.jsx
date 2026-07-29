@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../../components/ui'; 
 import HotelCard from '../../components/hotel/HotelCard'; 
-import hotelService from '../../services/hotelService'; // File gọi API của bạn
+import HotelFilter from '../../components/hotel/HotelFilter';
+import hotelService from '../../services/hotelService';
 
 const HomePage = () => {
+  const navigate = useNavigate();
+
   // ─── 1. STATES LƯU DỮ LIỆU TỪ BACKEND ───
   const [propertyTypes, setPropertyTypes] = useState([]);
   const [trendingDestinations, setTrendingDestinations] = useState([]);
@@ -18,7 +22,6 @@ const HomePage = () => {
     const fetchHomePageData = async () => {
       setLoading(true);
       try {
-        // Dùng Promise.all để gọi đồng thời các API cho tối ưu tốc độ
         const [typesData, trendingData, discoverData, staysData] = await Promise.all([
           hotelService.getPropertyTypes ? hotelService.getPropertyTypes() : Promise.resolve([]),
           hotelService.getTrendingDestinations ? hotelService.getTrendingDestinations() : Promise.resolve([]),
@@ -40,11 +43,47 @@ const HomePage = () => {
     fetchHomePageData();
   }, []);
 
+  // ─── 3. XỬ LÝ SỰ KIỆN TÌM KIẾM TỪ HOTELFILTER ───
+  const handleSearch = (searchParams) => {
+    // Chuyển đổi dữ liệu search thành URL Search Parameters (Query String)
+    const query = new URLSearchParams();
+
+    if (searchParams?.destination) query.append('destination', searchParams.destination);
+    if (searchParams?.startDate) query.append('checkIn', searchParams.startDate);
+    if (searchParams?.endDate) query.append('checkOut', searchParams.endDate);
+    if (searchParams?.guests) query.append('guests', searchParams.guests);
+
+    // Chuyển hướng người dùng sang trang danh sách khách sạn (/hotels) cùng thông tin tìm kiếm
+    navigate({
+      pathname: '/hotels',
+      search: query.toString(),
+    });
+  };
+
   return (
-    <div className="w-full pb-24">
-      
+    <div className="w-full pb-24 bg-gray-50/30">
+
+      {/* ─── HERO BANNER & HOTEL FILTER ─── */}
+      <div className="bg-[#003580] pt-10 pb-16 px-4 text-white">
+        <div className="max-w-7xl mx-auto space-y-4">
+          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight">
+            Tìm chỗ nghỉ tiếp theo
+          </h1>
+          <p className="text-base md:text-xl text-blue-100 font-normal">
+            Tìm ưu đãi khách sạn, chỗ nghỉ dạng nhà và nhiều hơn nữa...
+          </p>
+        </div>
+      </div>
+
+      {/* Thanh HotelFilter đè lên giữa Banner và Nội dung */}
+      <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-20">
+        <div >
+          <HotelFilter onSearch={handleSearch} />
+        </div>
+      </div>
+
       {/* ─── SECTION 1: TÌM THEO LOẠI CHỖ NGHĨ ─── */}
-      <section className="max-w-7xl mx-auto px-4 mt-20">
+      <section className="max-w-7xl mx-auto px-4 mt-16">
         <h2 className="text-2xl font-bold text-gray-900 mb-6 tracking-tight">
           Tìm theo loại chỗ nghỉ
         </h2>
@@ -58,7 +97,9 @@ const HomePage = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 relative">
             {propertyTypes.map((type) => (
-              <Card key={type.id || type._id} image={type.image} title={type.title} />
+              <div key={type.id || type._id} className="cursor-pointer hover:opacity-95 transition">
+                <Card image={type.image} title={type.title} />
+              </div>
             ))}
             {propertyTypes.length > 4 && (
               <button className="absolute -right-4 top-1/2 -translate-y-1/2 translate-x-1/2 w-9 h-9 bg-white border border-gray-200 rounded-full flex items-center justify-center shadow-md hover:bg-gray-50 z-10">
@@ -87,7 +128,11 @@ const HomePage = () => {
             {/* Hàng 1: Các thẻ lớn (isLarge = true) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {trendingDestinations.filter(item => item.isLarge).map((place) => (
-                <div key={place.id || place._id} className="relative rounded-lg overflow-hidden group shadow-sm">
+                <div 
+                  key={place.id || place._id} 
+                  onClick={() => handleSearch({ destination: place.title })}
+                  className="relative rounded-lg overflow-hidden group shadow-sm cursor-pointer"
+                >
                   <Card image={place.image} title="" className="w-full aspect-[16/9] md:aspect-[2/1]" />
                   <div className="absolute top-6 left-6 pointer-events-none drop-shadow-md">
                     <h3 className="text-white text-2xl font-extrabold flex items-center gap-1.5 tracking-wide">
@@ -101,7 +146,11 @@ const HomePage = () => {
             {/* Hàng 2: Các thẻ nhỏ (isLarge = false) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {trendingDestinations.filter(item => !item.isLarge).map((place) => (
-                <div key={place.id || place._id} className="relative rounded-lg overflow-hidden group shadow-sm">
+                <div 
+                  key={place.id || place._id} 
+                  onClick={() => handleSearch({ destination: place.title })}
+                  className="relative rounded-lg overflow-hidden group shadow-sm cursor-pointer"
+                >
                   <Card image={place.image} title="" className="w-full aspect-[4/3]" />
                   <div className="absolute top-5 left-5 pointer-events-none drop-shadow-md">
                     <h3 className="text-white text-xl font-extrabold flex items-center gap-1.5 tracking-wide">
@@ -135,7 +184,11 @@ const HomePage = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {discoverVietnam.map((item) => (
-              <div key={item.id || item._id} className="flex flex-col">
+              <div 
+                key={item.id || item._id} 
+                onClick={() => handleSearch({ destination: item.title })}
+                className="flex flex-col cursor-pointer hover:opacity-95 transition"
+              >
                 <Card
                   image={item.image}
                   title={

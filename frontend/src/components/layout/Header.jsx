@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../ui";
-import HotelFilter from "../hotel/HotelFilter";
 import { useAuthStore } from "@/stores/authStore";
 
 const Header = () => {
@@ -50,6 +49,7 @@ const Header = () => {
           </Button>
 
           {isAuthenticated ? (
+         
             /* --- GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP --- */
             <div className="relative">
               <button
@@ -132,22 +132,10 @@ const Header = () => {
 
       {/* Banner tìm kiếm */}
       <div className="relative w-full bg-[#003580] text-white">
-        <div className="max-w-7xl mx-auto px-4 pt-12 pb-20">
-          <h1 className="text-5xl font-extrabold mb-4 tracking-tight">
-            Tìm chỗ nghỉ tiếp theo
-          </h1>
-          <p className="text-2xl font-normal text-white/90">
-            Tìm ưu đãi khách sạn, chỗ nghỉ dạng nhà và nhiều hơn nữa...
-          </p>
-        </div>
-
-        {/* Thanh tìm kiếm */}
-        <div className="absolute bottom-0 left-0 right-0 transform translate-y-1/2 z-10 px-4">
-          <div className="max-w-7xl mx-auto">
-            <HotelFilter />
-          </div>
-        </div>
+        
+      
       </div>
+      
     </header>
   );
 };
