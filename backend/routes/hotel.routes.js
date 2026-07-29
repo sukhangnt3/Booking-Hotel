@@ -5,6 +5,10 @@ const {
   listHotels,
   listDestinationSuggestions,
   searchHotels,
+  listPropertyTypes,         // <--- Thêm hàm này
+  listTrendingDestinations,   // <--- Thêm hàm này
+  listDiscoverVietnam,        // <--- Thêm hàm này
+  listUniqueStays,            // <--- Thêm hàm này
 } = require("../controllers/hotel.controller");
 
 const router = express.Router();
