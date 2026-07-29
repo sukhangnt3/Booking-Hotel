@@ -8,7 +8,6 @@ const notificationRoutes = require("./notification.routes");
 const promotionRoutes = require("./promotion.routes");
 const reviewRoutes = require("./review.routes");
 const roomRoutes = require("./room.routes");
-const { login, register } = require("../controllers/auth.controller");
 
 const router = express.Router();
 
@@ -21,9 +20,5 @@ router.use("/notifications", notificationRoutes);
 router.use("/promotions", promotionRoutes);
 router.use("/reviews", reviewRoutes);
 router.use("/rooms", roomRoutes);
-
-// Backward compatibility for older frontend components.
-router.post("/register", register);
-router.post("/login", login);
 
 module.exports = router;
