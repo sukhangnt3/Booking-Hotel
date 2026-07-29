@@ -3,7 +3,8 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import GuestLayout from '../components/layout/GuestLayout';
 import HomePage from '../pages/guest/HomePage';
 import HotelListPage from '../pages/guest/HotelListPage';
-import LoginPage from '../pages/auth/LoginPage'; // Import trang LoginPage vừa làm
+import HotelDetailPage from '../pages/guest/HotelDetailPage'; // 🚀 1. Import trang HotelDetailPage
+import LoginPage from '../pages/auth/LoginPage';
 
 const router = createBrowserRouter([
   // ── NHÓM 1: CÁC TRANG DÙNG GUEST LAYOUT (Có Header lớn + Footer chung) ──
@@ -19,13 +20,18 @@ const router = createBrowserRouter([
         path: '/hotels', // Trang danh sách (/hotels)
         element: <HotelListPage />,
       },
+      {
+        // 🚀 2. THÊM ROUTE NÀY ĐỂ KHẮC PHỤC LỖI 404
+        path: '/hotel/:id', 
+        element: <HotelDetailPage />,
+      },
     ],
   },
 
   // ── NHÓM 2: TRANG ĐĂNG NHẬP RIÊNG (Hoàn toàn tách biệt) ──
   {
     path: '/login',
-    element: <LoginPage />, // Không bị ảnh hưởng bởi GuestLayout!
+    element: <LoginPage />,
   },
 ]);
 
