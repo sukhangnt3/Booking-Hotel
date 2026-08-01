@@ -1,171 +1,374 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import hotelService from '../../services/hotelService';
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import hotelService from "../../services/hotelService";
 
 const HotelFilter = ({ onSearch }) => {
   const navigate = useNavigate();
   const filterRef = useRef(null);
 
-  // States
-  const [destination, setDestination] = useState('');
-  const [destinations, setDestinations] = useState([]);
-  const [recentSearches, setRecentSearches] = useState([]);
-  const [checkInDate, setCheckInDate] = useState(new Date().toISOString().split('T')[0]);
-  const [checkOutDate, setCheckOutDate] = useState('');
+  // 1. Cấu hình ngày mặc định (Hôm nay & Ngày mai)
+  const today = new Date().toISOString().split("T")[0];
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+
+  // 2. States cho các trường nhập liệu
+  const [destination, setDestination] = useState("");
+  const [destinations, setDestinations] = useState([]); // Kết quả từ API
+  const [recentSearches, setRecentSearches] = useState([]); // Lịch sử từ LocalStorage
+  const [checkInDate, setCheckInDate] = useState(today);
+  const [checkOutDate, setCheckOutDate] = useState(tomorrow);
   const [guests, setGuests] = useState({ adults: 2, children: 0, rooms: 1 });
   const [isBusiness, setIsBusiness] = useState(false);
   const [hasPets, setHasPets] = useState(false);
 
-  // Popups toggle
+  // States quản lý UI
   const [activeTab, setActiveTab] = useState(null); // 'dest' | 'date' | 'guest' | null
   const [loadingDest, setLoadingDest] = useState(false);
 
+  // 3. Khởi tạo: Lấy lịch sử tìm kiếm từ LocalStorage
   useEffect(() => {
-    setRecentSearches(JSON.parse(localStorage.getItem('recent_searches') || '[]'));
+    const saved = localStorage.getItem("recent_searches");
+    if (saved) setRecentSearches(JSON.parse(saved));
   }, []);
 
-  // Debounce gọi API địa điểm
+  // 4. Debounce gọi API tìm địa điểm (Khi người dùng gõ từ khóa)
   useEffect(() => {
-    if (!destination.trim() || destination.length < 2) return setDestinations([]);
+    if (!destination.trim() || destination.length < 2) {
+      setDestinations([]);
+      return;
+    }
     const timer = setTimeout(async () => {
       setLoadingDest(true);
-      try { setDestinations(await hotelService.searchDestinations(destination) || []); } 
-      catch (e) { console.error(e); } 
-      finally { setLoadingDest(false); }
-    }, 300);
+      try {
+        // Gọi API gợi ý địa điểm (Sẽ query DISTINCT city trong Table 5: Hotel)
+        const data = await hotelService.searchDestinations(destination);
+        setDestinations(data || []);
+      } catch (e) {
+        console.error("Lỗi search destination:", e);
+      } finally {
+        setLoadingDest(false);
+      }
+    }, 400); // Đợi 400ms sau khi ngừng gõ mới gọi API
     return () => clearTimeout(timer);
   }, [destination]);
 
-  // Click outside để đóng popups
+  // 5. Đóng Popups khi click ra ngoài
   useEffect(() => {
-    const handleOutside = (e) => filterRef.current && !filterRef.current.contains(e.target) && setActiveTab(null);
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
+    const handleOutside = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) {
+        setActiveTab(null);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
+  // 6. Xử lý tăng giảm số lượng khách/phòng
   const handleGuestChange = (field, delta) => {
-    setGuests(prev => {
+    setGuests((prev) => {
       const val = prev[field] + delta;
-      if (val < (field === 'children' ? 0 : 1)) return prev;
+      const min = field === "children" ? 0 : 1;
+      if (val < min) return prev;
       return { ...prev, [field]: val };
     });
   };
 
+  // 7. Thực hiện Tìm kiếm
   const handleSearch = (e) => {
     e.preventDefault();
-    if (destination) {
-      const updated = [destination, ...recentSearches.filter(i => i !== destination)].slice(0, 5);
-      localStorage.setItem('recent_searches', JSON.stringify(updated));
+
+    // Lưu vào lịch sử tìm kiếm
+    if (destination.trim()) {
+      const updated = [
+        destination.trim(),
+        ...recentSearches.filter((i) => i !== destination.trim()),
+      ].slice(0, 5);
+      setRecentSearches(updated);
+      localStorage.setItem("recent_searches", JSON.stringify(updated));
     }
-    const params = { destination, checkIn: checkInDate, checkOut: checkOutDate, ...guests, isBusiness, hasPets };
-    
-    if (onSearch) onSearch(params);
-    else navigate(`/hotels?${new URLSearchParams(params).toString()}`);
+
+    // Đóng gói dữ liệu gửi đi (Đồng bộ với HotelListPage params)
+    const params = {
+      destination: destination.trim(),
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      adults: guests.adults,
+      children: guests.children,
+      rooms: guests.rooms,
+      isBusiness,
+      hasPets,
+    };
+
+    if (onSearch) {
+      onSearch(params); // Nếu dùng ở HomePage
+    } else {
+      navigate(`/hotels?${new URLSearchParams(params).toString()}`); // Nếu dùng ở các trang khác
+    }
     setActiveTab(null);
   };
 
   return (
-    <div ref={filterRef} className="w-full">
-      <form onSubmit={handleSearch} className="bg-[#ffb700] p-1 rounded-lg shadow-md grid grid-cols-1 md:grid-cols-12 gap-1 text-xs">
-        
-        {/* 1. ĐỊA ĐIỂM */}
-        <div className="relative md:col-span-4 bg-white rounded flex items-center px-3 py-2">
-          <span className="mr-2 text-base">🛏️</span>
+    <div ref={filterRef} className="w-full relative">
+      <form
+        onSubmit={handleSearch}
+        className="bg-[#ffb700] p-1 rounded-lg shadow-xl grid grid-cols-1 md:grid-cols-12 gap-1"
+      >
+        {/* 1. Ô ĐỊA ĐIỂM */}
+        <div className="relative md:col-span-4 bg-white rounded flex items-center px-4 py-2.5">
+          <span className="mr-3 text-lg">🛏️</span>
           <div className="flex-1">
-            <span className="text-[10px] text-gray-400 block font-medium">Nhập điểm đến</span>
+            <span className="text-[10px] text-gray-400 block font-bold uppercase">
+              Bạn muốn đến đâu?
+            </span>
             <input
               type="text"
-              placeholder="Bạn muốn đến đâu?"
+              placeholder="Nhập thành phố, điểm đến..."
               value={destination}
-              onChange={(e) => { setDestination(e.target.value); setActiveTab('dest'); }}
-              onFocus={() => setActiveTab('dest')}
-              className="w-full font-bold outline-none text-gray-900"
+              onChange={(e) => {
+                setDestination(e.target.value);
+                setActiveTab("dest");
+              }}
+              onFocus={() => setActiveTab("dest")}
+              className="w-full font-bold outline-none text-sm text-gray-800 placeholder-gray-300"
             />
           </div>
-          {destination && <button type="button" onClick={() => setDestination('')} className="text-gray-400 font-bold px-1">✕</button>}
+          {destination && (
+            <button
+              type="button"
+              onClick={() => setDestination("")}
+              className="text-gray-300 hover:text-gray-600 font-bold px-1 text-sm"
+            >
+              ✕
+            </button>
+          )}
 
           {/* Popup Dropdown Địa Điểm */}
-          {activeTab === 'dest' && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
-              {!destination && recentSearches.map((item, i) => (
-                <div key={i} onClick={() => { setDestination(item); setActiveTab(null); }} className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2">
-                  <span>🕒</span><span className="font-semibold">{item}</span>
+          {activeTab === "dest" && (
+            <div className="absolute top-[110%] left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in zoom-in duration-200">
+              {/* Lịch sử tìm kiếm gần đây */}
+              {!destination && recentSearches.length > 0 && (
+                <div className="p-2 border-b border-gray-100">
+                  <span className="text-[10px] font-bold text-gray-400 px-3 uppercase">
+                    Tìm kiếm gần đây
+                  </span>
+                  {recentSearches.map((item, i) => (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        setDestination(item);
+                        setActiveTab(null);
+                      }}
+                      className="px-3 py-2.5 hover:bg-gray-50 cursor-pointer flex items-center gap-3 text-sm font-semibold text-gray-700"
+                    >
+                      <span>🕒</span> {item}
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {loadingDest ? <div className="p-3 text-center text-gray-400">Đang tìm...</div> : 
-                destinations.map((item, i) => (
-                  <div key={i} onClick={() => { setDestination(item.name); setActiveTab(null); }} className="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-none">
-                    <div className="font-bold text-gray-800">📍 {item.name}</div>
+              )}
+
+              {/* Kết quả từ API */}
+              <div className="max-h-64 overflow-y-auto">
+                {loadingDest ? (
+                  <div className="p-4 text-center text-xs text-gray-400 font-medium">
+                    Đang tìm địa điểm...
                   </div>
-                ))
-              }
+                ) : destinations.length > 0 ? (
+                  destinations.map((item, i) => (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        setDestination(item.name || item);
+                        setActiveTab(null);
+                      }}
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-50 flex items-center gap-3 group"
+                    >
+                      <span className="text-gray-400 group-hover:text-[#006ce4]">
+                        📍
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-gray-800 text-sm">
+                          {item.name || item}
+                        </span>
+                        <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wider">
+                          Thành phố / Điểm đến
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  destination.length >= 2 && (
+                    <div className="p-4 text-center text-xs text-gray-400">
+                      Không tìm thấy địa điểm này
+                    </div>
+                  )
+                )}
+              </div>
             </div>
           )}
         </div>
 
         {/* 2. NGÀY NHẬN / TRẢ PHÒNG */}
-        <div className="relative md:col-span-4 bg-white rounded flex items-center px-3 py-2">
-          <span className="mr-2 text-base">📅</span>
-          <div onClick={() => setActiveTab(activeTab === 'date' ? null : 'date')} className="w-full cursor-pointer">
-            <span className="text-[10px] text-gray-400 block font-medium">Thời gian lưu trú</span>
-            <div className="font-bold truncate">{checkInDate} — {checkOutDate || 'Trả phòng'}</div>
+        <div
+          className="relative md:col-span-4 bg-white rounded flex items-center px-4 py-2.5 cursor-pointer hover:bg-gray-50"
+          onClick={() => setActiveTab(activeTab === "date" ? null : "date")}
+        >
+          <span className="mr-3 text-lg">📅</span>
+          <div className="w-full">
+            <span className="text-[10px] text-gray-400 block font-bold uppercase">
+              Ngày nhận — Ngày trả
+            </span>
+            <div className="text-sm font-bold text-gray-800 truncate">
+              {checkInDate} — {checkOutDate}
+            </div>
           </div>
 
-          {activeTab === 'date' && (
-            <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-xl p-3 z-50 w-64 space-y-2">
-              <div><label className="text-[10px] font-bold text-gray-500">Nhận phòng</label>
-                <input type="date" value={checkInDate} onChange={(e) => setCheckInDate(e.target.value)} className="w-full border rounded p-1" />
+          {activeTab === "date" && (
+            <div
+              className="absolute top-[110%] left-0 bg-white border border-gray-200 rounded-xl shadow-2xl p-5 z-[100] w-72 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">
+                    Ngày nhận
+                  </label>
+                  <input
+                    type="date"
+                    min={today}
+                    value={checkInDate}
+                    onChange={(e) => setCheckInDate(e.target.value)}
+                    className="w-full border-b-2 border-gray-100 py-1 outline-none focus:border-[#006ce4] font-bold text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">
+                    Ngày trả
+                  </label>
+                  <input
+                    type="date"
+                    min={checkInDate}
+                    value={checkOutDate}
+                    onChange={(e) => setCheckOutDate(e.target.value)}
+                    className="w-full border-b-2 border-gray-100 py-1 outline-none focus:border-[#006ce4] font-bold text-sm"
+                  />
+                </div>
               </div>
-              <div><label className="text-[10px] font-bold text-gray-500">Trả phòng</label>
-                <input type="date" min={checkInDate} value={checkOutDate} onChange={(e) => setCheckOutDate(e.target.value)} className="w-full border rounded p-1" />
-              </div>
-              <button type="button" onClick={() => setActiveTab(null)} className="w-full bg-[#006ce4] text-white py-1 rounded font-bold">Xác nhận</button>
+              <button
+                type="button"
+                onClick={() => setActiveTab(null)}
+                className="w-full bg-[#006ce4] text-white py-2 rounded-lg font-bold text-xs uppercase shadow-md"
+              >
+                Xác nhận ngày
+              </button>
             </div>
           )}
         </div>
 
         {/* 3. KHÁCH & PHÒNG */}
-        <div className="relative md:col-span-3 bg-white rounded flex items-center px-3 py-2">
-          <span className="mr-2 text-base">👤</span>
-          <div onClick={() => setActiveTab(activeTab === 'guest' ? null : 'guest')} className="w-full cursor-pointer">
-            <span className="text-[10px] text-gray-400 block font-medium">Số lượng</span>
-            <div className="font-bold truncate">{guests.adults} nl · {guests.children} trẻ · {guests.rooms} phòng</div>
+        <div
+          className="relative md:col-span-3 bg-white rounded flex items-center px-4 py-2.5 cursor-pointer hover:bg-gray-50"
+          onClick={() => setActiveTab(activeTab === "guest" ? null : "guest")}
+        >
+          <span className="mr-3 text-lg">👤</span>
+          <div className="w-full">
+            <span className="text-[10px] text-gray-400 block font-bold uppercase">
+              Chọn số lượng
+            </span>
+            <div className="text-sm font-bold text-gray-800 truncate tracking-tight">
+              {guests.adults} người lớn · {guests.children} trẻ em ·{" "}
+              {guests.rooms} phòng
+            </div>
           </div>
 
-          {activeTab === 'guest' && (
-            <div className="absolute top-full right-0 mt-1 bg-white border rounded-lg shadow-xl p-4 z-50 w-64 space-y-3">
-              {['adults', 'children', 'rooms'].map((type) => (
+          {activeTab === "guest" && (
+            <div
+              className="absolute top-[110%] right-0 bg-white border border-gray-200 rounded-xl shadow-2xl p-5 z-[100] w-72 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {["adults", "children", "rooms"].map((type) => (
                 <div key={type} className="flex justify-between items-center">
-                  <span className="capitalize font-semibold">{type === 'adults' ? 'Người lớn' : type === 'children' ? 'Trẻ em' : 'Phòng'}</span>
-                  <div className="flex items-center gap-2 border rounded p-0.5">
-                    <button type="button" onClick={() => handleGuestChange(type, -1)} className="w-6 h-6 text-[#006ce4] font-bold hover:bg-gray-100 rounded">-</button>
-                    <span className="font-bold w-4 text-center">{guests[type]}</span>
-                    <button type="button" onClick={() => handleGuestChange(type, 1)} className="w-6 h-6 text-[#006ce4] font-bold hover:bg-gray-100 rounded">+</button>
+                  <div className="flex flex-col">
+                    <span className="capitalize font-bold text-gray-700 text-sm">
+                      {type === "adults"
+                        ? "Người lớn"
+                        : type === "children"
+                          ? "Trẻ em"
+                          : "Số phòng"}
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-medium">
+                      {type === "adults"
+                        ? "Từ 13 tuổi trở lên"
+                        : type === "children"
+                          ? "0-12 tuổi"
+                          : "Số lượng phòng đặt"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleGuestChange(type, -1)}
+                      className="w-8 h-8 flex items-center justify-center text-[#006ce4] border border-[#006ce4] rounded-md hover:bg-blue-50 transition-colors font-bold text-lg"
+                    >
+                      -
+                    </button>
+                    <span className="font-bold text-sm w-4 text-center text-gray-800">
+                      {guests[type]}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleGuestChange(type, 1)}
+                      className="w-8 h-8 flex items-center justify-center text-[#006ce4] border border-[#006ce4] rounded-md hover:bg-blue-50 transition-colors font-bold text-lg"
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
               ))}
-              <div className="pt-2 border-t space-y-2">
-                <label className="flex justify-between items-center cursor-pointer">
-                  <span>Đi công tác?</span>
-                  <input type="checkbox" checked={isBusiness} onChange={(e) => setIsBusiness(e.target.checked)} className="accent-[#006ce4]" />
+
+              <div className="pt-4 border-t border-gray-100 space-y-3">
+                <label className="flex justify-between items-center cursor-pointer group">
+                  <span className="text-xs font-bold text-gray-600 group-hover:text-[#006ce4]">
+                    Bạn đi công tác?
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isBusiness}
+                    onChange={(e) => setIsBusiness(e.target.checked)}
+                    className="w-4 h-4 accent-[#006ce4]"
+                  />
                 </label>
-                <label className="flex justify-between items-center cursor-pointer">
-                  <span>Mang thú cưng</span>
-                  <input type="checkbox" checked={hasPets} onChange={(e) => setHasPets(e.target.checked)} className="accent-[#006ce4]" />
+                <label className="flex justify-between items-center cursor-pointer group">
+                  <span className="text-xs font-bold text-gray-600 group-hover:text-[#006ce4]">
+                    Mang theo thú cưng?
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={hasPets}
+                    onChange={(e) => setHasPets(e.target.checked)}
+                    className="w-4 h-4 accent-[#006ce4]"
+                  />
                 </label>
               </div>
-              <button type="button" onClick={() => setActiveTab(null)} className="w-full border-2 border-[#006ce4] text-[#006ce4] py-1 rounded-lg font-bold">Xong</button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab(null)}
+                className="w-full bg-white border-2 border-[#006ce4] text-[#006ce4] py-2 rounded-lg font-extrabold text-xs uppercase hover:bg-blue-50 transition-colors mt-2"
+              >
+                Xong
+              </button>
             </div>
           )}
         </div>
 
         {/* 4. NÚT TÌM KIẾM */}
         <div className="md:col-span-1">
-          <button type="submit" className="w-full h-full bg-[#006ce4] hover:bg-blue-700 text-white font-bold py-2 rounded text-sm transition">
+          <button
+            type="submit"
+            className="w-full h-full bg-[#006ce4] hover:bg-blue-700 text-white font-bold py-3 md:py-0 rounded text-base transition-all active:scale-95 shadow-lg"
+          >
             Tìm
           </button>
         </div>
-
       </form>
     </div>
   );
