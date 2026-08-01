@@ -30,6 +30,39 @@ function parseBooleanFlag(value) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
+function formatPolicy(policy) {
+  if (!policy) return null;
+
+  return {
+    limitedAge: policy.limited_age,
+    limited_age: policy.limited_age,
+    minAdultAge: policy.min_adult_age,
+    min_adult_age: policy.min_adult_age,
+    childrenAllowed: policy.children_allowed,
+    children_allowed: policy.children_allowed,
+    allowPets: policy.animal_allowed,
+    animal_allowed: policy.animal_allowed,
+    freeCancellation: policy.free_cancellation,
+    free_cancellation: policy.free_cancellation,
+    cancellationDeadlineHours: policy.cancellation_deadline_hours,
+    cancellation_deadline_hours: policy.cancellation_deadline_hours,
+    startCheckinTime: policy.start_checkin_time,
+    start_checkin_time: policy.start_checkin_time,
+    endCheckinTime: policy.end_checkin_time,
+    end_checkin_time: policy.end_checkin_time,
+    startCheckoutTime: policy.start_checkout_time,
+    start_checkout_time: policy.start_checkout_time,
+    endCheckoutTime: policy.end_checkout_time,
+    end_checkout_time: policy.end_checkout_time,
+    requireDeposit: policy.require_deposit,
+    require_deposit: policy.require_deposit,
+    depositType: policy.deposit_type,
+    deposit_type: policy.deposit_type,
+    depositValue: policy.deposit_value,
+    deposit_value: policy.deposit_value,
+  };
+}
+
 function buildHotelQuery({
   destination,
   maxPrice,
@@ -137,8 +170,11 @@ async function listHotels(req, res, next) {
 
     const result = await pool.query(query.text, query.params);
 
+    const hotels = result.rows.map(formatHotel);
+
     return res.json({
-      hotels: result.rows.map(formatHotel),
+      data: hotels,
+      hotels,
       total: result.rowCount,
       destination,
     });
@@ -170,7 +206,12 @@ async function searchHotels(req, res, next) {
 
     const result = await pool.query(query.text, query.params);
 
-    return res.json(result.rows.map(formatHotel));
+    const hotels = result.rows.map(formatHotel);
+    return res.json({
+      data: hotels,
+      hotels,
+      total: result.rowCount,
+    });
   } catch (error) {
     return next(error);
   }
@@ -197,14 +238,14 @@ async function listPropertyTypes(req, res, next) {
        LIMIT 8`,
     );
 
-    return res.json({
-      propertyTypes: result.rows.map((row, index) => ({
+    const propertyTypes = result.rows.map((row, index) => ({
         id: `${index}-${row.title}`,
         title: row.title,
         image: row.image,
         totalHotels: Number(row.total_hotels || 0),
-      })),
-    });
+      }));
+
+    return res.json({ data: propertyTypes, propertyTypes });
   } catch (error) {
     return next(error);
   }
@@ -230,15 +271,15 @@ async function listTrendingDestinations(req, res, next) {
        LIMIT 6`,
     );
 
-    return res.json({
-      trendingDestinations: result.rows.map((row, index) => ({
+    const trendingDestinations = result.rows.map((row, index) => ({
         id: `${index}-${row.title}`,
         title: row.title,
         image: row.image,
         isLarge: index < 2,
         totalHotels: Number(row.total_hotels || 0),
-      })),
-    });
+      }));
+
+    return res.json({ data: trendingDestinations, trendingDestinations });
   } catch (error) {
     return next(error);
   }
@@ -264,15 +305,15 @@ async function listDiscoverVietnam(req, res, next) {
        LIMIT 6`,
     );
 
-    return res.json({
-      discoverVietnam: result.rows.map((row) => ({
+    const discoverVietnam = result.rows.map((row) => ({
         id: row.title,
         title: row.title,
         subTitle: `${Number(row.total_hotels || 0)} chỗ nghỉ`,
         image: row.image,
         totalHotels: Number(row.total_hotels || 0),
-      })),
-    });
+      }));
+
+    return res.json({ data: discoverVietnam, discoverVietnam });
   } catch (error) {
     return next(error);
   }
@@ -306,8 +347,7 @@ async function listUniqueStays(req, res, next) {
        LIMIT 8`,
     );
 
-    return res.json({
-      uniqueStays: result.rows.map((hotel) => ({
+    const uniqueStays = result.rows.map((hotel) => ({
         id: hotel.id,
         type: hotel.city || "Việt Nam",
         title: hotel.name,
@@ -324,8 +364,9 @@ async function listUniqueStays(req, res, next) {
         salePrice: hotel.min_price === null ? null : Number(hotel.min_price),
         stars: hotel.star_rating,
         isGenius: Number(hotel.average_rating || 0) >= 9,
-      })),
-    });
+      }));
+
+    return res.json({ data: uniqueStays, uniqueStays });
   } catch (error) {
     return next(error);
   }
@@ -403,7 +444,7 @@ async function getHotelById(req, res, next) {
       return res.status(404).json({ message: "Không tìm thấy khách sạn." });
     }
 
-    const [policyResult, serviceResult] = await Promise.all([
+    const [policyResult, serviceResult, imageResult] = await Promise.all([
       pool.query(
         `SELECT
            limited_age,
@@ -437,37 +478,52 @@ async function getHotelById(req, res, next) {
          ORDER BY base_price ASC, name ASC`,
         [req.params.id],
       ),
+      pool.query(
+        `SELECT
+           id,
+           path,
+           alt_text,
+           is_thumbnail,
+           display_order
+         FROM image
+         WHERE hotel_id = $1
+         ORDER BY is_thumbnail DESC, display_order ASC NULLS LAST, created_at ASC`,
+        [req.params.id],
+      ),
     ]);
 
+    const images = imageResult.rows.map((image) => ({
+      id: image.id,
+      path: image.path,
+      altText: image.alt_text,
+      alt_text: image.alt_text,
+      isThumbnail: image.is_thumbnail,
+      is_thumbnail: image.is_thumbnail,
+      displayOrder: image.display_order,
+      display_order: image.display_order,
+    }));
+
+    const policy = formatPolicy(policyResult.rows[0]);
+
+    const hotelDetail = {
+      ...formatHotel({ ...hotel, images, policy, services: serviceResult.rows }),
+      amenities: hotel.amenities || [],
+      images,
+      policy,
+      services: serviceResult.rows.map((service) => ({
+        id: service.id,
+        name: service.name,
+        basePrice: Number(service.base_price || 0),
+        base_price: Number(service.base_price || 0),
+        description: service.description,
+        isActive: service.is_active,
+        is_active: service.is_active,
+      })),
+    };
+
     return res.json({
-      hotel: {
-        ...formatHotel(hotel),
-        amenities: hotel.amenities || [],
-        policy: policyResult.rows[0]
-          ? {
-              limitedAge: policyResult.rows[0].limited_age,
-              minAdultAge: policyResult.rows[0].min_adult_age,
-              childrenAllowed: policyResult.rows[0].children_allowed,
-              allowPets: policyResult.rows[0].animal_allowed,
-              freeCancellation: policyResult.rows[0].free_cancellation,
-              cancellationDeadlineHours: policyResult.rows[0].cancellation_deadline_hours,
-              startCheckinTime: policyResult.rows[0].start_checkin_time,
-              endCheckinTime: policyResult.rows[0].end_checkin_time,
-              startCheckoutTime: policyResult.rows[0].start_checkout_time,
-              endCheckoutTime: policyResult.rows[0].end_checkout_time,
-              requireDeposit: policyResult.rows[0].require_deposit,
-              depositType: policyResult.rows[0].deposit_type,
-              depositValue: policyResult.rows[0].deposit_value,
-            }
-          : null,
-        services: serviceResult.rows.map((service) => ({
-          id: service.id,
-          name: service.name,
-          basePrice: Number(service.base_price || 0),
-          description: service.description,
-          isActive: service.is_active,
-        })),
-      },
+      data: hotelDetail,
+      hotel: hotelDetail,
     });
   } catch (error) {
     return next(error);
@@ -505,9 +561,75 @@ async function listHotelRooms(req, res, next) {
       [req.params.id],
     );
 
+    const rooms = result.rows.map(formatRoom);
+
     return res.json({
-      rooms: result.rows.map(formatRoom),
+      data: rooms,
+      rooms,
       total: result.rowCount,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function listHotelRoomAvailability(req, res, next) {
+  const hotelId = req.params.id;
+  const checkIn = req.query.checkIn;
+  const checkOut = req.query.checkOut;
+  const adults = Number(req.query.adults || 1);
+
+  if (!hotelId || !checkIn || !checkOut) {
+    return res.status(400).json({
+      message: "hotelId, checkIn và checkOut là bắt buộc.",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         r.id,
+         r.hotel_id,
+         r.name,
+         r.capacity,
+         r.base_price,
+         r.description,
+         r.type,
+         r.bed_type,
+         r.room_area,
+         r.amount,
+         r.is_active,
+         thumb.path AS thumbnail,
+         COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), '{}') AS amenities,
+         COALESCE(MIN(ri.sell_price), r.base_price) AS sell_price,
+         COALESCE(MIN(ri.available_count), r.amount) AS available_count
+       FROM room r
+       LEFT JOIN image thumb
+         ON thumb.room_id = r.id
+        AND thumb.is_thumbnail = true
+       LEFT JOIN room_amenity ra ON ra.room_id = r.id
+       LEFT JOIN amenity a ON a.id = ra.amenity_id
+       LEFT JOIN room_inventory ri
+         ON ri.room_id = r.id
+        AND ri.inventory_date >= $2::date
+        AND ri.inventory_date < $3::date
+        AND ri.status = 'active'
+       WHERE r.hotel_id = $1
+        AND r.deleted_at IS NULL
+        AND r.is_active = true
+       GROUP BY r.id, thumb.path
+       HAVING COALESCE(MIN(ri.available_count), r.amount) >= $4
+         AND r.capacity >= $4
+       ORDER BY COALESCE(MIN(ri.sell_price), r.base_price) ASC, r.name ASC`,
+      [hotelId, checkIn, checkOut, adults],
+    );
+
+    const rooms = result.rows.map(formatRoom);
+
+    return res.json({
+      data: rooms,
+      rooms,
+      total: rooms.length,
     });
   } catch (error) {
     return next(error);
@@ -524,4 +646,5 @@ module.exports = {
   listDestinationSuggestions,
   getHotelById,
   listHotelRooms,
+  listHotelRoomAvailability,
 };

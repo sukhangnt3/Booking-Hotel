@@ -38,6 +38,10 @@ function formatHotel(hotel) {
     require_deposit: hotel.require_deposit,
     cancellationDeadlineHours: hotel.cancellation_deadline_hours,
     cancellation_deadline_hours: hotel.cancellation_deadline_hours,
+    images: hotel.images || [],
+    policy: hotel.policy || null,
+    services: hotel.services || [],
+    amenities: hotel.amenities || [],
   };
 }
 
@@ -45,17 +49,26 @@ function formatRoom(room) {
   return {
     id: room.id,
     hotelId: room.hotel_id,
+    hotel_id: room.hotel_id,
     name: room.name,
     capacity: room.capacity,
     basePrice: Number(room.base_price || 0),
+    base_price: Number(room.base_price || 0),
     description: room.description,
     type: room.type,
     bedType: room.bed_type,
+    bed_type: room.bed_type,
     roomArea: room.room_area,
+    room_area: room.room_area,
     amount: room.amount,
     isActive: room.is_active,
+    is_active: room.is_active,
     thumbnail: room.thumbnail,
     amenities: room.amenities || [],
+    sellPrice: room.sell_price === null || room.sell_price === undefined ? null : Number(room.sell_price),
+    sell_price: room.sell_price === null || room.sell_price === undefined ? null : Number(room.sell_price),
+    availableCount: room.available_count === null || room.available_count === undefined ? null : Number(room.available_count),
+    available_count: room.available_count === null || room.available_count === undefined ? null : Number(room.available_count),
   };
 }
 
@@ -111,8 +124,16 @@ function formatBooking(booking) {
     tax: booking.tax,
     serviceTotal: booking.service_total,
     totalPrice: booking.total_price,
+    currency: booking.currency,
+    commissionRate: booking.commission_rate,
+    commissionAmount: booking.commission_amount,
+    hotelPayout: booking.hotel_payout,
     specialRequire: booking.special_require,
     createdAt: booking.created_at,
+    cancelReason: booking.cancel_reason,
+    cancelledAt: booking.cancelled_at,
+    expiredAt: booking.expired_at,
+    confirmedAt: booking.confirmed_at,
   };
 }
 

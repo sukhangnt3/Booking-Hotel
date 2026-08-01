@@ -2,18 +2,24 @@ import React, { useState } from 'react';
 
 const HotelCard = ({ 
   image, 
-  type, 
-  title, 
-  location, 
-  rating, 
-  ratingText, 
-  reviewsCount, 
+  type = 'Khách sạn', 
+  title = '', 
+  location = '', 
+  rating = 0, 
+  ratingText = 'Đánh giá', 
+  reviewsCount = 0, 
   originalPrice, 
-  salePrice,
+  salePrice = 0,
   stars = 4,
   isGenius = true
 }) => {
   const [isFavorite, setIsFavorite] = useState(false);
+
+  // Safe number formatters
+  const safeRating = Number(rating || 0).toFixed(1);
+  const safeReviewsCount = Number(reviewsCount || 0).toLocaleString('vi-VN');
+  const safeSalePrice = Number(salePrice || 0).toLocaleString('vi-VN');
+  const safeOriginalPrice = originalPrice ? Number(originalPrice).toLocaleString('vi-VN') : null;
 
   return (
     <div className="bg-white border border-gray-100 rounded-lg overflow-hidden flex flex-col group relative shadow-sm hover:shadow-md transition-all">
@@ -21,7 +27,7 @@ const HotelCard = ({
       {/* 1. Phần Ảnh & Nút Trái tim */}
       <div className="w-full aspect-square overflow-hidden relative bg-gray-100">
         <img 
-          src={image} 
+          src={image || 'https://via.placeholder.com/300'} 
           alt={title} 
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
@@ -47,7 +53,7 @@ const HotelCard = ({
             <span className="font-medium text-gray-600">{type}</span>
             {/* Render số sao */}
             <div className="flex text-yellow-500 text-[10px]">
-              {Array.from({ length: stars }).map((_, i) => (
+              {Array.from({ length: Number(stars || 0) }).map((_, i) => (
                 <span key={i}>⭐</span>
               ))}
             </div>
@@ -70,11 +76,11 @@ const HotelCard = ({
           {/* Điểm số & Đánh giá */}
           <div className="flex items-center gap-2 mb-4">
             <div className="bg-[#003580] text-white font-bold text-sm px-1.5 py-1 rounded-t-md rounded-br-md">
-              {rating.toFixed(1)}
+              {safeRating}
             </div>
             <div className="text-xs">
               <p className="font-semibold text-gray-800 leading-tight">{ratingText}</p>
-              <p className="text-gray-500 leading-none mt-0.5">{reviewsCount.toLocaleString()} đánh giá</p>
+              <p className="text-gray-500 leading-none mt-0.5">{safeReviewsCount} đánh giá</p>
             </div>
           </div>
         </div>
@@ -83,13 +89,13 @@ const HotelCard = ({
         <div className="text-right mt-auto pt-2 border-t border-gray-50 flex flex-col items-end">
           <span className="text-xs text-gray-500 font-normal">Bắt đầu từ</span>
           <div className="flex items-center gap-2 mt-0.5">
-            {originalPrice && (
+            {safeOriginalPrice && (
               <span className="text-xs text-red-600 line-through font-normal">
-                VND {originalPrice.toLocaleString()}
+                VND {safeOriginalPrice}
               </span>
             )}
             <span className="text-base font-bold text-gray-900">
-              VND {salePrice.toLocaleString()}
+              VND {safeSalePrice}
             </span>
           </div>
         </div>

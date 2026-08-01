@@ -5,10 +5,11 @@ const {
   listHotels,
   listDestinationSuggestions,
   searchHotels,
-  listPropertyTypes,         // <--- Thêm hàm này
-  listTrendingDestinations,   // <--- Thêm hàm này
-  listDiscoverVietnam,        // <--- Thêm hàm này
-  listUniqueStays,            // <--- Thêm hàm này
+  listPropertyTypes,
+  listTrendingDestinations,
+  listDiscoverVietnam,
+  listUniqueStays,
+  listHotelRoomAvailability,
 } = require("../controllers/hotel.controller");
 
 const router = express.Router();
@@ -20,6 +21,7 @@ router.get("/discover-vietnam", listDiscoverVietnam);
 router.get("/unique-stays", listUniqueStays);
 router.get("/search", searchHotels);
 router.get("/destinations", listDestinationSuggestions);
+router.get("/:id/rooms/availability", listHotelRoomAvailability);
 router.get("/:id", getHotelById);
 router.get("/:id/rooms", listHotelRooms);
 

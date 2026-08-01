@@ -161,7 +161,12 @@ async function googleLogin(req, res, next) {
       });
     }
 
-    return res.json(buildAuthResponse(user));
+    const payload = buildAuthResponse(user);
+
+    return res.json({
+      data: payload,
+      ...payload,
+    });
   } catch (error) {
     return res.status(401).json({
       message: error.message || "Xác thực Google thất bại.",
@@ -180,6 +185,7 @@ async function profile(req, res, next) {
     }
 
     return res.json({
+      data: { user: formatUser(user) },
       user: formatUser(user),
     });
   } catch (error) {
