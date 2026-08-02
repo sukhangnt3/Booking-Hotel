@@ -5,7 +5,7 @@ import HomePage from '../pages/guest/HomePage';
 import HotelListPage from '../pages/guest/HotelListPage';
 import HotelDetailPage from '../pages/guest/HotelDetailPage'; // 🚀 1. Import trang HotelDetailPage
 import LoginPage from '../pages/auth/LoginPage';
-
+import BookingConfirmPage from '../pages/guest/BookingConfirmPage';
 const router = createBrowserRouter([
   // ── NHÓM 1: CÁC TRANG DÙNG GUEST LAYOUT (Có Header lớn + Footer chung) ──
   {
@@ -33,6 +33,8 @@ const router = createBrowserRouter([
     path: '/login',
     element: <LoginPage />,
   },
+  // 🚀 Đường dẫn mới:
+      { path: '/booking', element: <BookingConfirmPage /> },
 ]);
 
 const AppRoutes = () => {
