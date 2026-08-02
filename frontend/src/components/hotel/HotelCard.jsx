@@ -75,7 +75,7 @@ const HotelCard = ({
 
           {/* Điểm số & Đánh giá */}
           <div className="flex items-center gap-2 mb-4">
-            <div className="bg-[#003580] text-white font-bold text-sm px-1.5 py-1 rounded-t-md rounded-br-md">
+<div className="bg-[#003580] text-white font-bold text-sm px-1.5 py-1 rounded-t-md rounded-br-md">
               {safeRating}
             </div>
             <div className="text-xs">
