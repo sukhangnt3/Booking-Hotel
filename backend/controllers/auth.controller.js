@@ -119,6 +119,11 @@ async function findOrCreateGoogleUser(profile) {
 
       user = createResult.rows[0];
     }
+    // Ensure user's email in DB matches the Google email (lowercased).
+    await client.query(
+      `UPDATE users SET email = LOWER($1), updated_at = NOW() WHERE id = $2`,
+      [profile.email.trim(), user.id],
+    );
 
     const roleId = await ensureCustomerRole(client);
 
@@ -155,13 +160,16 @@ async function googleLogin(req, res, next) {
     const googleProfile = await getGoogleProfile(token.trim());
     const user = await findOrCreateGoogleUser(googleProfile);
 
-    if (!user || !user.activate) {
+    // Reload the user after any DB changes to ensure token/email are current
+    const freshUser = await loadUserWithRoles(user.id);
+
+    if (!freshUser || !freshUser.activate) {
       return res.status(401).json({
         message: "Tài khoản không tồn tại hoặc đã bị khóa.",
       });
     }
 
-    const payload = buildAuthResponse(user);
+    const payload = buildAuthResponse(freshUser);
 
     return res.json({
       data: payload,
@@ -193,7 +201,84 @@ async function profile(req, res, next) {
   }
 }
 
+  // Legacy/placeholder handlers to avoid route handler errors when frontend still
+  // calls email/password flows. They return clear messages instructing to use
+  // Google login. Adjust or implement full flows if you want email auth back.
+  async function login(req, res, next) {
+    return res.status(501).json({ message: 'Email/password login is not supported. Use Google login.' });
+  }
+
+  async function register(req, res, next) {
+    return res.status(501).json({ message: 'Registration is disabled. Use Google signup.' });
+  }
+
+  async function updateProfile(req, res, next) {
+    const userId = req.auth?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { fullName, full_name, phone, dob, gender } = req.body || {};
+
+    const updates = [];
+    const params = [];
+    let idx = 1;
+
+    if (fullName || full_name) {
+      updates.push(`full_name = $${idx}`);
+      params.push((fullName || full_name).toString().trim());
+      idx += 1;
+    }
+
+    if (typeof phone === 'string') {
+      updates.push(`phone = $${idx}`);
+      params.push(phone.trim() || null);
+      idx += 1;
+    }
+
+    if (dob) {
+      updates.push(`dob = $${idx}`);
+      params.push(dob);
+      idx += 1;
+    }
+
+    if (gender) {
+      updates.push(`gender = $${idx}`);
+      params.push(gender);
+      idx += 1;
+    }
+
+    if (updates.length === 0) {
+      const user = await loadUserWithRoles(userId);
+      return res.json({ data: { user: formatUser(user) }, user: formatUser(user) });
+    }
+
+    const sql = `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx} RETURNING id, full_name, email, phone, activate, created_at`;
+    params.push(userId);
+
+    try {
+      const result = await pool.query(sql, params);
+      if (!result.rows[0]) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+
+      const user = await loadUserWithRoles(userId);
+      return res.json({ message: 'Cập nhật hồ sơ thành công.', data: { user: formatUser(user) }, user: formatUser(user) });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async function changePassword(req, res, next) {
+    return res.status(501).json({ message: 'Password change not supported for Google-only accounts.' });
+  }
+
 module.exports = {
   googleLogin,
   profile,
+  login,
+  register,
+  updateProfile,
+  changePassword,
 };

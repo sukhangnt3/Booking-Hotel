@@ -280,11 +280,29 @@ async function createBooking(req, res, next) {
     guestEmail,
     guestPhone,
     specialRequire,
+    // ─── Hỗ trợ payload từ BookingConfirmPage (frontend) ───
+    checkIn,
+    checkOut,
+    adults,
+    customerInfo,
   } = req.body;
 
-  const nights = getNights(checkinDate, checkoutDate);
+  // Map từ format frontend sang format backend nếu cần
+  const finalCheckinDate = checkinDate || checkIn;
+  const finalCheckoutDate = checkoutDate || checkOut;
+  const finalAdultTotal = Number(adultTotal || adults || 1);
+  const finalCustomerName =
+    customerName ||
+    (customerInfo
+      ? `${customerInfo.lastName || ""} ${customerInfo.firstName || ""}`.trim()
+      : null);
+  const finalGuestEmail = guestEmail || customerInfo?.email || null;
+  const finalGuestPhone = guestPhone || customerInfo?.phone || null;
+  const finalSpecialRequire = specialRequire || customerInfo?.specialRequest || null;
 
-  if (!hotelId || !roomId || !checkinDate || !checkoutDate || nights <= 0) {
+  const nights = getNights(finalCheckinDate, finalCheckoutDate);
+
+  if (!hotelId || !roomId || !finalCheckinDate || !finalCheckoutDate || nights <= 0) {
     return res.status(400).json({
       message: "hotelId, roomId, ngày nhận phòng và ngày trả phòng hợp lệ là bắt buộc.",
     });
@@ -337,7 +355,7 @@ async function createBooking(req, res, next) {
          discount,
          tax,
          service_total,
-         total_price
+         total_price,
          commission_amount,
          hotel_payout
        )
@@ -371,14 +389,14 @@ async function createBooking(req, res, next) {
         bookingCode,
         req.auth.sub,
         hotelId,
-        checkinDate,
-        checkoutDate,
-        adultTotal,
+        finalCheckinDate,
+        finalCheckoutDate,
+        finalAdultTotal,
         childrenTotal,
-        customerName?.trim() || "Khách hàng",
-        guestEmail?.trim() || null,
-        guestPhone?.trim() || null,
-        specialRequire?.trim() || null,
+        finalCustomerName?.trim() || "Khách hàng",
+        finalGuestEmail?.trim() || null,
+        finalGuestPhone?.trim() || null,
+        finalSpecialRequire?.trim() || null,
         subtotal,
         totalPrice,
         0,
@@ -387,7 +405,7 @@ async function createBooking(req, res, next) {
     );
 
     const booking = bookingResult.rows[0];
-    const start = new Date(checkinDate);
+    const start = new Date(finalCheckinDate);
 
     for (let index = 0; index < nights; index += 1) {
       const date = new Date(start);
@@ -420,7 +438,7 @@ async function createBooking(req, res, next) {
           date.toISOString().slice(0, 10),
           room.base_price,
           room.base_price,
-          adultTotal,
+          finalAdultTotal,
           childrenTotal,
         ],
       );
