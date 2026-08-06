@@ -82,6 +82,7 @@ function formatReview(review) {
     point: review.point,
     reply: review.reply,
     userName: review.user_name,
+    full_name: review.user_name,
     createdAt: review.created_at,
   };
 }

@@ -11,6 +11,7 @@ const {
   listUniqueStays,
   listHotelRoomAvailability,
 } = require("../controllers/hotel.controller");
+const { listHotelReviews } = require("../controllers/review.controller");
 
 const router = express.Router();
 
@@ -22,6 +23,7 @@ router.get("/unique-stays", listUniqueStays);
 router.get("/search", searchHotels);
 router.get("/destinations", listDestinationSuggestions);
 router.get("/:id/rooms/availability", listHotelRoomAvailability);
+router.get("/:id/reviews", listHotelReviews);
 router.get("/:id", getHotelById);
 router.get("/:id/rooms", listHotelRooms);
 

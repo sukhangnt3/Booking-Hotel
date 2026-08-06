@@ -444,7 +444,7 @@ async function getHotelById(req, res, next) {
       return res.status(404).json({ message: "Không tìm thấy khách sạn." });
     }
 
-    const [policyResult, serviceResult, imageResult] = await Promise.all([
+    const [policyResult, serviceResult, imageResult, roomResult] = await Promise.all([
       pool.query(
         `SELECT
            limited_age,
@@ -490,6 +490,34 @@ async function getHotelById(req, res, next) {
          ORDER BY is_thumbnail DESC, display_order ASC NULLS LAST, created_at ASC`,
         [req.params.id],
       ),
+      pool.query(
+        `SELECT
+           r.id,
+           r.hotel_id,
+           r.name,
+           r.capacity,
+           r.base_price,
+           r.description,
+           r.type,
+           r.bed_type,
+           r.room_area,
+           r.amount,
+           r.is_active,
+           thumb.path AS thumbnail,
+           COALESCE(array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL), '{}') AS amenities
+         FROM room r
+         LEFT JOIN image thumb
+           ON thumb.room_id = r.id
+          AND thumb.is_thumbnail = true
+         LEFT JOIN room_amenity ra ON ra.room_id = r.id
+         LEFT JOIN amenity a ON a.id = ra.amenity_id
+         WHERE r.hotel_id = $1
+          AND r.deleted_at IS NULL
+          AND r.is_active = true
+         GROUP BY r.id, thumb.path
+         ORDER BY r.base_price ASC, r.name ASC`,
+        [req.params.id],
+      ),
     ]);
 
     const images = imageResult.rows.map((image) => ({
@@ -505,11 +533,14 @@ async function getHotelById(req, res, next) {
 
     const policy = formatPolicy(policyResult.rows[0]);
 
+    const rooms = roomResult.rows.map(formatRoom);
+
     const hotelDetail = {
       ...formatHotel({ ...hotel, images, policy, services: serviceResult.rows }),
       amenities: hotel.amenities || [],
       images,
       policy,
+      rooms,
       services: serviceResult.rows.map((service) => ({
         id: service.id,
         name: service.name,

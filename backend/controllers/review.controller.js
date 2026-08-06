@@ -3,30 +3,43 @@ const { formatReview } = require("../utils/formatters");
 
 async function listHotelReviews(req, res, next) {
   try {
-    const result = await pool.query(
-      `SELECT
-         rv.id,
-         rv.user_id,
-         rv.hotel_id,
-         rv.booking_id,
-         rv.description,
-         rv.point,
-         rv.reply,
-         rv.created_at,
-         u.full_name AS user_name
-       FROM review rv
-       LEFT JOIN users u ON u.id = rv.user_id
-       WHERE rv.hotel_id = $1
-       ORDER BY rv.created_at DESC
-       LIMIT 50`,
-      [req.params.hotelId],
+    const hotelId = req.params.hotelId || req.params.id;
+
+    if (!hotelId) {
+      return res.status(400).json({ message: "hotelId là bắt buộc." });
+    }
+
+    const query = `
+      SELECT
+        rv.id,
+        rv.user_id,
+        rv.hotel_id,
+        rv.booking_id,
+        rv.description,
+        rv.point,
+        rv.reply,
+        rv.created_at,
+        u.full_name AS user_name
+      FROM review rv
+      LEFT JOIN users u ON u.id = rv.user_id
+      WHERE rv.hotel_id = $1
+      ORDER BY rv.created_at DESC
+      LIMIT 50
+    `;
+
+    const result = await pool.query(query, [hotelId]);
+
+    const formattedReviews = result.rows.map((row) =>
+      typeof formatReview === "function" ? formatReview(row) : row
     );
 
     return res.json({
-      reviews: result.rows.map(formatReview),
+      reviews: formattedReviews,
+      data: formattedReviews,
       total: result.rowCount,
     });
   } catch (error) {
+    console.error("Lỗi tại listHotelReviews:", error);
     return next(error);
   }
 }
@@ -42,24 +55,32 @@ async function createReview(req, res, next) {
   }
 
   try {
-    const result = await pool.query(
-      `INSERT INTO review (user_id, hotel_id, booking_id, description, point)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, user_id, hotel_id, booking_id, description, point, reply, created_at`,
-      [
-        req.auth.sub,
-        hotelId,
-        bookingId || null,
-        description?.trim() || null,
-        rating,
-      ],
-    );
+    const query = `
+      INSERT INTO review (user_id, hotel_id, booking_id, description, point)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, user_id, hotel_id, booking_id, description, point, reply, created_at
+    `;
+
+    const result = await pool.query(query, [
+      req.auth?.sub || null,
+      hotelId,
+      bookingId || null,
+      description?.trim() || null,
+      rating,
+    ]);
+
+    const createdReview =
+      typeof formatReview === "function"
+        ? formatReview(result.rows[0])
+        : result.rows[0];
 
     return res.status(201).json({
       message: "Đã gửi đánh giá.",
-      review: formatReview(result.rows[0]),
+      review: createdReview,
+      data: createdReview,
     });
   } catch (error) {
+    console.error("Lỗi tại createReview:", error);
     return next(error);
   }
 }
