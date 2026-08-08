@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 // UI Components
 import { Card } from "../../components/ui";
 import HotelCard from "../../components/hotel/HotelCard";
@@ -32,6 +32,7 @@ const HomePage = () => {
           ]);
 
         setPropertyTypes(typesData || []);
+        setPropertyTypes(typesData || []);
         setTrendingDestinations(trendingData || []);
         setDiscoverVietnam(discoverData || []);
         setUniqueStays(staysData || []);
@@ -52,14 +53,11 @@ const HomePage = () => {
     if (searchData?.destination)
       query.append("destination", searchData.destination);
 
-    // Gửi checkIn/checkOut để HotelListPage và HotelDetailPage tính được giá từ Inventory (Table 9)
     if (searchData?.startDate) query.append("checkIn", searchData.startDate);
     if (searchData?.endDate) query.append("checkOut", searchData.endDate);
 
-    // Đồng bộ số lượng khách và phòng
     if (searchData?.adults) query.append("adults", searchData.adults);
     if (searchData?.rooms) query.append("rooms", searchData.rooms);
-    // Fallback nếu HotelFilter trả về biến guests chung
     if (!searchData?.adults && searchData?.guests)
       query.append("adults", searchData.guests);
 
@@ -88,8 +86,32 @@ const HomePage = () => {
         <HotelFilter onSearch={handleSearch} />
       </div>
 
+      {/* ─── BANNER NÚT VÀO ADMIN NẰM NGAY TRONG BODY ─── */}
+      <section className="max-w-7xl mx-auto px-4 mt-12">
+        <div className="p-6 md:p-8 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl shadow-xl text-white border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-semibold border border-blue-500/20">
+              <span>⚡ Khu Vực Quản Trị</span>
+            </div>
+            <h2 className="text-xl md:text-2xl font-extrabold tracking-tight">
+              Bảng Điều Khiển Hệ Thống (Admin Portal)
+            </h2>
+            <p className="text-sm text-slate-300 max-w-xl">
+              Truy cập nhanh vào giao diện Admin để xem tổng quan doanh thu, quản lý danh sách khách sạn và các đơn đặt phòng.
+            </p>
+          </div>
+
+          <button
+            onClick={() => navigate("/admin/dashboard")}
+            className="w-full md:w-auto px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-600/30 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+          >
+            <span>🚀 Mở Trang Admin</span>
+          </button>
+        </div>
+      </section>
+
       {/* ─── SECTION 1: TÌM THEO LOẠI CHỖ NGHĨ ─── */}
-      <section className="max-w-7xl mx-auto px-4 mt-16">
+      <section className="max-w-7xl mx-auto px-4 mt-12">
         <h2 className="text-2xl font-bold text-gray-900 mb-6 tracking-tight">
           Tìm theo loại chỗ nghỉ
         </h2>
@@ -219,7 +241,7 @@ const HomePage = () => {
               <div
                 key={stay.id || stay._id}
                 className="cursor-pointer transform transition-transform hover:scale-[1.02]"
-                onClick={() => navigate(`/hotel/${stay.id || stay._id}`)} // Điều hướng đến HotelDetailPage
+                onClick={() => navigate(`/hotel/${stay.id || stay._id}`)}
               >
                 <HotelCard
                   image={stay.image || stay.stay_image}

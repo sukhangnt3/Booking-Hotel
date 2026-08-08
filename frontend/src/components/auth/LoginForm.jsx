@@ -13,6 +13,15 @@ const LoginForm = () => {
   const navigate = useNavigate();
   const loginStore = useAuthStore((state) => state.login);
 
+  // --- XỬ LÝ ĐIỀU HƯỚNG THEO QUYỀN (ROLE) ---
+  const redirectByUserRole = (user) => {
+    if (user?.role === "admin") {
+      navigate("/admin/dashboard");
+    } else {
+      navigate("/");
+    }
+  };
+
   // --- XỬ LÝ ĐĂNG NHẬP GOOGLE ---
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
@@ -30,7 +39,9 @@ const LoginForm = () => {
         loginStore(user, systemToken);
 
         alert(`Chào mừng ${user.name} quay trở lại!`);
-        navigate("/");
+
+        // 4. Kiểm tra Role và điều hướng
+        redirectByUserRole(user);
       } catch (error) {
         console.error("Lỗi đăng nhập Google:", error);
         alert(error.message || "Xác thực với hệ thống thất bại");
@@ -54,7 +65,9 @@ const LoginForm = () => {
     try {
       const response = await authService.login(email, password);
       loginStore(response.user, response.systemToken);
-      navigate("/");
+
+      // Kiểm tra Role và điều hướng
+      redirectByUserRole(response.user);
     } catch (error) {
       alert(error.message || "Sai tài khoản hoặc mật khẩu");
     } finally {
