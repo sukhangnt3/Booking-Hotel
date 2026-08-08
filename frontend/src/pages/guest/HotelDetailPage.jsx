@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import hotelService from "../../services/hotelService";
 import { LoadingSpinner } from "../../components/common";
@@ -12,19 +12,27 @@ const HotelDetailPage = () => {
   const checkOut = searchParams.get("checkOut") || "";
 
   const [hotel, setHotel] = useState(null);
-  const [reviews, setReviews] = useState([]); // Dữ liệu từ bảng 22
+  const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
+
+  // State quản lý Trái tim Yêu thích (Bảng 24)
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favLoading, setFavLoading] = useState(false);
+
+  // Ref dùng để neo vị trí cuộn trang
+  const roomsSectionRef = useRef(null);
 
   useEffect(() => {
     const fetchAllData = async () => {
       try {
         setLoading(true);
-        // 1. Lấy thông tin khách sạn & phòng (Bảng 5, 7, 23)
+        // 1. Lấy thông tin khách sạn & phòng
         const hotelData = await hotelService.getHotelById(id);
         setHotel(hotelData);
+        setIsFavorite(hotelData?.is_favorite || false);
 
-        // 2. Lấy bình luận thật (Bảng 22 JOIN Bảng 2)
+        // 2. Lấy bình luận thật
         const reviewsData = await hotelService.getHotelReviews(id);
         setReviews(reviewsData);
       } catch (err) {
@@ -36,15 +44,58 @@ const HotelDetailPage = () => {
     fetchAllData();
   }, [id]);
 
-  const handleBookNow = () => {
-    const firstRoomId = hotel?.rooms?.[0]?.id;
-    if (!firstRoomId) {
-      alert("Khách sạn hiện chưa có phòng trống.");
-      return;
+  // HÀM BẤM TRÁI TIM (KẾT HỢP API VÀ DỰ PHÒNG LOCALSTORAGE)
+  const handleToggleFavorite = async () => {
+    try {
+      setFavLoading(true);
+
+      const favList = JSON.parse(
+        localStorage.getItem("user_favorites") || "[]",
+      );
+      const existsIndex = favList.findIndex(
+        (item) => String(item.id) === String(id),
+      );
+
+      let newFavList = [];
+      if (existsIndex >= 0) {
+        newFavList = favList.filter((item) => String(item.id) !== String(id));
+        setIsFavorite(false);
+        alert("Đã xóa khỏi danh sách yêu thích!");
+      } else {
+        newFavList = [
+          ...favList,
+          {
+            id: hotel.id,
+            name: hotel.name,
+            address: `${hotel.address}, ${hotel.city}`,
+            rating: hotel.average_rating,
+            image: hotel.images?.[0]?.path || "https://via.placeholder.com/300",
+          },
+        ];
+        setIsFavorite(true);
+        alert("Đã thêm vào danh sách yêu thích!");
+      }
+
+      localStorage.setItem("user_favorites", JSON.stringify(newFavList));
+
+      if (hotelService.toggleFavorite) {
+        await hotelService.toggleFavorite(id);
+      }
+    } catch (err) {
+      console.warn("Đã lưu dữ liệu dự phòng.");
+    } finally {
+      setFavLoading(false);
     }
-    navigate(
-      `/booking?hotelId=${id}&roomId=${firstRoomId}&checkIn=${checkIn}&checkOut=${checkOut}`,
-    );
+  };
+
+  const handleBookNow = () => {
+    setActiveTab("rooms");
+    setTimeout(() => {
+      roomsSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
   };
 
   if (loading) return <LoadingSpinner />;
@@ -55,8 +106,22 @@ const HotelDetailPage = () => {
       </div>
     );
 
-  // Lấy danh sách ảnh từ bảng image (Bảng 23)
   const hotelImages = hotel.images?.map((img) => img.path) || [];
+
+  // Dữ liệu Tiện ích (Lấy từ Bảng 11/12 API hoặc Mặc định)
+  const amenitiesList =
+    hotel.amenities?.length > 0
+      ? hotel.amenities
+      : [
+          { name: "WiFi miễn phí tốc độ cao", icon: "📶", type: "Internet" },
+          { name: "Hồ bơi ngoài trời", icon: "🏊", type: "Thư giãn" },
+          { name: "Chỗ đỗ xe miễn phí", icon: "🚗", type: "Đi lại" },
+          { name: "Trung tâm thể hình (Gym)", icon: "🏋️", type: "Sức khỏe" },
+          { name: "Nhà hàng & Quầy bar", icon: "🍹", type: "Ẩm thực" },
+          { name: "Lễ tân phục vụ 24/7", icon: "🏪", type: "Dịch vụ" },
+          { name: "Điều hòa nhiệt độ", icon: "❄️", type: "Tiện nghi" },
+          { name: "Dịch vụ dọn phòng hàng ngày", icon: "🧹", type: "Dịch vụ" },
+        ];
 
   return (
     <div className="bg-gray-50 min-h-screen pb-20 font-sans">
@@ -83,6 +148,7 @@ const HotelDetailPage = () => {
               </button>
             </p>
           </div>
+
           <div className="flex flex-col items-end gap-2 shrink-0">
             <button
               onClick={handleBookNow}
@@ -96,8 +162,25 @@ const HotelDetailPage = () => {
           </div>
         </div>
 
-        {/* 2. GALLERY GRID (5 Ảnh) */}
-        <div className="grid grid-cols-1 md:grid-cols-4 grid-rows-2 gap-2 h-[450px] overflow-hidden rounded-2xl mb-8 shadow-md">
+        {/* 2. GALLERY GRID (5 Ảnh) + NÚT YÊU THÍCH ❤️ */}
+        <div className="grid grid-cols-1 md:grid-cols-4 grid-rows-2 gap-2 h-[450px] overflow-hidden rounded-2xl mb-8 shadow-md relative">
+          {/* Nút Trái tim Yêu thích */}
+          <button
+            onClick={handleToggleFavorite}
+            disabled={favLoading}
+            className={`absolute top-4 right-4 z-20 p-3 rounded-full shadow-lg transition-all duration-300 ${
+              isFavorite
+                ? "bg-white text-rose-500 scale-110"
+                : "bg-black/40 text-white hover:bg-white hover:text-rose-500"
+            }`}
+            title={isFavorite ? "Bỏ yêu thích" : "Lưu vào yêu thích"}
+          >
+            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
+          </button>
+
+          {/* Ảnh chính */}
           <div className="md:col-span-2 md:row-span-2 relative group cursor-pointer">
             <img
               src={hotelImages[0] || "https://via.placeholder.com/800x600"}
@@ -105,6 +188,8 @@ const HotelDetailPage = () => {
               alt="Main"
             />
           </div>
+
+          {/* 4 Ảnh phụ */}
           {hotelImages.slice(1, 5).map((img, idx) => (
             <div
               key={idx}
@@ -125,7 +210,10 @@ const HotelDetailPage = () => {
         </div>
 
         {/* 3. STICKY TABS MENU */}
-        <div className="sticky top-0 bg-white shadow-sm border-b z-30 flex space-x-8 px-4 -mx-4 overflow-x-auto mb-8">
+        <div
+          ref={roomsSectionRef}
+          className="sticky top-0 bg-white shadow-sm border-b z-30 flex space-x-8 px-4 -mx-4 overflow-x-auto mb-8"
+        >
           {[
             { id: "overview", label: "Tổng quan" },
             { id: "rooms", label: "Giá & Phòng trống" },
@@ -148,7 +236,6 @@ const HotelDetailPage = () => {
 
         {/* 4. CHIA CỘT NỘI DUNG */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* CỘT TRÁI: NỘI DUNG TAB */}
           <div className="lg:col-span-2 space-y-10">
             {/* TAB: TỔNG QUAN */}
             {activeTab === "overview" && (
@@ -160,7 +247,7 @@ const HotelDetailPage = () => {
                   {hotel.description}
                 </p>
                 <div className="mt-8 pt-8 border-t">
-                  <h3 className="font-bold mb-4">Tiện ích phổ biến</h3>
+                  <h3 className="font-bold mb-4">Tiện ích nổi bật</h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-green-700 text-sm font-medium">
                     <span>🏊 Hồ bơi</span> <span>📶 WiFi miễn phí</span>{" "}
                     <span>🚗 Chỗ đỗ xe</span>
@@ -171,7 +258,7 @@ const HotelDetailPage = () => {
               </div>
             )}
 
-            {/* TAB: DANH SÁCH PHÒNG (Bảng 7) */}
+            {/* TAB: DANH SÁCH PHÒNG */}
             {activeTab === "rooms" && (
               <div className="space-y-6 animate-fadeIn">
                 <h2 className="text-2xl font-bold text-gray-900">
@@ -180,30 +267,33 @@ const HotelDetailPage = () => {
                 {hotel.rooms?.map((room) => (
                   <div
                     key={room.id}
-                    className="bg-white border-2 border-gray-100 rounded-2xl overflow-hidden hover:border-blue-300 transition shadow-sm"
+                    className="bg-white border-2 border-gray-100 rounded-2xl overflow-hidden hover:border-blue-300 transition shadow-sm p-6"
                   >
-                    <div className="flex flex-col md:flex-row">
-                      <div className="md:w-1/3 bg-gray-100">
+                    <div className="flex flex-col md:flex-row gap-6">
+                      <div className="md:w-1/3 bg-gray-100 rounded-xl overflow-hidden h-40">
                         <img
                           src={hotelImages[1] || hotelImages[0]}
                           className="h-full w-full object-cover"
                           alt="Room"
                         />
                       </div>
-                      <div className="p-6 flex-1">
-                        <div className="flex justify-between items-start">
-                          <h3 className="font-bold text-blue-600 text-xl">
-                            {room.name}
-                          </h3>
-                          <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded">
-                            CÒN PHÒNG
-                          </span>
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-start">
+                            <h3 className="font-bold text-blue-600 text-xl">
+                              {room.name}
+                            </h3>
+                            <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded">
+                              CÒN PHÒNG
+                            </span>
+                          </div>
+                          <div className="mt-3 flex gap-4 text-xs text-gray-500 font-medium">
+                            <span>📐 {room.room_area}m²</span>
+                            <span>👤 {room.capacity} Người</span>
+                            <span>🛏️ {room.bed_type}</span>
+                          </div>
                         </div>
-                        <div className="mt-3 flex gap-4 text-xs text-gray-500">
-                          <span>📐 {room.room_area}m²</span>
-                          <span>👤 {room.capacity} Người</span>
-                          <span>🛏️ {room.bed_type}</span>
-                        </div>
+
                         <div className="mt-6 pt-4 border-t flex items-end justify-between">
                           <div className="text-sm font-bold text-green-600">
                             ✔️ Hủy miễn phí
@@ -218,7 +308,7 @@ const HotelDetailPage = () => {
                                   `/booking?hotelId=${id}&roomId=${room.id}&checkIn=${checkIn}&checkOut=${checkOut}`,
                                 )
                               }
-                              className="mt-3 bg-blue-600 text-white px-6 py-2 rounded-md font-bold text-sm shadow-md"
+                              className="mt-3 bg-blue-600 text-white px-6 py-2 rounded-md font-bold text-sm shadow-md hover:bg-blue-700 transition"
                             >
                               Tôi sẽ đặt
                             </button>
@@ -231,7 +321,7 @@ const HotelDetailPage = () => {
               </div>
             )}
 
-            {/* TAB: BÌNH LUẬN THẬT (Bảng 22) */}
+            {/* TAB: BÌNH LUẬN */}
             {activeTab === "reviews" && (
               <div className="space-y-6 animate-fadeIn">
                 <h2 className="text-2xl font-bold text-gray-900">
@@ -270,14 +360,6 @@ const HotelDetailPage = () => {
                         <p className="text-gray-700 text-sm italic">
                           "{rev.description}"
                         </p>
-                        {rev.reply && (
-                          <div className="mt-4 p-4 bg-gray-50 border-l-4 border-blue-400 rounded-r-xl">
-                            <p className="text-xs font-bold text-blue-800 mb-1">
-                              💬 Phản hồi từ chủ nhà:
-                            </p>
-                            <p className="text-xs text-gray-600">{rev.reply}</p>
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))
@@ -286,6 +368,36 @@ const HotelDetailPage = () => {
                     Chưa có bình luận nào.
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB: TIỆN NGHI (BẢNG 11 & 12) */}
+            {activeTab === "facilities" && (
+              <div className="space-y-6 animate-fadeIn">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                  Cơ sở vật chất & Tiện nghi
+                </h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {amenitiesList.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white p-4 rounded-xl border border-gray-100 flex items-center gap-4 shadow-sm"
+                    >
+                      <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center text-2xl font-bold shrink-0">
+                        {item.icon || "✔️"}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-900 text-base">
+                          {typeof item === "object" ? item.name : item}
+                        </h4>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {item.type || "Tiện ích đạt chuẩn"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -306,29 +418,17 @@ const HotelDetailPage = () => {
                   {hotel.average_rating}
                 </div>
               </div>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Vị trí</span>
-                  <div className="w-32 bg-gray-200 h-1.5 rounded-full">
-                    <div
-                      className="bg-blue-600 h-full"
-                      style={{ width: "95%" }}
-                    ></div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Sạch sẽ</span>
-                  <div className="w-32 bg-gray-200 h-1.5 rounded-full">
-                    <div
-                      className="bg-blue-600 h-full"
-                      style={{ width: "90%" }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
               <button
-                onClick={() => setActiveTab("reviews")}
-                className="w-full mt-6 text-blue-600 font-bold text-sm border border-blue-600 py-2 rounded-lg hover:bg-blue-50 transition"
+                onClick={() => {
+                  setActiveTab("reviews");
+                  setTimeout(() => {
+                    roomsSectionRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    });
+                  }, 100);
+                }}
+                className="w-full text-blue-600 font-bold text-sm border border-blue-600 py-2.5 rounded-lg hover:bg-blue-50 transition"
               >
                 Xem tất cả bình luận
               </button>

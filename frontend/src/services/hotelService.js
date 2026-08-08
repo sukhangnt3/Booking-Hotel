@@ -5,22 +5,24 @@ export const hotelService = {
   getHotelById: async (id) => {
     try {
       const response = await apiClient.get(`/hotels/${id}`);
-      return response.data; // Trả về thông tin hotel + rooms + images + amenities
+      return response.data;
     } catch (error) {
       console.error("Error in getHotelById:", error);
       throw error;
     }
   },
+
   getHotelReviews: async (hotelId) => {
     try {
       const response = await apiClient.get(`/hotels/${hotelId}/reviews`);
-      return response.data; // Trả về mảng các review từ DB
+      return response.data;
     } catch (error) {
       console.error("Lỗi lấy bình luận:", error);
       throw error;
     }
   },
-  // 2. Lấy loại chỗ nghỉ (Dùng cho HomePage - FIX LỖI BẠN ĐANG GẶP)
+
+  // 2. Lấy loại chỗ nghỉ (Dùng cho HomePage)
   getPropertyTypes: async () => {
     try {
       const response = await apiClient.get("/hotels/property-types");
@@ -64,7 +66,39 @@ export const hotelService = {
     const response = await apiClient.get("/hotels/unique-stays");
     return response.data;
   },
+
+  // ==================== BẢNG 24: FAVORITES ====================
+
+  // 8. Thêm/Xóa khách sạn khỏi danh sách yêu thích
+  toggleFavorite: async (hotelId) => {
+    try {
+      const response = await apiClient.post(`/hotels/${hotelId}/favorite`);
+      return response.data;
+    } catch (error) {
+      console.error("Lỗi toggle favorite:", error);
+      throw error;
+    }
+  },
+
+  // 9. Lấy danh sách khách sạn đã yêu thích của User (Bóc tách dữ liệu thông minh)
+  getFavoriteHotels: async () => {
+    try {
+      const response = await apiClient.get("/users/favorites");
+
+      if (Array.isArray(response.data)) {
+        return response.data;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        return response.data.data;
+      } else if (response.data && Array.isArray(response.data.favorites)) {
+        return response.data.favorites;
+      }
+
+      return [];
+    } catch (error) {
+      console.error("Lỗi lấy danh sách yêu thích:", error);
+      return [];
+    }
+  },
 };
 
-// Đảm bảo có dòng export default này
 export default hotelService;
