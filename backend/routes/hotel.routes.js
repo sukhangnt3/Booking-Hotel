@@ -2,6 +2,7 @@ const express = require("express");
 const {
   getHotelById,
   listHotelRooms,
+  listHotelRoomAvailability,
   listHotels,
   listDestinationSuggestions,
   searchHotels,
@@ -9,9 +10,12 @@ const {
   listTrendingDestinations,
   listDiscoverVietnam,
   listUniqueStays,
-  listHotelRoomAvailability,
 } = require("../controllers/hotel.controller");
-const { listHotelReviews } = require("../controllers/review.controller");
+const {
+  addFavorite,
+  removeFavorite,
+} = require("../controllers/favorite.controller");
+const { requireAuth, optionalAuth } = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
@@ -22,9 +26,12 @@ router.get("/discover-vietnam", listDiscoverVietnam);
 router.get("/unique-stays", listUniqueStays);
 router.get("/search", searchHotels);
 router.get("/destinations", listDestinationSuggestions);
-router.get("/:id/rooms/availability", listHotelRoomAvailability);
-router.get("/:id/reviews", listHotelReviews);
-router.get("/:id", getHotelById);
+// ─── Route favorite cụ thể phải đặt TRƯỚC /:id ───
+router.post("/:id/favorite", requireAuth, addFavorite);
+router.delete("/:id/favorite", requireAuth, removeFavorite);
+// ─── optionalAuth: nếu có token thì trả is_favorite, không có thì vẫn hoạt động ───
+router.get("/:id", optionalAuth, getHotelById);
 router.get("/:id/rooms", listHotelRooms);
+router.get("/:id/availability", listHotelRoomAvailability);
 
 module.exports = router;

@@ -25,7 +25,18 @@ function requireAuth(req, res, next) {
   return next();
 }
 
+// Middleware tùy chọn: nếu có token hợp lệ → set req.auth, nếu không → req.auth = null
+// Dùng cho các endpoint công khai nhưng có thể trả thông tin cá nhân hóa (vd: is_favorite)
+function optionalAuth(req, res, next) {
+  const token = getBearerToken(req);
+  const payload = verifyToken(token);
+
+  req.auth = payload || null;
+  return next();
+}
+
 module.exports = {
   getBearerToken,
   requireAuth,
+  optionalAuth,
 };
