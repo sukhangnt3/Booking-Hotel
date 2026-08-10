@@ -9,7 +9,6 @@ function createBookingCode() {
 function getNights(checkinDate, checkoutDate) {
   const start = new Date(checkinDate);
   const end = new Date(checkoutDate);
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
   const diff = Math.ceil((end - start) / (24 * 60 * 60 * 1000));
 
   return diff > 0 ? diff : 0;
@@ -30,39 +29,39 @@ function buildDates(checkinDate, checkoutDate) {
 async function loadBookingDetail(bookingId, userId) {
   const bookingResult = await pool.query(
     `SELECT
-        b.id,
-        b.booking_code,
-        b.user_id,
-        b.hotel_id,
-        h.name AS hotel_name,
-        b.checkin_date,
-        b.checkout_date,
-        b.adult_total,
-        b.children_total,
-        b.customer_name,
-        b.guest_email,
-        b.guest_phone,
-        b.status,
-        b.payment_status,
-        b.subtotal,
-        b.currency,
-        b.discount,
-        b.tax,
-        b.service_total,
-        b.total_price,
-        b.commission_rate,
-        b.commission_amount,
-        b.hotel_payout,
-        b.special_require,
-        b.cancel_reason,
-        b.cancelled_at,
-        b.created_at,
-        b.updated_at
-      FROM booking b
-      JOIN hotel h ON h.id = b.hotel_id
-      WHERE b.id = $1
-        AND ($2::uuid IS NULL OR b.user_id = $2)
-      LIMIT 1`,
+       b.id,
+       b.booking_code,
+       b.user_id,
+       b.hotel_id,
+       h.name AS hotel_name,
+       b.checkin_date,
+       b.checkout_date,
+       b.adult_total,
+       b.children_total,
+       b.customer_name,
+       b.guest_email,
+       b.guest_phone,
+       b.status,
+       b.payment_status,
+       b.subtotal,
+      b.currency,
+       b.discount,
+       b.tax,
+       b.service_total,
+       b.total_price,
+      b.commission_rate,
+      b.commission_amount,
+      b.hotel_payout,
+       b.special_require,
+       b.cancel_reason,
+       b.cancelled_at,
+       b.created_at,
+       b.updated_at
+     FROM booking b
+     JOIN hotel h ON h.id = b.hotel_id
+     WHERE b.id = $1
+       AND ($2::uuid IS NULL OR b.user_id = $2)
+     LIMIT 1`,
     [bookingId, userId || null],
   );
 
@@ -72,31 +71,31 @@ async function loadBookingDetail(bookingId, userId) {
   const [roomResult, serviceResult] = await Promise.all([
     pool.query(
       `SELECT
-          booking_id,
-          room_id,
-          room_name,
-          room_type,
-          capacity,
-          book_date,
-          quantity,
-          price,
-          base_price,
-          adult_amount,
-          children_amount
-        FROM booking_room
-        WHERE booking_id = $1
-        ORDER BY book_date ASC, sub_index ASC`,
+         booking_id,
+         room_id,
+         room_name,
+         room_type,
+         capacity,
+         book_date,
+         quantity,
+         price,
+         base_price,
+         adult_amount,
+         children_amount
+       FROM booking_room
+       WHERE booking_id = $1
+       ORDER BY book_date ASC, sub_index ASC`,
       [bookingId],
     ),
     pool.query(
       `SELECT
-          service_name,
-          quantity,
-          unit_price,
-          total_price
-        FROM booking_service
-        WHERE booking_id = $1
-        ORDER BY created_at ASC`,
+         service_name,
+         quantity,
+         unit_price,
+         total_price
+       FROM booking_service
+       WHERE booking_id = $1
+       ORDER BY created_at ASC`,
       [bookingId],
     ),
   ]);
@@ -136,34 +135,48 @@ async function loadBookingDetail(bookingId, userId) {
 
 async function listMyBookings(req, res, next) {
   try {
+    // ─── Tìm user theo id HOẶC email (token chứa email) ───
+    // Nếu booking được tạo với user mới (cùng email khi token cũ),
+    // vẫn tìm thấy đơn đặt của user.
+    let userId = req.auth.sub;
+    if (req.auth.email) {
+      const userResult = await pool.query(
+        `SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+        [req.auth.email],
+      );
+      if (userResult.rows[0]) {
+        userId = userResult.rows[0].id;
+      }
+    }
+
     const result = await pool.query(
       `SELECT
-          b.id,
-          b.booking_code,
-          b.user_id,
-          b.hotel_id,
-          h.name AS hotel_name,
-          b.checkin_date,
-          b.checkout_date,
-          b.adult_total,
-          b.children_total,
-          b.customer_name,
-          b.guest_email,
-          b.guest_phone,
-          b.status,
-          b.payment_status,
-          b.subtotal,
-          b.discount,
-          b.tax,
-          b.service_total,
-          b.total_price,
-          b.special_require,
-          b.created_at
-        FROM booking b
-        JOIN hotel h ON h.id = b.hotel_id
-        WHERE b.user_id = $1
-        ORDER BY b.created_at DESC`,
-      [req.auth.sub],
+         b.id,
+         b.booking_code,
+         b.user_id,
+         b.hotel_id,
+         h.name AS hotel_name,
+         b.checkin_date,
+         b.checkout_date,
+         b.adult_total,
+         b.children_total,
+         b.customer_name,
+         b.guest_email,
+         b.guest_phone,
+         b.status,
+         b.payment_status,
+         b.subtotal,
+         b.discount,
+         b.tax,
+         b.service_total,
+         b.total_price,
+         b.special_require,
+         b.created_at
+       FROM booking b
+       JOIN hotel h ON h.id = b.hotel_id
+       WHERE b.user_id = $1
+       ORDER BY b.created_at DESC`,
+      [userId],
     );
 
     const bookings = result.rows.map(formatBooking);
@@ -172,6 +185,8 @@ async function listMyBookings(req, res, next) {
       data: bookings,
       bookings,
       total: result.rowCount,
+      // ─── Trả bookings ở top-level để frontend dễ đọc ───
+      booking_list: bookings,
     });
   } catch (error) {
     return next(error);
@@ -180,22 +195,18 @@ async function listMyBookings(req, res, next) {
 
 async function createTemporaryLock(req, res, next) {
   const roomId = req.body.room_id || req.body.roomId;
-  let checkIn = req.body.checkIn || req.body.lock_date || req.body.checkin_date;
+  const checkIn = req.body.checkIn || req.body.lock_date || req.body.checkin_date;
   let checkOut = req.body.checkOut || req.body.checkout_date;
   const quantity = Number(req.body.quantity || 1);
 
-  // Nếu không nhận được ngày checkIn, tự tạo ngày hôm nay
-  if (!checkIn || checkIn.trim() === "") {
-    checkIn = new Date().toISOString().slice(0, 10);
-  }
-
-  if (!roomId || quantity <= 0) {
+  if (!roomId || !checkIn || quantity <= 0) {
     return res.status(400).json({
-      message: "room_id và quantity hợp lệ là bắt buộc.",
+      message: "room_id, lock_date và quantity hợp lệ là bắt buộc.",
     });
   }
 
-  if (!checkOut || checkOut.trim() === "") {
+  // Frontend chỉ gửi lock_date → mặc định checkOut = checkIn + 1 ngày
+  if (!checkOut) {
     const nextDay = new Date(checkIn);
     nextDay.setDate(nextDay.getDate() + 1);
     checkOut = nextDay.toISOString().slice(0, 10);
@@ -215,8 +226,8 @@ async function createTemporaryLock(req, res, next) {
 
     const roomResult = await client.query(
       `SELECT id, hotel_id, name, capacity, base_price
-        FROM room
-        WHERE id = $1 AND deleted_at IS NULL AND is_active = true`,
+       FROM room
+       WHERE id = $1 AND deleted_at IS NULL AND is_active = true`,
       [roomId],
     );
 
@@ -231,17 +242,17 @@ async function createTemporaryLock(req, res, next) {
 
     const lockResult = await client.query(
       `INSERT INTO temporary_locks (
-          id,
-          room_id,
-          user_id,
-          lock_date,
-          quantity,
-          lock_expires_at,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-        RETURNING id, room_id, user_id, lock_date, quantity, lock_expires_at, booking_id, released_at, created_at, updated_at`,
+         id,
+         room_id,
+         user_id,
+         lock_date,
+         quantity,
+         lock_expires_at,
+         created_at,
+         updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+       RETURNING id, room_id, user_id, lock_date, quantity, lock_expires_at, booking_id, released_at, created_at, updated_at`,
       [lockId, roomId, req.auth?.sub || null, checkIn, quantity, lockExpiresAt],
     );
 
@@ -281,77 +292,57 @@ async function createTemporaryLock(req, res, next) {
 }
 
 async function createBooking(req, res, next) {
-  // 1. Khai báo và bóc tách các trường từ payload Frontend
   const {
-    hotel_id,
     hotelId,
-    room_id,
     roomId,
-    checkin_date,
     checkinDate,
-    checkIn,
-    checkout_date,
     checkoutDate,
-    checkOut,
-    customer_name,
+    adultTotal = 1,
+    childrenTotal = 0,
     customerName,
-    guest_email,
     guestEmail,
-    guest_phone,
     guestPhone,
-    special_require,
     specialRequire,
-    payment_method,
-    paymentMethod,
-    adult_total,
-    adultTotal,
-    children_total,
-    childrenTotal,
+    // ─── Hỗ trợ payload từ BookingConfirmPage (frontend) ───
+    checkIn,
+    checkOut,
+    adults,
     customerInfo,
+    paymentMethod,
+    quantity,
   } = req.body;
+  const finalPaymentMethod =
+    paymentMethod || req.body.payment_method || "VNPay";
+  const finalQuantity = Number(quantity || req.body.quantity || 1);
 
-  // Map lại dữ liệu nhận được linh hoạt từ Frontend
-  const finalHotelId = hotel_id || hotelId;
-  let finalRoomId = room_id || roomId;
-
-  // Xử lý ngày check-in/check-out nếu Frontend truyền rỗng ""
-  let finalCheckinDate = checkin_date || checkinDate || checkIn;
-  let finalCheckoutDate = checkout_date || checkoutDate || checkOut;
-
-  if (!finalCheckinDate || finalCheckinDate.trim() === "") {
-    finalCheckinDate = new Date().toISOString().slice(0, 10);
-  }
-
-  if (!finalCheckoutDate || finalCheckoutDate.trim() === "") {
-    const nextDay = new Date(finalCheckinDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-    finalCheckoutDate = nextDay.toISOString().slice(0, 10);
-  }
-
-  // Lấy thông tin khách hàng từ root body hoặc từ object customerInfo nếu có
+  // Map từ format frontend (snake_case) sang format backend (camelCase)
+  let finalHotelId = hotelId || req.body.hotel_id;
+  let finalRoomId = roomId || req.body.room_id;
+  const finalCheckinDate = checkinDate || checkIn || req.body.checkin_date;
+  const finalCheckoutDate = checkoutDate || checkOut || req.body.checkout_date;
+  const finalAdultTotal = Number(adultTotal || adults || req.body.adult_total || 1);
+  const finalChildrenTotal = Number(childrenTotal || req.body.children_total || 0);
   const finalCustomerName =
-    customer_name ||
     customerName ||
+    req.body.customer_name ||
     (customerInfo
       ? `${customerInfo.lastName || ""} ${customerInfo.firstName || ""}`.trim()
-      : "Khách hàng");
-
-  const finalGuestEmail = guest_email || guestEmail || customerInfo?.email || null;
-  const finalGuestPhone = guest_phone || guestPhone || customerInfo?.phone || null;
-  const finalSpecialRequire = special_require || specialRequire || customerInfo?.specialRequest || null;
-  const finalPaymentMethod = payment_method || paymentMethod || "VNPay";
-  const finalAdultTotal = Number(adult_total || adultTotal || 1);
-  const finalChildrenTotal = Number(children_total || childrenTotal || 0);
+      : null);
+  const finalGuestEmail = guestEmail || req.body.guest_email || customerInfo?.email || null;
+  const finalGuestPhone = guestPhone || req.body.guest_phone || customerInfo?.phone || null;
+  const finalSpecialRequire =
+    specialRequire || req.body.special_require || customerInfo?.specialRequest || null;
 
   const nights = getNights(finalCheckinDate, finalCheckoutDate);
 
   if (!finalHotelId) {
     return res.status(400).json({
-      message: "hotel_id là bắt buộc.",
+      message: "hotelId là bắt buộc.",
     });
   }
 
-  // Tự động tìm room_id nếu Frontend không gửi trường này
+  // Frontend không gửi room_id → tự suy ra từ temporary_locks gần nhất của user
+  // hoặc lấy phòng rẻ nhất của khách sạn
   if (!finalRoomId) {
     const fallbackRoomResult = await pool.query(
       `SELECT tl.room_id
@@ -367,7 +358,7 @@ async function createBooking(req, res, next) {
          )
        ORDER BY tl.created_at DESC
        LIMIT 1`,
-      [req.auth?.sub || null, finalHotelId],
+      [req.auth.sub, finalHotelId],
     );
 
     if (fallbackRoomResult.rows[0]) {
@@ -387,9 +378,9 @@ async function createBooking(req, res, next) {
     }
   }
 
-  if (!finalRoomId || nights <= 0) {
+  if (!finalRoomId || !finalCheckinDate || !finalCheckoutDate || nights <= 0) {
     return res.status(400).json({
-      message: "Không tìm thấy phòng phù hợp hoặc khoảng thời gian không hợp lệ.",
+      message: "Không tìm thấy phòng khả dụng cho khách sạn này.",
     });
   }
 
@@ -398,14 +389,59 @@ async function createBooking(req, res, next) {
   try {
     await client.query("BEGIN");
 
-    // Lấy thông tin phòng thực tế từ cơ sở dữ liệu
+    // ─── ĐẢM BẢO user_id HỢP LỆ (tránh lỗi fk_booking_user) ───
+    // Nếu req.auth.sub không tồn tại trong bảng users (user bị xóa, token cũ...),
+    // tự động tạo user mới từ thông tin khách hàng trong payload.
+    let finalUserId = req.auth.sub;
+    const userCheck = await client.query(
+      `SELECT id FROM users WHERE id = $1 LIMIT 1`,
+      [finalUserId],
+    );
+
+    if (!userCheck.rows[0]) {
+      // 1. Nếu có email, thử tìm user theo email (tránh vi phạm UNIQUE email)
+      let existingByEmail = null;
+      if (finalGuestEmail?.trim()) {
+        const emailResult = await client.query(
+          `SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+          [finalGuestEmail.trim()],
+        );
+        existingByEmail = emailResult.rows[0] || null;
+      }
+
+      if (existingByEmail) {
+        finalUserId = existingByEmail.id;
+        console.warn(`[createBooking] User ${req.auth.sub} không tồn tại, dùng user theo email ${finalUserId}`);
+      } else {
+        // 2. Tạo user mới với đầy đủ cột NOT NULL bắt buộc
+        const newUserResult = await client.query(
+          `INSERT INTO users (
+             full_name, email, password, phone,
+             email_verified, phone_verified, activate,
+             created_at, updated_at
+           )
+           VALUES ($1, $2, $3, $4, true, false, true, NOW(), NOW())
+           RETURNING id`,
+          [
+            finalCustomerName?.trim() || "Khách hàng",
+            finalGuestEmail?.trim() || `guest_${Date.now()}@temp.local`,
+            // Password giả ngẫu nhiên (không dùng được để đăng nhập)
+            `booking$${crypto.randomBytes(16).toString("hex")}`,
+            finalGuestPhone?.trim() || null,
+          ],
+        );
+        finalUserId = newUserResult.rows[0].id;
+        console.warn(`[createBooking] User ${req.auth.sub} không tồn tại, đã tạo user mới ${finalUserId}`);
+      }
+    }
+
     const roomResult = await client.query(
       `SELECT id, hotel_id, name, type, capacity, base_price
        FROM room
        WHERE id = $1
-         AND hotel_id = $2
-         AND is_active = true
-         AND deleted_at IS NULL`,
+        AND hotel_id = $2
+        AND is_active = true
+        AND deleted_at IS NULL`,
       [finalRoomId, finalHotelId],
     );
 
@@ -413,77 +449,76 @@ async function createBooking(req, res, next) {
 
     if (!room) {
       await client.query("ROLLBACK");
-      return res.status(404).json({ message: "Không tìm thấy phòng phù hợp trong hệ thống." });
+      return res.status(404).json({ message: "Không tìm thấy phòng phù hợp." });
     }
 
-    const subtotal = Number(room.base_price) * nights;
+    const subtotal = Number(room.base_price) * nights * finalQuantity;
     const totalPrice = subtotal;
     const bookingCode = createBookingCode();
 
-    // Thêm bản ghi vào Bảng 16: booking
     const bookingResult = await client.query(
       `INSERT INTO booking (
-          booking_code,
-          user_id,
-          hotel_id,
-          checkin_date,
-          checkout_date,
-          adult_total,
-          children_total,
-          customer_name,
-          guest_email,
-          guest_phone,
-          status,
-          payment_status,
-          special_require,
-          source,
-          currency,
-          subtotal,
-          discount,
-          tax,
-          service_total,
-          total_price,
-          commission_amount,
-          hotel_payout
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', 'unpaid', $11, 'web', 'VND', $12, 0, 0, 0, $13, $14, $15)
-        RETURNING
-          id,
-          booking_code,
-          user_id,
-          hotel_id,
-          checkin_date,
-          checkout_date,
-          adult_total,
-          children_total,
-          customer_name,
-          guest_email,
-          guest_phone,
-          status,
-          payment_status,
-          subtotal,
-          currency,
-          discount,
-          tax,
-          service_total,
-          total_price,
-          commission_rate,
-          commission_amount,
-          hotel_payout,
-          special_require,
-          created_at`,
+         booking_code,
+         user_id,
+         hotel_id,
+         checkin_date,
+         checkout_date,
+         adult_total,
+         children_total,
+         customer_name,
+         guest_email,
+         guest_phone,
+         status,
+         payment_status,
+         special_require,
+         source,
+         currency,
+         subtotal,
+         discount,
+         tax,
+         service_total,
+         total_price,
+         commission_amount,
+         hotel_payout
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', 'unpaid', $11, 'web', 'VND', $12, 0, 0, 0, $13, $14, $15)
+       RETURNING
+         id,
+         booking_code,
+         user_id,
+         hotel_id,
+         checkin_date,
+         checkout_date,
+         adult_total,
+         children_total,
+         customer_name,
+         guest_email,
+         guest_phone,
+         status,
+         payment_status,
+         subtotal,
+         currency,
+         discount,
+         tax,
+         service_total,
+         total_price,
+         commission_rate,
+         commission_amount,
+         hotel_payout,
+         special_require,
+         created_at`,
       [
         bookingCode,
-        req.auth?.sub || null,
+        finalUserId,
         finalHotelId,
         finalCheckinDate,
         finalCheckoutDate,
         finalAdultTotal,
         finalChildrenTotal,
-        finalCustomerName,
-        finalGuestEmail,
-        finalGuestPhone,
-        finalSpecialRequire,
+        finalCustomerName?.trim() || "Khách hàng",
+        finalGuestEmail?.trim() || null,
+        finalGuestPhone?.trim() || null,
+        finalSpecialRequire?.trim() || null,
         subtotal,
         totalPrice,
         0,
@@ -494,28 +529,27 @@ async function createBooking(req, res, next) {
     const booking = bookingResult.rows[0];
     const start = new Date(finalCheckinDate);
 
-    // Lưu chi tiết các đêm lưu trú vào bảng booking_room
     for (let index = 0; index < nights; index += 1) {
       const date = new Date(start);
       date.setDate(start.getDate() + index);
 
       await client.query(
         `INSERT INTO booking_room (
-            booking_id,
-            room_id,
-            sub_index,
-            room_name,
-            room_type,
-            capacity,
-            book_date,
-            quantity,
-            price,
-            base_price,
-            adult_amount,
-            children_amount,
-            created_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9, $10, $11, NOW())`,
+           booking_id,
+           room_id,
+           sub_index,
+           room_name,
+           room_type,
+           capacity,
+           book_date,
+           quantity,
+           price,
+           base_price,
+           adult_amount,
+           children_amount,
+           created_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())`,
         [
           booking.id,
           room.id,
@@ -524,6 +558,7 @@ async function createBooking(req, res, next) {
           room.type,
           room.capacity,
           date.toISOString().slice(0, 10),
+          finalQuantity,
           room.base_price,
           room.base_price,
           finalAdultTotal,
@@ -532,34 +567,34 @@ async function createBooking(req, res, next) {
       );
     }
 
-    // Tạo bản ghi thanh toán (Bảng 20: payment)
+    // Tạo bản ghi thanh toán (Bảng 20: payment) - defensive nếu bảng/cột chưa đúng.
+    // Dùng SAVEPOINT để nếu câu lệnh này lỗi, chỉ phần này bị rollback,
+    // KHÔNG làm "chết" toàn bộ transaction (tránh lỗi
+    // "current transaction is aborted, commands ignored until end of transaction block"
+    // ở các câu lệnh phía sau).
     try {
+      await client.query("SAVEPOINT before_payment_insert");
       await client.query(
-        `INSERT INTO payment (booking_id, payment_method, amount, status, created_at)
+        `INSERT INTO payment (booking_id, payment_method, expected_amount, status, created_at)
          VALUES ($1, $2, $3, 'pending', NOW())`,
         [booking.id, finalPaymentMethod, totalPrice],
       );
+      await client.query("RELEASE SAVEPOINT before_payment_insert");
     } catch (paymentError) {
-      console.warn("Lưu ý: Không thể chèn vào bảng payment:", paymentError.message);
+      await client.query("ROLLBACK TO SAVEPOINT before_payment_insert");
+      console.warn("Không thể tạo bản ghi payment (bảng/cột có thể chưa đúng):", paymentError.message);
     }
 
-    // Tạo thông báo nếu người dùng đã đăng nhập
-    if (req.auth?.sub) {
-      try {
-        await client.query(
-          `INSERT INTO notification (user_id, title, content, type, link)
-           VALUES ($1, $2, $3, 'booking', $4)`,
-          [
-            req.auth.sub,
-            "Đặt phòng thành công",
-            `Mã đặt phòng của bạn là ${booking.booking_code}.`,
-            `/bookings/${booking.id}`,
-          ],
-        );
-      } catch (notifError) {
-        console.warn("Lưu ý: Không thể tạo thông báo:", notifError.message);
-      }
-    }
+    await client.query(
+      `INSERT INTO notification (user_id, title, content, type, link)
+       VALUES ($1, $2, $3, 'booking', $4)`,
+      [
+        finalUserId,
+        "Đặt phòng thành công",
+        `Mã đặt phòng của bạn là ${booking.booking_code}.`,
+        `/bookings/${booking.id}`,
+      ],
+    );
 
     await client.query("COMMIT");
 
@@ -569,6 +604,10 @@ async function createBooking(req, res, next) {
       data: responseBooking,
       message: "Đặt phòng thành công.",
       booking: responseBooking,
+      // ─── Trả booking_code & id ở top-level để frontend dễ đọc ───
+      booking_code: responseBooking.booking_code,
+      code: responseBooking.booking_code,
+      id: responseBooking.id,
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -580,7 +619,7 @@ async function createBooking(req, res, next) {
 
 async function getBookingDetail(req, res, next) {
   try {
-    const booking = await loadBookingDetail(req.params.id, req.auth?.sub);
+    const booking = await loadBookingDetail(req.params.id, req.auth.sub);
 
     if (!booking) {
       return res.status(404).json({ message: "Không tìm thấy đơn đặt phòng." });
@@ -599,24 +638,100 @@ async function cancelBooking(req, res, next) {
   try {
     const result = await pool.query(
       `UPDATE booking
-        SET status = 'cancelled',
-            cancel_reason = NULLIF($3, ''),
-            cancelled_at = NOW(),
-            updated_at = NOW()
-        WHERE id = $1
-          AND user_id = $2
-          AND status NOT IN ('cancelled', 'completed', 'checked_out')
-        RETURNING id`,
-      [bookingId, req.auth?.sub, reason],
+       SET status = 'cancelled'::booking_status_enum,
+           cancel_reason = NULLIF($3, ''),
+           cancelled_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1
+         AND user_id = $2
+         AND status NOT IN ('cancelled', 'completed', 'checked_out')
+       RETURNING id`,
+      [bookingId, req.auth.sub, reason],
     );
 
     if (!result.rows[0]) {
       return res.status(404).json({ message: "Không tìm thấy đơn đặt phòng phù hợp." });
     }
 
-    const booking = await loadBookingDetail(bookingId, req.auth?.sub);
+    const booking = await loadBookingDetail(bookingId, req.auth.sub);
 
     return res.json({ data: booking, booking, message: "Đã hủy đơn đặt phòng." });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function updateBookingStatus(req, res, next) {
+  const bookingCode = req.params.code || req.body.bookingCode || req.body.booking_code;
+  const status = (req.body.status || "").toString().trim();
+  const paymentStatus = (req.body.payment_status || req.body.paymentStatus || "").toString().trim();
+
+  if (!bookingCode || !status) {
+    return res.status(400).json({ message: "bookingCode và status là bắt buộc." });
+  }
+
+  try {
+    // Ưu tiên tìm theo booking_code + user_id (an toàn).
+    // Nếu không tìm thấy (user mới được tạo tự động trong createBooking),
+    // fallback tìm theo booking_code thuần túy.
+    let result = await pool.query(
+      `UPDATE booking
+       SET status = $2::booking_status_enum,
+           payment_status = CASE
+             WHEN $3::text IS NULL OR $3::text = '' THEN payment_status
+             ELSE $3::booking_payment_status_enum
+           END,
+           confirmed_at = CASE WHEN $2 = 'confirmed' THEN COALESCE(confirmed_at, NOW()) ELSE confirmed_at END,
+           updated_at = NOW()
+       WHERE (booking_code = $1 OR id::text = $1)
+         AND user_id = $4
+       RETURNING id`,
+      [bookingCode, status, paymentStatus || null, req.auth.sub],
+    );
+
+    if (!result.rows[0]) {
+      result = await pool.query(
+        `UPDATE booking
+         SET status = $2::booking_status_enum,
+             payment_status = CASE
+               WHEN $3::text IS NULL OR $3::text = '' THEN payment_status
+               ELSE $3::booking_payment_status_enum
+             END,
+             confirmed_at = CASE WHEN $2 = 'confirmed' THEN COALESCE(confirmed_at, NOW()) ELSE confirmed_at END,
+             updated_at = NOW()
+         WHERE (booking_code = $1 OR id::text = $1)
+         RETURNING id`,
+        [bookingCode, status, paymentStatus || null],
+      );
+    }
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ message: "Không tìm thấy đơn đặt phòng phù hợp." });
+    }
+
+    // Nếu cập nhật thành công ở fallback (không có user_id), truyền null để
+    // loadBookingDetail không lọc theo user (chỉ lấy theo booking_id).
+    const booking = await loadBookingDetail(
+      result.rows[0].id,
+      // Lấy user_id từ booking vừa cập nhật nếu có
+      req.auth.sub,
+    );
+
+    if (!booking) {
+      // Fallback: load không cần filter user
+      const detailResult = await loadBookingDetail(result.rows[0].id, null);
+      return res.json({
+        data: detailResult,
+        booking: detailResult,
+        message: "Cập nhật trạng thái đặt phòng thành công.",
+      });
+    }
+
+    return res.json({
+      data: booking,
+      booking,
+      message: "Cập nhật trạng thái đặt phòng thành công.",
+    });
   } catch (error) {
     return next(error);
   }
@@ -627,5 +742,6 @@ module.exports = {
   createBooking,
   getBookingDetail,
   cancelBooking,
+  updateBookingStatus,
   listMyBookings,
 };

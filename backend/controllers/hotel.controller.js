@@ -535,27 +535,44 @@ async function getHotelById(req, res, next) {
 
     const rooms = roomResult.rows.map(formatRoom);
 
-    const hotelDetail = {
-      ...formatHotel({ ...hotel, images, policy, services: serviceResult.rows }),
-      amenities: hotel.amenities || [],
-      images,
-      policy,
-      rooms,
-      services: serviceResult.rows.map((service) => ({
-        id: service.id,
-        name: service.name,
-        basePrice: Number(service.base_price || 0),
-        base_price: Number(service.base_price || 0),
-        description: service.description,
-        isActive: service.is_active,
-        is_active: service.is_active,
-      })),
-    };
+     // ─── Kiểm tra trạng thái yêu thích từ DATABASE (nếu user đã đăng nhập) ───
+     let isFavorite = false;
+     if (req.auth?.sub) {
+       try {
+         const favResult = await pool.query(
+           `SELECT 1 FROM favorites WHERE user_id = $1 AND hotel_id = $2 LIMIT 1`,
+           [req.auth.sub, req.params.id],
+         );
+         isFavorite = (favResult.rows.length > 0);
+       } catch (favError) {
+         // Bỏ qua nếu bảng favorites chưa tồn tại
+         console.warn("Lỗi kiểm tra favorite:", favError.message);
+       }
+     }
 
-    return res.json({
-      data: hotelDetail,
-      hotel: hotelDetail,
-    });
+     const hotelDetail = {
+       ...formatHotel({ ...hotel, images, policy, services: serviceResult.rows }),
+       amenities: hotel.amenities || [],
+       images,
+       policy,
+       rooms,
+       services: serviceResult.rows.map((service) => ({
+         id: service.id,
+         name: service.name,
+         basePrice: Number(service.base_price || 0),
+         base_price: Number(service.base_price || 0),
+         description: service.description,
+         isActive: service.is_active,
+         is_active: service.is_active,
+       })),
+       isFavorite,
+       is_favorite: isFavorite,
+     };
+
+     return res.json({
+       data: hotelDetail,
+       hotel: hotelDetail,
+     });
   } catch (error) {
     return next(error);
   }
