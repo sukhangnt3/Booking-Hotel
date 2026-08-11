@@ -1,11 +1,14 @@
-// src/services/paymentService.js
 import apiClient from "./apiClient";
 
 const paymentService = {
-  createVNPayUrl: async (data) => {
-    // Gọi API của Backend để tạo URL
-    const response = await apiClient.post("/payments/create-vnpay-url", data);
-    return response.data;
+  // Sử dụng apiClient để tự động gắn Bearer Token đăng nhập
+  createVNPayUrl: async (paymentData) => {
+    const response = await apiClient.post(
+      "/payments/create-vnpay-url",
+      paymentData,
+    );
+    // apiClient interceptor đã tự động trả về response.data
+    return response;
   },
 };
 

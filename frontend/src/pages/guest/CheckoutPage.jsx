@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import bookingService from "../../services/bookingService";
-import paymentService from "../../services/paymentService"; // Đảm bảo bạn có file service này
+import paymentService from "../../services/paymentService";
 
 const CheckoutPage = () => {
   const [searchParams] = useSearchParams();
@@ -9,22 +9,48 @@ const CheckoutPage = () => {
 
   // Lấy tham số từ URL
   const bookingCode = searchParams.get("code");
-  const amount = searchParams.get("amount") || 0;
+  const rawAmount = searchParams.get("amount");
+
+  // ĐỌC VÀ LƯU SỐ TIỀN VÀO SESSION STORAGE (Để không bao giờ bị mất)
+  const [amount, setAmount] = useState(() => {
+    if (rawAmount && Number(rawAmount) > 0) {
+      if (bookingCode) {
+        sessionStorage.setItem(`booking_amount_${bookingCode}`, rawAmount);
+      }
+      return rawAmount;
+    }
+    // Nếu URL không có amount, tự lấy từ sessionStorage ra
+    return bookingCode
+      ? sessionStorage.getItem(`booking_amount_${bookingCode}`) || "0"
+      : "0";
+  });
+
+  useEffect(() => {
+    if (rawAmount && Number(rawAmount) > 0 && bookingCode) {
+      sessionStorage.setItem(`booking_amount_${bookingCode}`, rawAmount);
+      setAmount(rawAmount);
+    }
+  }, [rawAmount, bookingCode]);
 
   const [loading, setLoading] = useState(false);
 
   // 1. Xử lý Thanh toán tại khách sạn
   const handlePayAtHotel = async () => {
+    if (!bookingCode) {
+      alert("Thiếu mã đơn đặt phòng trên URL!");
+      return;
+    }
+
     try {
       setLoading(true);
-      // Gọi API cập nhật trạng thái đơn thành 'confirmed' (xác nhận)
       await bookingService.updateBookingStatus(bookingCode, {
         status: "confirmed",
-        payment_status: "unpaid", // Chưa trả tiền, sẽ trả tại KS
+        payment_status: "unpaid",
       });
 
-      // Chuyển sang trang đặt phòng thành công
-      navigate(`/booking-success?code=${bookingCode}`);
+      navigate(
+        `/booking-success?success=true&code=${bookingCode}&amount=${amount}`,
+      );
     } catch (err) {
       console.error("Lỗi xác nhận đặt phòng:", err);
       alert("Không thể xác nhận đặt phòng. Vui lòng thử lại!");
@@ -35,23 +61,44 @@ const CheckoutPage = () => {
 
   // 2. Xử lý Thanh toán Online (VNPay)
   const handlePayVNPay = async () => {
+    if (!bookingCode || !amount || Number(amount) <= 0) {
+      alert("Thông tin số tiền thanh toán không hợp lệ!");
+      return;
+    }
+
     try {
       setLoading(true);
-      // Gọi API Backend để tạo URL thanh toán VNPay
       const response = await paymentService.createVNPayUrl({
         bookingCode: bookingCode,
         amount: Number(amount),
       });
 
-      // Backend trả về vnpayUrl -> Chuyển hướng người dùng sang cổng VNPay
-      if (response && response.vnpayUrl) {
-        window.location.href = response.vnpayUrl;
+      console.log("[CheckoutPage] Response từ paymentService:", response);
+
+      let redirectUrl = null;
+      if (typeof response === "string" && response.startsWith("http")) {
+        redirectUrl = response;
+      } else if (response && typeof response === "object") {
+        redirectUrl =
+          response.vnpayUrl ||
+          response.paymentUrl ||
+          response.data?.vnpayUrl ||
+          response.data?.paymentUrl;
+      }
+
+      if (redirectUrl) {
+        window.location.href = redirectUrl;
       } else {
-        alert("Không thể tạo liên kết thanh toán VNPay!");
+        alert("Không thể lấy liên kết thanh toán VNPay từ máy chủ!");
       }
     } catch (err) {
-      console.error("Lỗi kết nối VNPay:", err);
-      alert("Lỗi kết nối cổng thanh toán. Hãy thử phương thức khác!");
+      console.error("Lỗi chi tiết từ Backend:", err.response?.data);
+      const errorMessage =
+        err.response?.data?.errorDetail ||
+        err.response?.data?.message ||
+        err.message;
+
+      alert("⚠️ LỖI TỪ MÁY CHỦ BACKEND:\n\n" + errorMessage);
     } finally {
       setLoading(false);
     }
@@ -64,7 +111,7 @@ const CheckoutPage = () => {
         <p className="text-sm text-gray-500 mb-6">
           Mã đơn:{" "}
           <span className="font-mono font-bold text-blue-600">
-            {bookingCode}
+            {bookingCode || "Không tìm thấy mã đơn"}
           </span>
         </p>
 
@@ -74,7 +121,9 @@ const CheckoutPage = () => {
             Tổng số tiền thanh toán
           </span>
           <span className="text-3xl font-black text-blue-700">
-            {Number(amount).toLocaleString()}đ
+            {Number(amount) > 0
+              ? `${Number(amount).toLocaleString("vi-VN")}đ`
+              : "0đ"}
           </span>
         </div>
 
@@ -82,9 +131,9 @@ const CheckoutPage = () => {
         <div className="space-y-4">
           <button
             onClick={handlePayAtHotel}
-            disabled={loading}
+            disabled={loading || !bookingCode}
             className={`w-full font-bold py-4 rounded-xl transition shadow-md flex items-center justify-center gap-2 ${
-              loading
+              loading || !bookingCode
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-emerald-600 hover:bg-emerald-700 text-white"
             }`}
@@ -94,9 +143,9 @@ const CheckoutPage = () => {
 
           <button
             onClick={handlePayVNPay}
-            disabled={loading}
+            disabled={loading || !bookingCode || Number(amount) <= 0}
             className={`w-full font-bold py-4 rounded-xl transition shadow-md flex items-center justify-center gap-2 ${
-              loading
+              loading || !bookingCode || Number(amount) <= 0
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}

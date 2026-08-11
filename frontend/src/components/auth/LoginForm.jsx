@@ -13,24 +13,53 @@ const LoginForm = () => {
   const navigate = useNavigate();
   const loginStore = useAuthStore((state) => state.login);
 
+  // --- XỬ LÝ ĐIỀU HƯỚNG THEO QUYỀN (ROLE) TỐI ƯU ---
+  const redirectByUserRole = (user) => {
+    // 1. Lấy role linh hoạt (Hỗ trợ String, Object, Mảng)
+    const rawRole =
+      user?.role ||
+      user?.role_name ||
+      (Array.isArray(user?.roles) ? user.roles[0] : "");
+    const role = String(rawRole).toLowerCase();
+
+    console.log("[LoginForm] Đã đăng nhập với Role:", role, "User Data:", user);
+
+    // 2. Chuyển hướng chuẩn xác dùng window.location.href để đảm bảo lưu Token
+    if (role === "admin" || role === "role_admin") {
+      window.location.href = "/admin/dashboard";
+    } else if (role === "owner" || role === "hotel_owner") {
+      window.location.href = "/owner/dashboard";
+    } else {
+      window.location.href = "/";
+    }
+  };
+
   // --- XỬ LÝ ĐĂNG NHẬP GOOGLE ---
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
       try {
-        // 1. Gửi token sang Backend qua authService
         const response = await authService.googleLogin(
           tokenResponse.access_token,
         );
 
-        // 2. Nhận kết quả (apiClient đã trả về response.data nên ta lấy trực tiếp)
-        const { user, systemToken } = response;
+        // Bóc tách user & token linh hoạt
+        const user = response?.user || response?.data?.user || response?.data;
+        const systemToken =
+          response?.systemToken || response?.token || response?.data?.token;
 
-        // 3. Lưu vào Zustand Store
+        if (!user) {
+          alert("Xác thực Google thành công nhưng không lấy được User!");
+          return;
+        }
+
+        // Lưu vào Zustand Store
         loginStore(user, systemToken);
 
-        alert(`Chào mừng ${user.name} quay trở lại!`);
-        navigate("/");
+        alert(`Chào mừng ${user.name || user.email} quay trở lại!`);
+
+        // Kiểm tra Role và điều hướng
+        redirectByUserRole(user);
       } catch (error) {
         console.error("Lỗi đăng nhập Google:", error);
         alert(error.message || "Xác thực với hệ thống thất bại");
@@ -53,9 +82,24 @@ const LoginForm = () => {
     setLoading(true);
     try {
       const response = await authService.login(email, password);
-      loginStore(response.user, response.systemToken);
-      navigate("/");
+
+      // Bóc tách user & token linh hoạt từ phản hồi từ Backend
+      const user = response?.user || response?.data?.user || response?.data;
+      const systemToken =
+        response?.systemToken || response?.token || response?.data?.token;
+
+      if (!user) {
+        alert("Đăng nhập thành công nhưng không lấy được thông tin User!");
+        return;
+      }
+
+      // Lưu vào Zustand Store
+      loginStore(user, systemToken);
+
+      // Kiểm tra Role và điều hướng sang trang Admin hoặc Trang chủ
+      redirectByUserRole(user);
     } catch (error) {
+      console.error("Lỗi đăng nhập email:", error);
       alert(error.message || "Sai tài khoản hoặc mật khẩu");
     } finally {
       setLoading(false);
@@ -68,8 +112,8 @@ const LoginForm = () => {
         Đăng nhập hoặc tạo tài khoản
       </h1>
       <p className="text-xs text-gray-600 mb-6">
-        Bạn có thể đăng nhập tài khoản Booking.com của mình để truy cập các dịch
-        vụ của chúng tôi.
+        Bạn có thể đăng nhập tài khoản của mình để truy cập các dịch vụ của
+        chúng tôi.
       </p>
 
       {step === "EMAIL" ? (
@@ -149,7 +193,7 @@ const LoginForm = () => {
         </span>
       </div>
 
-      {/* --- NÚT ĐĂNG NHẬP GOOGLE THẬT --- */}
+      {/* --- NÚT ĐĂNG NHẬP GOOGLE --- */}
       <div className="flex justify-center mb-6">
         <button
           type="button"

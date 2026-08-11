@@ -10,6 +10,15 @@ const Header = () => {
   // Trạng thái đóng/mở menu hồ sơ
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+  // --- KIỂM TRA TÀI KHOẢN CÓ PHẢI LÀ ADMIN HAY KHÔNG ---
+  const rawRole =
+    user?.role ||
+    user?.role_name ||
+    (Array.isArray(user?.roles) ? user.roles[0] : "");
+  const role = String(rawRole).toLowerCase();
+  const isAdmin =
+    role === "admin" || role === "role_admin" || user?.role_id === 1;
+
   const handleLogout = () => {
     logout();
     setIsMenuOpen(false);
@@ -37,10 +46,11 @@ const Header = () => {
           </Button>
           <Button
             variant="text"
-            className="text-white hover:bg-blue-700 hidden sm:block"
+            className="text-white hover:bg-blue-700 hidden sm:flex items-center"
           >
-            🇻🇳
+            <span className="fi fi-vn" />
           </Button>
+
           <Button
             variant="text"
             className="text-white hover:bg-blue-700 hidden lg:block text-sm"
@@ -49,7 +59,6 @@ const Header = () => {
           </Button>
 
           {isAuthenticated ? (
-         
             /* --- GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP --- */
             <div className="relative">
               <button
@@ -59,11 +68,18 @@ const Header = () => {
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-bold leading-none">{user?.name}</p>
                   <p className="text-[11px] text-yellow-400 font-medium mt-1">
-                    Khách hàng thân thiết
+                    {isAdmin
+                      ? "⚡ Quản trị viên (Admin)"
+                      : "Khách hàng thân thiết"}
                   </p>
                 </div>
                 <img
-                  src={user?.picture}
+                  src={
+                    user?.picture ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                      user?.name || user?.email || "User",
+                    )}`
+                  }
                   alt="Ảnh đại diện"
                   className="w-9 h-9 rounded-full border-2 border-white object-cover"
                 />
@@ -88,21 +104,29 @@ const Header = () => {
                       </p>
                     </div>
 
-                    <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-100 flex items-center gap-3">
+                    {/* MỤC TRANG QUẢN TRỊ ADMIN (HIỂN THỊ NẾU LÀ ADMIN) */}
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          navigate("/admin/dashboard");
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm bg-amber-50 text-amber-900 font-bold hover:bg-amber-100 flex items-center gap-3 transition"
+                      >
+                        <span className="w-5 text-center">⚡</span> Trang quản
+                        trị Admin
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        navigate("/UserProfilePage");
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-100 flex items-center gap-3"
+                    >
                       <span className="w-5 text-center text-gray-400">👤</span>{" "}
-                      <span onClick={() => navigate("/UserProfilePage")}>
-                        Quản lý tài khoản
-                      </span>
-                    </button>
-
-                    <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-100 flex items-center gap-3">
-                      <span className="w-5 text-center text-gray-400">👜</span>{" "}
-                      Đơn đặt chỗ của tôi
-                    </button>
-
-                    <button className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-100 flex items-center gap-3">
-                      <span className="w-5 text-center text-gray-400">❤️</span>{" "}
-                      Danh sách yêu thích
+                      <span>Quản lý tài khoản</span>
                     </button>
 
                     <div className="border-t border-gray-100 my-1"></div>
@@ -131,11 +155,7 @@ const Header = () => {
       </div>
 
       {/* Banner tìm kiếm */}
-      <div className="relative w-full bg-[#003580] text-white">
-        
-      
-      </div>
-      
+      <div className="relative w-full bg-[#003580] text-white"></div>
     </header>
   );
 };

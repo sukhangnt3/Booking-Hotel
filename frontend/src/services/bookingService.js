@@ -28,6 +28,16 @@ const bookingService = {
     });
     return response.data;
   },
+
+  // 5. Cập nhật trạng thái đơn hàng (ĐƯỢC THÊM MỚI VÀO ĐÂY)
+  // statusData: { status: "confirmed", payment_status: "unpaid" }
+  updateBookingStatus: async (bookingCode, statusData) => {
+    const response = await apiClient.put(
+      `/bookings/${bookingCode}/status`,
+      statusData,
+    );
+    return response.data;
+  },
 };
 
 // QUAN TRỌNG: Dòng này để sửa lỗi "does not provide an export named 'default'"
