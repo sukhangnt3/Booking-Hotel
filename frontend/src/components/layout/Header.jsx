@@ -26,34 +26,35 @@ const Header = () => {
   };
 
   return (
-    <header className="bg-[#003580] text-white px-4 py-3 relative">
+    /* 🛠 Cập nhật class ở thẻ header để xóa hoàn toàn nét đứt/khe hở */
+    <header className="bg-[#003580] text-white px-4 py-3 sticky -top-px z-50 border-b border-blue-900/60 outline-none select-none">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         {/* Logo */}
         <div
           onClick={() => navigate("/")}
           className="text-2xl font-bold cursor-pointer"
         >
-          Booking.com
+          GoStay
         </div>
 
         {/* Khu vực thao tác góc phải */}
         <div className="flex items-center gap-4">
           <Button
             variant="text"
-            className="text-white hover:bg-blue-700 hidden sm:block font-semibold"
+            className="text-white hover:bg-blue-700 hidden sm:block font-semibold focus:outline-none"
           >
             VND
           </Button>
           <Button
             variant="text"
-            className="text-white hover:bg-blue-700 hidden sm:flex items-center"
+            className="text-white hover:bg-blue-700 hidden sm:flex items-center focus:outline-none"
           >
             <span className="fi fi-vn" />
           </Button>
 
           <Button
             variant="text"
-            className="text-white hover:bg-blue-700 hidden lg:block text-sm"
+            className="text-white hover:bg-blue-700 hidden lg:block text-sm focus:outline-none"
           >
             Đăng chỗ nghỉ của Quý vị
           </Button>
@@ -63,7 +64,7 @@ const Header = () => {
             <div className="relative">
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="flex items-center gap-2 p-1 hover:bg-blue-700 rounded-md transition border border-transparent hover:border-white/30"
+                className="flex items-center gap-2 p-1 hover:bg-blue-700 rounded-md transition border border-transparent hover:border-white/30 focus:outline-none"
               >
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-bold leading-none">{user?.name}</p>
@@ -85,10 +86,9 @@ const Header = () => {
                 />
               </button>
 
-              {/* --- MENU THẢ XUỐNG (TIẾNG VIỆT 100%) --- */}
+              {/* --- MENU THẢ XUỐNG --- */}
               {isMenuOpen && (
                 <>
-                  {/* Click ra ngoài để đóng menu */}
                   <div
                     className="fixed inset-0 z-40"
                     onClick={() => setIsMenuOpen(false)}
@@ -104,7 +104,6 @@ const Header = () => {
                       </p>
                     </div>
 
-                    {/* MỤC TRANG QUẢN TRỊ ADMIN (HIỂN THỊ NẾU LÀ ADMIN) */}
                     {isAdmin && (
                       <button
                         onClick={() => {
@@ -142,10 +141,9 @@ const Header = () => {
               )}
             </div>
           ) : (
-            /* --- GIAO DIỆN KHI CHƯA ĐĂNG NHẬP (BỎ NÚT ĐĂNG KÝ) --- */
             <Button
               variant="outline"
-              className="bg-white text-blue-700 border-none hover:bg-gray-100 font-bold px-5"
+              className="bg-white text-blue-700 border-none hover:bg-gray-100 font-bold px-5 focus:outline-none"
               onClick={() => navigate("/login")}
             >
               Đăng nhập
@@ -153,9 +151,6 @@ const Header = () => {
           )}
         </div>
       </div>
-
-      {/* Banner tìm kiếm */}
-      <div className="relative w-full bg-[#003580] text-white"></div>
     </header>
   );
 };
