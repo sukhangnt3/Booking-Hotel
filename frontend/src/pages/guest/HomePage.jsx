@@ -7,6 +7,15 @@ import HotelFilter from "../../components/hotel/HotelFilter";
 // Services
 import hotelService from "../../services/hotelService";
 
+// Hàm hỗ trợ: Ép dữ liệu trả về LUÔN LÀ MẢNG (Tránh lỗi .map is not a function)
+const toSafeArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.data)) return data.data;
+  if (data && Array.isArray(data.favorites)) return data.favorites;
+  if (data && Array.isArray(data.items)) return data.items;
+  return [];
+};
+
 const HomePage = () => {
   const navigate = useNavigate();
 
@@ -15,6 +24,9 @@ const HomePage = () => {
   const [trendingDestinations, setTrendingDestinations] = useState([]);
   const [discoverVietnam, setDiscoverVietnam] = useState([]);
   const [uniqueStays, setUniqueStays] = useState([]);
+
+  // Set lưu danh sách các Hotel ID đã được User yêu thích trong Database
+  const [favoriteHotelIds, setFavoriteHotelIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
   // ─── 2. GỌI API KHI MOUNT ───
@@ -22,19 +34,33 @@ const HomePage = () => {
     const fetchHomePageData = async () => {
       setLoading(true);
       try {
-        // Gọi song song các API để tối ưu tốc độ load
-        const [typesData, trendingData, discoverData, staysData] =
-          await Promise.all([
-            hotelService.getPropertyTypes(),
-            hotelService.getTrendingDestinations(),
-            hotelService.getDiscoverVietnam(),
-            hotelService.getUniqueStays(),
-          ]);
+        // Gọi song song các API trang chủ VÀ API danh sách Yêu thích của User từ DB
+        const [
+          typesData,
+          trendingData,
+          discoverData,
+          staysData,
+          myFavoritesData,
+        ] = await Promise.all([
+          hotelService.getPropertyTypes(),
+          hotelService.getTrendingDestinations(),
+          hotelService.getDiscoverVietnam(),
+          hotelService.getUniqueStays(),
+          hotelService.getFavoriteHotels(), // Lấy danh sách yêu thích thật từ Database
+        ]);
 
-        setPropertyTypes(typesData || []);
-        setTrendingDestinations(trendingData || []);
-        setDiscoverVietnam(discoverData || []);
-        setUniqueStays(staysData || []);
+        // 1. Lưu danh sách ID đã yêu thích vào Set để tra cứu cực nhanh
+        const favList = toSafeArray(myFavoritesData);
+        const favIdsSet = new Set(
+          favList.map((item) => String(item.id || item.hotel_id)),
+        );
+        setFavoriteHotelIds(favIdsSet);
+
+        // 2. Lưu dữ liệu các section
+        setPropertyTypes(toSafeArray(typesData));
+        setTrendingDestinations(toSafeArray(trendingData));
+        setDiscoverVietnam(toSafeArray(discoverData));
+        setUniqueStays(toSafeArray(staysData));
       } catch (error) {
         console.error("Lỗi khi tải dữ liệu Trang chủ:", error);
       } finally {
@@ -45,21 +71,18 @@ const HomePage = () => {
     fetchHomePageData();
   }, []);
 
-  // ─── 3. XỬ LÝ TÌM KIẾM (ĐỒNG BỘ VỚI HOTEL LIST PAGE) ───
+  // ─── 3. XỬ LÝ TÌM KIẾM ───
   const handleSearch = (searchData) => {
     const query = new URLSearchParams();
 
     if (searchData?.destination)
       query.append("destination", searchData.destination);
 
-    // Gửi checkIn/checkOut để HotelListPage và HotelDetailPage tính được giá từ Inventory (Table 9)
     if (searchData?.startDate) query.append("checkIn", searchData.startDate);
     if (searchData?.endDate) query.append("checkOut", searchData.endDate);
 
-    // Đồng bộ số lượng khách và phòng
     if (searchData?.adults) query.append("adults", searchData.adults);
     if (searchData?.rooms) query.append("rooms", searchData.rooms);
-    // Fallback nếu HotelFilter trả về biến guests chung
     if (!searchData?.adults && searchData?.guests)
       query.append("adults", searchData.guests);
 
@@ -69,8 +92,13 @@ const HomePage = () => {
     });
   };
 
+  const safePropertyTypes = toSafeArray(propertyTypes);
+  const safeTrending = toSafeArray(trendingDestinations);
+  const safeDiscover = toSafeArray(discoverVietnam);
+  const safeUniqueStays = toSafeArray(uniqueStays);
+
   return (
-    <div className="w-full pb-24 bg-gray-50/30">
+    <div className="w-full pb-24 bg-gray-50/30 font-sans">
       {/* ─── HERO BANNER ─── */}
       <div className="bg-[#003580] pt-12 pb-20 px-4 text-white">
         <div className="max-w-7xl mx-auto space-y-4">
@@ -83,7 +111,7 @@ const HomePage = () => {
         </div>
       </div>
 
-      {/* HotelFilter: Nhận dữ liệu và chuyển hướng qua handleSearch */}
+      {/* HotelFilter */}
       <div className="max-w-7xl mx-auto px-4 -mt-8 relative z-20">
         <HotelFilter onSearch={handleSearch} />
       </div>
@@ -105,15 +133,18 @@ const HomePage = () => {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {propertyTypes.map((type) => (
+            {safePropertyTypes.map((type) => (
               <div
-                key={type.id || type._id}
+                key={type.id || type._id || Math.random()}
                 className="cursor-pointer hover:opacity-90 transition transform hover:-translate-y-1"
                 onClick={() =>
-                  handleSearch({ destination: "", type: type.title })
+                  handleSearch({
+                    destination: "",
+                    type: type.title || type.name,
+                  })
                 }
               >
-                <Card image={type.image} title={type.title} />
+                <Card image={type.image} title={type.title || type.name} />
               </div>
             ))}
           </div>
@@ -135,12 +166,14 @@ const HomePage = () => {
           <div className="h-80 bg-gray-200 animate-pulse rounded-xl" />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {trendingDestinations
-              .filter((item) => item.isLarge)
+            {safeTrending
+              .filter((item) => item.isLarge || true)
               .map((place) => (
                 <div
-                  key={place.id || place._id}
-                  onClick={() => handleSearch({ destination: place.title })}
+                  key={place.id || place._id || Math.random()}
+                  onClick={() =>
+                    handleSearch({ destination: place.title || place.name })
+                  }
                   className="relative rounded-xl overflow-hidden group cursor-pointer shadow-sm"
                 >
                   <Card
@@ -150,7 +183,8 @@ const HomePage = () => {
                   />
                   <div className="absolute top-6 left-6 drop-shadow-lg">
                     <h3 className="text-white text-2xl font-black flex items-center gap-2">
-                      {place.title} <span className="text-base">🇻🇳</span>
+                      {place.title || place.name}{" "}
+                      <span className="text-base">🇻🇳</span>
                     </h3>
                   </div>
                 </div>
@@ -172,17 +206,19 @@ const HomePage = () => {
                   className="h-48 bg-gray-200 animate-pulse rounded-xl"
                 />
               ))
-            : discoverVietnam.map((item) => (
+            : safeDiscover.map((item) => (
                 <div
-                  key={item.id || item._id}
-                  onClick={() => handleSearch({ destination: item.title })}
+                  key={item.id || item._id || Math.random()}
+                  onClick={() =>
+                    handleSearch({ destination: item.title || item.name })
+                  }
                   className="cursor-pointer group"
                 >
                   <Card
                     image={item.image}
                     title={
                       <span className="group-hover:text-[#006ce4] transition-colors">
-                        {item.title} 🇻🇳
+                        {item.title || item.name} 🇻🇳
                       </span>
                     }
                     subTitle={item.subTitle}
@@ -193,7 +229,7 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* ─── SECTION 4: UNIQUE STAYS (LIÊN KẾT ĐẾN CHI TIẾT) ─── */}
+      {/* ─── SECTION 4: UNIQUE STAYS (TRÁI TIM GIỮ MÀU SÁNG KỂ CẢ KHI F5) ─── */}
       <section className="max-w-7xl mx-auto px-4 mt-16">
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
@@ -215,13 +251,16 @@ const HomePage = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {uniqueStays.map((stay) => (
-              <div
-                key={stay.id || stay._id}
-                className="cursor-pointer transform transition-transform hover:scale-[1.02]"
-                onClick={() => navigate(`/hotel/${stay.id || stay._id}`)} // Điều hướng đến HotelDetailPage
-              >
+            {safeUniqueStays.map((stay) => {
+              const stayId = String(stay.id || stay.hotel_id || stay._id);
+              // Kiểm tra xem Hotel ID này có nằm trong danh sách đã yêu thích ở DB không
+              const isSavedInDb = favoriteHotelIds.has(stayId);
+
+              return (
                 <HotelCard
+                  key={stayId}
+                  id={stay.id || stay._id || stay.hotel_id}
+                  hotel={stay}
                   image={stay.image || stay.stay_image}
                   type={stay.type}
                   title={stay.title || stay.name}
@@ -231,9 +270,14 @@ const HomePage = () => {
                   salePrice={stay.min_price || stay.price}
                   stars={stay.star_rating || stay.stars}
                   isGenius={stay.isGenius}
+                  // TRUYỀN TRẠNG THÁI YÊU THÍCH THẬT TỪ DATABASE
+                  isFavoriteInitial={
+                    isSavedInDb || stay.is_favorite || stay.isFavorite
+                  }
+                  onClick={() => navigate(`/hotel/${stayId}`)}
                 />
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

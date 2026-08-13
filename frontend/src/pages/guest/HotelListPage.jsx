@@ -21,10 +21,10 @@ const HotelListPage = () => {
 
   // ─── 3. STATES BỘ LỌC (Đồng bộ với URL hoặc mặc định) ───
   const [priceRange, setPriceRange] = useState(
-    Number(searchParams.get("maxPrice")) || 10000000
+    Number(searchParams.get("maxPrice")) || 10000000,
   );
   const [selectedStars, setSelectedStars] = useState(
-    searchParams.get("stars")?.split(",").map(Number).filter(Boolean) || []
+    searchParams.get("stars")?.split(",").map(Number).filter(Boolean) || [],
   );
   const [sortBy, setSortBy] = useState(searchParams.get("sortBy") || "popular");
 
@@ -66,7 +66,7 @@ const HotelListPage = () => {
   // Handle chọn sao
   const handleStarChange = (star) => {
     setSelectedStars((prev) =>
-      prev.includes(star) ? prev.filter((s) => s !== star) : [...prev, star]
+      prev.includes(star) ? prev.filter((s) => s !== star) : [...prev, star],
     );
   };
 
@@ -78,13 +78,14 @@ const HotelListPage = () => {
 
   // 🚀 ĐÃ THÊM: Hàm tập trung chuyển hướng sang trang chi tiết HotelDetailPage
   const handleGoToDetail = (hotelId) => {
-    navigate(`/hotel/${hotelId}?checkIn=${checkIn}&checkOut=${checkOut}&adults=${adults}`);
+    navigate(
+      `/hotel/${hotelId}?checkIn=${checkIn}&checkOut=${checkOut}&adults=${adults}`,
+    );
   };
 
   return (
     <div className="bg-gray-50 min-h-screen pb-12 font-sans">
       <div className="max-w-6xl mx-auto px-4 pt-6 text-gray-800">
-        
         {/* Header Thông tin tìm kiếm */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900 uppercase">
@@ -100,7 +101,6 @@ const HotelListPage = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          
           {/* CỘT TRÁI: SIDEBAR BỘ LỌC */}
           <div className="md:col-span-4 lg:col-span-3 space-y-5 bg-white p-5 rounded-xl border border-gray-200 shadow-sm h-fit">
             <h2 className="text-sm font-bold border-b pb-3 uppercase tracking-tight">
@@ -155,11 +155,11 @@ const HotelListPage = () => {
 
           {/* CỘT PHẢI: KẾT QUẢ TÌM KIẾM */}
           <div className="md:col-span-8 lg:col-span-9 space-y-4">
-            
             {/* Thanh Sắp xếp */}
             <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
               <span className="text-xs font-bold">
-                Tìm thấy <span className="text-[#006ce4]">{hotels.length}</span> chỗ nghỉ
+                Tìm thấy <span className="text-[#006ce4]">{hotels.length}</span>{" "}
+                chỗ nghỉ
               </span>
               <select
                 value={sortBy}
@@ -180,7 +180,7 @@ const HotelListPage = () => {
               hotels.map((hotel) => {
                 // Xử lý dữ liệu linh hoạt theo tên cột Backend
                 const id = hotel.id || hotel.hotel_id;
-                
+
                 // 🚀 ĐÃ SỬA: Thêm ảnh mặc định phòng trường hợp API trả về null/empty
                 const image =
                   hotel.image ||
@@ -190,13 +190,24 @@ const HotelListPage = () => {
                   "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80";
 
                 const title = hotel.title || hotel.name || "Khách sạn";
-                const location = hotel.location || hotel.address || destination || "Địa điểm";
-                const rating = Number(hotel.rating || hotel.star_rating || 8.0).toFixed(1).replace(".", ",");
-                const ratingText = hotel.ratingText || (Number(hotel.rating || 8) >= 8 ? "Rất tốt" : "Tốt");
-                const reviewsCount = Number(hotel.reviewsCount || hotel.review_count || 0).toLocaleString("vi-VN");
+                const location =
+                  hotel.location || hotel.address || destination || "Địa điểm";
+                const rating = Number(hotel.rating || hotel.star_rating || 8.0)
+                  .toFixed(1)
+                  .replace(".", ",");
+                const ratingText =
+                  hotel.ratingText ||
+                  (Number(hotel.rating || 8) >= 8 ? "Rất tốt" : "Tốt");
+                const reviewsCount = Number(
+                  hotel.reviewsCount || hotel.review_count || 0,
+                ).toLocaleString("vi-VN");
                 const stars = Number(hotel.stars || hotel.star_rating || 4);
-                const originalPrice = hotel.originalPrice ? Number(hotel.originalPrice).toLocaleString("vi-VN") : null;
-                const salePrice = Number(hotel.salePrice || hotel.price || 0).toLocaleString("vi-VN");
+                const originalPrice = hotel.originalPrice
+                  ? Number(hotel.originalPrice).toLocaleString("vi-VN")
+                  : null;
+                const salePrice = Number(
+                  hotel.salePrice || hotel.price || 0,
+                ).toLocaleString("vi-VN");
 
                 return (
                   <div
@@ -214,16 +225,19 @@ const HotelListPage = () => {
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         onError={(e) => {
                           // Ảnh dự phòng nếu link bị lỗi
-                          e.target.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80";
+                          e.target.src =
+                            "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80";
                         }}
                       />
-                      
+
                       <button
                         type="button"
                         onClick={(e) => toggleFavorite(e, id)}
                         className="absolute top-2.5 right-2.5 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow hover:bg-white transition z-10"
                       >
-                        <span className={`text-sm ${favorites[id] ? "text-red-500" : "text-gray-400"}`}>
+                        <span
+                          className={`text-sm ${favorites[id] ? "text-red-500" : "text-gray-400"}`}
+                        >
                           {favorites[id] ? "❤️" : "🤍"}
                         </span>
                       </button>
@@ -249,7 +263,9 @@ const HotelListPage = () => {
                         </div>
 
                         <div className="text-xs text-gray-700 mt-2 flex flex-wrap items-center gap-1 font-medium">
-                          <span className="text-[#006ce4] font-semibold">{location}</span>
+                          <span className="text-[#006ce4] font-semibold">
+                            {location}
+                          </span>
                           <span>•</span>
                           <button
                             type="button"
@@ -261,7 +277,8 @@ const HotelListPage = () => {
                         </div>
 
                         <p className="text-xs text-gray-600 mt-3 line-clamp-2 leading-relaxed">
-                          {hotel.description || `Chỗ nghỉ tuyệt vời tại ${location}, cung cấp đầy đủ tiện nghi hiện đại cho chuyến đi của bạn.`}
+                          {hotel.description ||
+                            `Chỗ nghỉ tuyệt vời tại ${location}, cung cấp đầy đủ tiện nghi hiện đại cho chuyến đi của bạn.`}
                         </p>
                       </div>
                     </div>
@@ -298,7 +315,9 @@ const HotelListPage = () => {
                           }}
                           className="bg-[#006ce4] hover:bg-[#0057b8] text-white font-semibold text-sm px-4 py-2.5 rounded-md transition-colors w-full mt-1"
                         >
-                          {Number(hotel.salePrice || hotel.price) > 0 ? `VND ${salePrice}` : "Xem phòng"}
+                          {Number(hotel.salePrice || hotel.price) > 0
+                            ? `VND ${salePrice}`
+                            : "Xem phòng"}
                         </button>
                       </div>
                     </div>
@@ -309,7 +328,6 @@ const HotelListPage = () => {
               <EmptyState title="Không có kết quả nào phù hợp" />
             )}
           </div>
-
         </div>
       </div>
     </div>

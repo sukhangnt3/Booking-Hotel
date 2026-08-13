@@ -30,7 +30,13 @@ const HotelDetailPage = () => {
         // 1. Lấy thông tin khách sạn & phòng
         const hotelData = await hotelService.getHotelById(id);
         setHotel(hotelData);
-        setIsFavorite(hotelData?.is_favorite || false);
+
+        // Kiểm tra xem khách sạn này đã yêu thích chưa
+        const favoriteStatus =
+          hotelData?.is_favorite ||
+          hotelData?.isFavorite ||
+          checkLocalFavorite(id);
+        setIsFavorite(favoriteStatus);
 
         // 2. Lấy bình luận thật
         const reviewsData = await hotelService.getHotelReviews(id);
@@ -44,26 +50,49 @@ const HotelDetailPage = () => {
     fetchAllData();
   }, [id]);
 
-  // HÀM BẤM TRÁI TIM (KẾT HỢP API VÀ DỰ PHÒNG LOCALSTORAGE)
-  const handleToggleFavorite = async () => {
+  // Kiểm tra dự phòng từ LocalStorage
+  const checkLocalFavorite = (hotelId) => {
     try {
-      setFavLoading(true);
-
       const favList = JSON.parse(
         localStorage.getItem("user_favorites") || "[]",
       );
-      const existsIndex = favList.findIndex(
-        (item) => String(item.id) === String(id),
-      );
+      return favList.some((item) => String(item.id) === String(hotelId));
+    } catch {
+      return false;
+    }
+  };
 
-      let newFavList = [];
-      if (existsIndex >= 0) {
-        newFavList = favList.filter((item) => String(item.id) !== String(id));
-        setIsFavorite(false);
-        alert("Đã xóa khỏi danh sách yêu thích!");
+  // HÀM BẤM TRÁI TIM TỨC THÌ (OPTIMISTIC UPDATE 2 CHIỀU)
+  const handleToggleFavorite = async () => {
+    if (favLoading || !hotel) return;
+
+    const previousState = isFavorite; // Trạng thái hiện tại trước khi bấm
+    const nextState = !previousState; // Trạng thái mới (ngược lại)
+
+    // 1. ĐỔI MÀU TRÁI TIM NGAY LẬP TỨC TRÊN GIAO DIỆN (0.01 giây)
+    setIsFavorite(nextState);
+
+    try {
+      setFavLoading(true);
+
+      // 2. TỰ ĐỘNG GỌI API CHUẨN (POST NẾU THÊM, DELETE NẾU XÓA)
+      if (previousState) {
+        // Đang yêu thích -> Bấm vào để XÓA (DELETE)
+        await hotelService.removeFavorite(id);
       } else {
+        // Chưa yêu thích -> Bấm vào để THÊM (POST)
+        await hotelService.addFavorite(id);
+      }
+
+      // 3. ĐỒNG BỘ LOCALSTORAGE DỰ PHÒNG
+      const favList = JSON.parse(
+        localStorage.getItem("user_favorites") || "[]",
+      );
+      let newFavList = [];
+
+      if (nextState) {
         newFavList = [
-          ...favList,
+          ...favList.filter((item) => String(item.id) !== String(id)),
           {
             id: hotel.id,
             name: hotel.name,
@@ -72,17 +101,14 @@ const HotelDetailPage = () => {
             image: hotel.images?.[0]?.path || "https://via.placeholder.com/300",
           },
         ];
-        setIsFavorite(true);
-        alert("Đã thêm vào danh sách yêu thích!");
+      } else {
+        newFavList = favList.filter((item) => String(item.id) !== String(id));
       }
-
       localStorage.setItem("user_favorites", JSON.stringify(newFavList));
-
-      if (hotelService.toggleFavorite) {
-        await hotelService.toggleFavorite(id);
-      }
     } catch (err) {
-      console.warn("Đã lưu dữ liệu dự phòng.");
+      console.error("Lỗi cập nhật yêu thích:", err);
+      // 4. Nếu API Backend lỗi -> Trả màu trái tim về trạng thái cũ
+      setIsFavorite(previousState);
     } finally {
       setFavLoading(false);
     }
@@ -152,7 +178,7 @@ const HotelDetailPage = () => {
           <div className="flex flex-col items-end gap-2 shrink-0">
             <button
               onClick={handleBookNow}
-              className="bg-[#006ce4] hover:bg-blue-700 text-white px-8 py-3 rounded-md font-bold shadow-lg transition-all"
+              className="bg-[#006ce4] hover:bg-blue-700 text-white px-8 py-3 rounded-md font-bold shadow-lg transition-all cursor-pointer"
             >
               Đặt ngay
             </button>
@@ -164,18 +190,23 @@ const HotelDetailPage = () => {
 
         {/* 2. GALLERY GRID (5 Ảnh) + NÚT YÊU THÍCH ❤️ */}
         <div className="grid grid-cols-1 md:grid-cols-4 grid-rows-2 gap-2 h-[450px] overflow-hidden rounded-2xl mb-8 shadow-md relative">
-          {/* Nút Trái tim Yêu thích */}
+          {/* Nút Trái tim Yêu thích Đổi màu tức thì */}
           <button
             onClick={handleToggleFavorite}
             disabled={favLoading}
-            className={`absolute top-4 right-4 z-20 p-3 rounded-full shadow-lg transition-all duration-300 ${
+            className={`absolute top-4 right-4 z-20 p-3 rounded-full shadow-lg transition-all duration-300 cursor-pointer ${
               isFavorite
-                ? "bg-white text-rose-500 scale-110"
+                ? "bg-white text-rose-500 scale-110 shadow-rose-200"
                 : "bg-black/40 text-white hover:bg-white hover:text-rose-500"
             }`}
             title={isFavorite ? "Bỏ yêu thích" : "Lưu vào yêu thích"}
           >
-            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+            <svg
+              className={`w-6 h-6 transition-colors duration-200 ${
+                isFavorite ? "fill-rose-500" : "fill-current"
+              }`}
+              viewBox="0 0 24 24"
+            >
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
             </svg>
           </button>
@@ -217,13 +248,13 @@ const HotelDetailPage = () => {
           {[
             { id: "overview", label: "Tổng quan" },
             { id: "rooms", label: "Giá & Phòng trống" },
-            { id: "reviews", label: `Đánh giá (${hotel.review_count})` },
+            { id: "reviews", label: `Đánh giá (${hotel.review_count || 0})` },
             { id: "facilities", label: "Tiện nghi" },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`py-4 whitespace-nowrap font-bold text-sm transition-all ${
+              className={`py-4 whitespace-nowrap font-bold text-sm transition-all cursor-pointer ${
                 activeTab === tab.id
                   ? "text-blue-600 border-b-4 border-blue-600"
                   : "text-gray-500 hover:text-blue-600"
@@ -308,7 +339,7 @@ const HotelDetailPage = () => {
                                   `/booking?hotelId=${id}&roomId=${room.id}&checkIn=${checkIn}&checkOut=${checkOut}`,
                                 )
                               }
-                              className="mt-3 bg-blue-600 text-white px-6 py-2 rounded-md font-bold text-sm shadow-md hover:bg-blue-700 transition"
+                              className="mt-3 bg-blue-600 text-white px-6 py-2 rounded-md font-bold text-sm shadow-md hover:bg-blue-700 transition cursor-pointer"
                             >
                               Tôi sẽ đặt
                             </button>
@@ -371,7 +402,7 @@ const HotelDetailPage = () => {
               </div>
             )}
 
-            {/* TAB: TIỆN NGHI (BẢNG 11 & 12) */}
+            {/* TAB: TIỆN NGHI */}
             {activeTab === "facilities" && (
               <div className="space-y-6 animate-fadeIn">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">
@@ -411,11 +442,11 @@ const HotelDetailPage = () => {
                     Đánh giá
                   </h4>
                   <p className="text-xs text-gray-500">
-                    {hotel.review_count} lượt đánh giá thực tế
+                    {hotel.review_count || 0} lượt đánh giá thực tế
                   </p>
                 </div>
                 <div className="bg-[#003580] text-white w-12 h-12 rounded-t-xl rounded-br-xl flex items-center justify-center text-xl font-black shadow-lg">
-                  {hotel.average_rating}
+                  {hotel.average_rating || "N/A"}
                 </div>
               </div>
               <button
@@ -428,7 +459,7 @@ const HotelDetailPage = () => {
                     });
                   }, 100);
                 }}
-                className="w-full text-blue-600 font-bold text-sm border border-blue-600 py-2.5 rounded-lg hover:bg-blue-50 transition"
+                className="w-full text-blue-600 font-bold text-sm border border-blue-600 py-2.5 rounded-lg hover:bg-blue-50 transition cursor-pointer"
               >
                 Xem tất cả bình luận
               </button>
