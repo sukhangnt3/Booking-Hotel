@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom"; // Thêm useNavigate để điều hướng
+import { useNavigate } from "react-router-dom";
 import authService from "../../services/authService";
 import bookingService from "../../services/bookingService";
 import hotelService from "../../services/hotelService";
 import { LoadingSpinner } from "../../components/common";
 
 export default function UserProfilePage() {
-  const navigate = useNavigate(); // Hook chuyển trang
+  const navigate = useNavigate();
 
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState("profile");
@@ -75,6 +75,7 @@ export default function UserProfilePage() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  // CẬP NHẬT THÔNG TIN CÁ NHÂN (BAO GỒM EMAIL MỚI)
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -84,18 +85,26 @@ export default function UserProfilePage() {
         updatedUser = await authService.updateProfile(profileForm);
       }
       setUser(updatedUser);
-      localStorage.setItem("user", JSON.stringify({ ...user, ...profileForm }));
+
+      // Cập nhật lại LocalStorage với thông tin mới (bao gồm Email mới)
+      const existingUser = JSON.parse(localStorage.getItem("user") || "{}");
+      localStorage.setItem(
+        "user",
+        JSON.stringify({ ...existingUser, ...profileForm }),
+      );
+
       showToast("Cập nhật thông tin cá nhân thành công!");
     } catch (error) {
+      console.error("Lỗi cập nhật thông tin:", error);
       showToast("Cập nhật thất bại!", "error");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // HÀM XÓA YÊU THÍCH CHUẨN XÁC (GỌI HÀM removeFavorite DÙNG DELETE)
+  // HÀM XÓA YÊU THÍCH CHUẨN XÁC
   const handleRemoveFavorite = async (e, hotel) => {
-    e.stopPropagation(); // Ngăn chuyển trang khi bấm nút "Bỏ yêu thích"
+    e.stopPropagation();
 
     const targetHotelId = hotel.id || hotel.hotel_id;
     const favoriteRecordId = hotel.favorite_record_id || hotel.favorite_id;
@@ -108,10 +117,8 @@ export default function UserProfilePage() {
     try {
       setDeletingId(targetHotelId);
 
-      // 1. Gọi API removeFavorite (DELETE)
       await hotelService.removeFavorite(targetHotelId, favoriteRecordId);
 
-      // 2. Kéo lại danh sách mới nhất từ Database
       const updatedFavorites = await hotelService.getFavoriteHotels();
       setFavorites(updatedFavorites || []);
 
@@ -218,9 +225,11 @@ export default function UserProfilePage() {
                         })
                       }
                       required
-                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500"
+                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
                     />
                   </div>
+
+                  {/* Ô EMAIL ĐÃ ĐƯỢC MỞ KHÓA BẰNG CÁCH BỎ DISABLED */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
                       Email
@@ -228,10 +237,18 @@ export default function UserProfilePage() {
                     <input
                       type="email"
                       value={profileForm.email}
-                      disabled
-                      className="w-full px-4 py-2.5 rounded-xl border bg-slate-50 text-slate-500 text-sm outline-none"
+                      onChange={(e) =>
+                        setProfileForm({
+                          ...profileForm,
+                          email: e.target.value,
+                        })
+                      }
+                      required
+                      placeholder="Nhập email của bạn..."
+                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
                     />
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
                       Số điện thoại
@@ -245,10 +262,12 @@ export default function UserProfilePage() {
                           phone: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500"
+                      placeholder="Nhập số điện thoại..."
+                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
                     />
                   </div>
                 </div>
+
                 <div className="pt-4 border-t flex justify-end">
                   <button
                     type="submit"
@@ -297,7 +316,7 @@ export default function UserProfilePage() {
               </div>
             )}
 
-            {/* TAB YÊU THÍCH (BẤM VÀO CHUYỂN SANG TRANG CHI TIẾT) */}
+            {/* TAB YÊU THÍCH */}
             {activeTab === "favorites" && (
               <div>
                 <h2 className="text-xl font-bold text-slate-900 border-b pb-4 mb-6">
@@ -316,7 +335,7 @@ export default function UserProfilePage() {
                       return (
                         <div
                           key={hotelId}
-                          onClick={() => navigate(`/hotel/${hotelId}`)} // CHUYỂN TỚI TRANG CHI TIẾT
+                          onClick={() => navigate(`/hotel/${hotelId}`)}
                           className="border rounded-2xl overflow-hidden shadow-sm bg-white p-4 relative flex flex-col justify-between cursor-pointer hover:shadow-md hover:border-indigo-300 transition-all duration-200 group"
                         >
                           <div>
