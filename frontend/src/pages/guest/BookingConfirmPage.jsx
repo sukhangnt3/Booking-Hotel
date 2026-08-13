@@ -34,43 +34,70 @@ const BookingConfirmPage = () => {
 
   useEffect(() => {
     const initPage = async () => {
-      // 1. TỰ ĐỘNG QUÉT VÀ ĐIỀN THÔNG TIN NGƯỜI DÙNG NẾU ĐÃ ĐĂNG NHẬP
+      // 1. TỰ ĐỘNG QUÉT VÀ ĐIỀN THÔNG TIN NGƯỜI DÙNG TỪ ZUSTAND STORE & API
       try {
-        const savedUserStr =
-          localStorage.getItem("user") ||
-          localStorage.getItem("userInfo") ||
-          localStorage.getItem("currentUser") ||
-          localStorage.getItem("auth");
+        let user = null;
 
-        let user = savedUserStr ? JSON.parse(savedUserStr) : null;
-
-        // Xử lý bóc tách nếu object bị lồng nhiều cấp
-        if (user && user.data) user = user.data;
-        if (user && user.user) user = user.user;
-
-        if (!user && authService?.getCurrentUser) {
-          user = authService.getCurrentUser();
+        const authStorage = localStorage.getItem("auth-storage");
+        if (authStorage) {
+          try {
+            const parsed = JSON.parse(authStorage);
+            user = parsed.state?.user;
+          } catch (e) {}
         }
 
-        console.log("Dữ liệu User tìm thấy để tự điền:", user);
+        if (!user && authService?.getProfile) {
+          try {
+            const res = await authService.getProfile();
+            user = res?.user || res?.data?.user || res?.data || res;
+          } catch (err) {}
+        }
 
-        if (user) {
-          const fullName = user.full_name || user.fullName || user.name || "";
+        if (!user) {
+          const savedUserStr =
+            localStorage.getItem("user") ||
+            localStorage.getItem("userInfo") ||
+            localStorage.getItem("currentUser");
+          if (savedUserStr) {
+            try {
+              user = JSON.parse(savedUserStr);
+              if (user && user.data) user = user.data;
+              if (user && user.user) user = user.user;
+            } catch (e) {}
+          }
+        }
+
+        if (user && typeof user === "object") {
+          const fullName =
+            user.full_name ||
+            user.fullName ||
+            user.name ||
+            user.displayName ||
+            user.username ||
+            "";
+
           const nameParts = fullName.trim().split(" ");
-          const firstName = nameParts.length > 1 ? nameParts.pop() : fullName;
-          const lastName = nameParts.join(" ");
+          let firstName = "";
+          let lastName = "";
+
+          if (nameParts.length > 1) {
+            firstName = nameParts.pop();
+            lastName = nameParts.join(" ");
+          } else {
+            firstName = fullName;
+            lastName = "";
+          }
+
+          const extractedPhone =
+            user.phone || user.phoneNumber || user.phone_number || "";
+          const extractedEmail = user.email || "";
 
           setFormData((prev) => ({
             ...prev,
             firstName: firstName || user.firstName || prev.firstName || "",
             lastName: lastName || user.lastName || prev.lastName || "",
-            email: user.email || prev.email || "",
-            phone:
-              user.phone ||
-              user.phoneNumber ||
-              user.phone_number ||
-              prev.phone ||
-              "",
+            email: extractedEmail || prev.email || "",
+            phone: extractedPhone || prev.phone || "",
           }));
         }
       } catch (err) {
@@ -115,12 +142,18 @@ const BookingConfirmPage = () => {
     setTotalNights(diff > 0 ? diff : 1);
   };
 
+  // --- CÔNG THỨC TÍNH TOÁN TIỀN PHÒNG, GIẢM GIÁ & TỔNG CỘNG CHUẨN ---
+  const basePrice = room?.base_price || 0;
+  const subtotal = basePrice * totalNights * quantity; // Tổng tiền phòng
+  const discountAmount = subtotal * 0.1; // Giảm giá 10%
+  const priceAfterDiscount = subtotal - discountAmount;
+  const vatTaxAmount = priceAfterDiscount * 0.08; // Thuế VAT 8% tính trên số tiền sau giảm
+  const totalPrice = priceAfterDiscount + vatTaxAmount; // TỔNG TIỀN THANH TOÁN THỰC TẾ
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
 
-    const subtotal = (room?.base_price || 0) * totalNights * quantity;
-    const total = subtotal * 1.08;
     const payload = {
       hotel_id: hotelId,
       checkin_date: checkIn,
@@ -131,7 +164,7 @@ const BookingConfirmPage = () => {
       guest_phone: formData.phone,
       special_require: formData.specialRequest,
       subtotal: subtotal,
-      total_price: total,
+      total_price: totalPrice, // Gửi Tổng tiền chuẩn sang Backend
       status: "pending",
     };
 
@@ -139,7 +172,7 @@ const BookingConfirmPage = () => {
       const result = await bookingService.createBooking(payload);
       const code = result?.booking_code || result?.code || result?.id;
       if (code) {
-        navigate(`/checkout?code=${code}&amount=${total}`);
+        navigate(`/checkout?code=${code}&amount=${totalPrice}`);
       } else {
         alert("Đặt phòng thành công nhưng Server không trả về Mã Đơn Hàng!");
         setSubmitting(false);
@@ -156,18 +189,18 @@ const BookingConfirmPage = () => {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 bg-[#f5f5f5] min-h-screen">
+    <div className="max-w-6xl mx-auto p-6 bg-[#f5f5f5] min-h-screen font-sans">
       <form
         onSubmit={handleSubmit}
         className="grid grid-cols-1 lg:grid-cols-3 gap-6"
       >
-        {/* CỘT TRÁI: FORM ĐIỀN THÔNG TIN (ĐÃ TỰ ĐỘNG ĐIỀN) */}
+        {/* CỘT TRÁI: FORM ĐIỀN THÔNG TIN */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white p-6 rounded-2xl border shadow-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">Thông tin khách hàng</h2>
               {formData.email && (
-                <span className="text-xs bg-blue-50 text-blue-600 font-bold px-2.5 py-1 rounded-full border border-blue-200">
+                <span className="text-xs bg-emerald-50 text-emerald-600 font-bold px-3 py-1 rounded-full border border-emerald-200">
                   ✓ Đã tự động điền từ tài khoản
                 </span>
               )}
@@ -179,7 +212,7 @@ const BookingConfirmPage = () => {
                   Họ *
                 </label>
                 <input
-                  className="border p-3 rounded-lg w-full text-sm font-semibold"
+                  className="border p-3 rounded-lg w-full text-sm font-semibold outline-none focus:border-blue-600"
                   placeholder="Họ"
                   value={formData.lastName}
                   required
@@ -193,7 +226,7 @@ const BookingConfirmPage = () => {
                   Tên *
                 </label>
                 <input
-                  className="border p-3 rounded-lg w-full text-sm font-semibold"
+                  className="border p-3 rounded-lg w-full text-sm font-semibold outline-none focus:border-blue-600"
                   placeholder="Tên"
                   value={formData.firstName}
                   required
@@ -209,7 +242,7 @@ const BookingConfirmPage = () => {
                 Email *
               </label>
               <input
-                className="w-full border p-3 rounded-lg text-sm font-semibold"
+                className="w-full border p-3 rounded-lg text-sm font-semibold outline-none focus:border-blue-600"
                 type="email"
                 placeholder="Email"
                 value={formData.email}
@@ -225,7 +258,7 @@ const BookingConfirmPage = () => {
                 Số điện thoại *
               </label>
               <input
-                className="w-full border p-3 rounded-lg text-sm font-semibold"
+                className="w-full border p-3 rounded-lg text-sm font-semibold outline-none focus:border-blue-600"
                 type="tel"
                 placeholder="Số điện thoại"
                 value={formData.phone}
@@ -238,7 +271,7 @@ const BookingConfirmPage = () => {
 
             <h3 className="font-bold mt-6 mb-2 text-sm">Yêu cầu đặc biệt</h3>
             <textarea
-              className="w-full border p-3 rounded-lg text-sm"
+              className="w-full border p-3 rounded-lg text-sm outline-none focus:border-blue-600"
               rows="3"
               placeholder="Ví dụ: Giường đôi, nhận phòng muộn..."
               value={formData.specialRequest}
@@ -290,7 +323,7 @@ const BookingConfirmPage = () => {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="px-2.5 py-0.5 border rounded font-bold hover:bg-gray-100"
+                  className="px-2.5 py-0.5 border rounded font-bold hover:bg-gray-100 cursor-pointer"
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                 >
                   -
@@ -298,7 +331,7 @@ const BookingConfirmPage = () => {
                 <span className="font-bold text-sm">{quantity}</span>
                 <button
                   type="button"
-                  className="px-2.5 py-0.5 border rounded font-bold hover:bg-gray-100"
+                  className="px-2.5 py-0.5 border rounded font-bold hover:bg-gray-100 cursor-pointer"
                   onClick={() =>
                     setQuantity((q) => Math.min(room?.amount || 5, q + 1))
                   }
@@ -309,6 +342,7 @@ const BookingConfirmPage = () => {
             </div>
           </div>
 
+          {/* DỮ LIỆU THỜI GIAN LƯU TRÚ */}
           <div className="bg-white p-5 rounded-2xl border shadow-sm">
             <h4 className="font-bold text-sm text-[#003b95] mb-3">
               Thời gian lưu trú
@@ -325,7 +359,7 @@ const BookingConfirmPage = () => {
                     setCheckIn(e.target.value);
                     calculateNights(e.target.value, checkOut);
                   }}
-                  className="w-full font-bold text-xs outline-none border p-2 rounded-lg"
+                  className="w-full font-bold text-xs outline-none border p-2 rounded-lg cursor-pointer"
                 />
               </div>
               <div>
@@ -339,7 +373,7 @@ const BookingConfirmPage = () => {
                     setCheckOut(e.target.value);
                     calculateNights(checkIn, e.target.value);
                   }}
-                  className="w-full font-bold text-xs outline-none border p-2 rounded-lg"
+                  className="w-full font-bold text-xs outline-none border p-2 rounded-lg cursor-pointer"
                 />
               </div>
             </div>
@@ -348,48 +382,44 @@ const BookingConfirmPage = () => {
             </p>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border shadow-sm">
-            <h4 className="font-bold mb-4 text-sm">Giá Chi Tiết</h4>
-            <div className="flex justify-between text-xs mb-2">
+          {/* GIÁ CHI TIẾT TÍNH TOÁN MINH BẠCH */}
+          <div className="bg-white p-5 rounded-2xl border shadow-sm space-y-2.5">
+            <h4 className="font-bold text-sm border-b pb-2">Giá Chi Tiết</h4>
+
+            {/* Tiền phòng gốc */}
+            <div className="flex justify-between text-xs text-gray-600">
               <span>
                 {quantity} phòng × {totalNights} đêm
               </span>
-              <span className="font-bold">
-                {(
-                  (room?.base_price || 0) *
-                  totalNights *
-                  quantity
-                ).toLocaleString()}
-                đ
+              <span className="font-semibold text-gray-900">
+                {subtotal.toLocaleString("vi-VN")}đ
               </span>
             </div>
-            <div className="border-l-2 border-gray-200 pl-3 ml-1 mb-4 text-xs text-teal-600 font-bold">
-              Giảm giá đặc biệt: -
-              {(
-                (room?.base_price || 0) *
-                quantity *
-                totalNights *
-                0.1
-              ).toLocaleString()}
-              đ
+
+            {/* Giảm giá 10% */}
+            <div className="flex justify-between text-xs text-teal-600 font-bold bg-teal-50 p-2 rounded-lg">
+              <span>Giảm giá đặc biệt (10%):</span>
+              <span>- {discountAmount.toLocaleString("vi-VN")}đ</span>
             </div>
-            <div className="flex justify-between font-black text-xl pt-3 border-t">
-              <span>Tổng</span>
-              <span>
-                {(
-                  (room?.base_price || 0) *
-                  totalNights *
-                  quantity *
-                  1.08
-                ).toLocaleString()}
-                đ
+
+            {/* Thuế 8% VAT */}
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>Thuế & Phí dịch vụ (8% VAT):</span>
+              <span>+ {vatTaxAmount.toLocaleString("vi-VN")}đ</span>
+            </div>
+
+            {/* Tổng cộng */}
+            <div className="flex justify-between items-center font-black text-xl pt-3 border-t text-gray-900">
+              <span>Tổng thanh toán</span>
+              <span className="text-blue-600">
+                {totalPrice.toLocaleString("vi-VN")}đ
               </span>
             </div>
 
             <button
               type="submit"
               disabled={submitting}
-              className={`w-full font-bold py-4 rounded-xl mt-6 transition shadow-md ${
+              className={`w-full font-bold py-4 rounded-xl mt-4 transition shadow-md cursor-pointer ${
                 submitting
                   ? "bg-gray-400 cursor-not-allowed text-white"
                   : "bg-blue-600 hover:bg-blue-700 text-white"
