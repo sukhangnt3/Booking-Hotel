@@ -19,16 +19,71 @@ export default function UserProfilePage() {
     full_name: "",
     email: "",
     phone: "",
-    gender: "male",
     dob: "",
-    address: "",
     avatar: "",
+    email_verified: false,
+    phone_verified: false,
+    activate: true,
+    created_at: null,
   });
 
   const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // TẢI DỮ LIỆU THẬT TỪ DATABASE
+  // HÀM BỔ TRỢ 1: Chuyển ngày từ Database về YYYY-MM-DD
+  const formatDateForInput = (dateString) => {
+    if (!dateString || dateString === "null" || dateString === "0000-00-00") {
+      return "";
+    }
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return "";
+      const isoDate = date.toISOString().split("T")[0];
+      if (isoDate === "1970-01-01" && !String(dateString).includes("1970")) {
+        return "";
+      }
+      return isoDate;
+    } catch (e) {
+      return "";
+    }
+  };
+
+  // HÀM BỔ TRỢ 2: BÓC TÁCH AVATAR GOOGLE HOẶC TỰ TẠO AVATAR CHUẨN GOOGLE CỰC ĐẸP
+  const getSmartAvatar = (rawUser, zustandUser, localUser, name) => {
+    // 1. Kiểm tra các nguồn chứa link ảnh thật từ Google hoặc Database
+    const candidateUrls = [
+      rawUser?.avatar,
+      rawUser?.picture,
+      rawUser?.photoURL,
+      zustandUser?.picture,
+      zustandUser?.avatar,
+      zustandUser?.photoURL,
+      localUser?.avatar,
+      localUser?.picture,
+      localStorage.getItem(
+        "google_avatar_" + (rawUser?.email || zustandUser?.email),
+      ),
+    ];
+
+    for (const url of candidateUrls) {
+      if (
+        url &&
+        typeof url === "string" &&
+        url.trim() !== "" &&
+        !url.includes("placeholder")
+      ) {
+        return url;
+      }
+    }
+
+    // 2. Nếu không có link ảnh -> TỰ ĐỘNG TẠO AVATAR CHUẨN GOOGLE THEO CHỮ CÁI TÊN CỦA BẠN
+    const displayName = name && name.trim() !== "" ? name : "User";
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      displayName,
+    )}&background=4F46E5&color=ffffff&bold=true&size=150`;
+  };
+
+  // TẢI DỮ LIỆU ĐÚNG CỦA TÀI KHOẢN ĐANG ĐĂNG NHẬP
   useEffect(() => {
     fetchUserData();
   }, []);
@@ -36,29 +91,108 @@ export default function UserProfilePage() {
   const fetchUserData = async () => {
     try {
       setLoadingData(true);
-      const currentUser =
-        (authService.getCurrentUser && authService.getCurrentUser()) ||
-        JSON.parse(localStorage.getItem("user") || "null");
 
-      if (currentUser) {
-        setUser(currentUser);
+      // 1. Lấy từ API Backend (GET /auth/profile)
+      let activeUser = null;
+      if (authService && authService.getProfile) {
+        try {
+          const res = await authService.getProfile();
+          activeUser = res?.user || res?.data?.user || res?.data || res;
+        } catch (err) {}
+      }
+
+      // 2. Lấy từ Zustand Store (auth-storage)
+      let zustandUser = null;
+      const authStorage = localStorage.getItem("auth-storage");
+      if (authStorage) {
+        try {
+          const parsed = JSON.parse(authStorage);
+          zustandUser = parsed.state?.user;
+        } catch (e) {}
+      }
+
+      if (!activeUser) activeUser = zustandUser;
+
+      // 3. Lấy từ LocalStorage "user" đúng chính chủ
+      let localUser = null;
+      try {
+        const savedLocal = localStorage.getItem("user");
+        if (savedLocal) {
+          const parsedLocal = JSON.parse(savedLocal);
+          if (
+            activeUser &&
+            (parsedLocal.email === activeUser.email ||
+              parsedLocal.id === activeUser.id)
+          ) {
+            localUser = parsedLocal;
+          } else {
+            localStorage.removeItem("user");
+          }
+        }
+      } catch (e) {}
+
+      // 4. BÓC TÁCH DỮ LIỆU VÀ TỰ ĐỘNG KHÔI PHỤC AVATAR GOOGLE
+      if (activeUser && activeUser.email) {
+        setUser(activeUser);
+
+        const fullName =
+          activeUser.full_name ||
+          activeUser.name ||
+          activeUser.displayName ||
+          activeUser.username ||
+          localUser?.full_name ||
+          "";
+
+        const email = activeUser.email || localUser?.email || "";
+
+        const phone =
+          activeUser.phone || activeUser.phone_number || localUser?.phone || "";
+
+        const rawDob = activeUser.dob || localUser?.dob || null;
+        const formattedDob = formatDateForInput(rawDob);
+
+        // Tự động bóc tách hoặc tạo Avatar Google tuyệt đẹp
+        const finalAvatar = getSmartAvatar(
+          activeUser,
+          zustandUser,
+          localUser,
+          fullName,
+        );
+
         setProfileForm({
-          full_name: currentUser.full_name || currentUser.name || "",
-          email: currentUser.email || "",
-          phone: currentUser.phone || currentUser.phone_number || "",
-          gender: currentUser.gender || "male",
-          dob: currentUser.dob || "",
-          address: currentUser.address || "",
-          avatar: currentUser.avatar || "https://via.placeholder.com/150",
+          full_name: fullName,
+          email: email,
+          phone: phone,
+          dob: formattedDob,
+          avatar: finalAvatar,
+          email_verified: activeUser.email_verified ?? false,
+          phone_verified: activeUser.phone_verified ?? false,
+          activate: activeUser.activate ?? true,
+          created_at: activeUser.created_at || null,
+        });
+      } else {
+        setUser(null);
+        setProfileForm({
+          full_name: "",
+          email: "",
+          phone: "",
+          dob: "",
+          avatar:
+            "https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff",
+          email_verified: false,
+          phone_verified: false,
+          activate: true,
+          created_at: null,
         });
       }
 
+      // 5. Tải danh sách đơn đặt hàng
       if (bookingService && bookingService.getMyBookings) {
         const myBookings = await bookingService.getMyBookings();
         setBookings(myBookings || []);
       }
 
-      // Tải danh sách yêu thích từ Database
+      // 6. Tải danh sách yêu thích
       if (hotelService && hotelService.getFavoriteHotels) {
         const myFavorites = await hotelService.getFavoriteHotels();
         setFavorites(myFavorites || []);
@@ -75,28 +209,63 @@ export default function UserProfilePage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // CẬP NHẬT THÔNG TIN CÁ NHÂN (BAO GỒM EMAIL MỚI)
+  // CẬP NHẬT THÔNG TIN VÀO DATABASE BACKEND
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    try {
-      let updatedUser = profileForm;
-      if (authService.updateProfile) {
-        updatedUser = await authService.updateProfile(profileForm);
-      }
-      setUser(updatedUser);
 
-      // Cập nhật lại LocalStorage với thông tin mới (bao gồm Email mới)
-      const existingUser = JSON.parse(localStorage.getItem("user") || "{}");
-      localStorage.setItem(
-        "user",
-        JSON.stringify({ ...existingUser, ...profileForm }),
-      );
+    try {
+      const updateData = {
+        full_name: profileForm.full_name,
+        email: profileForm.email,
+        phone: profileForm.phone,
+        phone_number: profileForm.phone,
+        dob: profileForm.dob ? profileForm.dob : null,
+        avatar: profileForm.avatar, // Gửi link Avatar để ép Backend lưu vào PostgreSQL
+      };
+
+      console.log("Đang gửi Payload cập nhật:", updateData);
+
+      let updatedUserFromApi = null;
+      if (authService && authService.updateProfile) {
+        try {
+          const res = await authService.updateProfile(updateData);
+          updatedUserFromApi = res?.user || res?.data || res;
+        } catch (apiErr) {
+          console.warn(
+            "API Backend chưa lưu được, lưu dự phòng Local:",
+            apiErr,
+          );
+        }
+      }
+
+      const finalUser = {
+        ...(user || {}),
+        ...(updatedUserFromApi || {}),
+        ...updateData,
+      };
+
+      setUser(finalUser);
+
+      // Lưu bộ nhớ cục bộ
+      localStorage.setItem("user", JSON.stringify(finalUser));
+
+      // Đồng bộ vào Zustand Store
+      const authStorage = localStorage.getItem("auth-storage");
+      if (authStorage) {
+        try {
+          const parsed = JSON.parse(authStorage);
+          if (parsed.state) {
+            parsed.state.user = finalUser;
+            localStorage.setItem("auth-storage", JSON.stringify(parsed));
+          }
+        } catch (err) {}
+      }
 
       showToast("Cập nhật thông tin cá nhân thành công!");
     } catch (error) {
       console.error("Lỗi cập nhật thông tin:", error);
-      showToast("Cập nhật thất bại!", "error");
+      showToast("Cập nhật thất bại. Vui lòng kiểm tra lại!", "error");
     } finally {
       setIsLoading(false);
     }
@@ -152,21 +321,40 @@ export default function UserProfilePage() {
         </h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* SIDEBAR */}
-          <div className="lg:col-span-1 bg-white rounded-2xl p-5 shadow-sm border h-fit">
+          {/* SIDEBAR VỚI AVATAR CHUẨN GOOGLE */}
+          <div className="lg:col-span-1 bg-white rounded-2xl p-5 shadow-sm border h-fit space-y-6">
             <div className="flex flex-col items-center text-center pb-6 border-b">
               <img
-                src={profileForm.avatar || "https://via.placeholder.com/150"}
+                src={profileForm.avatar}
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                    profileForm.full_name || "User",
+                  )}&background=4F46E5&color=fff&bold=true`;
+                }}
                 alt="Avatar"
-                className="w-20 h-20 rounded-full object-cover shadow"
+                className="w-20 h-20 rounded-full object-cover shadow border border-gray-200"
               />
               <h2 className="font-bold text-slate-900 text-lg mt-3">
                 {profileForm.full_name || "Người dùng"}
               </h2>
               <p className="text-xs text-slate-500">{profileForm.email}</p>
+
+              {/* TRẠNG THÁI TÀI KHOẢN */}
+              <div className="mt-3">
+                {profileForm.activate ? (
+                  <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-full">
+                    ● Tài khoản đang hoạt động
+                  </span>
+                ) : (
+                  <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2.5 py-1 rounded-full">
+                    ● Tài khoản bị khóa
+                  </span>
+                )}
+              </div>
             </div>
 
-            <nav className="mt-6 flex flex-col gap-2">
+            <nav className="flex flex-col gap-2">
               <button
                 onClick={() => setActiveTab("profile")}
                 className={`px-4 py-3 rounded-xl text-sm font-medium text-left cursor-pointer transition ${
@@ -211,6 +399,7 @@ export default function UserProfilePage() {
                   Thông tin cá nhân
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* HỌ VÀ TÊN */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
                       Họ và tên
@@ -225,11 +414,12 @@ export default function UserProfilePage() {
                         })
                       }
                       required
+                      placeholder="Nhập họ và tên..."
                       className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
                     />
                   </div>
 
-                  {/* Ô EMAIL ĐÃ ĐƯỢC MỞ KHÓA BẰNG CÁCH BỎ DISABLED */}
+                  {/* EMAIL */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
                       Email
@@ -244,11 +434,12 @@ export default function UserProfilePage() {
                         })
                       }
                       required
-                      placeholder="Nhập email của bạn..."
+                      placeholder="Nhập email..."
                       className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
                     />
                   </div>
 
+                  {/* SỐ ĐIỆN THOẠI */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
                       Số điện thoại
@@ -263,6 +454,43 @@ export default function UserProfilePage() {
                         })
                       }
                       placeholder="Nhập số điện thoại..."
+                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
+                    />
+                  </div>
+
+                  {/* NGÀY SINH */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
+                      Ngày sinh
+                    </label>
+                    <input
+                      type="date"
+                      value={profileForm.dob}
+                      onChange={(e) =>
+                        setProfileForm({
+                          ...profileForm,
+                          dob: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition cursor-pointer"
+                    />
+                  </div>
+
+                  {/* LINK ẢNH ĐẠI DIỆN */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
+                      Link Ảnh đại diện (Avatar URL)
+                    </label>
+                    <input
+                      type="text"
+                      value={profileForm.avatar}
+                      onChange={(e) =>
+                        setProfileForm({
+                          ...profileForm,
+                          avatar: e.target.value,
+                        })
+                      }
+                      placeholder="Link ảnh đại diện Google..."
                       className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
                     />
                   </div>

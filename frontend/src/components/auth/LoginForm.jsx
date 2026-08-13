@@ -15,7 +15,6 @@ const LoginForm = () => {
 
   // --- XỬ LÝ ĐIỀU HƯỚNG THEO QUYỀN (ROLE) TỐI ƯU ---
   const redirectByUserRole = (user) => {
-    // 1. Lấy role linh hoạt (Hỗ trợ String, Object, Mảng)
     const rawRole =
       user?.role ||
       user?.role_name ||
@@ -24,7 +23,6 @@ const LoginForm = () => {
 
     console.log("[LoginForm] Đã đăng nhập với Role:", role, "User Data:", user);
 
-    // 2. Chuyển hướng chuẩn xác dùng window.location.href để đảm bảo lưu Token
     if (role === "admin" || role === "role_admin") {
       window.location.href = "/admin/dashboard";
     } else if (role === "owner" || role === "hotel_owner") {
@@ -34,11 +32,32 @@ const LoginForm = () => {
     }
   };
 
-  // --- XỬ LÝ ĐĂNG NHẬP GOOGLE ---
+  // --- XỬ LÝ ĐĂNG NHẬP GOOGLE VÀ LẤY ẢNH ĐẠI DIỆN THẬT ---
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
       try {
+        // 1. LẤY THÔNG TIN ẢNH THẬT TỪ GOOGLE USERINFO API
+        let googlePicture = null;
+        let googleName = null;
+        try {
+          const googleUserRes = await fetch(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            {
+              headers: {
+                Authorization: `Bearer ${tokenResponse.access_token}`,
+              },
+            },
+          );
+          const googleUserInfo = await googleUserRes.json();
+          console.log("📸 Thông tin Google thật thu được:", googleUserInfo);
+          googlePicture = googleUserInfo.picture;
+          googleName = googleUserInfo.name;
+        } catch (err) {
+          console.warn("Lỗi lấy Google UserInfo:", err);
+        }
+
+        // 2. Gọi API Đăng nhập Backend
         const response = await authService.googleLogin(
           tokenResponse.access_token,
         );
@@ -53,13 +72,30 @@ const LoginForm = () => {
           return;
         }
 
-        // Lưu vào Zustand Store
-        loginStore(user, systemToken);
+        // 3. ĐÍNH KÈM LẠI ẢNH THẬT GOOGLE VÀO USER OBJECT
+        const finalUser = {
+          ...user,
+          full_name: user.full_name || user.name || googleName,
+          avatar: user.avatar || googlePicture, // Gán ảnh Google thật
+          picture: googlePicture || user.picture,
+        };
 
-        alert(`Chào mừng ${user.name || user.email} quay trở lại!`);
+        // 4. Lưu vào Zustand Store
+        loginStore(finalUser, systemToken);
+
+        // 5. TỰ ĐỘNG ĐẨY LINK ẢNH GOOGLE THẬT NÀY LƯU VĨNH VIỄN VÀO POSTGRESQL
+        if (googlePicture && authService.updateProfile) {
+          try {
+            await authService.updateProfile({ avatar: googlePicture });
+          } catch (e) {}
+        }
+
+        alert(
+          `Chào mừng ${finalUser.full_name || finalUser.email} quay trở lại!`,
+        );
 
         // Kiểm tra Role và điều hướng
-        redirectByUserRole(user);
+        redirectByUserRole(finalUser);
       } catch (error) {
         console.error("Lỗi đăng nhập Google:", error);
         alert(error.message || "Xác thực với hệ thống thất bại");
@@ -83,7 +119,6 @@ const LoginForm = () => {
     try {
       const response = await authService.login(email, password);
 
-      // Bóc tách user & token linh hoạt từ phản hồi từ Backend
       const user = response?.user || response?.data?.user || response?.data;
       const systemToken =
         response?.systemToken || response?.token || response?.data?.token;
@@ -135,7 +170,7 @@ const LoginForm = () => {
 
           <button
             type="submit"
-            className="w-full bg-[#006ce4] hover:bg-[#0057b8] text-white font-semibold py-3 rounded-md text-sm transition"
+            className="w-full bg-[#006ce4] hover:bg-[#0057b8] text-white font-semibold py-3 rounded-md text-sm transition cursor-pointer"
           >
             Tiếp tục với email
           </button>
@@ -152,7 +187,7 @@ const LoginForm = () => {
               <button
                 type="button"
                 onClick={() => setStep("EMAIL")}
-                className="text-xs text-blue-600 hover:underline font-semibold"
+                className="text-xs text-blue-600 hover:underline font-semibold cursor-pointer"
               >
                 Thay đổi
               </button>
@@ -176,7 +211,7 @@ const LoginForm = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#006ce4] hover:bg-[#0057b8] text-white font-semibold py-3 rounded-md text-sm transition disabled:bg-gray-400"
+            className="w-full bg-[#006ce4] hover:bg-[#0057b8] text-white font-semibold py-3 rounded-md text-sm transition disabled:bg-gray-400 cursor-pointer"
           >
             {loading ? "Đang xử lý..." : "Đăng nhập"}
           </button>
@@ -199,7 +234,7 @@ const LoginForm = () => {
           type="button"
           onClick={() => handleGoogleLogin()}
           disabled={loading}
-          className="w-full h-12 border border-gray-300 rounded-md flex items-center justify-center hover:bg-gray-50 transition gap-3 shadow-sm active:scale-[0.98]"
+          className="w-full h-12 border border-gray-300 rounded-md flex items-center justify-center hover:bg-gray-50 transition gap-3 shadow-sm active:scale-[0.98] cursor-pointer"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
