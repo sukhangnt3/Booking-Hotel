@@ -10,6 +10,7 @@ const promotionRoutes = require("./promotion.routes");
 const reviewRoutes = require("./review.routes");
 const roomRoutes = require("./room.routes");
 const usersRoutes = require("./users.routes");
+const adminRoutes = require("../admin/admin.routes");
 
 const router = express.Router();
 
@@ -24,5 +25,7 @@ router.use("/promotions", promotionRoutes);
 router.use("/reviews", reviewRoutes);
 router.use("/rooms", roomRoutes);
 router.use("/users", usersRoutes);
+// ─── ADMIN - Yêu cầu role 'admin' (bảo vệ trong admin.routes.js) ───
+router.use("/admin", adminRoutes);
 
 module.exports = router;

@@ -8,6 +8,7 @@ function createToken(user) {
   const payload = Buffer.from(JSON.stringify({
     sub: user.id,
     email: user.email,
+    roles: user.roles || [],
     exp: Date.now() + 24 * 60 * 60 * 1000,
   })).toString("base64url");
 

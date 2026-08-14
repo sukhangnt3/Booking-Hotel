@@ -35,8 +35,36 @@ function optionalAuth(req, res, next) {
   return next();
 }
 
+// ─── PHÂN QUYỀN: requireRole('admin') hoặc requireRole('admin', 'owner') ───
+// Kiểm tra user có ít nhất 1 trong các role được phép.
+// Phải gọi SAU requireAuth (vì cần req.auth).
+// QUAN TRỌNG: Nếu không có quyền → trả 404 (giấu endpoint, như thể không tồn tại)
+// thay vì 403 (lộ thông tin endpoint admin tồn tại).
+function requireRole(...allowedRoles) {
+  return (req, res, next) => {
+    const userRoles = req.auth?.roles || [];
+
+    // Chuẩn hóa: chuyển tất cả về chữ thường
+    const normalizedAllowed = allowedRoles.map((r) => String(r).toLowerCase());
+    const hasRole = userRoles.some((r) => {
+      const roleStr = String(r?.name || r || "").toLowerCase();
+      return normalizedAllowed.includes(roleStr);
+    });
+
+    if (!hasRole) {
+      // Trả 404 giống như endpoint không tồn tại → ẩn hoàn toàn khỏi non-admin
+      return res.status(404).json({
+        message: "Không tìm thấy tài nguyên.",
+      });
+    }
+
+    return next();
+  };
+}
+
 module.exports = {
   getBearerToken,
   requireAuth,
   optionalAuth,
+  requireRole,
 };
