@@ -1,75 +1,7 @@
-<<<<<<< HEAD
-import React, { useState } from "react";
-
-const UserManagementPage = () => {
-  const [users, setUsers] = useState([
-    { id: 1, name: "Nguyễn Văn A", email: "vana@gmail.com", role: "CUSTOMER", status: "active" },
-    { id: 2, name: "Trần Thị B", email: "thib@gmail.com", role: "HOST", status: "active" },
-    { id: 3, name: "Lê Hoàng C", email: "hoangc@gmail.com", role: "CUSTOMER", status: "banned" },
-  ]);
-
-  const toggleStatus = (id) => {
-    setUsers(users.map((u) => (u.id === id ? { ...u, status: u.status === "active" ? "banned" : "active" } : u)));
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-        <h2 className="text-2xl font-black text-slate-900">Quản Lý Người Dùng</h2>
-        <p className="text-xs text-slate-500 mt-1">Quản lý danh sách tài khoản, phân quyền và khóa/mở tài khoản.</p>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50 border-b uppercase text-[10px] font-bold text-slate-500">
-            <tr>
-              <th className="p-4">Họ và Tên</th>
-              <th className="p-4">Email</th>
-              <th className="p-4">Vai trò</th>
-              <th className="p-4">Trạng thái</th>
-              <th className="p-4 text-center">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-semibold">
-            {users.map((u) => (
-              <tr key={u.id} className="hover:bg-slate-50">
-                <td className="p-4 font-bold text-slate-900">{u.name}</td>
-                <td className="p-4 text-slate-500">{u.email}</td>
-                <td className="p-4">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                    u.role === 'HOST' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {u.role}
-                  </span>
-                </td>
-                <td className="p-4">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                  }`}>
-                    {u.status === 'active' ? 'Hoạt động' : 'Đã khóa'}
-                  </span>
-                </td>
-                <td className="p-4 text-center">
-                  <button
-                    onClick={() => toggleStatus(u.id)}
-                    className={`px-3 py-1 rounded-lg text-[11px] font-bold ${
-                      u.status === 'active'
-                        ? 'bg-rose-50 text-rose-600 hover:bg-rose-100'
-                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                    }`}
-                  >
-                    {u.status === 'active' ? '🔒 Khóa TK' : '🔓 Mở khóa'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-=======
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 
-// ⚠️ Điều chỉnh PORT Backend tại đây nếu khác 5000
+// Backend
 const API_BASE_URL = "http://localhost:5000";
 
 const UserManagementPage = () => {
@@ -79,28 +11,36 @@ const UserManagementPage = () => {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentAdminId, setCurrentAdminId] = useState(null);
 
-  // 1. TỰ ĐỘNG BẮT ID CỦA ADMIN ĐANG ĐĂNG NHẬP
+  // =========================================================
+  // LẤY ID ADMIN ĐANG ĐĂNG NHẬP
+  // =========================================================
   useEffect(() => {
     try {
       const authStorage = localStorage.getItem("auth-storage");
+
       if (authStorage) {
         const parsed = JSON.parse(authStorage);
         setCurrentAdminId(parsed?.state?.user?.id || null);
       }
-    } catch (e) {
-      console.error("Lỗi lấy thông tin Admin đăng nhập:", e);
+    } catch (error) {
+      console.error("Lỗi lấy thông tin Admin đăng nhập:", error);
     }
   }, []);
 
-  // 2. TỐI ƯU SEARCH DEBOUNCE (Chờ gõ xong 300ms mới tìm kiếm)
+  // =========================================================
+  // SEARCH DEBOUNCE
+  // =========================================================
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
     }, 300);
+
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Lấy Authorization Header từ Zustand auth-storage
+  // =========================================================
+  // LẤY TOKEN
+  // =========================================================
   const getAuthHeaders = () => {
     let token =
       localStorage.getItem("token") || localStorage.getItem("accessToken");
@@ -108,12 +48,13 @@ const UserManagementPage = () => {
     if (!token) {
       try {
         const authStorage = localStorage.getItem("auth-storage");
+
         if (authStorage) {
           const parsed = JSON.parse(authStorage);
           token = parsed?.state?.token;
         }
-      } catch (e) {
-        console.error("Lỗi đọc token từ auth-storage:", e);
+      } catch (error) {
+        console.error("Lỗi đọc token từ auth-storage:", error);
       }
     }
 
@@ -126,25 +67,35 @@ const UserManagementPage = () => {
     };
   };
 
-  // 3. TẢI DANH SÁCH USER
+  // =========================================================
+  // LẤY DANH SÁCH USER
+  // =========================================================
   const fetchUsers = useCallback(async () => {
     setLoading(true);
+
     try {
       const response = await axios.get(`${API_BASE_URL}/api/admin/users`, {
-        params: { search: debouncedSearch.trim() },
+        params: {
+          search: debouncedSearch.trim(),
+        },
         ...getAuthHeaders(),
       });
 
-      let extractedUsers = [];
       const data = response.data;
 
-      if (Array.isArray(data)) extractedUsers = data;
-      else if (Array.isArray(data?.data)) extractedUsers = data.data;
-      else if (Array.isArray(data?.users)) extractedUsers = data.users;
+      let extractedUsers = [];
+
+      if (Array.isArray(data)) {
+        extractedUsers = data;
+      } else if (Array.isArray(data?.data)) {
+        extractedUsers = data.data;
+      } else if (Array.isArray(data?.users)) {
+        extractedUsers = data.users;
+      }
 
       setUsers(extractedUsers);
     } catch (error) {
-      console.error("❌ [LỖI FETCH USERS]:", error);
+      console.error("❌ Lỗi fetch users:", error);
       setUsers([]);
     } finally {
       setLoading(false);
@@ -155,21 +106,28 @@ const UserManagementPage = () => {
     fetchUsers();
   }, [fetchUsers]);
 
-  // 4. HÀM TÍNH ROLE ƯU TIÊN CAO NHẤT (ADMIN > OWNER > CUSTOMER > GUEST)
+  // =========================================================
+  // LẤY ROLE ƯU TIÊN
+  // ADMIN > OWNER > CUSTOMER > GUEST
+  // =========================================================
   const getPrimaryRole = (rolesList, singleRole) => {
     const roles = Array.isArray(rolesList)
-      ? rolesList.map((r) => String(r).toLowerCase())
+      ? rolesList.map((role) => String(role).toLowerCase())
       : [String(singleRole || "").toLowerCase()];
 
     if (roles.includes("admin")) return "admin";
     if (roles.includes("owner")) return "owner";
     if (roles.includes("customer")) return "customer";
     if (roles.includes("guest")) return "guest";
+
     return roles[0] || "customer";
   };
 
-  // 5. ĐỔI VAI TRÒ (CÓ CẢNH BÁO XÁC NHẬN)
+  // =========================================================
+  // ĐỔI ROLE
+  // =========================================================
   const handleRoleChange = async (userId, newRole, userName) => {
+    // Không cho admin tự hạ quyền
     if (userId === currentAdminId && newRole !== "admin") {
       alert("⚠️ Bạn không thể tự hạ quyền ADMIN của chính mình!");
       return;
@@ -178,90 +136,114 @@ const UserManagementPage = () => {
     const confirmChange = window.confirm(
       `Xác nhận chuyển vai trò của "${userName}" thành [${newRole.toUpperCase()}]?`,
     );
+
     if (!confirmChange) return;
 
     try {
-      const res = await axios.patch(
+      const response = await axios.patch(
         `${API_BASE_URL}/api/admin/users/${userId}/role`,
-        { role: newRole.toLowerCase() },
+        {
+          role: newRole.toLowerCase(),
+        },
         getAuthHeaders(),
       );
 
       setUsers((prev) =>
-        prev.map((u) => {
-          if (u.id === userId) {
+        prev.map((user) => {
+          if (user.id === userId) {
             return {
-              ...u,
+              ...user,
               roles: [newRole.toLowerCase()],
               role: newRole.toLowerCase(),
             };
           }
-          return u;
+
+          return user;
         }),
       );
 
-      alert(res.data?.message || "Đã cập nhật vai trò!");
+      alert(response.data?.message || "Đã cập nhật vai trò!");
     } catch (error) {
       console.error("❌ Lỗi đổi role:", error);
+
       alert(error.response?.data?.message || "Cập nhật vai trò thất bại!");
+
       fetchUsers();
     }
   };
 
-  // 6. KHÓA / MỞ KHÓA TÀI KHOẢN (CÓ BẢO VỆ ADMIN TỰ KHÓA)
+  // =========================================================
+  // KHÓA / MỞ KHÓA USER
+  // =========================================================
   const toggleUserStatus = async (userId, userName, currentStatus) => {
+    // Không cho admin tự khóa
     if (userId === currentAdminId) {
       alert("⚠️ Bạn không thể tự khóa tài khoản Admin đang sử dụng!");
       return;
     }
 
     const actionText = currentStatus ? "KHÓA" : "MỞ KHÓA";
+
     const confirmToggle = window.confirm(
       `Bạn có chắc chắn muốn ${actionText} tài khoản của "${userName}"?`,
     );
+
     if (!confirmToggle) return;
 
     try {
-      const res = await axios.patch(
+      const response = await axios.patch(
         `${API_BASE_URL}/api/admin/users/${userId}/status`,
         {},
         getAuthHeaders(),
       );
 
-      const newStatus = res.data?.activate;
+      const newStatus = response.data?.activate;
 
       setUsers((prev) =>
-        prev.map((u) => {
-          if (u.id === userId) {
-            return { ...u, activate: newStatus, active: newStatus };
+        prev.map((user) => {
+          if (user.id === userId) {
+            return {
+              ...user,
+              activate: newStatus,
+              active: newStatus,
+            };
           }
-          return u;
+
+          return user;
         }),
       );
 
-      alert(res.data?.message || "Thao tác thành công.");
+      alert(response.data?.message || "Thao tác thành công.");
     } catch (error) {
       console.error("❌ Lỗi đổi status:", error);
+
       alert(error.response?.data?.message || "Thao tác thất bại!");
     }
   };
 
-  // Kiểu dáng Badge phân màu theo Role
+  // =========================================================
+  // STYLE ROLE
+  // =========================================================
   const getRoleBadgeStyle = (role) => {
     switch (role?.toLowerCase()) {
       case "admin":
         return "bg-purple-100 text-purple-700 border-purple-200 font-bold";
+
       case "owner":
         return "bg-blue-100 text-blue-700 border-blue-200 font-bold";
+
       case "customer":
         return "bg-emerald-100 text-emerald-700 border-emerald-200 font-medium";
+
       case "guest":
       default:
         return "bg-slate-100 text-slate-600 border-slate-200 font-medium";
     }
   };
 
-  // Hàm tạo Avatar mặc định theo Tên
+  // =========================================================
+  // AVATAR
+  // =========================================================
   const renderAvatar = (name, avatarUrl) => {
     if (avatarUrl) {
       return (
@@ -272,6 +254,7 @@ const UserManagementPage = () => {
         />
       );
     }
+
     const initials = name
       ? name
           .split(" ")
@@ -280,6 +263,7 @@ const UserManagementPage = () => {
           .join("")
           .toUpperCase()
       : "U";
+
     return (
       <div className="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shadow-sm">
         {initials}
@@ -287,14 +271,18 @@ const UserManagementPage = () => {
     );
   };
 
+  // =========================================================
+  // UI
+  // =========================================================
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* Header & Thanh Tìm Kiếm */}
+      {/* Header + Search */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             Quản Lý Người Dùng
           </h1>
+
           <p className="text-xs text-slate-500 mt-1">
             Quản lý danh sách tài khoản, phân quyền và trạng thái hoạt động.
           </p>
@@ -306,9 +294,10 @@ const UserManagementPage = () => {
               type="text"
               placeholder="Tìm theo tên hoặc email..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm transition"
             />
+
             <svg
               className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5"
               fill="none"
@@ -326,11 +315,12 @@ const UserManagementPage = () => {
         </div>
       </div>
 
-      {/* Bảng Danh Sách */}
+      {/* Bảng */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-slate-500 font-medium space-y-2">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-200 border-t-blue-600 mb-2"></div>
+
             <p>Đang tải danh sách người dùng...</p>
           </div>
         ) : users.length === 0 ? (
@@ -343,51 +333,65 @@ const UserManagementPage = () => {
               <thead className="bg-slate-50/80 border-b border-slate-200/80 text-xs font-bold text-slate-500 uppercase tracking-wider">
                 <tr>
                   <th className="p-4 pl-6">Người Dùng</th>
+
                   <th className="p-4">Số Điện Thoại</th>
-                  <th className="p-4">Vai Trò (Role)</th>
+
+                  <th className="p-4">Vai Trò</th>
+
                   <th className="p-4">Trạng Thái</th>
+
                   <th className="p-4 pr-6 text-right">Thao Tác</th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-slate-100">
-                {users.map((u) => {
+                {users.map((user) => {
                   const name =
-                    u.full_name || u.fullName || u.name || "Chưa đặt tên";
-                  const email = u.email || "Không có email";
-                  const phone = u.phone || "---";
-                  const avatarUrl = u.avatar || u.picture;
-                  const isSelf = u.id === currentAdminId;
+                    user.full_name ||
+                    user.fullName ||
+                    user.name ||
+                    "Chưa đặt tên";
+
+                  const email = user.email || "Không có email";
+
+                  const phone = user.phone || "---";
+
+                  const avatarUrl = user.avatar || user.picture;
+
+                  const isSelf = user.id === currentAdminId;
 
                   const isActive =
-                    u.activate !== undefined
-                      ? Boolean(u.activate)
-                      : Boolean(u.active);
+                    user.activate !== undefined
+                      ? Boolean(user.activate)
+                      : Boolean(user.active);
 
-                  // 🎯 Lấy Role ưu tiên cao nhất (ADMIN luôn được ưu tiên đầu tiên)
-                  const currentRole = getPrimaryRole(u.roles, u.role);
+                  const currentRole = getPrimaryRole(user.roles, user.role);
 
                   return (
                     <tr
-                      key={u.id}
+                      key={user.id}
                       className={`hover:bg-slate-50/80 transition ${
                         isSelf ? "bg-blue-50/30" : ""
                       }`}
                     >
-                      {/* Avatar & Thông tin */}
+                      {/* User */}
                       <td className="p-4 pl-6">
                         <div className="flex items-center gap-3">
                           {renderAvatar(name, avatarUrl)}
+
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="font-bold text-slate-900 leading-snug">
                                 {name}
                               </p>
+
                               {isSelf && (
                                 <span className="px-2 py-0.5 text-[10px] font-extrabold bg-blue-100 text-blue-700 rounded-full border border-blue-200">
                                   Bạn
                                 </span>
                               )}
                             </div>
+
                             <p className="text-xs text-slate-400 font-medium">
                               {email}
                             </p>
@@ -395,31 +399,34 @@ const UserManagementPage = () => {
                         </div>
                       </td>
 
-                      {/* SĐT */}
+                      {/* Phone */}
                       <td className="p-4 text-xs font-medium text-slate-600">
                         {phone}
                       </td>
 
-                      {/* Select Vai Trò với màu sắc nổi bật */}
+                      {/* Role */}
                       <td className="p-4">
                         <select
                           value={currentRole}
                           disabled={isSelf}
-                          onChange={(e) =>
-                            handleRoleChange(u.id, e.target.value, name)
+                          onChange={(event) =>
+                            handleRoleChange(user.id, event.target.value, name)
                           }
                           className={`px-3 py-1.5 border rounded-xl text-xs cursor-pointer outline-none transition uppercase shadow-sm ${getRoleBadgeStyle(
                             currentRole,
                           )} ${isSelf ? "opacity-75 cursor-not-allowed" : ""}`}
                         >
                           <option value="admin">ADMIN</option>
+
                           <option value="owner">OWNER</option>
+
                           <option value="customer">CUSTOMER</option>
+
                           <option value="guest">GUEST</option>
                         </select>
                       </td>
 
-                      {/* Trạng Thái */}
+                      {/* Status */}
                       <td className="p-4">
                         <span
                           className={`px-3 py-1 text-xs font-bold rounded-full inline-flex items-center gap-1.5 border ${
@@ -432,15 +439,18 @@ const UserManagementPage = () => {
                             className={`w-1.5 h-1.5 rounded-full ${
                               isActive ? "bg-emerald-500" : "bg-rose-500"
                             }`}
-                          ></span>
+                          />
+
                           {isActive ? "Hoạt động" : "Đã khóa"}
                         </span>
                       </td>
 
-                      {/* Nút Thao Tác (Có bảo vệ Admin) */}
+                      {/* Action */}
                       <td className="p-4 pr-6 text-right">
                         <button
-                          onClick={() => toggleUserStatus(u.id, name, isActive)}
+                          onClick={() =>
+                            toggleUserStatus(user.id, name, isActive)
+                          }
                           disabled={isSelf}
                           title={
                             isSelf
@@ -467,7 +477,6 @@ const UserManagementPage = () => {
             </table>
           </div>
         )}
->>>>>>> b44f319820301cf0f690e8e584f4de4ab5d0442e
       </div>
     </div>
   );
