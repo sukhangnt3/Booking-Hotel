@@ -16,15 +16,24 @@ const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
+// 🟢 CẤU HÌNH CORS CHUẨN ĐÃ THÊM credentials: true
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (
+        !origin ||
+        allowedOrigins.includes("*") ||
+        allowedOrigins.includes(origin)
+      ) {
+        return callback(null, true);
+      }
 
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
-  },
-}));
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true, // 👈 BẮT BỘC PHẢI CÓ DÒNG NÀY ĐỂ BÌNH THƯỜNG HÓA WITHCREDENTIALS TỪ FRONTEND
+  }),
+);
+
 app.use(express.json({ limit: "1mb" }));
 
 app.use("/api", apiRoutes);

@@ -1,25 +1,38 @@
 const pool = require("../config/database");
-const { formatUser, formatBooking, formatHotel } = require("../utils/formatters");
+const {
+  formatUser,
+  formatBooking,
+  formatHotel,
+} = require("../utils/formatters");
 
 // ─────────────────────────────────────────────
 //  DASHBOARD - Thống kê tổng quan
 // ─────────────────────────────────────────────
 async function getStats(req, res, next) {
   try {
-    const [userCount, bookingCount, hotelCount, revenueResult, pendingHotelCount] =
-      await Promise.all([
-        pool.query(`SELECT COUNT(*)::int AS count FROM users WHERE activate = true`),
-        pool.query(`SELECT COUNT(*)::int AS count FROM booking`),
-        pool.query(`SELECT COUNT(*)::int AS count FROM hotel WHERE deleted_at IS NULL`),
-        pool.query(
-          `SELECT COALESCE(SUM(total_price), 0)::int AS revenue
+    const [
+      userCount,
+      bookingCount,
+      hotelCount,
+      revenueResult,
+      pendingHotelCount,
+    ] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::int AS count FROM users WHERE activate = true`,
+      ),
+      pool.query(`SELECT COUNT(*)::int AS count FROM booking`),
+      pool.query(
+        `SELECT COUNT(*)::int AS count FROM hotel WHERE deleted_at IS NULL`,
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(total_price), 0)::int AS revenue
            FROM booking
            WHERE status IN ('confirmed', 'checked_in', 'checked_out', 'completed')`,
-        ),
-        pool.query(
-          `SELECT COUNT(*)::int AS count FROM hotel WHERE status = 'pending' AND deleted_at IS NULL`,
-        ),
-      ]);
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS count FROM hotel WHERE status = 'pending' AND deleted_at IS NULL`,
+      ),
+    ]);
 
     return res.json({
       data: {
@@ -40,7 +53,11 @@ async function getStats(req, res, next) {
 // ─────────────────────────────────────────────
 async function listUsers(req, res, next) {
   try {
-    const search = (req.query.search || "").toString().trim();
+    let search = (req.query.search || "").toString().trim();
+    if (search === "undefined" || search === "null") {
+      search = "";
+    }
+
     const params = [];
     let where = "";
 
@@ -68,17 +85,28 @@ async function listUsers(req, res, next) {
       params,
     );
 
+    // 🔍 LOG DEBUG XEM DỮ LIỆU TẠI TERMINAL NODEJS
+    console.log("==========================================");
+    console.log("👉 [1] SỐ LƯỢNG USER LẤY TỪ DB:", result.rows.length);
+    console.log("👉 [2] DỮ LIỆU THÔ TỪ DB:", result.rows);
+
     const users = result.rows.map(formatUser);
+    console.log("👉 [3] DỮ LIỆU SAU KHI FORMAT:", users);
+    console.log("==========================================");
 
     return res.json({ data: users, users, total: result.rowCount });
   } catch (error) {
+    console.error("❌ LỖI TRUY VẤN SQL LIST_USERS:", error);
     return next(error);
   }
 }
 
 async function updateUserRole(req, res, next) {
   const userId = req.params.id;
-  const newRole = (req.body.role || req.body.role_name || "").toString().trim().toLowerCase();
+  const newRole = (req.body.role || req.body.role_name || "")
+    .toString()
+    .trim()
+    .toLowerCase();
 
   if (!userId || !newRole) {
     return res.status(400).json({ message: "userId và role là bắt buộc." });
@@ -86,14 +114,15 @@ async function updateUserRole(req, res, next) {
 
   const allowedRoles = ["admin", "owner", "customer", "guest"];
   if (!allowedRoles.includes(newRole)) {
-    return res.status(400).json({ message: `Role không hợp lệ. Chỉ chấp nhận: ${allowedRoles.join(", ")}` });
+    return res.status(400).json({
+      message: `Role không hợp lệ. Chỉ chấp nhận: ${allowedRoles.join(", ")}`,
+    });
   }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Tìm role id
     const roleResult = await client.query(
       `SELECT id FROM roles WHERE LOWER(name) = LOWER($1) LIMIT 1`,
       [newRole],
@@ -103,7 +132,6 @@ async function updateUserRole(req, res, next) {
     if (roleResult.rows[0]) {
       roleId = roleResult.rows[0].id;
     } else {
-      // Tạo role mới nếu chưa tồn tại
       const newRoleResult = await client.query(
         `INSERT INTO roles (name) VALUES ($1) RETURNING id`,
         [newRole],
@@ -111,10 +139,8 @@ async function updateUserRole(req, res, next) {
       roleId = newRoleResult.rows[0].id;
     }
 
-    // Xóa tất cả role hiện tại của user (trừ admin - không cho tự hạ admin)
     await client.query(`DELETE FROM user_roles WHERE user_id = $1`, [userId]);
 
-    // Gán role mới
     await client.query(
       `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`,
       [userId, roleId],
@@ -152,7 +178,9 @@ async function toggleUserStatus(req, res, next) {
     }
 
     return res.json({
-      message: result.rows[0].activate ? "Đã mở khóa tài khoản." : "Đã khóa tài khoản.",
+      message: result.rows[0].activate
+        ? "Đã mở khóa tài khoản."
+        : "Đã khóa tài khoản.",
       activate: result.rows[0].activate,
     });
   } catch (error) {
@@ -217,12 +245,25 @@ async function updateBookingStatusAdmin(req, res, next) {
   const status = (req.body.status || "").toString().trim();
 
   if (!bookingId || !status) {
-    return res.status(400).json({ message: "bookingId và status là bắt buộc." });
+    return res
+      .status(400)
+      .json({ message: "bookingId và status là bắt buộc." });
   }
 
-  const allowedStatuses = ["pending", "pending_payment", "confirmed", "checked_in", "checked_out", "completed", "cancelled", "no_show"];
+  const allowedStatuses = [
+    "pending",
+    "pending_payment",
+    "confirmed",
+    "checked_in",
+    "checked_out",
+    "completed",
+    "cancelled",
+    "no_show",
+  ];
   if (!allowedStatuses.includes(status)) {
-    return res.status(400).json({ message: `Status không hợp lệ. Chỉ chấp nhận: ${allowedStatuses.join(", ")}` });
+    return res.status(400).json({
+      message: `Status không hợp lệ. Chỉ chấp nhận: ${allowedStatuses.join(", ")}`,
+    });
   }
 
   try {
@@ -310,7 +351,9 @@ async function updateHotelStatus(req, res, next) {
 
   const allowedStatuses = ["pending", "approved", "rejected", "suspended"];
   if (!allowedStatuses.includes(status)) {
-    return res.status(400).json({ message: `Status không hợp lệ. Chỉ chấp nhận: ${allowedStatuses.join(", ")}` });
+    return res.status(400).json({
+      message: `Status không hợp lệ. Chỉ chấp nhận: ${allowedStatuses.join(", ")}`,
+    });
   }
 
   try {
@@ -365,7 +408,11 @@ async function listPromotions(req, res, next) {
        LIMIT 200`,
     );
 
-    return res.json({ data: result.rows, promotions: result.rows, total: result.rowCount });
+    return res.json({
+      data: result.rows,
+      promotions: result.rows,
+      total: result.rowCount,
+    });
   } catch (error) {
     return next(error);
   }
@@ -386,7 +433,9 @@ async function createPromotion(req, res, next) {
   } = req.body;
 
   if (!code || !type || value === undefined) {
-    return res.status(400).json({ message: "code, type và value là bắt buộc." });
+    return res
+      .status(400)
+      .json({ message: "code, type và value là bắt buộc." });
   }
 
   try {
@@ -411,7 +460,9 @@ async function createPromotion(req, res, next) {
       ],
     );
 
-    return res.status(201).json({ message: "Đã tạo khuyến mãi.", id: result.rows[0].id });
+    return res
+      .status(201)
+      .json({ message: "Đã tạo khuyến mãi.", id: result.rows[0].id });
   } catch (error) {
     return next(error);
   }
@@ -516,7 +567,11 @@ async function listReviews(req, res, next) {
        LIMIT 200`,
     );
 
-    return res.json({ data: result.rows, reviews: result.rows, total: result.rowCount });
+    return res.json({
+      data: result.rows,
+      reviews: result.rows,
+      total: result.rowCount,
+    });
   } catch (error) {
     return next(error);
   }
