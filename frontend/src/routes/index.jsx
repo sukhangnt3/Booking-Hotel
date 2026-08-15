@@ -19,7 +19,7 @@ import BookingConfirmPage from "../pages/guest/BookingConfirmPage";
 import BookingSuccessPage from "../pages/guest/BookingSuccessPage";
 import CheckoutPage from "../pages/guest/CheckoutPage";
 import LoginPage from "../pages/auth/LoginPage";
-
+import RegisterForm from "../components/auth/RegisterForm";
 // Trọn bộ 6 trang Admin
 import AdminDashboardPage from "../pages/admin/AdminDashboardPage";
 import HotelApprovalPage from "../pages/admin/HotelApprovalPage";
@@ -27,6 +27,8 @@ import UserManagementPage from "../pages/admin/UserManagementPage";
 import BookingManagementPage from "../pages/admin/BookingManagementPage";
 import GlobalPromotionPage from "../pages/admin/GlobalPromotionPage";
 import SystemReviewPage from "../pages/admin/SystemReviewPage";
+
+// Trọn bộ 6 trang Owner
 
 const router = createBrowserRouter([
   // 1. DÀNH CHO KHÁCH HÀNG
@@ -49,7 +51,10 @@ const router = createBrowserRouter([
     path: "/login",
     element: <LoginPage />,
   },
-
+{
+    path: "/register",
+    element: <RegisterForm />,
+  },
   // 3. DÀNH CHO QUẢN TRỊ VIÊN (ADMIN) - ĐÃ BỔ SUNG ĐẦY ĐỦ
   {
     path: "/admin",

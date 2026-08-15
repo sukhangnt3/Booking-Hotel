@@ -55,7 +55,14 @@ const Header = () => {
           <Button
             variant="text"
             className="text-white hover:bg-blue-700 hidden lg:block text-sm focus:outline-none"
+<<<<<<< HEAD
             onClick={() => navigate("/register")}
+=======
+              onClick={() => {
+                        setIsMenuOpen(false);
+                        navigate("/register");
+                      }}
+>>>>>>> 099cfbfd82290f7e70973308680ff37d228a62c7
           >
             Đăng chỗ nghỉ của Quý vị
           </Button>
