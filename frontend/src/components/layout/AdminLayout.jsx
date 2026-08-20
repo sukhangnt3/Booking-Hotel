@@ -1,95 +1,139 @@
-import React from "react";
-import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
+import React, { useState } from "react";
+import { cn } from "@/utils/cn";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import {
+  LayoutDashboard,
+  Building2,
+  Users,
+  ClipboardList,
+  Tag,
+  MessageSquareText,
+  Menu,
+  Bell,
+  Search,
+} from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import Sidebar from "./Sidebar";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuthStore();
 
-  // --- XỬ LÝ ĐĂNG XUẤT ---
-  const handleLogout = () => {
-    if (window.confirm("Bạn có chắc chắn muốn đăng xuất khỏi hệ thống Admin?")) {
-      if (typeof logout === "function") {
-        logout();
-      }
-      localStorage.removeItem("auth-storage");
-      navigate("/", { replace: true });
-    }
-  };
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  // Danh sách menu quản trị
   const menuItems = [
-    { path: "/admin/dashboard", label: "Thống kê (Dashboard)", icon: "📊" },
-    { path: "/admin/hotels", label: "Duyệt khách sạn", icon: "🏨" },
-    { path: "/admin/users", label: "Quản lý người dùng", icon: "👥" },
-    { path: "/admin/bookings", label: "Quản lý đặt phòng", icon: "📑" },
-    { path: "/admin/promotions", label: "Khuyến mãi hệ thống", icon: "🏷️" },
-    { path: "/admin/reviews", label: "Đánh giá hệ thống", icon: "⭐" },
+    {
+      path: "/admin/dashboard",
+      label: "Dashboard",
+      icon: <LayoutDashboard size={20} />,
+    },
+    {
+      path: "/admin/hotels",
+      label: "Duyệt khách sạn",
+      icon: <Building2 size={20} />,
+    },
+    { path: "/admin/users", label: "Người dùng", icon: <Users size={20} /> },
+    {
+      path: "/admin/bookings",
+      label: "Đặt phòng",
+      icon: <ClipboardList size={20} />,
+    },
+    { path: "/admin/promotions", label: "Khuyến mãi", icon: <Tag size={20} /> },
+    {
+      path: "/admin/reviews",
+      label: "Đánh giá",
+      icon: <MessageSquareText size={20} />,
+    },
   ];
 
+  const currentTab =
+    menuItems.find((item) => item.path === location.pathname)?.label ||
+    "Quản trị";
+
   return (
-    <div className="flex h-screen bg-slate-100 font-sans text-slate-800">
-      {/* ================= SIDEBAR QUẢN TRỊ ================= */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col justify-between p-4 shadow-xl flex-shrink-0">
-        <div>
-          {/* Logo / Tiêu đề */}
-          <div className="flex items-center gap-2 text-xl font-black text-blue-400 mb-8 px-2 py-1">
-            <span>⚡</span> Admin Portal
+    // CHIỀU CAO H-SCREEN VÀ OVERFLOW-HIDDEN LÀ BẮT BUỘC Ở ĐÂY
+    <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans">
+      {/* 1. SIDEBAR */}
+      <div
+        className={cn(
+          "lg:block shrink-0 h-full",
+          isMobileOpen ? "block fixed inset-0 z-[100]" : "hidden",
+        )}
+      >
+        {isMobileOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 lg:hidden"
+            onClick={() => setIsMobileOpen(false)}
+          />
+        )}
+        <Sidebar
+          items={menuItems}
+          isCollapsed={isCollapsed}
+          setIsCollapsed={setIsCollapsed}
+          user={user}
+          onLogout={() => {
+            logout();
+            navigate("/");
+          }}
+          activeColor="bg-blue-600"
+          roleName="Hệ thống Admin"
+        />
+      </div>
+
+      {/* 2. NỘI DUNG CHÍNH (PHẢI CÓ FLEX-COL VÀ H-FULL) */}
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        {/* TOPBAR */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 shrink-0 z-30 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button
+              className="lg:hidden p-2 hover:bg-slate-100 rounded-lg"
+              onClick={() => setIsMobileOpen(true)}
+            >
+              <Menu size={22} />
+            </button>
+            <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+              {currentTab}
+            </h2>
           </div>
 
-          {/* Menu Điều Hướng Trang Admin (Sử dụng NavLink để Highlight trang hiện tại) */}
-          <nav className="space-y-1">
-            {menuItems.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition ${
-                    isActive
-                      ? "bg-blue-600 text-white font-bold shadow-md"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }`
-                }
-              >
-                <span className="text-base">{item.icon}</span>
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
-          </nav>
-        </div>
-
-        {/* ================= KHỐI TÀI KHOẢN VÀ ĐĂNG XUẤT ================= */}
-        <div className="border-t border-slate-800 pt-4 space-y-3">
-          {/* Hiển thị email Admin */}
-          <div className="px-2 text-xs text-slate-400">
-            <span>Đăng nhập bởi:</span>
-            <strong className="text-white block truncate mt-0.5">
-              {user?.email || "Admin Account"}
-            </strong>
+          <div className="flex items-center gap-5">
+            <div className="hidden md:flex items-center bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+              <Search size={16} className="text-slate-400 mr-2" />
+              <input
+                type="text"
+                placeholder="Tìm kiếm..."
+                className="bg-transparent text-xs outline-none w-40"
+              />
+            </div>
+            <div className="relative cursor-pointer text-slate-400 hover:text-blue-600 transition-colors">
+              <Bell size={20} />
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+            </div>
+            <div className="flex items-center gap-3 pl-2 border-l border-slate-200">
+              <div className="text-right hidden sm:block">
+                <p className="text-xs font-bold text-slate-800 leading-none">
+                  Admin
+                </p>
+                <p className="text-[10px] text-blue-600 font-bold mt-1 uppercase">
+                  Online
+                </p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
+                AD
+              </div>
+            </div>
           </div>
+        </header>
 
-          {/* 1. NÚT QUAY LẠI TRANG CHỦ */}
-          <Link
-            to="/"
-            className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2.5 rounded-lg transition"
-          >
-            🏠 Xem trang chủ
-          </Link>
-
-          {/* 2. NÚT ĐĂNG XUẤT */}
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white text-xs font-bold py-2.5 rounded-lg transition"
-          >
-            🚪 Đăng xuất
-          </button>
-        </div>
-      </aside>
-
-      {/* ================= HIỂN THỊ NỘI DUNG CÁC TRANG ADMIN ================= */}
-      <main className="flex-1 overflow-y-auto p-8">
-        <Outlet />
-      </main>
+        {/* PHẦN CUỘN NỘI DUNG (OVERFLOW-Y-AUTO) */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 custom-scrollbar bg-[#f8fafc]">
+          <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

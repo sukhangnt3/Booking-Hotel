@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from "react";
-import hotelService from "../../services/hotelService";
+import { Heart, MapPin } from "lucide-react";
+import { useAuthStore } from "@/stores/authStore";
+import hotelService from "@/services/hotelService";
+import { Badge, StarRating } from "../ui"; // Tận dụng UI Kit
+import { cn } from "@/utils/cn";
 
 const HotelCard = ({
   id,
@@ -16,168 +20,140 @@ const HotelCard = ({
   isFavoriteInitial = false,
   onClick,
 }) => {
-  // LẤY ĐÚNG ID KHÁCH SẠN (Ưu tiên hotel_id -> id -> _id)
-  const targetHotelId =
-    id || hotel?.hotel_id || hotel?.id || hotel?._id || hotel?.hotel?.id;
+  // 1. Lấy ID và trạng thái Auth từ Store
+  const targetHotelId = id || hotel?.hotel_id || hotel?.id || hotel?._id;
+  const { isAuthenticated, token } = useAuthStore();
 
-  // State quản lý màu trái tim
   const [isFavorite, setIsFavorite] = useState(false);
   const [loadingFav, setLoadingFav] = useState(false);
 
+  // Khởi tạo trạng thái yêu thích
   useEffect(() => {
-    const initialStatus =
-      isFavoriteInitial || hotel?.is_favorite || hotel?.isFavorite || false;
-    setIsFavorite(initialStatus);
+    setIsFavorite(isFavoriteInitial || hotel?.is_favorite || false);
   }, [isFavoriteInitial, hotel]);
 
-  // HÀM BẤM TRÁI TIM LƯU DATABASE
+  // 2. Xử lý Yêu thích
   const handleFavoriteClick = async (e) => {
-    e.stopPropagation(); // Ngăn việc bấm trái tim bị chuyển sang trang Chi tiết
-
+    e.stopPropagation();
     if (loadingFav) return;
 
-    // 1. KIỂM TRA ID KHÁCH SẠN
-    if (!targetHotelId) {
-      alert("Lỗi: Không tìm thấy ID của khách sạn này!");
-      console.error("Dữ liệu hotel thiếu ID:", hotel);
-      return;
-    }
-
-    // 2. KIỂM TRA XEM NGƯỜI DÙNG ĐÃ ĐĂNG NHẬP CHƯA
-    const authData = localStorage.getItem("auth-storage");
-    let token = null;
-    if (authData) {
-      try {
-        token = JSON.parse(authData)?.state?.token;
-      } catch (err) {
-        token = null;
-      }
-    }
-
-    if (!token) {
+    if (!isAuthenticated) {
       alert("Vui lòng đăng nhập để lưu khách sạn yêu thích!");
       return;
     }
 
-    const previousState = isFavorite; // Trạng thái cũ
-    const nextState = !previousState; // Trạng thái mới (ngược lại)
-
-    // 3. CẬP NHẬT GIAO DIỆN SÁNG/TẮT TỨC THÌ (0.01s)
-    setIsFavorite(nextState);
+    const previousState = isFavorite;
+    setIsFavorite(!previousState); // Cập nhật UI ngay lập tức
 
     try {
       setLoadingFav(true);
-
-      // 4. GỌI API BACKEND CHUẨN (POST NẾU THÊM, DELETE NẾU XÓA)
       if (previousState) {
-        // Đang yêu thích -> Bấm vào để XÓA (DELETE)
         await hotelService.removeFavorite(targetHotelId);
       } else {
-        // Chưa yêu thích -> Bấm vào để THÊM (POST)
         await hotelService.addFavorite(targetHotelId);
       }
     } catch (error) {
-      console.error("Lỗi khi bấm yêu thích ở Trang Chủ:", error);
-
-      // 5. Nếu API thất bại -> Hoàn tác màu trái tim cũ
-      setIsFavorite(previousState);
-
-      const errorMsg =
-        error.response?.data?.message ||
-        "Không thể lưu vào yêu thích. Vui lòng kiểm tra lại kết nối!";
-      alert(errorMsg);
+      setIsFavorite(previousState); // Hoàn tác nếu lỗi
+      alert(error.response?.data?.message || "Lỗi cập nhật yêu thích");
     } finally {
       setLoadingFav(false);
     }
   };
 
+  // 3. Định dạng giá tiền
+  const formatPrice = (price) => {
+    return new Intl.NumberFormat("vi-VN", {
+      style: "currency",
+      currency: "VND",
+    }).format(price);
+  };
+
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between relative group cursor-pointer"
+      className="group bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full relative cursor-pointer"
     >
-      {/* NÚT TRÁI TIM CÓ CHỨC NĂNG LƯU DATABASE */}
+      {/* NÚT TRÁI TIM */}
       <button
         onClick={handleFavoriteClick}
         disabled={loadingFav}
-        className={`absolute top-3 right-3 z-10 p-2.5 rounded-full shadow-md transition-all duration-300 cursor-pointer ${
+        className={cn(
+          "absolute top-3 right-3 z-20 p-2 rounded-full shadow-lg transition-all active:scale-90",
           isFavorite
-            ? "bg-white text-rose-500 scale-110 shadow-rose-100"
-            : "bg-black/30 text-white hover:bg-white hover:text-rose-500"
-        }`}
-        title={isFavorite ? "Bỏ yêu thích" : "Lưu vào yêu thích"}
+            ? "bg-white text-rose-500"
+            : "bg-black/20 text-white hover:bg-white hover:text-rose-500",
+        )}
       >
-        <svg
-          className={`w-5 h-5 transition-colors duration-200 ${
-            isFavorite ? "fill-rose-500" : "fill-current"
-          }`}
-          viewBox="0 0 24 24"
-        >
-          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-        </svg>
+        <Heart
+          size={20}
+          fill={isFavorite ? "currentColor" : "none"}
+          strokeWidth={isFavorite ? 0 : 2.5}
+        />
       </button>
 
       {/* ẢNH KHÁCH SẠN */}
-      <div className="relative h-48 w-full overflow-hidden bg-gray-100">
+      <div className="relative aspect-[4/3] overflow-hidden bg-gray-200">
         <img
-          src={image || "https://via.placeholder.com/300"}
-          alt={title || "Khách sạn"}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          src={image || "https://placehold.co/600x400?text=No+Image"}
+          alt={title}
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+          loading="lazy"
         />
         {isGenius && (
-          <span className="absolute bottom-2 left-2 bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-            Genius
-          </span>
+          <div className="absolute bottom-3 left-3">
+            <Badge variant="primary" size="sm">
+              Genius
+            </Badge>
+          </div>
         )}
       </div>
 
-      {/* THÔNG TIN KHÁCH SẠN */}
-      <div className="p-4 flex-1 flex flex-col justify-between">
-        <div>
-          {type && (
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-              {type}
-            </span>
+      {/* NỘI DUNG */}
+      <div className="p-4 flex flex-col flex-1">
+        <div className="flex justify-between items-start mb-1">
+          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
+            {type || "Chỗ nghỉ"}
+          </span>
+          {stars > 0 && (
+            <StarRating rating={stars} size={12} className="gap-0.5" />
           )}
+        </div>
 
-          <h3 className="font-bold text-gray-900 text-base line-clamp-1 mt-0.5 group-hover:text-blue-600 transition-colors">
-            {title || "Khách sạn"}
-          </h3>
+        <h3 className="font-bold text-gray-900 text-base line-clamp-1 group-hover:text-[#006ce4] transition-colors">
+          {title}
+        </h3>
 
-          <p className="text-xs text-gray-500 mt-1 line-clamp-1">
-            📍 {location || "Đang cập nhật địa điểm"}
-          </p>
+        <div className="flex items-center gap-1 text-gray-500 mt-1">
+          <MapPin size={12} className="shrink-0" />
+          <p className="text-xs line-clamp-1">{location}</p>
+        </div>
 
-          {/* ĐÁNH GIÁ & SAO */}
-          <div className="flex items-center gap-2 mt-3">
-            {rating && (
-              <span className="bg-[#003580] text-white text-xs font-bold px-2 py-1 rounded-t-md rounded-br-md">
-                {rating}
-              </span>
-            )}
-            <div className="text-xs text-gray-500">
-              {reviewsCount ? `${reviewsCount} đánh giá` : "Mới ra mắt"}
-            </div>
-            {stars && (
-              <div className="text-amber-400 text-xs ml-auto">
-                {"★".repeat(stars)}
-              </div>
-            )}
+        {/* ĐÁNH GIÁ */}
+        <div className="mt-4 flex items-center gap-2">
+          <div className="bg-[#003580] text-white text-sm font-bold w-8 h-8 flex items-center justify-center rounded-lg rounded-bl-none">
+            {rating || "N/A"}
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-gray-800 leading-none">
+              {rating >= 9 ? "Xuất sắc" : rating >= 8 ? "Rất tốt" : "Tốt"}
+            </span>
+            <span className="text-[11px] text-gray-500">
+              {reviewsCount || 0} đánh giá
+            </span>
           </div>
         </div>
 
         {/* GIÁ TIỀN */}
-        <div className="mt-4 pt-3 border-t flex justify-between items-end">
-          <span className="text-xs text-gray-400 font-medium">
-            Giá 1 đêm từ
+        <div className="mt-auto pt-4 flex flex-col items-end">
+          <span className="text-[11px] text-gray-500 font-medium">
+            Giá mỗi đêm từ
           </span>
-          <div className="text-right">
-            <span className="text-lg font-black text-red-600">
-              {salePrice
-                ? `${Number(salePrice).toLocaleString("vi-VN")} VND`
-                : "Liên hệ"}
-            </span>
-          </div>
+          <span className="text-lg font-black text-red-600">
+            {salePrice ? formatPrice(salePrice) : "Liên hệ"}
+          </span>
+          <span className="text-[10px] text-gray-400 italic">
+            Đã bao gồm thuế và phí
+          </span>
         </div>
       </div>
     </div>

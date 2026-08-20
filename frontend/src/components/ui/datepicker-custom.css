@@ -1,0 +1,35 @@
+/* Đổi màu các ngày nằm trong khoảng được chọn */
+.react-datepicker__day--in-range {
+  background-color: #f0f6ff !important;
+  color: #006ce4 !important;
+}
+
+/* Đổi màu ngày bắt đầu và ngày kết thúc */
+.react-datepicker__day--selecting-range-start,
+.react-datepicker__day--range-start,
+.react-datepicker__day--range-end {
+  background-color: #006ce4 !important;
+  color: white !important;
+  border-radius: 0.5rem !important;
+}
+
+/* Tùy chỉnh khung lịch */
+.react-datepicker {
+  border: none !important;
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1) !important;
+  border-radius: 1rem !important;
+  font-family: inherit !important;
+  padding: 10px !important;
+}
+
+.react-datepicker__header {
+  background-color: white !important;
+  border-bottom: none !important;
+}
+
+.react-datepicker__day:hover {
+  border-radius: 0.5rem !important;
+  background-color: #f3f4f6 !important;
+}

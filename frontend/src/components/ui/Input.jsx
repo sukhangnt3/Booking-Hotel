@@ -1,114 +1,132 @@
-import React from "react";
+import React, { forwardRef, useId } from "react";
+import { twMerge } from "tailwind-merge";
+import { clsx } from "clsx";
 
-const Input = ({
-  label,
-  type = "text",
-  placeholder,
-  value = "", // Khắc phục 1: Luôn đặt mặc định là string rỗng tránh lỗi uncontrolled input
-  onChange,
-  onClear,
-  clearable = false,
-  required = false,
-  hasError = false,
-  errorText,
-  leftIcon,
-  rightIcon,
-  className = "",
-  wrapperClassName = "",
-  ...props
-}) => {
-  // Xử lý sự kiện bấm nút Xóa
-  const handleClear = (e) => {
-    e.stopPropagation();
-    if (onClear) {
-      onClear();
-    } else if (onChange) {
-      // Giả lập event onChange chuẩn
-      onChange({ target: { value: "" } });
-    }
-  };
+function cn(...inputs) {
+  return twMerge(clsx(inputs));
+}
 
-  // Render Icon bên phải hoặc Nút Clear
-  const renderRightIcon = () => {
-    if (clearable && Boolean(value)) {
-      return (
-        <button
-          type="button"
-          onClick={handleClear}
-          className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200/60 rounded-full transition-colors outline-none cursor-pointer pointer-events-auto z-10"
-          title="Xoá nội dung"
-          aria-label="Clear input"
-        >
-          <svg
-            className="w-3.5 h-3.5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+const Input = forwardRef(
+  (
+    {
+      label,
+      type = "text",
+      placeholder,
+      value = "",
+      onChange,
+      onClear,
+      clearable = false,
+      required = false,
+      hasError = false,
+      errorText,
+      leftIcon,
+      rightIcon,
+      className = "",
+      wrapperClassName = "",
+      ...props
+    },
+    ref,
+  ) => {
+    const generatedId = useId(); // Tạo ID duy nhất cho label và input
+    const inputId = props.id || generatedId;
+
+    const handleClear = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (onClear) {
+        onClear();
+      } else if (onChange) {
+        onChange({ target: { value: "" } });
+      }
+    };
+
+    return (
+      <div className={cn("w-full flex flex-col gap-1.5", wrapperClassName)}>
+        {/* 1. Label */}
+        {label && (
+          <label
+            htmlFor={inputId}
+            className="text-sm font-semibold text-gray-700 select-none w-fit cursor-pointer"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2.5"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
-      );
-    }
-    return rightIcon;
-  };
-
-  const activeRightIcon = renderRightIcon();
-
-  return (
-    <div className="w-full flex flex-col justify-center">
-      {/* 1. Hiển thị Label */}
-      {label && (
-        <label className="block text-sm font-semibold text-gray-700 mb-1 select-none">
-          {label}
-        </label>
-      )}
-
-      {/* 2. Ô nhập liệu */}
-      <div className={`relative flex items-center w-full ${wrapperClassName}`}>
-        {/* Left Icon (Thêm pointer-events-none để click xuyên qua input) */}
-        {leftIcon && (
-          <div className="absolute left-3 flex items-center justify-center text-gray-500 pointer-events-none z-10">
-            {leftIcon}
-          </div>
+            {label} {required && <span className="text-red-500">*</span>}
+          </label>
         )}
 
-        {/* Input Field */}
-        <input
-          type={type}
-          placeholder={placeholder}
-          required={required}
-          value={value}
-          onChange={onChange}
-          className={`w-full bg-transparent text-gray-800 text-sm outline-none transition-all placeholder-gray-400 ${
-            leftIcon ? "pl-9" : "pl-3"
-          } ${activeRightIcon ? "pr-9" : "pr-3"} ${
-            hasError ? "border-red-500 bg-red-50 focus:border-red-500" : ""
-          } ${className}`}
-          {...props}
-        />
+        {/* 2. Input Wrapper */}
+        <div className="relative group flex items-center">
+          {/* Left Icon */}
+          {leftIcon && (
+            <div className="absolute left-3 flex items-center justify-center text-gray-400 pointer-events-none transition-colors group-focus-within:text-[#006ce4]">
+              {leftIcon}
+            </div>
+          )}
 
-        {/* Right Icon (Khắc phục 2: Kiểm tra nếu không phải nút clear thì ngắt pointer events) */}
-        {activeRightIcon && (
-          <div className="absolute right-3 flex items-center justify-center text-gray-500 z-10 pointer-events-none">
-            {activeRightIcon}
+          {/* Input Field */}
+          <input
+            ref={ref}
+            id={inputId}
+            type={type}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            className={cn(
+              "w-full h-11 bg-white border border-gray-300 rounded-md text-gray-800 text-sm transition-all outline-none",
+              "placeholder:text-gray-400",
+              "focus:border-[#006ce4] focus:ring-[3px] focus:ring-[#006ce4]/10",
+              leftIcon ? "pl-10" : "pl-3",
+              clearable || rightIcon ? "pr-10" : "pr-3",
+              hasError &&
+                "border-red-500 bg-red-50/30 focus:border-red-500 focus:ring-red-500/10",
+              "disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed",
+              className,
+            )}
+            {...props}
+          />
+
+          {/* Right Icon / Clear Button */}
+          <div className="absolute right-3 flex items-center gap-2">
+            {clearable && value && !props.disabled && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors cursor-pointer"
+                title="Xóa nội dung"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            )}
+
+            {rightIcon && !clearable && (
+              <div className="text-gray-400 pointer-events-none">
+                {rightIcon}
+              </div>
+            )}
           </div>
+        </div>
+
+        {/* 3. Error Message */}
+        {hasError && errorText && (
+          <p className="text-[13px] text-red-500 font-medium animate-in fade-in slide-in-from-top-1">
+            {errorText}
+          </p>
         )}
       </div>
+    );
+  },
+);
 
-      {/* 3. Dòng chữ báo lỗi */}
-      {hasError && errorText && (
-        <span className="text-xs text-red-500 mt-1 select-none font-medium">
-          {errorText}
-        </span>
-      )}
-    </div>
-  );
-};
+Input.displayName = "Input";
 
 export default Input;

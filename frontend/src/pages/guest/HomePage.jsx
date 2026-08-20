@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-// UI Components
-import { Card } from "../../components/ui";
-import HotelCard from "../../components/hotel/HotelCard";
-import HotelFilter from "../../components/hotel/HotelFilter";
-// Services
-import hotelService from "../../services/hotelService";
+import { Sparkles, TrendingUp, Compass, Flame } from "lucide-react";
 
-// Hàm hỗ trợ: Ép dữ liệu trả về LUÔN LÀ MẢNG (Tránh lỗi .map is not a function)
+// UI Components
+import { Card, Badge, Button } from "@/components/ui";
+import { HotelCard, HotelFilter } from "@/components/hotel";
+import { PromotionBadge } from "@/components/promotion";
+
+// Services & Helpers
+import { hotelService } from "@/services";
+
 const toSafeArray = (data) => {
   if (Array.isArray(data)) return data;
   if (data && Array.isArray(data.data)) return data.data;
@@ -19,22 +21,23 @@ const toSafeArray = (data) => {
 const HomePage = () => {
   const navigate = useNavigate();
 
-  // ─── 1. STATES LƯU DỮ LIỆU ───
-  const [propertyTypes, setPropertyTypes] = useState([]);
-  const [trendingDestinations, setTrendingDestinations] = useState([]);
-  const [discoverVietnam, setDiscoverVietnam] = useState([]);
-  const [uniqueStays, setUniqueStays] = useState([]);
-
-  // Set lưu danh sách các Hotel ID đã được User yêu thích trong Database
+  // ─── 1. GOM NHÓM STATES ───
+  const [pageData, setPageData] = useState({
+    propertyTypes: [],
+    trendingDestinations: [],
+    discoverVietnam: [],
+    uniqueStays: [],
+  });
   const [favoriteHotelIds, setFavoriteHotelIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
-  // ─── 2. GỌI API KHI MOUNT ───
+  // ─── 2. GỌI API PARALLEL KHI MOUNT ───
   useEffect(() => {
+    let isMounted = true;
+
     const fetchHomePageData = async () => {
       setLoading(true);
       try {
-        // Gọi song song các API trang chủ VÀ API danh sách Yêu thích của User từ DB
         const [
           typesData,
           trendingData,
@@ -46,106 +49,142 @@ const HomePage = () => {
           hotelService.getTrendingDestinations(),
           hotelService.getDiscoverVietnam(),
           hotelService.getUniqueStays(),
-          hotelService.getFavoriteHotels(), // Lấy danh sách yêu thích thật từ Database
+          hotelService.getFavoriteHotels(),
         ]);
 
-        // 1. Lưu danh sách ID đã yêu thích vào Set để tra cứu cực nhanh
+        if (!isMounted) return;
+
+        // Lưu ID đã yêu thích vào Set
         const favList = toSafeArray(myFavoritesData);
         const favIdsSet = new Set(
           favList.map((item) => String(item.id || item.hotel_id)),
         );
         setFavoriteHotelIds(favIdsSet);
 
-        // 2. Lưu dữ liệu các section
-        setPropertyTypes(toSafeArray(typesData));
-        setTrendingDestinations(toSafeArray(trendingData));
-        setDiscoverVietnam(toSafeArray(discoverData));
-        setUniqueStays(toSafeArray(staysData));
+        // Lưu toàn bộ data vào 1 lần setState duy nhất
+        setPageData({
+          propertyTypes: toSafeArray(typesData),
+          trendingDestinations: toSafeArray(trendingData),
+          discoverVietnam: toSafeArray(discoverData),
+          uniqueStays: toSafeArray(staysData),
+        });
       } catch (error) {
         console.error("Lỗi khi tải dữ liệu Trang chủ:", error);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchHomePageData();
+
+    return () => {
+      isMounted = false; // Chống memory leak khi unmount
+    };
   }, []);
 
-  // ─── 3. XỬ LÝ TÌM KIẾM ───
+  // ─── 3. ĐIỀU HƯỚNG TÌM KIẾM ───
   const handleSearch = (searchData) => {
     const query = new URLSearchParams();
-
     if (searchData?.destination)
       query.append("destination", searchData.destination);
-
-    if (searchData?.startDate) query.append("checkIn", searchData.startDate);
-    if (searchData?.endDate) query.append("checkOut", searchData.endDate);
-
+    if (searchData?.checkIn) query.append("checkIn", searchData.checkIn);
+    if (searchData?.checkOut) query.append("checkOut", searchData.checkOut);
     if (searchData?.adults) query.append("adults", searchData.adults);
+    if (searchData?.children) query.append("children", searchData.children);
     if (searchData?.rooms) query.append("rooms", searchData.rooms);
-    if (!searchData?.adults && searchData?.guests)
-      query.append("adults", searchData.guests);
 
-    navigate({
-      pathname: "/hotels",
-      search: query.toString(),
-    });
+    navigate(`/hotels?${query.toString()}`);
   };
 
-  const safePropertyTypes = toSafeArray(propertyTypes);
-  const safeTrending = toSafeArray(trendingDestinations);
-  const safeDiscover = toSafeArray(discoverVietnam);
-  const safeUniqueStays = toSafeArray(uniqueStays);
-
   return (
-    <div className="w-full pb-24 bg-gray-50/30 font-sans">
+    <div className="w-full pb-24 bg-gray-50/50 font-sans">
       {/* ─── HERO BANNER ─── */}
-      <div className="bg-[#003580] pt-12 pb-20 px-4 text-white">
-        <div className="max-w-7xl mx-auto space-y-4">
-          <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight">
+      <div className="bg-[#003580] pt-10 pb-24 px-4 text-white relative">
+        <div className="max-w-7xl mx-auto space-y-3">
+          <Badge
+            variant="primary"
+            className="bg-blue-800/80 text-blue-200 border-none"
+          >
+            Ưu đãi du lịch 2024
+          </Badge>
+          <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight">
             Tìm chỗ nghỉ tiếp theo
           </h1>
-          <p className="text-base md:text-xl text-blue-100 font-normal">
-            Tìm ưu đãi khách sạn, chỗ nghỉ dạng nhà và nhiều hơn nữa...
+          <p className="text-base md:text-xl text-blue-100/90 font-normal max-w-2xl">
+            Khám phá khách sạn sang trọng, homestay ấm cúng và những khu nghỉ
+            dưỡng tuyệt vời tại Việt Nam.
           </p>
         </div>
       </div>
 
-      {/* HotelFilter */}
-      <div className="max-w-7xl mx-auto px-4 -mt-8 relative z-20">
+      {/* ─── BỘ LỌC TÌM KIẾM CHÍNH ─── */}
+      <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-30">
         <HotelFilter onSearch={handleSearch} />
       </div>
 
-      {/* ─── SECTION 1: TÌM THEO LOẠI CHỖ NGHĨ ─── */}
+      {/* ─── PROMOTION BANNER NỔI BẬT ─── */}
+      <section className="max-w-7xl mx-auto px-4 mt-12">
+        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-950 rounded-2xl p-6 md:p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl relative overflow-hidden">
+          <div className="space-y-2 z-10">
+            <div className="flex items-center gap-2">
+              <Sparkles className="text-yellow-400" size={20} />
+              <span className="text-xs uppercase tracking-widest font-black text-yellow-400">
+                Khuyến Mãi Đặc Biệt
+              </span>
+            </div>
+            <h3 className="text-xl md:text-2xl font-bold">
+              Giảm đến 30% cho kỳ nghỉ hè sớm!
+            </h3>
+            <p className="text-sm text-gray-300 max-w-xl">
+              Áp dụng cho các điểm đến hàng đầu như Đà Nẵng, Nha Trang, Phú Quốc
+              khi đặt trước 30 ngày.
+            </p>
+          </div>
+          <Button
+            className="bg-[#ffb700] hover:bg-[#e0a200] text-gray-900 font-extrabold px-8 h-12 shrink-0 z-10 border-none shadow-lg"
+            onClick={() => handleSearch({ destination: "Đà Nẵng" })}
+          >
+            Khám phá ưu đãi
+          </Button>
+          {/* Vòng tròn trang trí */}
+          <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-blue-600/10 rounded-full blur-2xl" />
+        </div>
+      </section>
+
+      {/* ─── SECTION 1: TÌM THEO LOẠI CHỖ NGHỈ ─── */}
       <section className="max-w-7xl mx-auto px-4 mt-16">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 tracking-tight">
-          Tìm theo loại chỗ nghỉ
-        </h2>
+        <div className="flex items-center gap-2 mb-6">
+          <Compass className="text-[#006ce4]" size={24} />
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+            Tìm theo loại chỗ nghỉ
+          </h2>
+        </div>
 
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((n) => (
               <div
                 key={n}
-                className="w-full h-40 bg-gray-200 animate-pulse rounded-xl"
+                className="w-full aspect-[4/3] bg-gray-200 animate-pulse rounded-2xl"
               />
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {safePropertyTypes.map((type) => (
-              <div
-                key={type.id || type._id || Math.random()}
-                className="cursor-pointer hover:opacity-90 transition transform hover:-translate-y-1"
+            {pageData.propertyTypes.map((type) => (
+              <Card
+                key={type.id || type.name}
+                image={type.image}
+                title={type.title || type.name}
+                subTitle={`${type.count || 100}+ chỗ nghỉ`}
                 onClick={() =>
                   handleSearch({
                     destination: "",
                     type: type.title || type.name,
                   })
                 }
-              >
-                <Card image={type.image} title={type.title || type.name} />
-              </div>
+                className="hover:-translate-y-1 hover:shadow-lg transition-all rounded-2xl"
+              />
             ))}
           </div>
         )}
@@ -153,49 +192,62 @@ const HomePage = () => {
 
       {/* ─── SECTION 2: ĐIỂM ĐẾN ĐANG THỊNH HÀNH ─── */}
       <section className="max-w-7xl mx-auto px-4 mt-16">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
-            Điểm đến đang thịnh hành
-          </h2>
-          <p className="text-gray-500 text-sm mt-1">
-            Các lựa chọn phổ biến nhất cho du khách từ Việt Nam
-          </p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="text-rose-500" size={24} />
+              <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+                Điểm đến đang thịnh hành
+              </h2>
+            </div>
+            <p className="text-gray-500 text-sm mt-1">
+              Các lựa chọn phổ biến nhất cho du khách từ Việt Nam
+            </p>
+          </div>
         </div>
 
         {loading ? (
-          <div className="h-80 bg-gray-200 animate-pulse rounded-xl" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[1, 2].map((n) => (
+              <div
+                key={n}
+                className="aspect-[16/9] bg-gray-200 animate-pulse rounded-2xl"
+              />
+            ))}
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {safeTrending
-              .filter((item) => item.isLarge || true)
-              .map((place) => (
-                <div
-                  key={place.id || place._id || Math.random()}
-                  onClick={() =>
-                    handleSearch({ destination: place.title || place.name })
-                  }
-                  className="relative rounded-xl overflow-hidden group cursor-pointer shadow-sm"
-                >
-                  <Card
-                    image={place.image}
-                    title=""
-                    className="w-full aspect-[16/9] md:aspect-[2/1]"
-                  />
-                  <div className="absolute top-6 left-6 drop-shadow-lg">
-                    <h3 className="text-white text-2xl font-black flex items-center gap-2">
-                      {place.title || place.name}{" "}
-                      <span className="text-base">🇻🇳</span>
-                    </h3>
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {pageData.trendingDestinations.map((place) => (
+              <div
+                key={place.id || place.name}
+                onClick={() =>
+                  handleSearch({ destination: place.title || place.name })
+                }
+                className="relative rounded-2xl overflow-hidden group cursor-pointer shadow-md aspect-[16/9]"
+              >
+                <img
+                  src={place.image}
+                  alt={place.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                <div className="absolute bottom-6 left-6 text-white space-y-1">
+                  <h3 className="text-2xl md:text-3xl font-black flex items-center gap-2">
+                    {place.title || place.name} <span>🇻🇳</span>
+                  </h3>
+                  <p className="text-xs md:text-sm text-gray-200 font-medium opacity-90">
+                    {place.subtitle || "Điểm đến lý tưởng cho kỳ nghỉ"}
+                  </p>
                 </div>
-              ))}
+              </div>
+            ))}
           </div>
         )}
       </section>
 
       {/* ─── SECTION 3: KHÁM PHÁ VIỆT NAM ─── */}
       <section className="max-w-7xl mx-auto px-4 mt-16">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 tracking-tight">
+        <h2 className="text-2xl font-black text-gray-900 mb-6 tracking-tight">
           Khám phá Việt Nam
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
@@ -203,63 +255,60 @@ const HomePage = () => {
             ? [1, 2, 3].map((n) => (
                 <div
                   key={n}
-                  className="h-48 bg-gray-200 animate-pulse rounded-xl"
+                  className="aspect-[4/3] bg-gray-200 animate-pulse rounded-2xl"
                 />
               ))
-            : safeDiscover.map((item) => (
-                <div
-                  key={item.id || item._id || Math.random()}
+            : pageData.discoverVietnam.map((item) => (
+                <Card
+                  key={item.id || item.name}
+                  image={item.image}
+                  title={`${item.title || item.name} 🇻🇳`}
+                  subTitle={
+                    item.subTitle || `${item.hotelCount || 50} chỗ nghỉ`
+                  }
                   onClick={() =>
                     handleSearch({ destination: item.title || item.name })
                   }
-                  className="cursor-pointer group"
-                >
-                  <Card
-                    image={item.image}
-                    title={
-                      <span className="group-hover:text-[#006ce4] transition-colors">
-                        {item.title || item.name} 🇻🇳
-                      </span>
-                    }
-                    subTitle={item.subTitle}
-                    className="w-full aspect-[4/3] rounded-xl"
-                  />
-                </div>
+                  className="rounded-2xl hover:shadow-lg transition-all"
+                />
               ))}
         </div>
       </section>
 
-      {/* ─── SECTION 4: UNIQUE STAYS (TRÁI TIM GIỮ MÀU SÁNG KỂ CẢ KHI F5) ─── */}
+      {/* ─── SECTION 4: CHỖ NGHỈ ĐỘC ĐÁO (UNIQUE STAYS) ─── */}
       <section className="max-w-7xl mx-auto px-4 mt-16">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
-            Lưu trú tại các chỗ nghỉ độc đáo hàng đầu
-          </h2>
+          <div className="flex items-center gap-2">
+            <Flame className="text-orange-500" size={24} />
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+              Lưu trú tại các chỗ nghỉ độc đáo hàng đầu
+            </h2>
+          </div>
           <p className="text-gray-500 text-sm mt-1">
-            Khám phá những trải nghiệm lưu trú đặc biệt nhất
+            Trải nghiệm các khu nghỉ dưỡng, biệt thự và căn hộ được đánh giá cao
+            nhất
           </p>
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {[1, 2, 3, 4].map((n) => (
               <div
                 key={n}
-                className="h-72 bg-gray-200 animate-pulse rounded-xl"
+                className="h-80 bg-gray-200 animate-pulse rounded-2xl"
               />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {safeUniqueStays.map((stay) => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {pageData.uniqueStays.map((stay) => {
               const stayId = String(stay.id || stay.hotel_id || stay._id);
-              // Kiểm tra xem Hotel ID này có nằm trong danh sách đã yêu thích ở DB không
               const isSavedInDb = favoriteHotelIds.has(stayId);
 
               return (
                 <HotelCard
                   key={stayId}
-                  id={stay.id || stay._id || stay.hotel_id}
+                  id={stayId}
                   hotel={stay}
                   image={stay.image || stay.stay_image}
                   type={stay.type}
@@ -270,10 +319,7 @@ const HomePage = () => {
                   salePrice={stay.min_price || stay.price}
                   stars={stay.star_rating || stay.stars}
                   isGenius={stay.isGenius}
-                  // TRUYỀN TRẠNG THÁI YÊU THÍCH THẬT TỪ DATABASE
-                  isFavoriteInitial={
-                    isSavedInDb || stay.is_favorite || stay.isFavorite
-                  }
+                  isFavoriteInitial={isSavedInDb || stay.is_favorite}
                   onClick={() => navigate(`/hotel/${stayId}`)}
                 />
               );

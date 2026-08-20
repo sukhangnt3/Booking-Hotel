@@ -1,14 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import path from "path"; // Thêm dòng này để xử lý đường dẫn
+import path from "path";
+import { fileURLToPath } from "url"; // Thêm dòng này
 
-// https://vite.dev/config/
+// Tự định nghĩa __dirname cho môi trường ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      // Cấu hình dấu @ đại diện cho thư mục src
+      // Dấu @ bây giờ sẽ trỏ thẳng vào thư mục src
       "@": path.resolve(__dirname, "./src"),
     },
   },

@@ -1,40 +1,45 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import hotelService from "../../services/hotelService";
+import {
+  MapPin,
+  Calendar as CalendarIcon,
+  Users,
+  Search,
+  Plus,
+  Minus,
+  X,
+} from "lucide-react";
+import { Button, Input, DatePicker } from "../ui";
+import hotelService from "@/services/hotelService";
+import { cn } from "@/utils/cn";
 
-const HotelFilter = ({ onSearch }) => {
+const HotelFilter = ({ onSearch, className = "" }) => {
   const navigate = useNavigate();
   const filterRef = useRef(null);
 
-  const today = new Date().toISOString().split("T")[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
-
+  // 1. STATE QUẢN LÝ
   const [destination, setDestination] = useState("");
   const [destinations, setDestinations] = useState([]);
-  const [recentSearches, setRecentSearches] = useState([]);
-
-  const [checkInDate, setCheckInDate] = useState(() => {
-    const saved = localStorage.getItem("search_dates");
-    return saved ? JSON.parse(saved).checkIn : today;
-  });
-  const [checkOutDate, setCheckOutDate] = useState(() => {
-    const saved = localStorage.getItem("search_dates");
-    return saved ? JSON.parse(saved).checkOut : tomorrow;
-  });
-
+  const [dateRange, setDateRange] = useState([null, null]);
+  const [startDate, endDate] = dateRange;
   const [guests, setGuests] = useState({ adults: 2, children: 0, rooms: 1 });
-  const [isBusiness, setIsBusiness] = useState(false);
-  const [hasPets, setHasPets] = useState(false);
-  const [activeTab, setActiveTab] = useState(null);
+  const [activeTab, setActiveTab] = useState(null); // 'dest' | 'date' | 'guest'
   const [loadingDest, setLoadingDest] = useState(false);
 
+  // 2. CLICK OUTSIDE: Đóng menu khi click ra ngoài
   useEffect(() => {
-    const saved = localStorage.getItem("recent_searches");
-    if (saved) setRecentSearches(JSON.parse(saved));
+    const handleClickOutside = (event) => {
+      if (filterRef.current && !filterRef.current.contains(event.target)) {
+        setActiveTab(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // 3. DEBOUNCE TÌM KIẾM ĐỊA ĐIỂM
   useEffect(() => {
-    if (!destination.trim() || destination.length < 2) {
+    if (destination.length < 2) {
       setDestinations([]);
       return;
     }
@@ -56,34 +61,21 @@ const HotelFilter = ({ onSearch }) => {
     setGuests((prev) => {
       const val = prev[field] + delta;
       const min = field === "children" ? 0 : 1;
-      if (val < min) return prev;
-      return { ...prev, [field]: val };
+      return val < min ? prev : { ...prev, [field]: val };
     });
   };
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (destination.trim()) {
-      const updated = [
-        destination.trim(),
-        ...recentSearches.filter((i) => i !== destination.trim()),
-      ].slice(0, 5);
-      setRecentSearches(updated);
-      localStorage.setItem("recent_searches", JSON.stringify(updated));
-    }
-    localStorage.setItem(
-      "search_dates",
-      JSON.stringify({ checkIn: checkInDate, checkOut: checkOutDate }),
-    );
-
+  const handleFinalSearch = (e) => {
+    if (e) e.preventDefault();
     const params = {
       destination: destination.trim(),
-      checkIn: checkInDate,
-      checkOut: checkOutDate,
+      checkIn: startDate?.toISOString(),
+      checkOut: endDate?.toISOString(),
       adults: guests.adults,
       children: guests.children,
       rooms: guests.rooms,
     };
+
     if (onSearch) {
       onSearch(params);
     } else {
@@ -93,147 +85,131 @@ const HotelFilter = ({ onSearch }) => {
   };
 
   return (
-    <div ref={filterRef} className="w-full relative">
+    <div
+      ref={filterRef}
+      className={cn("w-full max-w-7xl mx-auto relative z-[100]", className)}
+    >
       <form
-        onSubmit={handleSearch}
-        className="bg-[#ffb700] p-1 rounded-lg shadow-xl grid grid-cols-1 md:grid-cols-12 gap-1"
+        onSubmit={handleFinalSearch}
+        className="bg-[#ffb700] p-1 rounded-xl shadow-2xl grid grid-cols-1 lg:grid-cols-12 gap-1"
       >
-        {/* 1. Ô ĐỊA ĐIỂM */}
-        <div className="relative md:col-span-4 bg-white rounded flex items-center px-4 py-2.5">
-          <span className="mr-3 text-lg">🛏️</span>
-          <div className="flex-1">
-            <span className="text-[10px] text-gray-400 block font-bold uppercase">
-              Bạn muốn đến đâu?
-            </span>
-            <input
-              type="text"
-              placeholder="Nhập địa điểm..."
-              value={destination}
-              onChange={(e) => {
-                setDestination(e.target.value);
-                setActiveTab("dest");
-              }}
-              onFocus={() => setActiveTab("dest")}
-              className="w-full font-bold outline-none text-sm text-gray-800"
-            />
-          </div>
-        </div>
+        {/* SECTION 1: ĐỊA ĐIỂM */}
+        <div className="lg:col-span-4 relative">
+          <Input
+            placeholder="Bạn muốn đến đâu?"
+            value={destination}
+            onChange={(e) => {
+              setDestination(e.target.value);
+              setActiveTab("dest");
+            }}
+            onFocus={() => setActiveTab("dest")}
+            leftIcon={<MapPin className="text-gray-400" size={20} />}
+            className="border-none h-14 rounded-lg focus:ring-0"
+            clearable
+            onClear={() => setDestination("")}
+          />
 
-        {/* 2. NGÀY NHẬN / TRẢ PHÒNG */}
-        <div
-          className="relative md:col-span-4 bg-white rounded flex items-center px-4 py-2.5 cursor-pointer"
-          onClick={() => setActiveTab(activeTab === "date" ? null : "date")}
-        >
-          <span className="mr-3 text-lg">📅</span>
-          <div className="w-full">
-            <span className="text-[10px] text-gray-400 block font-bold uppercase">
-              Ngày nhận — Ngày trả
-            </span>
-            <div className="text-sm font-bold text-gray-800">
-              {checkInDate} — {checkOutDate}
-            </div>
-          </div>
-          {activeTab === "date" && (
-            <div
-              className="absolute top-[110%] left-0 bg-white border rounded-xl shadow-2xl p-5 z-[100] w-72"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="date"
-                  value={checkInDate}
-                  onChange={(e) => setCheckInDate(e.target.value)}
-                  className="w-full border-b font-bold text-sm outline-none"
-                />
-                <input
-                  type="date"
-                  value={checkOutDate}
-                  onChange={(e) => setCheckOutDate(e.target.value)}
-                  className="w-full border-b font-bold text-sm outline-none"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab(null)}
-                className="w-full bg-[#006ce4] text-white py-2 rounded mt-4 font-bold text-xs uppercase"
-              >
-                Xác nhận
-              </button>
+          {/* Dropdown gợi ý địa điểm */}
+          {activeTab === "dest" && destinations.length > 0 && (
+            <div className="absolute top-[110%] left-0 w-full bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95">
+              {destinations.map((item, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    setDestination(item.name);
+                    setActiveTab(null);
+                  }}
+                  className="px-4 py-3 hover:bg-gray-50 flex items-center gap-3 cursor-pointer border-b last:border-0"
+                >
+                  <MapPin size={16} className="text-gray-400" />
+                  <span className="text-sm font-bold text-gray-700">
+                    {item.name}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* 3. KHÁCH & PHÒNG */}
-        <div
-          className="relative md:col-span-3 bg-white rounded flex items-center px-4 py-2.5 cursor-pointer"
-          onClick={() => setActiveTab(activeTab === "guest" ? null : "guest")}
-        >
-          <span className="mr-3 text-lg">👤</span>
-          <div className="w-full">
-            <span className="text-[10px] text-gray-400 block font-bold uppercase">
-              Số lượng
-            </span>
-            <div className="text-sm font-bold text-gray-800 truncate">
-              {guests.adults} lớn · {guests.children} trẻ · {guests.rooms} phòng
+        {/* SECTION 2: NGÀY THÁNG */}
+        <div className="lg:col-span-4 bg-white rounded-lg h-14 flex items-center relative">
+          <DatePicker
+            startDate={startDate}
+            endDate={endDate}
+            onChange={(update) => setDateRange(update)}
+            placeholderText="Ngày nhận - Ngày trả"
+            className="h-full border-none"
+          />
+        </div>
+
+        {/* SECTION 3: KHÁCH & PHÒNG */}
+        <div className="lg:col-span-3 relative">
+          <div
+            onClick={() => setActiveTab(activeTab === "guest" ? null : "guest")}
+            className="h-14 bg-white rounded-lg flex items-center px-4 cursor-pointer hover:bg-gray-50 transition-colors"
+          >
+            <Users className="text-gray-400 mr-3 shrink-0" size={20} />
+            <div className="flex flex-col">
+              <span className="text-[10px] text-gray-400 font-bold uppercase leading-none mb-1">
+                Số khách & Phòng
+              </span>
+              <span className="text-sm font-bold text-gray-800 truncate">
+                {guests.adults} lớn · {guests.children} trẻ · {guests.rooms}{" "}
+                phòng
+              </span>
             </div>
           </div>
+
           {activeTab === "guest" && (
-            <div
-              className="absolute top-[110%] right-0 bg-white border rounded-xl shadow-2xl p-5 z-[100] w-72"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {["adults", "children", "rooms"].map((type) => (
+            <div className="absolute top-[110%] right-0 w-72 bg-white rounded-xl shadow-2xl p-6 border border-gray-100 animate-in fade-in zoom-in-95">
+              {[
+                { label: "Người lớn", key: "adults" },
+                { label: "Trẻ em", key: "children" },
+                { label: "Phòng", key: "rooms" },
+              ].map((item) => (
                 <div
-                  key={type}
-                  className="flex justify-between items-center mb-4"
+                  key={item.key}
+                  className="flex justify-between items-center mb-5 last:mb-0"
                 >
-                  <span className="capitalize font-bold text-sm">
-                    {type === "adults"
-                      ? "Người lớn"
-                      : type === "children"
-                        ? "Trẻ em"
-                        : "Số phòng"}
-                  </span>
-                  <div className="flex items-center gap-3">
+                  <span className="font-bold text-gray-700">{item.label}</span>
+                  <div className="flex items-center gap-4">
                     <button
                       type="button"
-                      onClick={() => handleGuestChange(type, -1)}
-                      className="w-8 h-8 border border-[#006ce4] text-[#006ce4] rounded font-bold"
+                      onClick={() => handleGuestChange(item.key, -1)}
+                      className="w-8 h-8 rounded-full border border-blue-600 text-blue-600 flex items-center justify-center hover:bg-blue-50 disabled:opacity-30 transition-colors"
                     >
-                      -
+                      <Minus size={16} />
                     </button>
-                    <span className="font-bold w-4 text-center">
-                      {guests[type]}
+                    <span className="font-bold text-sm w-4 text-center">
+                      {guests[item.key]}
                     </span>
                     <button
                       type="button"
-                      onClick={() => handleGuestChange(type, 1)}
-                      className="w-8 h-8 border border-[#006ce4] text-[#006ce4] rounded font-bold"
+                      onClick={() => handleGuestChange(item.key, 1)}
+                      className="w-8 h-8 rounded-full border border-blue-600 text-blue-600 flex items-center justify-center hover:bg-blue-50 transition-colors"
                     >
-                      +
+                      <Plus size={16} />
                     </button>
                   </div>
                 </div>
               ))}
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                className="w-full mt-6 h-10 text-xs font-black uppercase tracking-wider"
                 onClick={() => setActiveTab(null)}
-                className="w-full bg-white border-2 border-[#006ce4] text-[#006ce4] py-2 rounded font-extrabold text-xs uppercase mt-2"
               >
                 Xong
-              </button>
+              </Button>
             </div>
           )}
         </div>
 
-        {/* 4. NÚT TÌM KIẾM */}
-        <div className="md:col-span-1">
-          <button
-            type="submit"
-            className="w-full h-full bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded text-base transition-all shadow-lg"
-          >
-            Tìm
-          </button>
+        {/* SECTION 4: NÚT TÌM KIẾM */}
+        <div className="lg:col-span-1">
+          <Button type="submit" className="w-full h-14 rounded-lg shadow-lg">
+            <Search size={24} className="lg:hidden mr-2" />
+            <span className="lg:text-lg">Tìm</span>
+          </Button>
         </div>
       </form>
     </div>

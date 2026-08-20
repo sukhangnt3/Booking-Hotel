@@ -1,411 +1,273 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import authService from "../../services/authService";
-import bookingService from "../../services/bookingService";
-import hotelService from "../../services/hotelService";
-import { LoadingSpinner } from "../../components/common";
+import {
+  User,
+  Mail,
+  Phone,
+  Calendar,
+  Image as ImageIcon,
+  Receipt,
+  Heart,
+  CheckCircle2,
+  Building2,
+  CalendarDays,
+  Trash2,
+  ExternalLink,
+  ShieldCheck,
+  CreditCard,
+  Clock,
+  Filter,
+} from "lucide-react";
+
+// UI Kit & Common Components
+import { Button, Input, Badge } from "@/components/ui";
+import { LoadingSpinner, EmptyState, Breadcrumb } from "@/components/common";
+import { PaymentStatusBadge } from "@/components/payment";
+
+// Services & Stores
+import { authService, bookingService, hotelService } from "@/services";
+import { useAuthStore } from "@/stores/authStore";
 
 export default function UserProfilePage() {
   const navigate = useNavigate();
+  const { user, updateUser } = useAuthStore();
 
-  const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState("profile");
+  const [activeTab, setActiveTab] = useState("profile"); // 'profile' | 'bookings' | 'favorites'
+  const [bookingFilter, setBookingFilter] = useState("all"); // 'all' | 'paid' | 'unpaid'
   const [bookings, setBookings] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [deletingId, setDeletingId] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toast, setToast] = useState(null);
 
+  // Form State
   const [profileForm, setProfileForm] = useState({
     full_name: "",
     email: "",
     phone: "",
     dob: "",
     avatar: "",
-    email_verified: false,
-    phone_verified: false,
-    activate: true,
-    created_at: null,
   });
-
-  const [toast, setToast] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // HÀM BỔ TRỢ 1: Chuyển ngày từ Database về YYYY-MM-DD
-  const formatDateForInput = (dateString) => {
-    if (!dateString || dateString === "null" || dateString === "0000-00-00") {
-      return "";
-    }
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return "";
-      const isoDate = date.toISOString().split("T")[0];
-      if (isoDate === "1970-01-01" && !String(dateString).includes("1970")) {
-        return "";
-      }
-      return isoDate;
-    } catch (e) {
-      return "";
-    }
-  };
-
-  // HÀM BỔ TRỢ 2: BÓC TÁCH AVATAR GOOGLE HOẶC TỰ TẠO AVATAR CHUẨN GOOGLE CỰC ĐẸP
-  const getSmartAvatar = (rawUser, zustandUser, localUser, name) => {
-    // 1. Kiểm tra các nguồn chứa link ảnh thật từ Google hoặc Database
-    const candidateUrls = [
-      rawUser?.avatar,
-      rawUser?.picture,
-      rawUser?.photoURL,
-      zustandUser?.picture,
-      zustandUser?.avatar,
-      zustandUser?.photoURL,
-      localUser?.avatar,
-      localUser?.picture,
-      localStorage.getItem(
-        "google_avatar_" + (rawUser?.email || zustandUser?.email),
-      ),
-    ];
-
-    for (const url of candidateUrls) {
-      if (
-        url &&
-        typeof url === "string" &&
-        url.trim() !== "" &&
-        !url.includes("placeholder")
-      ) {
-        return url;
-      }
-    }
-
-    // 2. Nếu không có link ảnh -> TỰ ĐỘNG TẠO AVATAR CHUẨN GOOGLE THEO CHỮ CÁI TÊN CỦA BẠN
-    const displayName = name && name.trim() !== "" ? name : "User";
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      displayName,
-    )}&background=4F46E5&color=ffffff&bold=true&size=150`;
-  };
-
-  // TẢI DỮ LIỆU ĐÚNG CỦA TÀI KHOẢN ĐANG ĐĂNG NHẬP
-  useEffect(() => {
-    fetchUserData();
-  }, []);
-
-  const fetchUserData = async () => {
-    try {
-      setLoadingData(true);
-
-      // 1. Lấy từ API Backend (GET /auth/profile)
-      let activeUser = null;
-      if (authService && authService.getProfile) {
-        try {
-          const res = await authService.getProfile();
-          activeUser = res?.user || res?.data?.user || res?.data || res;
-        } catch (err) {}
-      }
-
-      // 2. Lấy từ Zustand Store (auth-storage)
-      let zustandUser = null;
-      const authStorage = localStorage.getItem("auth-storage");
-      if (authStorage) {
-        try {
-          const parsed = JSON.parse(authStorage);
-          zustandUser = parsed.state?.user;
-        } catch (e) {}
-      }
-
-      if (!activeUser) activeUser = zustandUser;
-
-      // 3. Lấy từ LocalStorage "user" đúng chính chủ
-      let localUser = null;
-      try {
-        const savedLocal = localStorage.getItem("user");
-        if (savedLocal) {
-          const parsedLocal = JSON.parse(savedLocal);
-          if (
-            activeUser &&
-            (parsedLocal.email === activeUser.email ||
-              parsedLocal.id === activeUser.id)
-          ) {
-            localUser = parsedLocal;
-          } else {
-            localStorage.removeItem("user");
-          }
-        }
-      } catch (e) {}
-
-      // 4. BÓC TÁCH DỮ LIỆU VÀ TỰ ĐỘNG KHÔI PHỤC AVATAR GOOGLE
-      if (activeUser && activeUser.email) {
-        setUser(activeUser);
-
-        const fullName =
-          activeUser.full_name ||
-          activeUser.name ||
-          activeUser.displayName ||
-          activeUser.username ||
-          localUser?.full_name ||
-          "";
-
-        const email = activeUser.email || localUser?.email || "";
-
-        const phone =
-          activeUser.phone || activeUser.phone_number || localUser?.phone || "";
-
-        const rawDob = activeUser.dob || localUser?.dob || null;
-        const formattedDob = formatDateForInput(rawDob);
-
-        // Tự động bóc tách hoặc tạo Avatar Google tuyệt đẹp
-        const finalAvatar = getSmartAvatar(
-          activeUser,
-          zustandUser,
-          localUser,
-          fullName,
-        );
-
-        setProfileForm({
-          full_name: fullName,
-          email: email,
-          phone: phone,
-          dob: formattedDob,
-          avatar: finalAvatar,
-          email_verified: activeUser.email_verified ?? false,
-          phone_verified: activeUser.phone_verified ?? false,
-          activate: activeUser.activate ?? true,
-          created_at: activeUser.created_at || null,
-        });
-      } else {
-        setUser(null);
-        setProfileForm({
-          full_name: "",
-          email: "",
-          phone: "",
-          dob: "",
-          avatar:
-            "https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff",
-          email_verified: false,
-          phone_verified: false,
-          activate: true,
-          created_at: null,
-        });
-      }
-
-      // 5. Tải danh sách đơn đặt hàng
-      if (bookingService && bookingService.getMyBookings) {
-        const myBookings = await bookingService.getMyBookings();
-        setBookings(myBookings || []);
-      }
-
-      // 6. Tải danh sách yêu thích
-      if (hotelService && hotelService.getFavoriteHotels) {
-        const myFavorites = await hotelService.getFavoriteHotels();
-        setFavorites(myFavorites || []);
-      }
-    } catch (error) {
-      console.error("Lỗi lấy dữ liệu tài khoản:", error);
-    } finally {
-      setLoadingData(false);
-    }
-  };
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 3000);
   };
 
-  // CẬP NHẬT THÔNG TIN VÀO DATABASE BACKEND
+  // ─── 1. LOAD DỮ LIỆU BAN ĐẦU ───
+  useEffect(() => {
+    const initData = async () => {
+      setLoadingData(true);
+      try {
+        if (user) {
+          setProfileForm({
+            full_name: user.full_name || user.name || "",
+            email: user.email || "",
+            phone: user.phone || user.phone_number || "",
+            dob: user.dob ? user.dob.split("T")[0] : "",
+            avatar:
+              user.avatar ||
+              user.picture ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.email || "U")}&background=006ce4&color=fff`,
+          });
+        }
+
+        // Gọi song song API lấy Đơn đặt phòng & Yêu thích
+        const [bookingsRes, favoritesRes] = await Promise.all([
+          bookingService.getHistory?.() || [],
+          hotelService.getFavorites?.() || [],
+        ]);
+
+        setBookings(
+          Array.isArray(bookingsRes)
+            ? bookingsRes
+            : bookingsRes?.data || bookingsRes?.bookings || [],
+        );
+        setFavorites(
+          Array.isArray(favoritesRes) ? favoritesRes : favoritesRes?.data || [],
+        );
+      } catch (err) {
+        console.error("Lỗi khi tải dữ liệu trang cá nhân:", err);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+
+    initData();
+  }, [user]);
+
+  // ─── 2. CẬP NHẬT THÔNG TIN CÁ NHÂN ───
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
+    setIsSubmitting(true);
 
     try {
       const updateData = {
         full_name: profileForm.full_name,
         email: profileForm.email,
         phone: profileForm.phone,
-        phone_number: profileForm.phone,
-        dob: profileForm.dob ? profileForm.dob : null,
-        avatar: profileForm.avatar, // Gửi link Avatar để ép Backend lưu vào PostgreSQL
+        dob: profileForm.dob || null,
+        avatar: profileForm.avatar,
       };
 
-      console.log("Đang gửi Payload cập nhật:", updateData);
-
-      let updatedUserFromApi = null;
-      if (authService && authService.updateProfile) {
-        try {
-          const res = await authService.updateProfile(updateData);
-          updatedUserFromApi = res?.user || res?.data || res;
-        } catch (apiErr) {
-          console.warn(
-            "API Backend chưa lưu được, lưu dự phòng Local:",
-            apiErr,
-          );
-        }
+      if (authService?.updateProfile) {
+        await authService.updateProfile(updateData);
       }
 
-      const finalUser = {
-        ...(user || {}),
-        ...(updatedUserFromApi || {}),
-        ...updateData,
-      };
-
-      setUser(finalUser);
-
-      // Lưu bộ nhớ cục bộ
-      localStorage.setItem("user", JSON.stringify(finalUser));
-
-      // Đồng bộ vào Zustand Store
-      const authStorage = localStorage.getItem("auth-storage");
-      if (authStorage) {
-        try {
-          const parsed = JSON.parse(authStorage);
-          if (parsed.state) {
-            parsed.state.user = finalUser;
-            localStorage.setItem("auth-storage", JSON.stringify(parsed));
-          }
-        } catch (err) {}
-      }
-
+      updateUser(updateData);
       showToast("Cập nhật thông tin cá nhân thành công!");
     } catch (error) {
-      console.error("Lỗi cập nhật thông tin:", error);
-      showToast("Cập nhật thất bại. Vui lòng kiểm tra lại!", "error");
+      showToast("Cập nhật thất bại, vui lòng thử lại.", "error");
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  // HÀM XÓA YÊU THÍCH CHUẨN XÁC
-  const handleRemoveFavorite = async (e, hotel) => {
+  // ─── 3. XÓA KHÁCH SẠN YÊU THÍCH ───
+  const handleRemoveFavorite = async (e, hotelId) => {
     e.stopPropagation();
-
-    const targetHotelId = hotel.id || hotel.hotel_id;
-    const favoriteRecordId = hotel.favorite_record_id || hotel.favorite_id;
-
-    if (!targetHotelId) {
-      showToast("Không tìm thấy ID khách sạn!", "error");
-      return;
-    }
-
     try {
-      setDeletingId(targetHotelId);
-
-      await hotelService.removeFavorite(targetHotelId, favoriteRecordId);
-
-      const updatedFavorites = await hotelService.getFavoriteHotels();
-      setFavorites(updatedFavorites || []);
-
-      showToast("Đã xóa khỏi danh sách yêu thích!", "info");
+      await hotelService.removeFavorite(hotelId);
+      setFavorites((prev) =>
+        prev.filter((item) => (item.id || item.hotel_id) !== hotelId),
+      );
+      showToast("Đã xóa khỏi danh sách yêu thích!");
     } catch (err) {
-      console.error("Lỗi xóa yêu thích:", err);
-      showToast("Không thể xóa khỏi Database!", "error");
-    } finally {
-      setDeletingId(null);
+      showToast("Không thể xóa lúc này.", "error");
     }
   };
 
-  if (loadingData) return <LoadingSpinner />;
+  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "N/A";
+    try {
+      return new Date(dateStr).toLocaleDateString("vi-VN");
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Lọc danh sách booking theo tab con
+  const filteredBookings = bookings.filter((b) => {
+    if (bookingFilter === "paid")
+      return b.payment_status === "paid" || b.status === "confirmed";
+    if (bookingFilter === "unpaid")
+      return b.payment_status === "unpaid" || b.payment_status === "pending";
+    return true;
+  });
+
+  const breadcrumbs = [
+    { label: "Trang chủ", link: "/" },
+    { label: "Tài khoản của tôi" },
+  ];
+
+  if (loadingData)
+    return <LoadingSpinner fullPage label="Đang tải dữ liệu tài khoản..." />;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 py-8 px-4 sm:px-6 lg:px-8 font-sans">
-      {/* TOAST THÔNG BÁO */}
+    <div className="min-h-screen bg-gray-50/60 text-gray-800 pb-20 font-sans">
+      {/* TOAST NOTIFICATION */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-xl text-white font-medium ${
-            toast.type === "error" ? "bg-rose-600" : "bg-emerald-600"
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3.5 rounded-2xl shadow-2xl text-white font-bold text-sm animate-in slide-in-from-bottom-5 ${
+            toast.type === "error"
+              ? "bg-rose-600 shadow-rose-200"
+              : "bg-emerald-600 shadow-emerald-200"
           }`}
         >
+          <CheckCircle2 size={18} />
           <span>{toast.message}</span>
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold text-slate-900 mb-6">
-          Quản lý tài khoản
-        </h1>
+      <div className="max-w-7xl mx-auto px-4 pt-4">
+        <Breadcrumb items={breadcrumbs} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* SIDEBAR VỚI AVATAR CHUẨN GOOGLE */}
-          <div className="lg:col-span-1 bg-white rounded-2xl p-5 shadow-sm border h-fit space-y-6">
-            <div className="flex flex-col items-center text-center pb-6 border-b">
-              <img
-                src={profileForm.avatar}
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                    profileForm.full_name || "User",
-                  )}&background=4F46E5&color=fff&bold=true`;
-                }}
-                alt="Avatar"
-                className="w-20 h-20 rounded-full object-cover shadow border border-gray-200"
-              />
-              <h2 className="font-bold text-slate-900 text-lg mt-3">
-                {profileForm.full_name || "Người dùng"}
-              </h2>
-              <p className="text-xs text-slate-500">{profileForm.email}</p>
-
-              {/* TRẠNG THÁI TÀI KHOẢN */}
-              <div className="mt-3">
-                {profileForm.activate ? (
-                  <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-full">
-                    ● Tài khoản đang hoạt động
-                  </span>
-                ) : (
-                  <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2.5 py-1 rounded-full">
-                    ● Tài khoản bị khóa
-                  </span>
-                )}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-6">
+          {/* ─── CỘT TRÁI: SIDEBAR USER (4 COLS) ─── */}
+          <div className="lg:col-span-4 space-y-6">
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-200 text-center space-y-4">
+              {/* Avatar & Thông tin */}
+              <div className="relative w-24 h-24 mx-auto">
+                <img
+                  src={profileForm.avatar}
+                  alt="Avatar"
+                  className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg mx-auto"
+                />
+                <div className="absolute bottom-0 right-0 bg-emerald-500 text-white p-1 rounded-full border-2 border-white">
+                  <ShieldCheck size={14} />
+                </div>
               </div>
+
+              <div className="space-y-1">
+                <h2 className="font-black text-gray-900 text-xl">
+                  {profileForm.full_name || "Khách hàng GoStay"}
+                </h2>
+                <p className="text-xs text-gray-500 font-medium truncate">
+                  {profileForm.email}
+                </p>
+                <Badge variant="primary" size="sm" className="mt-2">
+                  Thành viên thân thiết
+                </Badge>
+              </div>
+
+              {/* Menu Tabs */}
+              <nav className="space-y-1.5 pt-4 border-t border-gray-100 text-left">
+                {[
+                  {
+                    id: "profile",
+                    label: "Thông tin cá nhân",
+                    icon: <User size={18} />,
+                  },
+                  {
+                    id: "bookings",
+                    label: `Đơn đặt của tôi (${bookings.length})`,
+                    icon: <Receipt size={18} />,
+                  },
+                  {
+                    id: "favorites",
+                    label: `Khách sạn yêu thích (${favorites.length})`,
+                    icon: <Heart size={18} />,
+                  },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                      activeTab === tab.id
+                        ? "bg-[#006ce4] text-white shadow-lg shadow-blue-100"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </nav>
             </div>
-
-            <nav className="flex flex-col gap-2">
-              <button
-                onClick={() => setActiveTab("profile")}
-                className={`px-4 py-3 rounded-xl text-sm font-medium text-left cursor-pointer transition ${
-                  activeTab === "profile"
-                    ? "bg-indigo-50 text-indigo-600 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                Thông tin cá nhân
-              </button>
-
-              <button
-                onClick={() => setActiveTab("bookings")}
-                className={`px-4 py-3 rounded-xl text-sm font-medium text-left cursor-pointer transition ${
-                  activeTab === "bookings"
-                    ? "bg-indigo-50 text-indigo-600 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                Đơn đặt của tôi ({bookings.length})
-              </button>
-
-              <button
-                onClick={() => setActiveTab("favorites")}
-                className={`px-4 py-3 rounded-xl text-sm font-medium text-left cursor-pointer transition ${
-                  activeTab === "favorites"
-                    ? "bg-indigo-50 text-indigo-600 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                Khách sạn yêu thích ({favorites.length})
-              </button>
-            </nav>
           </div>
 
-          {/* CONTENT AREA */}
-          <div className="lg:col-span-3 bg-white rounded-2xl p-6 sm:p-8 shadow-sm border">
-            {/* TAB THÔNG TIN CÁ NHÂN */}
+          {/* ─── CỘT PHẢI: NỘI DUNG TỪNG TAB (8 COLS) ─── */}
+          <div className="lg:col-span-8">
+            {/* ─── TAB 1: THÔNG TIN CÁ NHÂN ─── */}
             {activeTab === "profile" && (
-              <form onSubmit={handleProfileSubmit} className="space-y-6">
-                <h2 className="text-xl font-bold text-slate-900 border-b pb-4">
-                  Thông tin cá nhân
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {/* HỌ VÀ TÊN */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
-                      Họ và tên
-                    </label>
-                    <input
-                      type="text"
+              <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 space-y-6 animate-in fade-in">
+                <div className="border-b border-gray-100 pb-4">
+                  <h2 className="text-xl font-black text-gray-900">
+                    Thông tin cá nhân
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Cập nhật hồ sơ để nhận được trải nghiệm đặt phòng tốt nhất
+                  </p>
+                </div>
+
+                <form onSubmit={handleProfileSubmit} className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <Input
+                      label="Họ và tên *"
+                      required
+                      placeholder="Nguyễn Văn A"
                       value={profileForm.full_name}
                       onChange={(e) =>
                         setProfileForm({
@@ -413,19 +275,14 @@ export default function UserProfilePage() {
                           full_name: e.target.value,
                         })
                       }
-                      required
-                      placeholder="Nhập họ và tên..."
-                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
+                      leftIcon={<User size={18} className="text-gray-400" />}
                     />
-                  </div>
 
-                  {/* EMAIL */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
-                      Email
-                    </label>
-                    <input
+                    <Input
+                      label="Địa chỉ Email *"
                       type="email"
+                      required
+                      placeholder="email@example.com"
                       value={profileForm.email}
                       onChange={(e) =>
                         setProfileForm({
@@ -433,19 +290,13 @@ export default function UserProfilePage() {
                           email: e.target.value,
                         })
                       }
-                      required
-                      placeholder="Nhập email..."
-                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
+                      leftIcon={<Mail size={18} className="text-gray-400" />}
                     />
-                  </div>
 
-                  {/* SỐ ĐIỆN THOẠI */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
-                      Số điện thoại
-                    </label>
-                    <input
+                    <Input
+                      label="Số điện thoại"
                       type="tel"
+                      placeholder="0912 345 678"
                       value={profileForm.phone}
                       onChange={(e) =>
                         setProfileForm({
@@ -453,165 +304,257 @@ export default function UserProfilePage() {
                           phone: e.target.value,
                         })
                       }
-                      placeholder="Nhập số điện thoại..."
-                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
+                      leftIcon={<Phone size={18} className="text-gray-400" />}
                     />
-                  </div>
 
-                  {/* NGÀY SINH */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
-                      Ngày sinh
-                    </label>
-                    <input
+                    <Input
+                      label="Ngày sinh"
                       type="date"
                       value={profileForm.dob}
                       onChange={(e) =>
-                        setProfileForm({
-                          ...profileForm,
-                          dob: e.target.value,
-                        })
+                        setProfileForm({ ...profileForm, dob: e.target.value })
                       }
-                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition cursor-pointer"
+                      leftIcon={
+                        <Calendar size={18} className="text-gray-400" />
+                      }
                     />
                   </div>
 
-                  {/* LINK ẢNH ĐẠI DIỆN */}
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-2">
-                      Link Ảnh đại diện (Avatar URL)
-                    </label>
-                    <input
-                      type="text"
-                      value={profileForm.avatar}
-                      onChange={(e) =>
-                        setProfileForm({
-                          ...profileForm,
-                          avatar: e.target.value,
-                        })
-                      }
-                      placeholder="Link ảnh đại diện Google..."
-                      className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none focus:border-indigo-500 transition"
-                    />
-                  </div>
-                </div>
+                  <Input
+                    label="Link ảnh đại diện (Avatar URL)"
+                    placeholder="https://example.com/avatar.jpg"
+                    value={profileForm.avatar}
+                    onChange={(e) =>
+                      setProfileForm({ ...profileForm, avatar: e.target.value })
+                    }
+                    leftIcon={<ImageIcon size={18} className="text-gray-400" />}
+                  />
 
-                <div className="pt-4 border-t flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold shadow hover:bg-indigo-700 transition cursor-pointer"
-                  >
-                    {isLoading ? "Đang lưu..." : "Lưu thay đổi"}
-                  </button>
-                </div>
-              </form>
+                  <div className="pt-4 border-t border-gray-100 flex justify-end">
+                    <Button
+                      type="submit"
+                      isLoading={isSubmitting}
+                      className="px-8 h-12 text-sm font-black rounded-xl bg-[#006ce4] shadow-md shadow-blue-100"
+                    >
+                      Lưu thay đổi
+                    </Button>
+                  </div>
+                </form>
+              </div>
             )}
 
-            {/* TAB ĐƠN ĐẶT CỦA TÔI */}
+            {/* ─── TAB 2: ĐƠN ĐẶT CỦA TÔI (CÓ BỘ LỌC & NÚT THANH TOÁN TIẾP) ─── */}
             {activeTab === "bookings" && (
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 border-b pb-4 mb-6">
-                  Đơn đặt của tôi
-                </h2>
-                {bookings.length === 0 ? (
-                  <p className="text-center py-12 text-slate-500 text-sm">
-                    Chưa có đơn đặt phòng nào.
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {bookings.map((booking) => (
-                      <div
-                        key={booking.id}
-                        className="border p-4 rounded-xl flex justify-between items-center hover:border-indigo-200 transition"
-                      >
-                        <div>
-                          <h4 className="font-bold">
-                            {booking.hotel_name || "Khách sạn"}
-                          </h4>
-                          <p className="text-xs text-slate-500">
-                            Mã đơn: #{booking.id} | Ngày đặt:{" "}
-                            {booking.created_at || "N/A"}
-                          </p>
-                        </div>
-                        <span className="text-sm font-semibold text-emerald-600">
-                          {booking.status || "Đã xác nhận"}
-                        </span>
-                      </div>
-                    ))}
+              <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 space-y-6 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center pb-4 border-b border-gray-100 gap-3">
+                  <div>
+                    <h2 className="text-xl font-black text-gray-900">
+                      Lịch sử đặt phòng
+                    </h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Danh sách tất cả các chuyến đi bạn đã đặt trên GoStay
+                    </p>
                   </div>
+
+                  {/* Bộ lọc con */}
+                  <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-2xl self-start">
+                    <button
+                      onClick={() => setBookingFilter("all")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        bookingFilter === "all"
+                          ? "bg-white text-gray-900 shadow-sm"
+                          : "text-gray-500 hover:text-gray-900"
+                      }`}
+                    >
+                      Tất cả ({bookings.length})
+                    </button>
+                    <button
+                      onClick={() => setBookingFilter("paid")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        bookingFilter === "paid"
+                          ? "bg-emerald-500 text-white shadow-sm"
+                          : "text-gray-500 hover:text-gray-900"
+                      }`}
+                    >
+                      Đã thanh toán
+                    </button>
+                    <button
+                      onClick={() => setBookingFilter("unpaid")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        bookingFilter === "unpaid"
+                          ? "bg-amber-500 text-white shadow-sm"
+                          : "text-gray-500 hover:text-gray-900"
+                      }`}
+                    >
+                      Chưa thanh toán
+                    </button>
+                  </div>
+                </div>
+
+                {filteredBookings.length > 0 ? (
+                  <div className="space-y-4">
+                    {filteredBookings.map((booking) => {
+                      const isPaid =
+                        booking.payment_status === "paid" ||
+                        booking.status === "confirmed";
+
+                      return (
+                        <div
+                          key={booking.id}
+                          onClick={() =>
+                            navigate(
+                              `/booking/success?code=${booking.booking_code || booking.id}`,
+                            )
+                          }
+                          className="border border-gray-200 rounded-2xl p-5 hover:border-[#006ce4] hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row justify-between items-start md:items-center gap-4 group bg-gray-50/30"
+                        >
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-extrabold text-gray-900 text-base group-hover:text-[#006ce4] transition-colors">
+                                {booking.hotel_name ||
+                                  booking.hotel?.name ||
+                                  "Khách sạn nghỉ dưỡng"}
+                              </h4>
+                              <PaymentStatusBadge
+                                status={booking.payment_status || "paid"}
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-4 text-xs text-gray-500 font-medium flex-wrap">
+                              <span className="flex items-center gap-1 font-mono font-bold text-gray-700">
+                                Mã đơn: #{booking.booking_code || booking.id}
+                              </span>
+                              <span>•</span>
+                              <span className="flex items-center gap-1">
+                                <CalendarDays
+                                  size={13}
+                                  className="text-[#006ce4]"
+                                />
+                                {formatDate(booking.checkin_date)} —{" "}
+                                {formatDate(booking.checkout_date)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right w-full md:w-auto flex md:flex-col justify-between items-center md:items-end pt-3 md:pt-0 border-t md:border-t-0 border-gray-100 gap-2">
+                            <p className="text-lg font-black text-rose-600">
+                              {formatVND(
+                                booking.total_price || booking.totalPrice,
+                              )}
+                            </p>
+
+                            {/* Nút hành động */}
+                            {!isPaid ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(
+                                    `/checkout?code=${booking.booking_code || booking.id}&amount=${booking.total_price || booking.totalPrice}`,
+                                  );
+                                }}
+                                className="bg-[#006ce4] hover:bg-blue-700 text-white text-xs font-black px-4 py-2 rounded-xl shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
+                              >
+                                <CreditCard size={14} /> Thanh toán ngay
+                              </button>
+                            ) : (
+                              <span className="text-xs text-blue-600 font-bold flex items-center gap-1 group-hover:underline">
+                                Xem vé điện tử <ExternalLink size={12} />
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={Receipt}
+                    title="Không có đơn đặt phòng nào trong mục này"
+                    description="Hãy khám phá hàng ngàn khách sạn ưu đãi và lên kế hoạch cho chuyến đi tiếp theo."
+                    actionLabel="Tìm chỗ nghỉ ngay"
+                    onAction={() => navigate("/")}
+                  />
                 )}
               </div>
             )}
 
-            {/* TAB YÊU THÍCH */}
+            {/* ─── TAB 3: KHÁCH SẠN YÊU THÍCH ─── */}
             {activeTab === "favorites" && (
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 border-b pb-4 mb-6">
-                  Khách sạn yêu thích
-                </h2>
-                {favorites.length === 0 ? (
-                  <p className="text-center py-12 text-slate-500 text-sm">
-                    Chưa có khách sạn yêu thích nào.
+              <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 space-y-6 animate-in fade-in">
+                <div className="border-b border-gray-100 pb-4">
+                  <h2 className="text-xl font-black text-gray-900">
+                    Danh sách yêu thích
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Các chỗ nghỉ bạn đã lưu để đặt phòng sau
                   </p>
-                ) : (
+                </div>
+
+                {favorites.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     {favorites.map((hotel) => {
                       const hotelId = hotel.id || hotel.hotel_id;
-                      const isDeleting = deletingId === hotelId;
-
                       return (
                         <div
                           key={hotelId}
                           onClick={() => navigate(`/hotel/${hotelId}`)}
-                          className="border rounded-2xl overflow-hidden shadow-sm bg-white p-4 relative flex flex-col justify-between cursor-pointer hover:shadow-md hover:border-indigo-300 transition-all duration-200 group"
+                          className="border border-gray-200 rounded-2xl overflow-hidden hover:border-[#006ce4] hover:shadow-xl transition-all duration-300 cursor-pointer group bg-white flex flex-col justify-between"
                         >
                           <div>
-                            <div className="overflow-hidden rounded-xl mb-3">
+                            <div className="relative aspect-[16/10] overflow-hidden bg-gray-100">
                               <img
                                 src={
                                   hotel.image ||
                                   hotel.images?.[0]?.path ||
-                                  "https://via.placeholder.com/300"
+                                  "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400"
                                 }
-                                alt={
-                                  hotel.name || hotel.hotel_name || "Khách sạn"
-                                }
-                                className="w-full h-40 object-cover group-hover:scale-105 transition-transform duration-300"
+                                alt={hotel.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                               />
+                              <button
+                                onClick={(e) =>
+                                  handleRemoveFavorite(e, hotelId)
+                                }
+                                className="absolute top-3 right-3 p-2 rounded-full bg-white/90 text-rose-500 hover:bg-rose-500 hover:text-white transition-colors shadow-md"
+                                title="Xóa khỏi yêu thích"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </div>
-                            <h3 className="font-bold text-slate-900 line-clamp-1 group-hover:text-indigo-600 transition-colors">
-                              {hotel.name || hotel.hotel_name || "Khách sạn"}
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                              📍{" "}
-                              {hotel.address ||
-                                hotel.location ||
-                                "Đang cập nhật địa chỉ"}
-                            </p>
+
+                            <div className="p-4 space-y-1">
+                              <h3 className="font-extrabold text-gray-900 text-base group-hover:text-[#006ce4] transition-colors line-clamp-1">
+                                {hotel.name}
+                              </h3>
+                              <p className="text-xs text-gray-500 line-clamp-1">
+                                {hotel.address}, {hotel.city}
+                              </p>
+                            </div>
                           </div>
 
-                          <div className="mt-4 pt-3 border-t flex justify-between items-center">
-                            <button
-                              onClick={(e) => handleRemoveFavorite(e, hotel)}
-                              disabled={isDeleting}
-                              className={`text-xs font-bold transition cursor-pointer ${
-                                isDeleting
-                                  ? "text-slate-400"
-                                  : "text-rose-600 hover:text-rose-800 hover:underline"
-                              }`}
-                            >
-                              {isDeleting ? "Đang xóa..." : "Bỏ yêu thích"}
-                            </button>
-
-                            <span className="text-xs font-semibold text-indigo-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                              Xem chi tiết &rarr;
+                          <div className="p-4 pt-0 flex justify-between items-center border-t border-gray-50 mt-2">
+                            <span className="text-xs text-blue-600 font-bold">
+                              Xem phòng ngay
+                            </span>
+                            <span className="text-sm font-black text-rose-600">
+                              {formatVND(
+                                hotel.min_price || hotel.price || 1200000,
+                              )}
                             </span>
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                ) : (
+                  <EmptyState
+                    icon={Heart}
+                    title="Chưa có chỗ nghỉ nào được lưu"
+                    description="Nhấn vào biểu tượng trái tim ở bất kỳ khách sạn nào để lưu lại và xem lại tại đây."
+                    actionLabel="Khám phá khách sạn"
+                    onAction={() => navigate("/")}
+                  />
                 )}
               </div>
             )}

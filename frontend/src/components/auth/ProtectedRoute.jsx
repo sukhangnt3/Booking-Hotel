@@ -1,39 +1,60 @@
-import { Navigate, Outlet } from "react-router-dom";
+import React from "react";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 
-export const ProtectedRoute = ({ allowedRoles = [] }) => {
-  const { user, token, systemToken } = useAuthStore();
+const ProtectedRoute = ({ allowedRoles = [], redirectTo = "/login" }) => {
+  const { user, token, systemToken, isRehydrated } = useAuthStore();
+  const location = useLocation();
 
-  // 1. Kiểm tra Token linh hoạt (Chấp nhận cả 'token' hoặc 'systemToken')
+  // 1. Kiểm tra Token
   const activeToken = token || systemToken;
 
-  // Chưa đăng nhập → chuyển về trang login
-  if (!activeToken) {
-    console.warn(
-      "⚠️ [ProtectedRoute] Từ chối: Chưa có Token đăng nhập -> Về /login",
+  // 2. Chờ Zustand khôi phục dữ liệu từ localStorage (nếu có dùng persist)
+  // Nếu bạn không dùng persist, có thể bỏ qua check isRehydrated
+  if (isRehydrated === false) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        Đang xác thực...
+      </div>
     );
-    return <Navigate to="/login" replace />;
   }
 
-  // 2. Chuyển tất cả Role về chữ thường để so sánh không phân biệt HOA/thường
-  const userRole = String(user?.role || user?.role_name || "").toLowerCase();
+  // 3. Nếu chưa đăng nhập -> Chuyển về trang login
+  // Lưu lại vị trí hiện tại (from) để sau khi login xong có thể quay lại trang này
+  if (!activeToken) {
+    console.warn("⚠️ [ProtectedRoute] Chưa đăng nhập -> Redirect to login");
+    return <Navigate to={redirectTo} state={{ from: location }} replace />;
+  }
+
+  // 4. Lấy Role của User (Hỗ trợ cả String và Array)
+  const getRoles = () => {
+    const raw = user?.role || user?.role_name || user?.roles || "";
+    if (Array.isArray(raw)) return raw.map((r) => String(r).toLowerCase());
+    return [String(raw).toLowerCase()];
+  };
+
+  const userRoles = getRoles();
   const normalizedAllowedRoles = allowedRoles.map((role) =>
     String(role).toLowerCase(),
   );
 
-  // Không có quyền → chuyển về trang chủ
-  if (
-    normalizedAllowedRoles.length > 0 &&
-    !normalizedAllowedRoles.includes(userRole)
-  ) {
-    console.warn(
-      `⚠️ [ProtectedRoute] Từ chối quyền! User Role hiện tại là "${userRole}", nhưng trang này yêu cầu:`,
-      normalizedAllowedRoles,
-    );
+  // 5. Kiểm tra quyền
+  // - Nếu không yêu cầu role cụ thể (allowedRoles rỗng) -> Cho qua
+  // - Nếu User là admin -> Luôn luôn cho qua (Admin bypass)
+  // - Nếu role của User nằm trong danh sách allowedRoles -> Cho qua
+  const hasAccess =
+    normalizedAllowedRoles.length === 0 ||
+    userRoles.includes("admin") ||
+    userRoles.includes("role_admin") ||
+    normalizedAllowedRoles.some((role) => userRoles.includes(role));
+
+  if (!hasAccess) {
+    console.warn(`⚠️ [ProtectedRoute] Từ chối quyền cho roles:`, userRoles);
+    // Nếu không có quyền, thường ta trả về trang chủ hoặc trang 403
     return <Navigate to="/" replace />;
   }
 
-  // Đủ quyền → cho phép truy cập trang
+  // 6. Đủ quyền -> Render nội dung bên trong
   return <Outlet />;
 };
 

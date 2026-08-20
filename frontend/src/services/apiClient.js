@@ -1,51 +1,126 @@
 import axios from "axios";
+import { useAuthStore } from "@/stores/authStore";
 
 const apiClient = axios.create({
-  // Sử dụng biến môi trường hoặc mặc định localhost:5000
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api",
   headers: {
     "Content-Type": "application/json",
   },
+  timeout: 30000,
 });
 
-// --- GẮN TOKEN TỪ ZUSTAND VÀO MỖI REQUEST ---
+// Biến hỗ trợ cơ chế Refresh Token
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) prom.reject(error);
+    else prom.resolve(token);
+  });
+  failedQueue = [];
+};
+
+// ─── 1. REQUEST INTERCEPTOR: GẮN TOKEN ───
 apiClient.interceptors.request.use(
   (config) => {
-    // 1. Lấy dữ liệu mà Zustand đã lưu (key: auth-storage)
-    const authData = localStorage.getItem("auth-storage");
+    const token =
+      useAuthStore.getState().token || useAuthStore.getState().systemToken;
 
-    if (authData) {
-      try {
-        const parsedData = JSON.parse(authData);
-        // Lấy token nằm trong state của Zustand
-        const token = parsedData.state?.token;
-
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-      } catch (error) {
-        console.error("Lỗi lấy token từ LocalStorage:", error);
-      }
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => Promise.reject(error),
 );
 
-// --- XỬ LÝ DỮ LIỆU TRẢ VỀ CHUẨN TẬP TRUNG ---
+// ─── 2. RESPONSE INTERCEPTOR: XỬ LÝ DATA & REFRESH TOKEN AN TOÀN ───
 apiClient.interceptors.response.use(
-  (response) => {
-    // Trả về data trực tiếp để các Service dùng cho gọn
-    return response.data;
-  },
-  (error) => {
-    // Xử lý lỗi 401 (Hết hạn Token / Chưa đăng nhập)
-    if (error.response?.status === 401) {
-      console.warn("Phiên đăng nhập hết hạn hoặc chưa đăng nhập!");
+  (response) => response.data,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Chỉ xử lý 401 nếu request này chưa từng thử lại
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      const currentToken =
+        useAuthStore.getState().token || useAuthStore.getState().systemToken;
+      const refreshToken = useAuthStore.getState().refreshToken;
+
+      // 👈 QUAN TRỌNG: Nếu KHÔNG CÓ token hoặc KHÔNG CÓ refreshToken (Khách vãng lai)
+      // thì KHÔNG ĐƯỢC CHUYỂN HƯỚNG sang login, chỉ reject lỗi bình thường!
+      if (!currentToken || !refreshToken) {
+        return Promise.reject({
+          status: 401,
+          message: error.response?.data?.message || "Chưa đăng nhập",
+          data: error.response?.data,
+        });
+      }
+
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return apiClient(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        // GỌI API REFRESH TOKEN KHI THỰC SỰ CÓ REFRESH TOKEN
+        const res = await axios.post(
+          `${apiClient.defaults.baseURL}/auth/refresh`,
+          { refreshToken },
+        );
+
+        const { token, user } = res.data;
+
+        // Cập nhật lại Zustand Store
+        useAuthStore.getState().login(user, token, refreshToken);
+
+        processQueue(null, token);
+
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return apiClient(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        useAuthStore.getState().logout();
+
+        // Chỉ đá về login nếu người dùng đang ở trong trang cần đăng nhập
+        const isPublicPage = [
+          "/",
+          "/hotels",
+          "/login",
+          "/register",
+          "/promotions",
+        ].some(
+          (p) =>
+            window.location.pathname === p ||
+            window.location.pathname.startsWith("/hotel/"),
+        );
+
+        if (!isPublicPage) {
+          window.location.href = "/login?session_expired=true";
+        }
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
     }
 
-    // Giữ nguyên object error để các hàm try...catch ở FE đọc được err.response.data
-    return Promise.reject(error);
+    // Xử lý các lỗi khác (500, 403, 404...)
+    const customError = {
+      status: error.response?.status,
+      message: error.response?.data?.message || "Đã có lỗi xảy ra từ máy chủ",
+      data: error.response?.data,
+    };
+
+    return Promise.reject(customError);
   },
 );
 
