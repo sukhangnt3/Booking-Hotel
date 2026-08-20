@@ -8,18 +8,17 @@ import {
   Users,
   ShieldCheck,
   Building2,
+  Sparkles,
 } from "lucide-react";
 
-// ─── UI & COMMON COMPONENTS ───
+// Components
 import { Button, Badge, StarRating } from "@/components/ui";
 import { Breadcrumb, LoadingSpinner } from "@/components/common";
-
-// ─── HOTEL SPECIFIC COMPONENTS ───
 import { HotelGallery, HotelInfo, AmenityList } from "@/components/hotel";
 import { RoomCard } from "@/components/room";
 import { ReviewList, ReviewForm } from "@/components/review";
 
-// ─── SERVICES & STORES ───
+// Services & Stores
 import { hotelService } from "@/services";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -33,7 +32,7 @@ const HotelDetailPage = () => {
   const checkOut = searchParams.get("checkOut") || "";
   const adults = searchParams.get("adults") || "2";
 
-  // ─── 1. STATES DỮ LIỆU ───
+  // ─── 1. STATES ───
   const [hotel, setHotel] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,13 +42,12 @@ const HotelDetailPage = () => {
   const roomsRef = useRef(null);
   const reviewsRef = useRef(null);
 
-  // ─── 2. FETCH HOTEL DATA + REVIEWS ───
-  // ─── 2. FETCH HOTEL DATA + REVIEWS ĐỘC LẬP (ĐÃ SỬA) ───
+  // ─── 2. FETCH HOTEL DATA + REVIEWS ĐỘC LẬP ───
   const fetchAllData = async () => {
     if (!id) return;
     setLoading(true);
 
-    // 1. Lấy thông tin khách sạn chính
+    // 1. Lấy thông tin khách sạn
     try {
       const hotelData = await hotelService.getById(id);
       setHotel(hotelData);
@@ -58,14 +56,14 @@ const HotelDetailPage = () => {
       console.error("Lỗi tải chi tiết khách sạn:", err);
     }
 
-    // 2. Lấy đánh giá (Nếu 404 thì bỏ qua, không làm sập trang)
+    // 2. Lấy đánh giá (Nếu chưa có API 404 thì trả về mảng rỗng)
     try {
       const reviewsData = await hotelService.getReviews(id);
       setReviews(
         Array.isArray(reviewsData) ? reviewsData : reviewsData?.data || [],
       );
-    } catch (err) {
-      setReviews([]); // Để mảng rỗng nếu chưa có đánh giá
+    } catch {
+      setReviews([]);
     } finally {
       setLoading(false);
     }
@@ -75,7 +73,7 @@ const HotelDetailPage = () => {
     fetchAllData();
   }, [id]);
 
-  // ─── 3. TOGGLE FAVORITE (OPTIMISTIC) ───
+  // ─── 3. TOGGLE FAVORITE ───
   const handleToggleFavorite = async () => {
     if (!isAuthenticated) {
       alert("Vui lòng đăng nhập để lưu khách sạn yêu thích!");
@@ -104,7 +102,7 @@ const HotelDetailPage = () => {
 
   if (!hotel) {
     return (
-      <div className="py-24 text-center space-y-4">
+      <div className="py-24 text-center space-y-4 font-sans">
         <h2 className="text-2xl font-bold text-gray-800">
           Không tìm thấy khách sạn
         </h2>
@@ -112,6 +110,19 @@ const HotelDetailPage = () => {
       </div>
     );
   }
+
+  // Tính toán giá phòng thấp nhất trong các phòng
+  const lowestPrice =
+    hotel.rooms && hotel.rooms.length > 0
+      ? Math.min(
+          ...hotel.rooms.map((r) =>
+            Number(r.base_price || r.sell_price || r.price || 999999999),
+          ),
+        )
+      : hotel.min_price || hotel.price || 0;
+
+  const formatVND = (price) =>
+    Number(price || 0).toLocaleString("vi-VN") + " ₫";
 
   const breadcrumbs = [
     { label: "Khách sạn", link: "/hotels" },
@@ -129,7 +140,7 @@ const HotelDetailPage = () => {
         <Breadcrumb items={breadcrumbs} />
 
         {/* ─── HEADER CHI TIẾT ─── */}
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-3 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm mt-3 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="space-y-1.5 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="primary" size="sm">
@@ -160,10 +171,23 @@ const HotelDetailPage = () => {
           </div>
 
           {/* ACTION BUTTONS */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Nút Chia sẻ */}
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+                alert("Đã sao chép liên kết khách sạn!");
+              }}
+              className="p-3 rounded-2xl border border-gray-200 bg-white text-gray-500 hover:text-[#006ce4] hover:border-blue-200 transition-all shadow-sm"
+              title="Chia sẻ"
+            >
+              <Share2 size={20} />
+            </button>
+
+            {/* Nút Yêu thích */}
             <button
               onClick={handleToggleFavorite}
-              className={`p-3 rounded-xl border transition-all ${
+              className={`p-3 rounded-2xl border transition-all ${
                 isFavorite
                   ? "bg-rose-50 border-rose-200 text-rose-500 shadow-sm"
                   : "bg-white border-gray-200 text-gray-400 hover:text-rose-500 hover:border-rose-200"
@@ -177,9 +201,10 @@ const HotelDetailPage = () => {
               />
             </button>
 
+            {/* Nút Đặt phòng */}
             <Button
               onClick={scrollToRooms}
-              className="bg-[#006ce4] hover:bg-blue-700 text-white font-extrabold px-8 h-12 rounded-xl shadow-lg shadow-blue-100"
+              className="bg-[#006ce4] hover:bg-blue-700 text-white font-extrabold px-8 h-12 rounded-2xl shadow-lg shadow-blue-100"
             >
               Đặt phòng ngay
             </Button>
@@ -230,7 +255,7 @@ const HotelDetailPage = () => {
             {/* 1. TỔNG QUAN & GIỚI THIỆU */}
             <section
               id="overview"
-              className="bg-white p-6 md:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6"
+              className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6"
             >
               <h2 className="text-xl font-black text-gray-900">
                 Về {hotel.name}
@@ -244,22 +269,20 @@ const HotelDetailPage = () => {
             {/* 2. DANH SÁCH TIỆN NGHI */}
             <section
               id="facilities"
-              className="bg-white p-6 md:p-8 rounded-2xl border border-gray-200 shadow-sm"
+              className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm"
             >
               <AmenityList amenities={hotel.amenities || []} />
             </section>
 
             {/* 3. DANH SÁCH PHÒNG TRỐNG */}
             <section ref={roomsRef} id="rooms" className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-black text-gray-900 tracking-tight">
-                    Các loại phòng trống
-                  </h2>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Chọn loại phòng phù hợp nhất với chuyến đi của bạn
-                  </p>
-                </div>
+              <div>
+                <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+                  Các loại phòng trống
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Chọn loại phòng phù hợp nhất với chuyến đi của bạn
+                </p>
               </div>
 
               {hotel.rooms && hotel.rooms.length > 0 ? (
@@ -270,15 +293,15 @@ const HotelDetailPage = () => {
                       room={room}
                       onSelect={() =>
                         navigate(
-                          `/booking?hotelId=${id}&roomId=${room.id}&checkIn=${checkIn}&checkOut=${checkOut}`,
+                          `/booking?hotelId=${id}&roomId=${room.id}&checkIn=${checkIn}&checkOut=${checkOut}&adults=${adults}`,
                         )
                       }
                     />
                   ))}
                 </div>
               ) : (
-                <div className="bg-white p-10 rounded-2xl border border-dashed text-center text-gray-400">
-                  Hiện chưa có thông tin phòng trống cho khoảng thời gian này.
+                <div className="bg-white p-10 rounded-3xl border border-dashed text-center text-gray-400">
+                  Hiện chưa có thông tin phòng trống cho khách sạn này.
                 </div>
               )}
             </section>
@@ -303,7 +326,6 @@ const HotelDetailPage = () => {
                 }}
               />
 
-              {/* Form gửi đánh giá mới */}
               <ReviewForm
                 hotelId={hotel.id}
                 hotelName={hotel.name}
@@ -314,8 +336,8 @@ const HotelDetailPage = () => {
 
           {/* CỘT PHẢI: STICKY SIDEBAR (4 COLS) */}
           <aside className="lg:col-span-4 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm sticky top-24 space-y-6">
-              {/* Điểm đánh giá tóm tắt */}
+            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm sticky top-24 space-y-6">
+              {/* Điểm đánh giá */}
               <div className="flex justify-between items-center pb-6 border-b border-gray-100">
                 <div>
                   <h4 className="font-extrabold text-gray-900 text-base">
@@ -333,7 +355,27 @@ const HotelDetailPage = () => {
                 </div>
               </div>
 
-              {/* Lợi ích nổi bật */}
+              {/* 👈 GIÁ PHÒNG TỐT NHẤT TỰ ĐỘNG TÍNH TOÁN */}
+              {lowestPrice > 0 && (
+                <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-100 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-gray-400 block">
+                      Giá tốt nhất từ
+                    </span>
+                    <span className="text-2xl font-black text-rose-600">
+                      {formatVND(lowestPrice)}
+                    </span>
+                    <span className="text-[10px] text-gray-400 block italic">
+                      / đêm
+                    </span>
+                  </div>
+                  <Badge variant="danger" size="sm">
+                    Ưu đãi hôm nay
+                  </Badge>
+                </div>
+              )}
+
+              {/* Lợi ích cam kết */}
               <div className="space-y-3 text-xs text-gray-600 font-medium">
                 <div className="flex items-center gap-2.5 text-emerald-600 font-bold">
                   <ShieldCheck size={18} className="shrink-0" />
@@ -349,10 +391,10 @@ const HotelDetailPage = () => {
                 </div>
               </div>
 
-              {/* Nút Call-To-Action */}
+              {/* Nút Xem phòng */}
               <Button
                 onClick={scrollToRooms}
-                className="w-full h-12 text-sm font-extrabold shadow-lg shadow-blue-100"
+                className="w-full h-12 text-sm font-extrabold shadow-lg shadow-blue-100 rounded-2xl"
               >
                 Xem các phòng còn trống
               </Button>

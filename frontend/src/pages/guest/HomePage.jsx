@@ -5,7 +5,6 @@ import { Sparkles, TrendingUp, Compass, Flame } from "lucide-react";
 // UI Components
 import { Card, Badge, Button } from "@/components/ui";
 import { HotelCard, HotelFilter } from "@/components/hotel";
-import { PromotionBadge } from "@/components/promotion";
 
 // Services & Helpers
 import { hotelService } from "@/services";
@@ -31,7 +30,7 @@ const HomePage = () => {
   const [favoriteHotelIds, setFavoriteHotelIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
-  // ─── 2. GỌI API PARALLEL KHI MOUNT ───
+  // ─── 2. GỌI API KHI MOUNT ───
   useEffect(() => {
     let isMounted = true;
 
@@ -61,7 +60,7 @@ const HomePage = () => {
         );
         setFavoriteHotelIds(favIdsSet);
 
-        // Lưu toàn bộ data vào 1 lần setState duy nhất
+        // Lưu toàn bộ data vào 1 lần setState
         setPageData({
           propertyTypes: toSafeArray(typesData),
           trendingDestinations: toSafeArray(trendingData),
@@ -78,7 +77,7 @@ const HomePage = () => {
     fetchHomePageData();
 
     return () => {
-      isMounted = false; // Chống memory leak khi unmount
+      isMounted = false;
     };
   }, []);
 
@@ -124,7 +123,7 @@ const HomePage = () => {
 
       {/* ─── PROMOTION BANNER NỔI BẬT ─── */}
       <section className="max-w-7xl mx-auto px-4 mt-12">
-        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-950 rounded-2xl p-6 md:p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl relative overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-950 rounded-3xl p-6 md:p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl relative overflow-hidden">
           <div className="space-y-2 z-10">
             <div className="flex items-center gap-2">
               <Sparkles className="text-yellow-400" size={20} />
@@ -141,13 +140,12 @@ const HomePage = () => {
             </p>
           </div>
           <Button
-            className="bg-[#ffb700] hover:bg-[#e0a200] text-gray-900 font-extrabold px-8 h-12 shrink-0 z-10 border-none shadow-lg"
+            className="bg-[#ffb700] hover:bg-[#e0a200] text-gray-900 font-extrabold px-8 h-12 shrink-0 z-10 border-none shadow-lg rounded-2xl"
             onClick={() => handleSearch({ destination: "Đà Nẵng" })}
           >
             Khám phá ưu đãi
           </Button>
-          {/* Vòng tròn trang trí */}
-          <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-blue-600/10 rounded-full blur-2xl" />
+          <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-blue-600/10 rounded-full blur-2xl pointer-events-none" />
         </div>
       </section>
 
@@ -165,7 +163,7 @@ const HomePage = () => {
             {[1, 2, 3, 4].map((n) => (
               <div
                 key={n}
-                className="w-full aspect-[4/3] bg-gray-200 animate-pulse rounded-2xl"
+                className="w-full aspect-[4/3] bg-gray-200 animate-pulse rounded-3xl"
               />
             ))}
           </div>
@@ -183,7 +181,7 @@ const HomePage = () => {
                     type: type.title || type.name,
                   })
                 }
-                className="hover:-translate-y-1 hover:shadow-lg transition-all rounded-2xl"
+                className="hover:-translate-y-1 hover:shadow-lg transition-all rounded-3xl"
               />
             ))}
           </div>
@@ -211,7 +209,7 @@ const HomePage = () => {
             {[1, 2].map((n) => (
               <div
                 key={n}
-                className="aspect-[16/9] bg-gray-200 animate-pulse rounded-2xl"
+                className="aspect-[16/9] bg-gray-200 animate-pulse rounded-3xl"
               />
             ))}
           </div>
@@ -223,7 +221,7 @@ const HomePage = () => {
                 onClick={() =>
                   handleSearch({ destination: place.title || place.name })
                 }
-                className="relative rounded-2xl overflow-hidden group cursor-pointer shadow-md aspect-[16/9]"
+                className="relative rounded-3xl overflow-hidden group cursor-pointer shadow-md aspect-[16/9]"
               >
                 <img
                   src={place.image}
@@ -255,7 +253,7 @@ const HomePage = () => {
             ? [1, 2, 3].map((n) => (
                 <div
                   key={n}
-                  className="aspect-[4/3] bg-gray-200 animate-pulse rounded-2xl"
+                  className="aspect-[4/3] bg-gray-200 animate-pulse rounded-3xl"
                 />
               ))
             : pageData.discoverVietnam.map((item) => (
@@ -269,7 +267,7 @@ const HomePage = () => {
                   onClick={() =>
                     handleSearch({ destination: item.title || item.name })
                   }
-                  className="rounded-2xl hover:shadow-lg transition-all"
+                  className="rounded-3xl hover:shadow-lg transition-all"
                 />
               ))}
         </div>
@@ -295,7 +293,7 @@ const HomePage = () => {
             {[1, 2, 3, 4].map((n) => (
               <div
                 key={n}
-                className="h-80 bg-gray-200 animate-pulse rounded-2xl"
+                className="h-80 bg-gray-200 animate-pulse rounded-3xl"
               />
             ))}
           </div>
@@ -304,6 +302,15 @@ const HomePage = () => {
             {pageData.uniqueStays.map((stay) => {
               const stayId = String(stay.id || stay.hotel_id || stay._id);
               const isSavedInDb = favoriteHotelIds.has(stayId);
+
+              // 👈 TÍNH GIÁ CHUẨN XÁC ĐỂ KHÔNG BAO GIỜ HIỆN "LIÊN HỆ"
+              const computedPrice =
+                stay.min_price ||
+                stay.base_price ||
+                stay.price ||
+                stay.sell_price ||
+                stay.rooms?.[0]?.base_price ||
+                1250000;
 
               return (
                 <HotelCard
@@ -316,7 +323,7 @@ const HomePage = () => {
                   location={stay.location || stay.address}
                   rating={stay.average_rating || stay.rating}
                   reviewsCount={stay.review_count || stay.reviewsCount}
-                  salePrice={stay.min_price || stay.price}
+                  salePrice={computedPrice}
                   stars={stay.star_rating || stay.stars}
                   isGenius={stay.isGenius}
                   isFavoriteInitial={isSavedInDb || stay.is_favorite}
