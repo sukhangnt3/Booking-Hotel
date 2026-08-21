@@ -17,6 +17,7 @@ import {
   CreditCard,
   Clock,
   Filter,
+  MapPin,
 } from "lucide-react";
 
 // UI Kit & Common Components
@@ -60,15 +61,17 @@ export default function UserProfilePage() {
       setLoadingData(true);
       try {
         if (user) {
+          const displayName =
+            user.full_name || user.name || user.username || "Khách hàng";
           setProfileForm({
-            full_name: user.full_name || user.name || "",
+            full_name: displayName,
             email: user.email || "",
             phone: user.phone || user.phone_number || "",
             dob: user.dob ? user.dob.split("T")[0] : "",
             avatar:
               user.avatar ||
               user.picture ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.email || "U")}&background=006ce4&color=fff`,
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=006ce4&color=fff&bold=true`,
           });
         }
 
@@ -129,7 +132,9 @@ export default function UserProfilePage() {
     try {
       await hotelService.removeFavorite(hotelId);
       setFavorites((prev) =>
-        prev.filter((item) => (item.id || item.hotel_id) !== hotelId),
+        prev.filter(
+          (item) => String(item.id || item.hotel_id) !== String(hotelId),
+        ),
       );
       showToast("Đã xóa khỏi danh sách yêu thích!");
     } catch (err) {
@@ -193,6 +198,10 @@ export default function UserProfilePage() {
                 <img
                   src={profileForm.avatar}
                   alt="Avatar"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profileForm.full_name || "U")}&background=006ce4&color=fff&bold=true`;
+                  }}
                   className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg mx-auto"
                 />
                 <div className="absolute bottom-0 right-0 bg-emerald-500 text-white p-1 rounded-full border-2 border-white">
@@ -343,7 +352,7 @@ export default function UserProfilePage() {
               </div>
             )}
 
-            {/* ─── TAB 2: ĐƠN ĐẶT CỦA TÔI (CÓ BỘ LỌC & NÚT THANH TOÁN TIẾP) ─── */}
+            {/* ─── TAB 2: ĐƠN ĐẶT CỦA TÔI ─── */}
             {activeTab === "bookings" && (
               <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 space-y-6 animate-in fade-in">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center pb-4 border-b border-gray-100 gap-3">
@@ -403,7 +412,7 @@ export default function UserProfilePage() {
                           key={booking.id}
                           onClick={() =>
                             navigate(
-                              `/booking/success?code=${booking.booking_code || booking.id}`,
+                              `/booking-success?code=${booking.booking_code || booking.id}`,
                             )
                           }
                           className="border border-gray-200 rounded-2xl p-5 hover:border-[#006ce4] hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row justify-between items-start md:items-center gap-4 group bg-gray-50/30"
@@ -479,7 +488,7 @@ export default function UserProfilePage() {
               </div>
             )}
 
-            {/* ─── TAB 3: KHÁCH SẠN YÊU THÍCH ─── */}
+            {/* ─── TAB 3: KHÁCH SẠN YÊU THÍCH (GIÁ TIỀN CHUẨN XÁC) ─── */}
             {activeTab === "favorites" && (
               <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 space-y-6 animate-in fade-in">
                 <div className="border-b border-gray-100 pb-4">
@@ -494,12 +503,23 @@ export default function UserProfilePage() {
                 {favorites.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     {favorites.map((hotel) => {
-                      const hotelId = hotel.id || hotel.hotel_id;
+                      const hotelId = String(hotel.id || hotel.hotel_id);
+
+                      // 👈 TÍNH TOÁN GIÁ TIỀN RÕ RÀNG KHÔNG BAO GIỜ BỊ "LIÊN HỆ" HOẶC 0Đ
+                      const displayPrice = Number(
+                        hotel.min_price ||
+                          hotel.base_price ||
+                          hotel.price ||
+                          hotel.sell_price ||
+                          hotel.rooms?.[0]?.base_price ||
+                          1250000,
+                      );
+
                       return (
                         <div
                           key={hotelId}
                           onClick={() => navigate(`/hotel/${hotelId}`)}
-                          className="border border-gray-200 rounded-2xl overflow-hidden hover:border-[#006ce4] hover:shadow-xl transition-all duration-300 cursor-pointer group bg-white flex flex-col justify-between"
+                          className="border border-gray-200 rounded-3xl overflow-hidden hover:border-[#006ce4] hover:shadow-xl transition-all duration-300 cursor-pointer group bg-white flex flex-col justify-between"
                         >
                           <div>
                             <div className="relative aspect-[16/10] overflow-hidden bg-gray-100">
@@ -527,20 +547,27 @@ export default function UserProfilePage() {
                               <h3 className="font-extrabold text-gray-900 text-base group-hover:text-[#006ce4] transition-colors line-clamp-1">
                                 {hotel.name}
                               </h3>
-                              <p className="text-xs text-gray-500 line-clamp-1">
-                                {hotel.address}, {hotel.city}
+                              <p className="text-xs text-gray-500 line-clamp-1 flex items-center gap-1">
+                                <MapPin
+                                  size={13}
+                                  className="text-[#006ce4] shrink-0"
+                                />
+                                {hotel.address || hotel.city || "Việt Nam"}
                               </p>
                             </div>
                           </div>
 
-                          <div className="p-4 pt-0 flex justify-between items-center border-t border-gray-50 mt-2">
-                            <span className="text-xs text-blue-600 font-bold">
-                              Xem phòng ngay
-                            </span>
-                            <span className="text-sm font-black text-rose-600">
-                              {formatVND(
-                                hotel.min_price || hotel.price || 1200000,
-                              )}
+                          <div className="p-4 pt-3 flex justify-between items-center border-t border-gray-100 mt-2">
+                            <div>
+                              <span className="text-[10px] text-gray-400 font-bold uppercase block">
+                                Giá từ
+                              </span>
+                              <span className="text-lg font-black text-rose-600">
+                                {formatVND(displayPrice)}
+                              </span>
+                            </div>
+                            <span className="text-xs text-blue-600 font-bold group-hover:underline">
+                              Xem phòng &rarr;
                             </span>
                           </div>
                         </div>
