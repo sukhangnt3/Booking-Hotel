@@ -15,6 +15,7 @@ const {
   addFavorite,
   removeFavorite,
 } = require("../controllers/favorite.controller");
+const { listHotelReviews } = require("../controllers/review.controller");
 const { requireAuth, optionalAuth } = require("../middleware/auth.middleware");
 
 const router = express.Router();
@@ -29,6 +30,8 @@ router.get("/destinations", listDestinationSuggestions);
 // ─── Route favorite cụ thể phải đặt TRƯỚC /:id ───
 router.post("/:id/favorite", requireAuth, addFavorite);
 router.delete("/:id/favorite", requireAuth, removeFavorite);
+// ─── Route reviews: frontend gọi GET /hotels/:id/reviews ───
+router.get("/:id/reviews", listHotelReviews);
 // ─── optionalAuth: nếu có token thì trả is_favorite, không có thì vẫn hoạt động ───
 router.get("/:id", optionalAuth, getHotelById);
 router.get("/:id/rooms", listHotelRooms);

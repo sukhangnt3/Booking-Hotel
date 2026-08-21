@@ -35,21 +35,43 @@ function optionalAuth(req, res, next) {
   return next();
 }
 
+const pool = require("../config/database");
+
 // ─── PHÂN QUYỀN: requireRole('admin') hoặc requireRole('admin', 'owner') ───
 // Kiểm tra user có ít nhất 1 trong các role được phép.
 // Phải gọi SAU requireAuth (vì cần req.auth).
-// QUAN TRỌNG: Nếu không có quyền → trả 404 (giấu endpoint, như thể không tồn tại)
+// QUAN TRỌNG 1: Nếu không có quyền → trả 404 (giấu endpoint, như thể không tồn tại)
 // thay vì 403 (lộ thông tin endpoint admin tồn tại).
+// QUAN TRỌNG 2: LUÔN query database để lấy role thật (không phụ thuộc token cũ)
+// → token cũ không chứa roles vẫn hoạt động đúng.
+// LƯU Ý: KHÔNG được khai báo `async` ở hàm ngoài - vì nó phải TRẢ VỀ middleware function,
+// nếu khai báo async thì nó trả về Promise → Express lỗi "argument handler is required".
 function requireRole(...allowedRoles) {
-  return (req, res, next) => {
-    const userRoles = req.auth?.roles || [];
+  return async (req, res, next) => {
+    // 1. Query role THẬT từ DB theo user_id trong token
+    let dbRoles = [];
+    try {
+      const roleResult = await pool.query(
+        `SELECT r.name
+         FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id = $1`,
+        [req.auth.sub],
+      );
+      dbRoles = roleResult.rows.map((row) => row.name);
+    } catch (dbError) {
+      console.error("❌ Lỗi query roles trong requireRole:", dbError.message);
+      return res.status(500).json({ message: "Lỗi hệ thống." });
+    }
 
-    // Chuẩn hóa: chuyển tất cả về chữ thường
+    // Ghi đè roles từ DB vào req.auth để các middleware/controller sau dùng đúng
+    req.auth.roles = dbRoles;
+
+    // 2. So sánh role từ DB với role được phép
     const normalizedAllowed = allowedRoles.map((r) => String(r).toLowerCase());
-    const hasRole = userRoles.some((r) => {
-      const roleStr = String(r?.name || r || "").toLowerCase();
-      return normalizedAllowed.includes(roleStr);
-    });
+    const hasRole = dbRoles.some((roleName) =>
+      normalizedAllowed.includes(String(roleName).toLowerCase()),
+    );
 
     if (!hasRole) {
       // Trả 404 giống như endpoint không tồn tại → ẩn hoàn toàn khỏi non-admin
