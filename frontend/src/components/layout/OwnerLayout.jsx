@@ -1,22 +1,17 @@
 import React, { useState } from "react";
-import { cn } from "@/utils/cn";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Hotel,
   BedDouble,
-  Hash,
   CalendarCheck,
-  Coffee,
-  Ticket,
-  Star,
-  Wallet,
   Menu,
   Bell,
   Search,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import Sidebar from "./Sidebar";
+import { cn } from "@/utils/cn";
 
 const OwnerLayout = () => {
   const navigate = useNavigate();
@@ -27,45 +22,28 @@ const OwnerLayout = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  // Danh mục menu dành riêng cho Chủ khách sạn
+  // ─── 4 CHỨC NĂNG CỐT LÕI DÀNH CHO CHỦ KHÁCH SẠN ───
   const navItems = [
     {
       path: "/owner/dashboard",
-      label: "Dashboard",
+      label: "Thống Kê & Vận Hành",
       icon: <LayoutDashboard size={20} />,
     },
     {
       path: "/owner/hotels",
-      label: "Khách Sạn Của Tôi",
+      label: "Thông Tin Chỗ Nghỉ",
       icon: <Hotel size={20} />,
     },
     {
       path: "/owner/rooms",
-      label: "Loại Phòng",
+      label: "Giá Phòng & Sơ Đồ",
       icon: <BedDouble size={20} />,
     },
     {
-      path: "/owner/room-numbers",
-      label: "Sơ Đồ Số Phòng",
-      icon: <Hash size={20} />,
-    },
-    {
       path: "/owner/bookings",
-      label: "Quản Lý Đặt Phòng",
+      label: "Xử Lý Đặt Phòng",
       icon: <CalendarCheck size={20} />,
     },
-    {
-      path: "/owner/services",
-      label: "Dịch Vụ Đi Kèm",
-      icon: <Coffee size={20} />,
-    },
-    {
-      path: "/owner/promotions",
-      label: "Mã Giảm Giá",
-      icon: <Ticket size={20} />,
-    },
-    { path: "/owner/reviews", label: "Đánh Giá", icon: <Star size={20} /> },
-    { path: "/owner/payouts", label: "Tài Chính", icon: <Wallet size={20} /> },
   ];
 
   // Tìm tên trang hiện tại dựa trên đường dẫn
@@ -73,9 +51,12 @@ const OwnerLayout = () => {
     navItems.find((item) => item.path === location.pathname)?.label ||
     "Quản lý chỗ nghỉ";
 
+  const displayName = user?.full_name || user?.name || "Đối tác GoStay";
+  const userInitial = displayName.charAt(0).toUpperCase();
+
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans">
-      {/* 1. SIDEBAR CHO CHỦ NHÀ */}
+      {/* 1. SIDEBAR CHO CHỦ NHÀ (4 MỤC GỌN GÀNG) */}
       <div
         className={cn(
           "lg:block shrink-0 h-full",
@@ -99,7 +80,7 @@ const OwnerLayout = () => {
             logout();
             navigate("/");
           }}
-          activeColor="bg-emerald-600" // 👈 Màu đặc trưng của Owner
+          activeColor="bg-emerald-600" // Màu xanh lá đặc trưng của Đối tác
           roleName="Chủ Chỗ Nghỉ"
         />
       </div>
@@ -111,24 +92,24 @@ const OwnerLayout = () => {
           <div className="flex items-center gap-4">
             {/* Nút mở Sidebar trên Mobile */}
             <button
-              className="lg:hidden p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              className="lg:hidden p-2 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               onClick={() => setIsMobileOpen(true)}
             >
               <Menu size={22} className="text-slate-600" />
             </button>
-            <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+            <h2 className="text-lg font-black text-slate-800 tracking-tight">
               {currentTab}
             </h2>
           </div>
 
           <div className="flex items-center gap-4 sm:gap-6">
-            {/* Thanh tìm kiếm nhanh (Chỉ hiện trên màn hình lớn) */}
-            <div className="hidden md:flex items-center bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
-              <Search size={16} className="text-slate-400 mr-2" />
+            {/* Thanh tìm kiếm nhanh */}
+            <div className="hidden md:flex items-center bg-slate-100 px-4 py-2 rounded-2xl border border-slate-200">
+              <Search size={16} className="text-slate-400 mr-2 shrink-0" />
               <input
                 type="text"
                 placeholder="Tìm mã đơn, phòng..."
-                className="bg-transparent text-xs outline-none w-44"
+                className="bg-transparent text-xs outline-none w-44 font-semibold"
               />
             </div>
 
@@ -141,15 +122,15 @@ const OwnerLayout = () => {
             {/* Thông tin User */}
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
               <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold text-slate-800 leading-none">
-                  {user?.name || "Partner"}
+                <p className="text-xs font-black text-slate-800 leading-none">
+                  {displayName}
                 </p>
-                <p className="text-[10px] text-emerald-600 font-bold mt-1 uppercase tracking-wider">
+                <p className="text-[10px] text-emerald-600 font-black mt-1 uppercase tracking-wider">
                   Đối tác tin cậy
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-emerald-200">
-                {user?.name ? user.name.charAt(0).toUpperCase() : "O"}
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-emerald-100">
+                {userInitial}
               </div>
             </div>
           </div>
