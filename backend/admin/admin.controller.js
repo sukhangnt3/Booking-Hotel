@@ -49,7 +49,7 @@ async function getStats(req, res, next) {
 }
 
 // ─────────────────────────────────────────────
-//  USERS - Quản lý người dùng
+//  USERS - Quản lý người dùng (ĐÃ BỔ SUNG CỘT u.avatar)
 // ─────────────────────────────────────────────
 async function listUsers(req, res, next) {
   try {
@@ -72,6 +72,7 @@ async function listUsers(req, res, next) {
          u.full_name,
          u.email,
          u.phone,
+         u.avatar,        -- 👈 ĐÃ BỔ SUNG CỘT AVATAR VÀO ĐÂY!
          u.activate,
          u.created_at,
          COALESCE(array_agg(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
@@ -85,14 +86,11 @@ async function listUsers(req, res, next) {
       params,
     );
 
-    // 🔍 LOG DEBUG XEM DỮ LIỆU TẠI TERMINAL NODEJS
-    console.log("==========================================");
-    console.log("👉 [1] SỐ LƯỢNG USER LẤY TỪ DB:", result.rows.length);
-    console.log("👉 [2] DỮ LIỆU THÔ TỪ DB:", result.rows);
-
-    const users = result.rows.map(formatUser);
-    console.log("👉 [3] DỮ LIỆU SAU KHI FORMAT:", users);
-    console.log("==========================================");
+    const users = result.rows.map((row) => ({
+      ...(formatUser ? formatUser(row) : {}),
+      ...row, // Giữ nguyên toàn bộ cột từ Database bao gồm avatar
+      avatar: row.avatar,
+    }));
 
     return res.json({ data: users, users, total: result.rowCount });
   } catch (error) {
@@ -232,7 +230,9 @@ async function listAllBookings(req, res, next) {
       params,
     );
 
-    const bookings = result.rows.map(formatBooking);
+    const bookings = result.rows.map((row) =>
+      formatBooking ? formatBooking(row) : row,
+    );
 
     return res.json({ data: bookings, bookings, total: result.rowCount });
   } catch (error) {
@@ -327,7 +327,7 @@ async function listAdminHotels(req, res, next) {
     );
 
     const hotels = result.rows.map((hotel) => ({
-      ...formatHotel(hotel),
+      ...(formatHotel ? formatHotel(hotel) : hotel),
       ownerName: hotel.owner_name,
       owner_name: hotel.owner_name,
       ownerEmail: hotel.owner_email,
