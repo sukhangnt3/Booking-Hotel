@@ -1,39 +1,71 @@
 import React, { forwardRef } from "react";
 import ReactDatePicker, { registerLocale } from "react-datepicker";
-import { vi } from "date-fns/locale"; // Import ngôn ngữ tiếng Việt
+import { vi } from "date-fns/locale/vi";
 import { Calendar, X } from "lucide-react";
 import "react-datepicker/dist/react-datepicker.css";
-import "./datepicker-custom.css"; // File CSS để ghi đè style mặc định
+import "./datepicker-custom.css";
 
 registerLocale("vi", vi);
 
-// 1. Tạo Custom Input để đồng bộ giao diện
+const formatDateVN = (date) => {
+  if (!date) return "";
+  const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+  return `${days[date.getDay()]}, ${date.getDate()} thg ${date.getMonth() + 1}`;
+};
+
 const CustomInput = forwardRef(
-  ({ value, onClick, placeholder, clearable, onClear }, ref) => (
-    <div className="relative w-full group" onClick={onClick} ref={ref}>
-      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-[#006ce4] transition-colors">
-        <Calendar size={18} />
+  ({ onClick, startDate, endDate, placeholder, clearable, onClear }, ref) => {
+    const hasValue = startDate || endDate;
+
+    const renderText = () => {
+      if (startDate && endDate) {
+        return `${formatDateVN(startDate)} – ${formatDateVN(endDate)}`;
+      }
+      if (startDate) {
+        return `${formatDateVN(startDate)} – chọn ngày trả`;
+      }
+      return placeholder;
+    };
+
+    return (
+      <div
+        ref={ref}
+        onClick={onClick}
+        className="relative w-full h-14 bg-white rounded-lg flex items-center px-3 cursor-pointer select-none border border-transparent hover:border-gray-200 transition-all"
+      >
+        <Calendar size={22} className="text-gray-500 mr-3 shrink-0" />
+        
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <span className="text-[11px] text-blue-600 font-medium leading-none mb-1 truncate">
+            Ngày nhận phòng — Ngày trả phòng
+          </span>
+          <span
+            className={`text-sm font-bold truncate ${
+              hasValue ? "text-gray-800" : "text-gray-400"
+            }`}
+          >
+            {renderText()}
+          </span>
+        </div>
+
+        {clearable && hasValue && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClear();
+            }}
+            className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 ml-1 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
-      <input
-        readOnly
-        value={value}
-        placeholder={placeholder}
-        className="w-full h-12 pl-10 pr-10 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 cursor-pointer outline-none focus:border-[#006ce4] focus:ring-4 focus:ring-[#006ce4]/10 transition-all"
-      />
-      {clearable && value && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onClear();
-          }}
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600"
-        >
-          <X size={14} />
-        </button>
-      )}
-    </div>
-  ),
+    );
+  }
 );
+
+CustomInput.displayName = "CustomInput";
 
 const DatePicker = ({
   startDate,
@@ -53,12 +85,14 @@ const DatePicker = ({
         locale="vi"
         dateFormat="dd/MM/yyyy"
         placeholderText={placeholderText}
-        minDate={new Date()} // Không cho chọn ngày trong quá khứ
-        monthsShown={2} // Hiển thị 2 tháng cùng lúc (giống các trang đặt phòng)
+        minDate={new Date()}
+        monthsShown={2}
+        showOutsideDays={false} // <-- TẮT NGÀY DƯ CỦA THÁNG KHÁC Ở ĐÂY
         isClearable={false}
-        // Sử dụng Custom Input đã tạo ở trên
         customInput={
           <CustomInput
+            startDate={startDate}
+            endDate={endDate}
             placeholder={placeholderText}
             clearable={!!startDate}
             onClear={() => onChange([null, null])}

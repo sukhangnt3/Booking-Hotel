@@ -104,7 +104,7 @@ const HomePage = () => {
             variant="primary"
             className="bg-blue-800/80 text-blue-200 border-none"
           >
-            Ưu đãi du lịch 2024
+            Ưu đãi du lịch 2026
           </Badge>
           <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight">
             Tìm chỗ nghỉ tiếp theo
