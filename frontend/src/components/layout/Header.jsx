@@ -18,23 +18,7 @@ const Header = () => {
   const { user, isAuthenticated, logout } = useAuthStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // ─── 1. BÓC TÁCH TÊN VÀ AVATAR THÔNG MINH CHO MỌI LOẠI USER ───
-  const displayName =
-    user?.full_name ||
-    user?.fullName ||
-    user?.name ||
-    user?.username ||
-    user?.email?.split("@")[0] ||
-    "Khách hàng";
-
-  const avatarUrl =
-    user?.avatar ||
-    user?.picture ||
-    user?.photoURL ||
-    user?.image ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=006ce4&color=fff&bold=true`;
-
-  // ─── 2. LOGIC ROLE ───
+  // ─── 1. BÓC TÁCH ROLE ───
   const getRole = () => {
     const rawRole =
       user?.role ||
@@ -46,6 +30,40 @@ const Header = () => {
   const role = getRole();
   const isAdmin = role.includes("admin") || user?.role_id === 1;
   const isOwner = role.includes("owner") || role.includes("partner");
+
+  // ─── 2. TÍNH TOÁN TÊN HIỂN THỊ CHUẨN XÁC ───
+  const displayName =
+    user?.full_name ||
+    user?.fullName ||
+    user?.name ||
+    user?.username ||
+    user?.email?.split("@")[0] ||
+    "Khách hàng";
+
+  // Màu Avatar đổi theo Role
+  const roleBgColor = isAdmin ? "4F46E5" : isOwner ? "059669" : "006CE4";
+
+  // ─── 3. BÓC TÁCH LINK ẢNH THẬT (LOẠI BỎ PLACEHOLDER VÔ DỤNG) ───
+  const getCleanAvatar = () => {
+    const rawAvatar =
+      user?.avatar || user?.picture || user?.photoURL || user?.image;
+
+    // Nếu là link ảnh thật hợp lệ (không chứa chữ placeholder)
+    if (
+      rawAvatar &&
+      typeof rawAvatar === "string" &&
+      rawAvatar.trim() !== "" &&
+      !rawAvatar.includes("placeholder") &&
+      rawAvatar !== "null"
+    ) {
+      return rawAvatar;
+    }
+
+    // Tự động tạo Avatar màu sắc theo Role và chữ cái tên người dùng
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=${roleBgColor}&color=fff&bold=true`;
+  };
+
+  const avatarUrl = getCleanAvatar();
 
   const handleLogout = () => {
     logout();
@@ -93,7 +111,7 @@ const Header = () => {
           </div>
 
           {isAuthenticated ? (
-            /* ─── GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP (DÀNH CHO MỌI USER) ─── */
+            /* ─── GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP ─── */
             <div className="relative">
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -104,24 +122,25 @@ const Header = () => {
                     : "hover:bg-white/10",
                 )}
               >
-                {/* 👈 AVATAR THÔNG MINH CÓ FALLBACK CHỮ CÁI ĐẦU NẾU LỖI */}
+                {/* 👈 THÊM KEY ĐỂ ÉP REACT TẢI LẠI AVATAR KHI ĐỔI TÀI KHOẢN */}
                 <img
+                  key={user?.id || user?.email}
                   src={avatarUrl}
                   alt={displayName}
                   onError={(e) => {
                     e.currentTarget.onerror = null;
-                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=006ce4&color=fff&bold=true`;
+                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=${roleBgColor}&color=fff&bold=true`;
                   }}
                   className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-white object-cover shadow-sm shrink-0"
                 />
 
-                {/* 👈 TÊN KHÁCH HÀNG & DANH HIỆU */}
+                {/* TÊN & DANH HIỆU */}
                 <div className="hidden sm:block text-left mr-1">
                   <p className="text-xs font-bold leading-tight line-clamp-1 max-w-[120px]">
                     {displayName}
                   </p>
                   <p className="text-[10px] text-yellow-400 font-bold uppercase tracking-wider mt-0.5">
-                    {isAdmin ? "Admin" : isOwner ? "Chủ nhà" : "Genius Level 1"}
+                    {isAdmin ? "Admin" : isOwner ? "Chủ nhà" : "Khách hàng"}
                   </p>
                 </div>
 
@@ -177,7 +196,7 @@ const Header = () => {
                       </button>
                     )}
 
-                    {/* Hồ sơ cá nhân cho tất cả mọi người */}
+                    {/* Hồ sơ cá nhân */}
                     <button
                       onClick={() => {
                         setIsMenuOpen(false);

@@ -1,17 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Users,
   Search,
   ShieldCheck,
   Lock,
   Unlock,
-  ShieldAlert,
-  Mail,
-  Phone,
   CheckCircle2,
   Filter,
-  UserCheck,
-  Building,
 } from "lucide-react";
 
 // Components
@@ -30,10 +25,9 @@ const ROLE_TABS = [
 ];
 
 const UserManagementPage = () => {
-  const { user: currentAdmin } = useAuthStore(); // Lấy admin hiện tại từ Zustand
+  const { user: currentAdmin } = useAuthStore();
   const currentAdminId = currentAdmin?.id || currentAdmin?._id;
 
-  // ─── 1. STATES ───
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -41,7 +35,6 @@ const UserManagementPage = () => {
   const [roleFilter, setRoleFilter] = useState("all");
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = "success") => {
@@ -49,57 +42,70 @@ const UserManagementPage = () => {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ─── 2. SEARCH DEBOUNCE ───
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
       setCurrentPage(1);
     }, 350);
-
     return () => clearTimeout(timer);
   }, [search]);
 
-  // ─── 3. FETCH DANH SÁCH USER TỪ API (DÙNG APICLIENT) ───
+  // ─── FETCH TẤT CẢ USER ───
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {
-        search: debouncedSearch.trim() || undefined,
-        role: roleFilter === "all" ? undefined : roleFilter,
-        page: currentPage,
-        limit: 10,
-      };
-
-      const res = await apiClient.get("/admin/users", { params });
+      const res = await apiClient.get("/admin/users", {
+        params: { search: debouncedSearch.trim() || undefined },
+      });
       const list = Array.isArray(res) ? res : res?.data || res?.users || [];
-
       setUsers(list);
-      setTotalPages(res?.totalPages || res?.total_pages || 1);
     } catch (error) {
       console.error("Lỗi khi tải danh sách người dùng:", error);
       setUsers([]);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, roleFilter, currentPage]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
 
-  // Lấy role ưu tiên
+  // Hàm chuẩn hóa Role của từng User
   const getPrimaryRole = (rolesList, singleRole) => {
     const roles = Array.isArray(rolesList)
       ? rolesList.map((r) => String(r).toLowerCase())
       : [String(singleRole || "").toLowerCase()];
 
     if (roles.includes("admin") || roles.includes("role_admin")) return "admin";
-    if (roles.includes("owner") || roles.includes("hotel_owner"))
+    if (
+      roles.includes("owner") ||
+      roles.includes("hotel_owner") ||
+      roles.includes("partner")
+    )
       return "owner";
     return "customer";
   };
 
-  // ─── 4. ĐỔI VAI TRÒ (ROLE) ───
+  // ─── LỌC THEO ROLE ───
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      const userRole = getPrimaryRole(u.roles, u.role);
+      if (roleFilter === "admin") return userRole === "admin";
+      if (roleFilter === "owner") return userRole === "owner";
+      if (roleFilter === "customer") return userRole === "customer";
+      return true;
+    });
+  }, [users, roleFilter]);
+
+  const pageSize = 10;
+  const totalPages = Math.ceil(filteredUsers.length / pageSize) || 1;
+  const paginatedUsers = filteredUsers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+
+  // ─── ĐỔI ROLE ───
   const handleRoleChange = async (userId, newRole, userName) => {
     if (userId === currentAdminId && newRole !== "admin") {
       alert("⚠️ Bạn không thể tự hạ quyền ADMIN của chính mình!");
@@ -118,23 +124,26 @@ const UserManagementPage = () => {
       await apiClient.patch(`/admin/users/${userId}/role`, {
         role: newRole.toLowerCase(),
       });
-
       setUsers((prev) =>
         prev.map((u) =>
-          u.id === userId ? { ...u, role: newRole.toLowerCase() } : u,
+          u.id === userId
+            ? {
+                ...u,
+                role: newRole.toLowerCase(),
+                roles: [newRole.toLowerCase()],
+              }
+            : u,
         ),
       );
-
       showToast(
         `Đã đổi vai trò của "${userName}" thành ${newRole.toUpperCase()}!`,
       );
     } catch (error) {
-      showToast(error?.message || "Cập nhật vai trò thất bại!", "error");
-      fetchUsers();
+      showToast("Cập nhật vai trò thất bại!", "error");
     }
   };
 
-  // ─── 5. KHÓA / MỞ KHÓA TÀI KHOẢN ───
+  // ─── KHÓA / MỞ KHÓA ───
   const toggleUserStatus = async (userId, userName, currentActive) => {
     if (userId === currentAdminId) {
       alert("⚠️ Bạn không thể tự khóa tài khoản Admin đang sử dụng!");
@@ -161,38 +170,68 @@ const UserManagementPage = () => {
             : u,
         ),
       );
-
       showToast(
         `Đã ${actionText.toLowerCase()} tài khoản "${userName}" thành công!`,
       );
     } catch (error) {
-      showToast("Thao tác thất bại, vui lòng thử lại.", "error");
+      showToast("Thao tác thất bại.", "error");
     }
   };
 
-  // Render Avatar
-  const renderAvatar = (name, avatarUrl) => {
-    if (avatarUrl) {
-      return (
-        <img
-          src={avatarUrl}
-          alt={name}
-          className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm shrink-0"
-        />
-      );
-    }
+  // ─── 👈 RENDER AVATAR GOOGLE THẬT CHO TỪNG DÒNG USER ───
+  const renderAvatar = (u, isSelf) => {
+    const name =
+      u.full_name || u.name || u.username || u.email?.split("@")[0] || "User";
+    const savedGoogleAvatar = u.email
+      ? localStorage.getItem(`google_avatar_${u.email}`)
+      : null;
 
-    const initial = name?.charAt(0)?.toUpperCase() || "U";
+    // Ưu tiên đọc ảnh Google thật của chính bạn hoặc từ database
+    const rawAvatar =
+      (isSelf
+        ? currentAdmin?.avatar || currentAdmin?.picture || savedGoogleAvatar
+        : null) ||
+      u.avatar ||
+      u.picture ||
+      u.avatar_url ||
+      u.photo_url ||
+      u.image ||
+      savedGoogleAvatar;
+
+    const hasValidAvatar =
+      rawAvatar &&
+      typeof rawAvatar === "string" &&
+      rawAvatar.trim() !== "" &&
+      !rawAvatar.includes("placeholder") &&
+      rawAvatar !== "null" &&
+      rawAvatar !== "undefined";
+
+    const role = getPrimaryRole(u.roles, u.role);
+    const bgColors = {
+      admin: "4F46E5",
+      owner: "059669",
+      customer: "006CE4",
+    };
+    const bg = bgColors[role] || "006CE4";
+
+    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${bg}&color=fff&bold=true`;
+
     return (
-      <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-black text-sm shadow-sm shrink-0">
-        {initial}
-      </div>
+      <img
+        src={hasValidAvatar ? rawAvatar : fallbackUrl}
+        alt={name}
+        onError={(e) => {
+          e.currentTarget.onerror = null;
+          e.currentTarget.src = fallbackUrl;
+        }}
+        className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm shrink-0"
+      />
     );
   };
 
   return (
     <div className="space-y-8 font-sans pb-16 text-slate-800">
-      {/* TOAST NOTIFICATION */}
+      {/* Toast */}
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3.5 rounded-2xl shadow-2xl text-white font-bold text-sm animate-in slide-in-from-bottom-5 ${
@@ -204,30 +243,29 @@ const UserManagementPage = () => {
         </div>
       )}
 
-      {/* ─── HEADER BAR ─── */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-black uppercase text-blue-600 tracking-wider">
-              Hệ Thống Thành Viên
+              Quản Trị Thành Viên
             </span>
             <Badge variant="primary" size="sm">
-              {users.length} Tài khoản
+              {filteredUsers.length} Tài khoản
             </Badge>
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-            Quản Lý Người Dùng
+            Quản Lý Người Dùng & Phân Quyền
           </h1>
           <p className="text-xs text-slate-500 font-medium">
-            Quản lý danh sách khách hàng, đối tác chủ nhà, phân quyền hạn và
-            kiểm soát trạng thái hoạt động.
+            Quản lý danh sách tài khoản toàn hệ thống, phân quyền và kiểm soát
+            trạng thái hoạt động.
           </p>
         </div>
       </div>
 
-      {/* ─── BỘ LỌC ROLE & THANH TÌM KIẾM ─── */}
+      {/* Bộ lọc Role & Search */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-        {/* Role Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
           {ROLE_TABS.map((tab) => (
             <button
@@ -247,7 +285,6 @@ const UserManagementPage = () => {
           ))}
         </div>
 
-        {/* Thanh tìm kiếm */}
         <div className="relative">
           <Input
             placeholder="Tìm kiếm theo tên, email hoặc số điện thoại..."
@@ -261,16 +298,15 @@ const UserManagementPage = () => {
         </div>
       </div>
 
-      {/* ─── BẢNG DANH SÁCH NGƯỜI DÙNG ─── */}
+      {/* Bảng dữ liệu */}
       {loading ? (
         <div className="py-24 flex justify-center bg-white rounded-3xl border border-slate-200/80 shadow-sm">
           <LoadingSpinner size="lg" label="Đang tải danh sách người dùng..." />
         </div>
-      ) : users.length > 0 ? (
+      ) : paginatedUsers.length > 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
-              {/* Header Bảng */}
               <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-100">
                 <tr>
                   <th className="p-4 pl-6">Người Dùng</th>
@@ -281,13 +317,11 @@ const UserManagementPage = () => {
                 </tr>
               </thead>
 
-              {/* Body Bảng */}
               <tbody className="divide-y divide-slate-100 font-medium">
-                {users.map((u) => {
+                {paginatedUsers.map((u) => {
                   const name = u.full_name || u.name || "Chưa đặt tên";
                   const email = u.email || "Không có email";
                   const phone = u.phone || u.phone_number || "---";
-                  const avatarUrl = u.avatar || u.picture;
                   const isSelf = u.id === currentAdminId;
                   const isActive =
                     u.activate !== undefined
@@ -300,10 +334,10 @@ const UserManagementPage = () => {
                       key={u.id}
                       className={`hover:bg-slate-50/80 transition-colors ${isSelf ? "bg-blue-50/20" : ""}`}
                     >
-                      {/* Người dùng */}
                       <td className="p-4 pl-6">
                         <div className="flex items-center gap-3">
-                          {renderAvatar(name, avatarUrl)}
+                          {/* 👈 RENDER AVATAR GOOGLE THẬT */}
+                          {renderAvatar(u, isSelf)}
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="font-extrabold text-slate-900 text-sm">
@@ -322,12 +356,10 @@ const UserManagementPage = () => {
                         </div>
                       </td>
 
-                      {/* SĐT */}
                       <td className="p-4 text-xs font-semibold text-slate-600">
                         {phone}
                       </td>
 
-                      {/* Phân quyền Dropdown */}
                       <td className="p-4">
                         <select
                           value={currentRole}
@@ -339,17 +371,16 @@ const UserManagementPage = () => {
                             currentRole === "admin"
                               ? "bg-purple-50 text-purple-700 border-purple-200"
                               : currentRole === "owner"
-                                ? "bg-blue-50 text-[#006ce4] border-blue-200"
-                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-blue-50 text-[#006ce4] border-blue-200"
                           } ${isSelf ? "opacity-60 cursor-not-allowed" : ""}`}
                         >
-                          <option value="customer">CUSTOMER</option>
+                          <option value="customer">CUSTOMER (Khách)</option>
                           <option value="owner">OWNER (Chủ nhà)</option>
-                          <option value="admin">ADMIN</option>
+                          <option value="admin">ADMIN (Quản trị)</option>
                         </select>
                       </td>
 
-                      {/* Trạng thái hoạt động */}
                       <td className="p-4">
                         <span
                           className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-full border ${
@@ -365,7 +396,6 @@ const UserManagementPage = () => {
                         </span>
                       </td>
 
-                      {/* Nút Khóa / Mở khóa */}
                       <td className="p-4 pr-6 text-right">
                         <Button
                           size="sm"
@@ -378,9 +408,6 @@ const UserManagementPage = () => {
                                 ? "bg-rose-600 hover:bg-rose-700 text-white shadow-sm"
                                 : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                           }`}
-                          leftIcon={
-                            isActive ? <Lock size={13} /> : <Unlock size={13} />
-                          }
                         >
                           {isActive ? "Khóa Tài Khoản" : "Mở Khóa"}
                         </Button>
@@ -392,12 +419,13 @@ const UserManagementPage = () => {
             </table>
           </div>
 
-          {/* Phân trang */}
           {totalPages > 1 && (
             <div className="p-4 flex justify-center border-t border-slate-100">
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
+                totalCount={filteredUsers.length}
+                pageSize={10}
                 onPageChange={(p) => setCurrentPage(p)}
               />
             </div>
@@ -406,8 +434,8 @@ const UserManagementPage = () => {
       ) : (
         <EmptyState
           icon={Users}
-          title="Không tìm thấy tài khoản nào"
-          description="Hãy thử thay đổi từ khóa tìm kiếm hoặc chọn danh mục vai trò khác."
+          title="Không có tài khoản nào phù hợp"
+          description={`Không tìm thấy tài khoản nào thuộc nhóm vai trò "${roleFilter.toUpperCase()}".`}
           actionLabel="Xem tất cả tài khoản"
           onAction={() => {
             setRoleFilter("all");

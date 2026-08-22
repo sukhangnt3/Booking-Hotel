@@ -44,11 +44,23 @@ const AdminLayout = () => {
     menuItems.find((item) => item.path === location.pathname)?.label ||
     "Quản trị sàn";
 
-  const adminName = user?.full_name || user?.name || "Super Admin";
+  const adminName =
+    user?.full_name || user?.name || user?.username || "Super Admin";
+
+  // 👈 BÓC TÁCH AVATAR GOOGLE THẬT
+  const savedGoogleAvatar = user?.email
+    ? localStorage.getItem(`google_avatar_${user.email}`)
+    : null;
+  const avatarUrl =
+    user?.avatar ||
+    user?.picture ||
+    user?.photoURL ||
+    savedGoogleAvatar ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(adminName)}&background=4F46E5&color=fff&bold=true`;
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans">
-      {/* 1. SIDEBAR QUẢN TRỊ (3 MỤC CỐT LÕI - MÀU XANH DƯƠNG) */}
+      {/* 1. SIDEBAR QUẢN TRỊ */}
       <div
         className={cn(
           "lg:block shrink-0 h-full",
@@ -70,7 +82,7 @@ const AdminLayout = () => {
             logout();
             navigate("/");
           }}
-          activeColor="bg-[#006ce4]" // Màu xanh dương uy quyền của Admin
+          activeColor="bg-[#006ce4]"
           roleName="Quản Trị Tối Cao"
         />
       </div>
@@ -108,7 +120,7 @@ const AdminLayout = () => {
               <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </div>
 
-            {/* Thông tin Admin */}
+            {/* 👈 HIỂN THỊ AVATAR THẬT CỦA ADMIN */}
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
               <div className="text-right hidden sm:block">
                 <p className="text-xs font-black text-slate-800 leading-none">
@@ -118,9 +130,17 @@ const AdminLayout = () => {
                   Admin Portal
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#006ce4] to-blue-700 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-blue-100">
-                AD
-              </div>
+
+              <img
+                key={user?.id || user?.email}
+                src={avatarUrl}
+                alt={adminName}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(adminName)}&background=4F46E5&color=fff&bold=true`;
+                }}
+                className="w-10 h-10 rounded-2xl object-cover border-2 border-blue-500 shadow-md shadow-blue-100 shrink-0"
+              />
             </div>
           </div>
         </header>

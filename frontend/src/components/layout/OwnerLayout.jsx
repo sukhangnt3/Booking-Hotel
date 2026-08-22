@@ -18,11 +18,10 @@ const OwnerLayout = () => {
   const location = useLocation();
   const { user, logout } = useAuthStore();
 
-  // Quản lý trạng thái đóng/mở Sidebar
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  // ─── 4 CHỨC NĂNG CỐT LÕI DÀNH CHO CHỦ KHÁCH SẠN ───
+  // 4 Chức năng cốt lõi dành cho Chủ nhà
   const navItems = [
     {
       path: "/owner/dashboard",
@@ -46,24 +45,33 @@ const OwnerLayout = () => {
     },
   ];
 
-  // Tìm tên trang hiện tại dựa trên đường dẫn
   const currentTab =
     navItems.find((item) => item.path === location.pathname)?.label ||
     "Quản lý chỗ nghỉ";
 
-  const displayName = user?.full_name || user?.name || "Đối tác GoStay";
-  const userInitial = displayName.charAt(0).toUpperCase();
+  const ownerName =
+    user?.full_name || user?.name || user?.username || "Đối tác GoStay";
+
+  // 👈 BÓC TÁCH AVATAR GOOGLE THẬT
+  const savedGoogleAvatar = user?.email
+    ? localStorage.getItem(`google_avatar_${user.email}`)
+    : null;
+  const avatarUrl =
+    user?.avatar ||
+    user?.picture ||
+    user?.photoURL ||
+    savedGoogleAvatar ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=059669&color=fff&bold=true`;
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans">
-      {/* 1. SIDEBAR CHO CHỦ NHÀ (4 MỤC GỌN GÀNG) */}
+      {/* 1. SIDEBAR CHO CHỦ NHÀ */}
       <div
         className={cn(
           "lg:block shrink-0 h-full",
           isMobileOpen ? "block fixed inset-0 z-[100]" : "hidden",
         )}
       >
-        {/* Lớp nền mờ khi mở menu trên mobile */}
         {isMobileOpen && (
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm lg:hidden"
@@ -80,7 +88,7 @@ const OwnerLayout = () => {
             logout();
             navigate("/");
           }}
-          activeColor="bg-emerald-600" // Màu xanh lá đặc trưng của Đối tác
+          activeColor="bg-emerald-600"
           roleName="Chủ Chỗ Nghỉ"
         />
       </div>
@@ -90,7 +98,6 @@ const OwnerLayout = () => {
         {/* TOPBAR */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 shrink-0 z-30 shadow-sm">
           <div className="flex items-center gap-4">
-            {/* Nút mở Sidebar trên Mobile */}
             <button
               className="lg:hidden p-2 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
               onClick={() => setIsMobileOpen(true)}
@@ -119,19 +126,27 @@ const OwnerLayout = () => {
               <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
             </div>
 
-            {/* Thông tin User */}
+            {/* 👈 HIỂN THỊ AVATAR THẬT CỦA CHỦ NHÀ */}
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
               <div className="text-right hidden sm:block">
                 <p className="text-xs font-black text-slate-800 leading-none">
-                  {displayName}
+                  {ownerName}
                 </p>
                 <p className="text-[10px] text-emerald-600 font-black mt-1 uppercase tracking-wider">
                   Đối tác tin cậy
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-sm shadow-lg shadow-emerald-100">
-                {userInitial}
-              </div>
+
+              <img
+                key={user?.id || user?.email}
+                src={avatarUrl}
+                alt={ownerName}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=059669&color=fff&bold=true`;
+                }}
+                className="w-10 h-10 rounded-2xl object-cover border-2 border-emerald-500 shadow-md shadow-emerald-100 shrink-0"
+              />
             </div>
           </div>
         </header>

@@ -1,4 +1,5 @@
-import React from "react";
+// src/components/ui/Pagination.jsx
+import React, { useMemo } from "react";
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { twMerge } from "tailwind-merge";
 import { clsx } from "clsx";
@@ -8,17 +9,27 @@ function cn(...inputs) {
 }
 
 const Pagination = ({
-  currentPage,
-  totalCount,
-  pageSize,
+  currentPage = 1,
+  totalCount = 0,
+  pageSize = 10,
+  totalPages = null,
   onPageChange,
-  siblingCount = 1, // Số lượng số trang hiển thị bên cạnh trang hiện tại
+  siblingCount = 1,
   className = "",
 }) => {
-  const totalPageCount = Math.ceil(totalCount / pageSize);
+  // Tự động tính toán tổng số trang từ totalPages hoặc totalCount / pageSize
+  const totalPageCount = useMemo(() => {
+    if (typeof totalPages === "number" && totalPages > 0) return totalPages;
+    if (typeof totalCount === "number" && totalCount > 0) {
+      return Math.ceil(totalCount / (pageSize || 10));
+    }
+    return 1;
+  }, [totalPages, totalCount, pageSize]);
 
-  // Thuật toán tính toán dãy số trang (ví dụ: [1, '...', 4, 5, 6, '...', 10])
-  const paginationRange = React.useMemo(() => {
+  // Thuật toán tính toán dãy số trang an toàn
+  const paginationRange = useMemo(() => {
+    if (!totalPageCount || totalPageCount <= 1) return [];
+
     const totalPageNumbers = siblingCount + 5;
 
     if (totalPageNumbers >= totalPageCount) {
@@ -40,7 +51,7 @@ const Pagination = ({
     if (!shouldShowLeftDots && shouldShowRightDots) {
       let leftItemCount = 3 + 2 * siblingCount;
       let leftRange = Array.from({ length: leftItemCount }, (_, i) => i + 1);
-      return [...leftRange, "DOTS", totalPageCount];
+      return [...leftRange, "DOTS", lastPageIndex];
     }
 
     if (shouldShowLeftDots && !shouldShowRightDots) {
@@ -59,30 +70,35 @@ const Pagination = ({
       );
       return [firstPageIndex, "DOTS", ...middleRange, "DOTS", lastPageIndex];
     }
-  }, [totalCount, pageSize, siblingCount, currentPage]);
 
-  if (currentPage === 0 || paginationRange.length < 2) {
+    return Array.from({ length: totalPageCount }, (_, i) => i + 1);
+  }, [totalPageCount, siblingCount, currentPage]);
+
+  // 👈 KHÁNG LỖI: Nếu chỉ có 1 trang hoặc không có trang nào thì ẩn phân trang, không bao giờ bị lỗi .length
+  if (!paginationRange || paginationRange.length <= 1) {
     return null;
   }
 
   const onNext = () => {
-    if (currentPage < totalPageCount) onPageChange(currentPage + 1);
+    if (currentPage < totalPageCount && onPageChange)
+      onPageChange(currentPage + 1);
   };
 
   const onPrevious = () => {
-    if (currentPage > 1) onPageChange(currentPage - 1);
+    if (currentPage > 1 && onPageChange) onPageChange(currentPage - 1);
   };
 
   return (
     <nav
-      className={cn("flex items-center justify-center gap-1.5 mt-6", className)}
+      className={cn("flex items-center justify-center gap-1.5 py-4", className)}
       aria-label="Pagination"
     >
       {/* Nút Previous */}
       <button
+        type="button"
         onClick={onPrevious}
         disabled={currentPage === 1}
-        className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+        className="p-2 rounded-xl border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-sm"
       >
         <ChevronLeft size={18} />
       </button>
@@ -103,11 +119,12 @@ const Pagination = ({
           return (
             <button
               key={index}
-              onClick={() => onPageChange(pageNumber)}
+              type="button"
+              onClick={() => onPageChange && onPageChange(pageNumber)}
               className={cn(
-                "min-w-[40px] h-10 flex items-center justify-center rounded-lg text-sm font-semibold transition-all cursor-pointer",
+                "min-w-[40px] h-10 flex items-center justify-center rounded-xl text-xs font-black transition-all cursor-pointer",
                 isActive
-                  ? "bg-[#006ce4] text-white shadow-md shadow-blue-200"
+                  ? "bg-[#006ce4] text-white shadow-md shadow-blue-100"
                   : "bg-white border border-gray-200 text-gray-600 hover:border-[#006ce4] hover:text-[#006ce4]",
               )}
             >
@@ -119,9 +136,10 @@ const Pagination = ({
 
       {/* Nút Next */}
       <button
+        type="button"
         onClick={onNext}
         disabled={currentPage === totalPageCount}
-        className="p-2 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+        className="p-2 rounded-xl border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-sm"
       >
         <ChevronRight size={18} />
       </button>
