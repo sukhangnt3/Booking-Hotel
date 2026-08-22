@@ -37,3 +37,48 @@
   border-radius: 0.5rem !important;
   background-color: #f3f4f6 !important;
 }
+ {/* CSS override trực tiếp để định dạng giao diện lịch đôi Booking */}
+  
+        .booking-datepicker {
+          border: none !important;
+          font-family: inherit !important;
+          display: flex !important;
+        }
+        .booking-datepicker .react-datepicker__month-container {
+          float: left;
+          padding: 8px 16px;
+        }
+        .booking-datepicker .react-datepicker__header {
+          background-color: white !important;
+          border-bottom: none !important;
+          padding-top: 8px !important;
+        }
+        .booking-datepicker .react-datepicker__day-name {
+          font-weight: 700 !important;
+          color: #4b5563 !important;
+          width: 2.25rem !important;
+          line-height: 2.25rem !important;
+        }
+        .booking-datepicker .react-datepicker__day {
+          width: 2.25rem !important;
+          line-height: 2.25rem !important;
+          margin: 2px !important;
+          font-weight: 600 !important;
+          border-radius: 4px !important;
+        }
+        .booking-datepicker .react-datepicker__day--in-range {
+          background-color: #ebf5ff !important;
+          color: #1d4ed8 !important;
+          border-radius: 0 !important;
+        }
+        .booking-datepicker .react-datepicker__day--range-start,
+        .booking-datepicker .react-datepicker__day--range-end,
+        .booking-datepicker .react-datepicker__day--selected {
+          background-color: #003580 !important;
+          color: white !important;
+          border-radius: 4px !important;
+        }
+        .booking-datepicker .react-datepicker__day--disabled {
+          color: #d1d5db !important;
+        }
+     

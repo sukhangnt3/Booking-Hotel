@@ -206,52 +206,6 @@ const HotelFilter = ({ onSearch, className = "" }) => {
       ref={filterRef}
       className={cn("w-full max-w-7xl mx-auto relative z-[100]", className)}
     >
-      {/* CSS override trực tiếp để định dạng giao diện lịch đôi Booking */}
-      <style>{`
-        .booking-datepicker {
-          border: none !important;
-          font-family: inherit !important;
-          display: flex !important;
-        }
-        .booking-datepicker .react-datepicker__month-container {
-          float: left;
-          padding: 8px 16px;
-        }
-        .booking-datepicker .react-datepicker__header {
-          background-color: white !important;
-          border-bottom: none !important;
-          padding-top: 8px !important;
-        }
-        .booking-datepicker .react-datepicker__day-name {
-          font-weight: 700 !important;
-          color: #4b5563 !important;
-          width: 2.25rem !important;
-          line-height: 2.25rem !important;
-        }
-        .booking-datepicker .react-datepicker__day {
-          width: 2.25rem !important;
-          line-height: 2.25rem !important;
-          margin: 2px !important;
-          font-weight: 600 !important;
-          border-radius: 4px !important;
-        }
-        .booking-datepicker .react-datepicker__day--in-range {
-          background-color: #ebf5ff !important;
-          color: #1d4ed8 !important;
-          border-radius: 0 !important;
-        }
-        .booking-datepicker .react-datepicker__day--range-start,
-        .booking-datepicker .react-datepicker__day--range-end,
-        .booking-datepicker .react-datepicker__day--selected {
-          background-color: #003580 !important;
-          color: white !important;
-          border-radius: 4px !important;
-        }
-        .booking-datepicker .react-datepicker__day--disabled {
-          color: #d1d5db !important;
-        }
-      `}</style>
-
       <form
         onSubmit={handleFinalSearch}
         className="bg-[#ffb700] p-1 rounded-xl shadow-2xl grid grid-cols-1 lg:grid-cols-12 gap-1"
