@@ -378,8 +378,7 @@ const HomePage = () => {
                 stay.base_price ||
                 stay.price ||
                 stay.sell_price ||
-                stay.rooms?.[0]?.base_price ||
-                1250000;
+                stay.rooms?.[0]?.base_price ;
 
               return (
                 <HotelCard
@@ -403,64 +402,7 @@ const HomePage = () => {
           </div>
         )}
       </section>
-      {/* ─── SECTION 4: KHÁCH SẠN MÀ KHÁCH YÊU THÍCH ─── */}
-      <section className="max-w-7xl mx-auto px-4 mt-16">
-        <div className="mb-6">
-          <div className="flex items-center gap-2">
-            <Flame className="text-orange-500" size={24} />
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">
-              Khách sạn mà khách yêu thích
-            </h2>
-          </div>
-         
-        </div>
 
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {[1, 2, 3, 4].map((n) => (
-              <div
-                key={n}
-                className="h-80 bg-gray-200 animate-pulse rounded-3xl"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {pageData.uniqueStays.map((stay) => {
-              const stayId = String(stay.id || stay.hotel_id || stay._id);
-              const isSavedInDb = favoriteHotelIds.has(stayId);
-
-              // 👈 TÍNH GIÁ CHUẨN XÁC ĐỂ KHÔNG BAO GIỜ HIỆN "LIÊN HỆ"
-              const computedPrice =
-                stay.min_price ||
-                stay.base_price ||
-                stay.price ||
-                stay.sell_price ||
-                stay.rooms?.[0]?.base_price ||
-                1250000;
-
-              return (
-                <HotelCard
-                  key={stayId}
-                  id={stayId}
-                  hotel={stay}
-                  image={stay.image || stay.stay_image}
-                  type={stay.type}
-                  title={stay.title || stay.name}
-                  location={stay.location || stay.address}
-                  rating={stay.average_rating || stay.rating}
-                  reviewsCount={stay.review_count || stay.reviewsCount}
-                  salePrice={computedPrice}
-                  stars={stay.star_rating || stay.stars}
-                  isGenius={stay.isGenius}
-                  isFavoriteInitial={isSavedInDb || stay.is_favorite}
-                  onClick={() => navigate(`/hotel/${stayId}`)}
-                />
-              );
-            })}
-          </div>
-        )}
-      </section>
     </div>
   );
 };
