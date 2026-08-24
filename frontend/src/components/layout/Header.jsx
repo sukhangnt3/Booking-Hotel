@@ -83,7 +83,7 @@ const Header = () => {
             <Building size={24} strokeWidth={3} />
           </div>
           <span className="text-2xl font-black tracking-tighter italic">
-            GoStay
+            GoAway
           </span>
         </div>
 
