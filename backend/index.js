@@ -1,9 +1,11 @@
 const express = require("express");
 const cors = require("cors");
+const swaggerUi = require("swagger-ui-express");
 require("dotenv").config();
 
 const pool = require("./config/database");
 const apiRoutes = require("./routes");
+const swaggerSpec = require("./swagger");
 const {
   errorHandler,
   notFoundHandler,
@@ -35,6 +37,9 @@ app.use(
 );
 
 app.use(express.json({ limit: "1mb" }));
+
+// ─── SWAGGER UI: http://localhost:5000/api/docs ───
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use("/api", apiRoutes);
 app.use(notFoundHandler);
