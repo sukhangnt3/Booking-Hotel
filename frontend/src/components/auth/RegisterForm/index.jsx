@@ -20,13 +20,17 @@ import {
 
 // Dữ liệu khởi tạo mặc định cho toàn bộ Form
 const initialFormData = {
-  // BƯỚC 1: THÔNG TIN & PHÒNG
+  // BƯỚC 1: TÀI KHOẢN OWNER & THÔNG TIN CHỖ NGHỈ
+  ownerName: "",
+  phoneContact: "",
+  emailContact: "",
+  password: "",
+  confirmPassword: "",
+
   hotelNameVi: "",
   hotelNameEn: "",
   hotelType: "hotel",
   starRating: 0,
-  phoneContact: "",
-  emailContact: "",
   website: "",
   description: "",
   province: "Hồ Chí Minh",
@@ -93,7 +97,7 @@ const initialFormData = {
 };
 
 const STEPS = [
-  { id: 1, title: "Thông tin & Phòng" },
+  { id: 1, title: "Tài khoản & Phòng" },
   { id: 2, title: "Ảnh & Pháp lý" },
   { id: 3, title: "Hợp đồng & Thanh toán" },
   { id: 4, title: "Chính sách vận hành" },
@@ -113,7 +117,6 @@ export const RegisterForm = () => {
   // Cập nhật State từ các Step con
   const handleChange = (updatedFields) => {
     setFormData((prev) => ({ ...prev, ...updatedFields }));
-    // Xóa lỗi tương ứng khi người dùng nhập
     setErrors({});
   };
 
@@ -121,11 +124,22 @@ export const RegisterForm = () => {
   const validateCurrentStep = () => {
     const err = {};
     if (currentStep === 1) {
-      if (!formData.hotelNameVi) err.hotelName = "Vui lòng nhập tên chỗ nghỉ!";
+      // 1. Kiểm tra tài khoản Owner
+      if (!formData.ownerName)
+        err.ownerName = "Vui lòng nhập họ tên chủ tài khoản!";
       if (!formData.phoneContact)
-        err.phoneContact = "Vui lòng nhập số điện thoại liên hệ!";
+        err.phoneContact = "Vui lòng nhập số điện thoại!";
       if (!formData.emailContact)
-        err.emailContact = "Vui lòng nhập email nhận đặt phòng!";
+        err.emailContact = "Vui lòng nhập email đăng nhập!";
+      if (!formData.password || formData.password.length < 6) {
+        err.password = "Mật khẩu phải từ 6 ký tự trở lên!";
+      }
+      if (formData.password !== formData.confirmPassword) {
+        err.confirmPassword = "Mật khẩu xác nhận không khớp!";
+      }
+
+      // 2. Kiểm tra thông tin khách sạn
+      if (!formData.hotelNameVi) err.hotelName = "Vui lòng nhập tên chỗ nghỉ!";
       if (!formData.streetAddress)
         err.streetAddress = "Vui lòng nhập địa chỉ chi tiết!";
       if (formData.rooms.length === 0)
@@ -219,7 +233,7 @@ export const RegisterForm = () => {
               Đăng Ký Cơ Sở Lưu Trú Đối Tác
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Quy trình 4 bước tiêu chuẩn hóa theo hệ thống OTA quốc tế
+              Quy trình 4 bước tạo tài khoản & đăng ký niêm yết theo chuẩn OTA
             </p>
           </div>
 

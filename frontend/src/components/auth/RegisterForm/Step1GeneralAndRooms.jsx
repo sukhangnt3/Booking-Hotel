@@ -13,6 +13,8 @@ import {
   Phone,
   Mail,
   Globe,
+  UserPlus,
+  Lock,
 } from "lucide-react";
 
 // DỮ LIỆU TỈNH / THÀNH PHỐ THẬT (Kèm tọa độ GPS và Quận/Huyện)
@@ -186,7 +188,138 @@ export const Step1GeneralAndRooms = ({
 
   return (
     <div className="space-y-8 animate-fadeIn">
-      {/* SECTION 1: THÔNG TIN CƠ BẢN */}
+      {/* ─── PHẦN 1: TẠO TÀI KHOẢN OWNER (DÀNH CHO KHÁCH VÃNG LAI) ─── */}
+      <div className="bg-white rounded-2xl p-6 sm:p-8 border-2 border-blue-600/30 shadow-sm space-y-6">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+              <UserPlus className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                1. Thiết Lập Tài Khoản Đối Tác Quản Trị
+              </h2>
+              <p className="text-xs text-slate-500">
+                Thông tin dùng để đăng nhập vào trang quản trị cơ sở lưu trú
+                (Owner Portal)
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold px-3 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded-full">
+            Tài khoản mới
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+              Họ và tên Chủ cơ sở / Người đại diện *
+            </label>
+            <input
+              type="text"
+              value={data?.ownerName || ""}
+              onChange={(e) => onChange({ ownerName: e.target.value })}
+              placeholder="VD: Nguyễn Văn An"
+              className={`w-full h-11 px-4 text-sm rounded-xl border ${
+                errors?.ownerName
+                  ? "border-red-500 bg-red-50/30"
+                  : "border-slate-200"
+              } text-slate-900 bg-white focus:border-blue-600 outline-none`}
+            />
+            {errors?.ownerName && (
+              <p className="text-xs text-red-500 mt-1">{errors.ownerName}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+              <Phone className="w-3.5 h-3.5 text-blue-600" /> SĐT Đăng nhập /
+              Zalo liên hệ *
+            </label>
+            <input
+              type="tel"
+              value={data?.phoneContact || ""}
+              onChange={(e) => onChange({ phoneContact: e.target.value })}
+              placeholder="VD: 0905123456"
+              className={`w-full h-11 px-4 text-sm rounded-xl border ${
+                errors?.phoneContact
+                  ? "border-red-500 bg-red-50/30"
+                  : "border-slate-200"
+              } text-slate-900 bg-white focus:border-blue-600 outline-none`}
+            />
+            {errors?.phoneContact && (
+              <p className="text-xs text-red-500 mt-1">{errors.phoneContact}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+              <Mail className="w-3.5 h-3.5 text-blue-600" /> Email Đăng nhập
+              quản trị *
+            </label>
+            <input
+              type="email"
+              value={data?.emailContact || ""}
+              onChange={(e) => onChange({ emailContact: e.target.value })}
+              placeholder="owner.hotel@gmail.com"
+              className={`w-full h-11 px-4 text-sm rounded-xl border ${
+                errors?.emailContact
+                  ? "border-red-500 bg-red-50/30"
+                  : "border-slate-200"
+              } text-slate-900 bg-white focus:border-blue-600 outline-none`}
+            />
+            {errors?.emailContact && (
+              <p className="text-xs text-red-500 mt-1">{errors.emailContact}</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+                <Lock className="w-3.5 h-3.5 text-blue-600" /> Mật khẩu *
+              </label>
+              <input
+                type="password"
+                value={data?.password || ""}
+                onChange={(e) => onChange({ password: e.target.value })}
+                placeholder="Tối thiểu 6 ký tự"
+                className={`w-full h-11 px-4 text-sm rounded-xl border ${
+                  errors?.password
+                    ? "border-red-500 bg-red-50/30"
+                    : "border-slate-200"
+                } text-slate-900 bg-white focus:border-blue-600 outline-none`}
+              />
+              {errors?.password && (
+                <p className="text-xs text-red-500 mt-1">{errors.password}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+                Xác nhận lại *
+              </label>
+              <input
+                type="password"
+                value={data?.confirmPassword || ""}
+                onChange={(e) => onChange({ confirmPassword: e.target.value })}
+                placeholder="Nhập lại mật khẩu"
+                className={`w-full h-11 px-4 text-sm rounded-xl border ${
+                  errors?.confirmPassword
+                    ? "border-red-500 bg-red-50/30"
+                    : "border-slate-200"
+                } text-slate-900 bg-white focus:border-blue-600 outline-none`}
+              />
+              {errors?.confirmPassword && (
+                <p className="text-xs text-red-500 mt-1">
+                  {errors.confirmPassword}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── PHẦN 2: THÔNG TIN ĐỊNH DANH CƠ SỞ LƯU TRÚ ─── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -195,7 +328,7 @@ export const Step1GeneralAndRooms = ({
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900">
-                1. Thông tin Định danh Cơ sở lưu trú
+                2. Thông tin Định danh Chỗ Nghỉ
               </h2>
               <p className="text-xs text-slate-500">
                 Tên hiển thị trên cổng tìm kiếm của du khách trong nước & quốc
@@ -222,7 +355,7 @@ export const Step1GeneralAndRooms = ({
                 errors?.hotelName
                   ? "border-red-500 bg-red-50/30"
                   : "border-slate-200"
-              } text-slate-900 bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition`}
+              } text-slate-900 bg-white focus:border-blue-600 outline-none`}
             />
             {errors?.hotelName && (
               <p className="text-xs text-red-500 mt-1">{errors.hotelName}</p>
@@ -238,7 +371,7 @@ export const Step1GeneralAndRooms = ({
               value={data?.hotelNameEn || ""}
               onChange={(e) => onChange({ hotelNameEn: e.target.value })}
               placeholder="VD: East Sea Luxury Hotel"
-              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 outline-none transition"
+              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none"
             />
           </div>
 
@@ -249,7 +382,7 @@ export const Step1GeneralAndRooms = ({
             <select
               value={data?.hotelType || "hotel"}
               onChange={(e) => onChange({ hotelType: e.target.value })}
-              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none transition"
+              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none cursor-pointer"
             >
               <option value="hotel">Khách sạn tiêu chuẩn (Hotel)</option>
               <option value="resort">Khu nghỉ dưỡng (Resort)</option>
@@ -269,7 +402,7 @@ export const Step1GeneralAndRooms = ({
             <select
               value={data?.starRating ?? 0}
               onChange={(e) => onChange({ starRating: Number(e.target.value) })}
-              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none transition font-medium"
+              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none font-medium cursor-pointer"
             >
               <option value={0}>Không xếp hạng / Nhà dân ấm cúng</option>
               <option value={1}>1 Sao ⭐</option>
@@ -281,53 +414,11 @@ export const Step1GeneralAndRooms = ({
           </div>
         </div>
 
-        {/* LIÊN HỆ */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-              <Phone className="w-3.5 h-3.5 text-blue-600" /> SĐT Lễ tân / Quản
-              lý *
-            </label>
-            <input
-              type="tel"
-              value={data?.phoneContact || ""}
-              onChange={(e) => onChange({ phoneContact: e.target.value })}
-              placeholder="VD: 02838123456 hoặc 0905123456"
-              className={`w-full h-11 px-4 text-sm rounded-xl border ${
-                errors?.phoneContact
-                  ? "border-red-500 bg-red-50/30"
-                  : "border-slate-200"
-              } text-slate-900 bg-white focus:border-blue-600 outline-none`}
-            />
-            {errors?.phoneContact && (
-              <p className="text-xs text-red-500 mt-1">{errors.phoneContact}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-blue-600" /> Email nhận thông
-              báo *
-            </label>
-            <input
-              type="email"
-              value={data?.emailContact || ""}
-              onChange={(e) => onChange({ emailContact: e.target.value })}
-              placeholder="reservation@hotel.com"
-              className={`w-full h-11 px-4 text-sm rounded-xl border ${
-                errors?.emailContact
-                  ? "border-red-500 bg-red-50/30"
-                  : "border-slate-200"
-              } text-slate-900 bg-white focus:border-blue-600 outline-none`}
-            />
-            {errors?.emailContact && (
-              <p className="text-xs text-red-500 mt-1">{errors.emailContact}</p>
-            )}
-          </div>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
               <Globe className="w-3.5 h-3.5 text-slate-400" /> Website / Fanpage
+              (Nếu có)
             </label>
             <input
               type="url"
@@ -337,23 +428,23 @@ export const Step1GeneralAndRooms = ({
               className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none"
             />
           </div>
-        </div>
 
-        <div>
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-            Mô tả ngắn gọn về chỗ nghỉ
-          </label>
-          <textarea
-            rows={2}
-            value={data?.description || ""}
-            onChange={(e) => onChange({ description: e.target.value })}
-            placeholder="Khách sạn sở hữu hồ bơi vô cực view biển tuyệt đẹp, chỉ cách bãi tắm 2 phút đi bộ..."
-            className="w-full p-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none"
-          />
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+              Mô tả ngắn gọn về chỗ nghỉ
+            </label>
+            <textarea
+              rows={2}
+              value={data?.description || ""}
+              onChange={(e) => onChange({ description: e.target.value })}
+              placeholder="Khách sạn sở hữu hồ bơi vô cực view biển tuyệt đẹp..."
+              className="w-full p-3 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none"
+            />
+          </div>
         </div>
       </div>
 
-      {/* SECTION 2: ĐỊA ĐIỂM & BẢN ĐỒ */}
+      {/* ─── PHẦN 3: ĐỊA ĐIỂM & BẢN ĐỒ ─── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
           <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
@@ -361,10 +452,10 @@ export const Step1GeneralAndRooms = ({
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-900">
-              2. Vị trí địa lý & Tọa độ Google Maps
+              3. Vị trí địa lý & Tọa độ Google Maps
             </h2>
             <p className="text-xs text-slate-500">
-              Giúp khách hàng tìm thấy cơ sở lưu trú của bạn dễ dàng
+              Giúp du khách tìm thấy cơ sở lưu trú của bạn dễ dàng
             </p>
           </div>
         </div>
@@ -377,7 +468,7 @@ export const Step1GeneralAndRooms = ({
             <select
               value={data?.province || selectedProvinceObj.name}
               onChange={handleProvinceChange}
-              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none"
+              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none cursor-pointer"
             >
               {PROVINCES_DATA.map((p) => (
                 <option key={p.name} value={p.name}>
@@ -394,7 +485,7 @@ export const Step1GeneralAndRooms = ({
             <select
               value={data?.district || selectedProvinceObj.districts[0]}
               onChange={(e) => onChange({ district: e.target.value })}
-              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none"
+              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none cursor-pointer"
             >
               {selectedProvinceObj.districts.map((d) => (
                 <option key={d} value={d}>
@@ -493,7 +584,7 @@ export const Step1GeneralAndRooms = ({
         </div>
       </div>
 
-      {/* SECTION 3: THIẾT LẬP CÁC LOẠI PHÒNG (ROOM TYPES) */}
+      {/* ─── PHẦN 4: THIẾT LẬP CÁC LOẠI PHÒNG (ROOM TYPES) ─── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -502,7 +593,7 @@ export const Step1GeneralAndRooms = ({
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900">
-                3. Danh mục Loại phòng & Bảng giá ban đầu
+                4. Danh mục Loại phòng & Bảng giá ban đầu
               </h2>
               <p className="text-xs text-slate-500">
                 Cấu hình các hạng phòng (Deluxe, Superior, Suite...) và giá bán
