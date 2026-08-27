@@ -11,8 +11,9 @@ import {
   FileText,
   MapPin,
   BedDouble,
+  CreditCard,
+  Percent,
   ExternalLink,
-  AlertTriangle,
 } from "lucide-react";
 
 // Components
@@ -46,6 +47,10 @@ const HotelApprovalPage = () => {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const formatVND = (amount) => {
+    return new Intl.NumberFormat("vi-VN").format(amount || 0) + " ₫";
+  };
+
   // ─── 2. FETCH DANH SÁCH HỒ SƠ TỪ API ───
   const fetchHotels = async () => {
     setLoading(true);
@@ -54,8 +59,14 @@ const HotelApprovalPage = () => {
         status: statusFilter === "all" ? undefined : statusFilter,
       };
 
-      const res = await hotelService.getAll(params);
-      const list = Array.isArray(res) ? res : res?.data || res?.hotels || [];
+      let list = [];
+      if (hotelService?.getAll) {
+        const res = await hotelService.getAll(params);
+        list = Array.isArray(res) ? res : res?.data || res?.hotels || [];
+      } else {
+        const res = await apiClient.get("/admin/hotels", { params });
+        list = Array.isArray(res.data) ? res.data : res.data?.hotels || [];
+      }
       setHotels(list);
     } catch (err) {
       console.error("Lỗi tải danh sách duyệt khách sạn:", err);
@@ -73,7 +84,7 @@ const HotelApprovalPage = () => {
   const handleApprove = async (hotelId, hotelName) => {
     setActionLoadingId(hotelId);
     try {
-      if (hotelService.updateStatus) {
+      if (hotelService?.updateStatus) {
         await hotelService.updateStatus(hotelId, "approved");
       } else {
         await apiClient.patch(`/hotels/${hotelId}/status`, {
@@ -103,7 +114,7 @@ const HotelApprovalPage = () => {
 
     setActionLoadingId(hotelId);
     try {
-      if (hotelService.updateStatus) {
+      if (hotelService?.updateStatus) {
         await hotelService.updateStatus(hotelId, "rejected", { reason });
       } else {
         await apiClient.patch(`/hotels/${hotelId}/status`, {
@@ -189,11 +200,15 @@ const HotelApprovalPage = () => {
       ) : hotels.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {hotels.map((h) => {
-            const id = h.id || h.hotel_id;
+            const id = h.id || h.hotel_id || h._id;
             const isActing = actionLoadingId === id;
             const status = h.status || (h.is_approved ? "approved" : "pending");
+
+            // Xử lý an toàn tên và ảnh
+            const hotelName = h.hotelNameVi || h.name || "Chưa đặt tên";
             const image =
               h.image ||
+              h.hotelImages?.[0]?.preview ||
               h.images?.[0]?.path ||
               h.images?.[0] ||
               "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500";
@@ -208,7 +223,7 @@ const HotelApprovalPage = () => {
                   <div className="relative h-48 w-full overflow-hidden bg-slate-100">
                     <img
                       src={image}
-                      alt={h.name}
+                      alt={hotelName}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     />
 
@@ -233,43 +248,52 @@ const HotelApprovalPage = () => {
                   <div className="p-6 space-y-4">
                     <div>
                       <span className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
-                        {h.type || "Khách sạn"}
+                        {h.hotelType || h.type || "Khách sạn"}
                       </span>
                       <h3 className="text-xl font-black text-slate-900 mt-1 leading-snug group-hover:text-blue-600 transition-colors">
-                        {h.name}
+                        {hotelName}
                       </h3>
                       <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
                         <MapPin size={13} className="text-slate-400 shrink-0" />{" "}
-                        {h.address}, {h.city}
+                        {h.streetAddress || h.address},{" "}
+                        {h.district && `${h.district}, `}
+                        {h.province || h.city}
                       </p>
                     </div>
 
                     {/* Thông tin chủ sở hữu & pháp lý */}
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs space-y-2">
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Chủ sở hữu:</span>
+                        <span className="text-slate-500">Người đại diện:</span>
                         <strong className="text-slate-800">
-                          {h.owner_name || h.owner?.name || "Chưa rõ"}
+                          {h.signerName ||
+                            h.owner_name ||
+                            h.owner?.name ||
+                            "Chưa rõ"}
                         </strong>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500">Hotline / SĐT:</span>
                         <strong className="text-slate-800">
-                          {h.phone || h.hotline || "N/A"}
+                          {h.phoneContact || h.signerPhone || h.phone || "N/A"}
                         </strong>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Quy mô chỗ nghỉ:</span>
+                        <span className="text-slate-500">
+                          Hoa hồng thỏa thuận:
+                        </span>
                         <strong className="text-blue-600 font-black">
-                          {h.total_rooms || h.totalRooms || 10} phòng
+                          {h.commissionRate || 18}%
                         </strong>
                       </div>
                       <div className="flex justify-between pt-1 border-t border-slate-200">
                         <span className="text-slate-500">Ngày gửi hồ sơ:</span>
                         <span className="font-mono text-slate-700 font-bold">
-                          {h.created_at
-                            ? new Date(h.created_at).toLocaleDateString("vi-VN")
-                            : "Gần đây"}
+                          {h.created_at || h.createdAt
+                            ? new Date(
+                                h.created_at || h.createdAt,
+                              ).toLocaleDateString("vi-VN")
+                            : "Vừa xong"}
                         </span>
                       </div>
                     </div>
@@ -282,9 +306,9 @@ const HotelApprovalPage = () => {
                     <Button
                       size="sm"
                       isLoading={isActing}
-                      onClick={() => handleApprove(id, h.name)}
+                      onClick={() => handleApprove(id, hotelName)}
                       disabled={status === "approved"}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl text-xs shadow-md shadow-emerald-100 disabled:opacity-40"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl text-xs shadow-md shadow-emerald-100 disabled:opacity-40 cursor-pointer"
                       leftIcon={<CheckCircle2 size={16} />}
                     >
                       {status === "approved" ? "Đã Phê Duyệt" : "Chấp Thuận"}
@@ -294,9 +318,9 @@ const HotelApprovalPage = () => {
                       size="sm"
                       variant="outline"
                       isLoading={isActing}
-                      onClick={() => handleReject(id, h.name)}
+                      onClick={() => handleReject(id, hotelName)}
                       disabled={status === "rejected"}
-                      className="border-rose-200 text-rose-600 hover:bg-rose-50 rounded-2xl text-xs font-bold disabled:opacity-40"
+                      className="border-rose-200 text-rose-600 hover:bg-rose-50 rounded-2xl text-xs font-bold disabled:opacity-40 cursor-pointer"
                       leftIcon={<XCircle size={16} />}
                     >
                       Từ Chối
@@ -307,10 +331,10 @@ const HotelApprovalPage = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => setSelectedHotel(h)}
-                    className="w-full text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl"
+                    className="w-full text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl cursor-pointer"
                     leftIcon={<Eye size={14} />}
                   >
-                    Xem Chi Tiết Hồ Sơ & Hình Ảnh
+                    Xem Chi Tiết Đầy Đủ & Pháp Lý
                   </Button>
                 </div>
               </div>
@@ -327,79 +351,179 @@ const HotelApprovalPage = () => {
         />
       )}
 
-      {/* ─── MODAL XEM CHI TIẾT HỒ SƠ ─── */}
+      {/* ─── MODAL XEM CHI TIẾT ĐẦY ĐỦ HỒ SƠ ─── */}
       {selectedHotel && (
         <Modal
           isOpen={Boolean(selectedHotel)}
           onClose={() => setSelectedHotel(null)}
-          title={`Chi Tiết Hồ Sơ: ${selectedHotel.name}`}
-          maxWidth="max-w-2xl"
+          title={`Thẩm Định Hồ Sơ: ${selectedHotel.hotelNameVi || selectedHotel.name}`}
+          maxWidth="max-w-3xl"
         >
-          <div className="space-y-5 text-xs text-slate-700">
-            {/* Ảnh gallery */}
+          <div className="space-y-6 text-xs text-slate-700 max-h-[75vh] overflow-y-auto pr-1">
+            {/* 1. HÌNH ẢNH */}
             <div>
               <p className="font-bold text-slate-400 uppercase mb-2">
-                Hình ảnh chỗ nghỉ
+                1. Bộ sưu tập hình ảnh (
+                {selectedHotel.hotelImages?.length ||
+                  selectedHotel.images?.length ||
+                  1}{" "}
+                ảnh)
               </p>
-              <div className="grid grid-cols-3 gap-2 h-40">
-                {(selectedHotel.images || [selectedHotel.image]).map(
-                  (img, i) => (
-                    <img
-                      key={i}
-                      src={typeof img === "object" ? img.path : img}
-                      alt="Hotel"
-                      className="w-full h-full object-cover rounded-xl border border-slate-200"
-                    />
-                  ),
-                )}
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {(
+                  selectedHotel.hotelImages ||
+                  selectedHotel.images || [selectedHotel.image]
+                ).map((img, i) => (
+                  <img
+                    key={i}
+                    src={
+                      typeof img === "object" ? img.preview || img.path : img
+                    }
+                    alt="Hotel Gallery"
+                    className="w-full h-24 object-cover rounded-xl border border-slate-200"
+                  />
+                ))}
               </div>
             </div>
 
-            {/* Mô tả */}
-            <div>
-              <p className="font-bold text-slate-400 uppercase mb-1">
-                Mô tả giới thiệu
-              </p>
-              <p className="p-3 bg-slate-50 rounded-xl border leading-relaxed">
-                {selectedHotel.description || "Chưa có mô tả chi tiết."}
-              </p>
-            </div>
+            {/* 2. DANH MỤC CÁC LOẠI PHÒNG */}
+            {selectedHotel.rooms && selectedHotel.rooms.length > 0 && (
+              <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2">
+                <p className="font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                  <BedDouble size={15} className="text-blue-600" /> Danh mục{" "}
+                  {selectedHotel.rooms.length} loại phòng niêm yết:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {selectedHotel.rooms.map((room, idx) => (
+                    <div
+                      key={room.id || idx}
+                      className="p-2.5 bg-white rounded-xl border text-xs"
+                    >
+                      <div className="flex justify-between font-bold text-slate-900">
+                        <span>{room.roomName}</span>
+                        <span className="text-emerald-600">
+                          {formatVND(room.weekdayPrice)}/đêm
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {room.bedType} • Kho: {room.totalRooms} phòng
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-            {/* Thông tin liên hệ */}
-            <div className="grid grid-cols-2 gap-3 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
-              <div>
-                <span className="text-slate-400 block">Người đại diện:</span>
-                <strong className="text-slate-900 text-sm">
-                  {selectedHotel.owner_name ||
-                    selectedHotel.owner?.name ||
+            {/* 3. TÀI KHOẢN NGÂN HÀNG & PHÁP LÝ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="p-4 bg-blue-50/40 rounded-2xl border border-blue-100 space-y-1.5">
+                <span className="font-bold text-blue-900 flex items-center gap-1">
+                  <CreditCard size={14} /> Tài khoản nhận quyết toán:
+                </span>
+                <p>
+                  <b>Ngân hàng:</b> {selectedHotel.bankName || "N/A"}
+                </p>
+                <p>
+                  <b>Số tài khoản:</b>{" "}
+                  <span className="font-mono font-bold text-slate-900">
+                    {selectedHotel.bankAccount || "N/A"}
+                  </span>
+                </p>
+                <p>
+                  <b>Chủ tài khoản:</b> {selectedHotel.bankAccountName || "N/A"}
+                </p>
+              </div>
+
+              <div className="p-4 bg-amber-50/40 rounded-2xl border border-amber-100 space-y-1.5">
+                <span className="font-bold text-amber-900 flex items-center gap-1">
+                  <ShieldCheck size={14} /> Người ký & Pháp lý:
+                </span>
+                <p>
+                  <b>Người đại diện:</b> {selectedHotel.signerName || "N/A"} (
+                  {selectedHotel.signerPosition || "Chủ cơ sở"})
+                </p>
+                <p>
+                  <b>Số CCCD / MST:</b>{" "}
+                  {selectedHotel.signerIdNumber ||
+                    selectedHotel.taxCode ||
                     "N/A"}
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block">Số điện thoại:</span>
-                <strong className="text-slate-900 text-sm">
-                  {selectedHotel.phone || selectedHotel.hotline || "N/A"}
-                </strong>
+                </p>
+                <p>
+                  <b>Email nhận hợp đồng:</b>{" "}
+                  {selectedHotel.signerEmail ||
+                    selectedHotel.emailContact ||
+                    "N/A"}
+                </p>
               </div>
             </div>
 
-            {/* Thao tác trong Modal */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            {/* 4. TÀI LIỆU ĐÍNH KÈM (CCCD / GIẤY ĐKKD) */}
+            {selectedHotel.legalDocuments &&
+              selectedHotel.legalDocuments.length > 0 && (
+                <div>
+                  <p className="font-bold text-slate-400 uppercase mb-2">
+                    Tài liệu pháp lý tải lên:
+                  </p>
+                  <div className="space-y-2">
+                    {selectedHotel.legalDocuments.map((doc, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-3 bg-slate-50 border rounded-xl"
+                      >
+                        <span className="font-medium text-slate-800">
+                          {doc.name || `Tài liệu pháp lý #${idx + 1}`}
+                        </span>
+                        {doc.preview && (
+                          <a
+                            href={doc.preview}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 font-bold flex items-center gap-1 hover:underline"
+                          >
+                            Xem file <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            {/* THAO TÁC TRONG MODAL */}
+            <div className="flex justify-between items-center pt-4 border-t border-slate-100">
               <Button
                 variant="outline"
-                onClick={() => setSelectedHotel(null)}
-                className="rounded-xl font-bold"
-              >
-                Đóng
-              </Button>
-              <Button
                 onClick={() =>
-                  handleApprove(selectedHotel.id, selectedHotel.name)
+                  handleReject(
+                    selectedHotel.id || selectedHotel.hotel_id,
+                    selectedHotel.hotelNameVi || selectedHotel.name,
+                  )
                 }
-                className="bg-emerald-600 text-white font-extrabold rounded-xl px-6"
+                className="text-rose-600 border-rose-200 hover:bg-rose-50 rounded-xl font-bold cursor-pointer"
               >
-                Phê Duyệt Ngay
+                Từ Chối Hồ Sơ
               </Button>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedHotel(null)}
+                  className="rounded-xl font-bold cursor-pointer"
+                >
+                  Đóng
+                </Button>
+                <Button
+                  onClick={() =>
+                    handleApprove(
+                      selectedHotel.id || selectedHotel.hotel_id,
+                      selectedHotel.hotelNameVi || selectedHotel.name,
+                    )
+                  }
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl px-6 cursor-pointer"
+                >
+                  Phê Duyệt Ngay
+                </Button>
+              </div>
             </div>
           </div>
         </Modal>
