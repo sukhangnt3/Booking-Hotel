@@ -19,14 +19,14 @@ const Sidebar = ({
   return (
     <aside
       className={cn(
-        "flex flex-col bg-[#030712] text-slate-400 transition-all duration-300 relative border-r border-slate-800 h-screen shrink-0 z-50 select-none",
+        "flex flex-col bg-[#ffffff] text-slate-400 transition-all duration-300 relative border-r border-slate-300 h-screen shrink-0 z-50 select-none",
         isCollapsed ? "w-20" : "w-72",
       )}
     >
       {/* NÚT THU GỌN */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-10 z-[60] bg-slate-800 text-white rounded-full p-1.5 border border-slate-700 hover:bg-blue-600 transition-all shadow-xl hidden lg:block cursor-pointer"
+        className="absolute -right-3 top-10 z-[60] bg-neutral-200 text-emerald-600 rounded-full p-1.5 border border-stone-300 hover:bg-green-400 transition-all shadow-xl hidden lg:block cursor-pointer"
       >
         {isCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
       </button>
@@ -34,7 +34,7 @@ const Sidebar = ({
       {/* LOGO GOSTAY */}
       <div
         className={cn(
-          "h-20 flex items-center px-6 mb-2 shrink-0 border-b border-slate-800/60",
+          "h-20 flex items-center px-6 mb-2 shrink-0 border-b border-slate-300/60",
           isCollapsed ? "justify-center px-0" : "justify-start",
         )}
       >
@@ -48,8 +48,8 @@ const Sidebar = ({
             <LayoutDashboard size={22} />
           </div>
           {!isCollapsed && (
-            <span className="font-black text-white text-xl tracking-tight animate-in fade-in duration-500">
-              GoStay<span className="text-blue-500">.</span>
+            <span className="font-black text-black text-xl tracking-tight animate-in fade-in duration-500">
+              GoStay<span className="text-green-500">.</span>
             </span>
           )}
         </Link>
@@ -74,7 +74,7 @@ const Sidebar = ({
                   : "px-4 py-3.5",
                 isActive
                   ? `${activeColor} text-white shadow-lg shadow-blue-900/40 font-bold`
-                  : "hover:bg-slate-800/50 hover:text-white font-semibold text-slate-400",
+                  : "hover:bg-slate-800/50 hover:text-white font-semibold text-slate-950",
               )
             }
           >
@@ -107,7 +107,7 @@ const Sidebar = ({
       </nav>
 
       {/* ─── ĐÁY SIDEBAR: CHỈ GIỮ 2 NÚT THAO TÁC GỌN GÀNG ─── */}
-      <div className="p-4 border-t border-slate-800/60 bg-slate-950/40 shrink-0">
+      <div className="p-4 border-t border-slate-300/60 bg-[#f8fafc] shrink-0">
         <div
           className={cn(
             "flex gap-2",

@@ -109,10 +109,10 @@ const AdminDashboardPage = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black uppercase text-blue-600 tracking-wider">
+            <span className="text-xs font-black uppercase text-black-600 tracking-wider">
               Hệ Thống Quản Trị Trung Tâm
             </span>
-            <Badge variant="primary" size="sm">
+            <Badge variant="primary" size="sm"  >
               Super Admin
             </Badge>
           </div>
@@ -158,7 +158,7 @@ const AdminDashboardPage = () => {
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Tổng GMV Toàn Sàn
               </span>
-              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#006ce4] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
                 <DollarSign size={20} />
               </div>
             </div>
@@ -171,7 +171,7 @@ const AdminDashboardPage = () => {
               </p>
             </div>
             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-[#006ce4] h-full rounded-full w-4/5" />
+              <div className="bg-emerald-500 h-full rounded-full w-4/5" />
             </div>
           </div>
 
@@ -204,7 +204,7 @@ const AdminDashboardPage = () => {
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Tổng Lượt Đặt Phòng
               </span>
-              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
                 <Receipt size={20} />
               </div>
             </div>
@@ -212,12 +212,12 @@ const AdminDashboardPage = () => {
               <div className="text-2xl md:text-3xl font-black text-slate-900">
                 {stats.totalBookings} Đơn
               </div>
-              <p className="text-xs font-bold text-purple-600 mt-1">
+              <p className="text-xs font-bold text-emerald-500 mt-1">
                 Khách đã giao dịch thành công
               </p>
             </div>
             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-purple-600 h-full rounded-full w-3/4" />
+              <div className="bg-emerald-500 h-full rounded-full w-3/4" />
             </div>
           </div>
 
@@ -227,12 +227,12 @@ const AdminDashboardPage = () => {
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Chỗ Nghỉ Chờ Duyệt
               </span>
-              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
                 <Clock size={20} />
               </div>
             </div>
             <div>
-              <div className="text-2xl md:text-3xl font-black text-amber-600">
+              <div className="text-2xl md:text-3xl font-black text-emerald-500">
                 {stats.pendingHotelsCount} Hồ sơ
               </div>
               <button
@@ -243,7 +243,7 @@ const AdminDashboardPage = () => {
               </button>
             </div>
             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-amber-500 h-full rounded-full w-1/2" />
+              <div className="bg-emerald-500 h-full rounded-full w-1/2" />
             </div>
           </div>
         </div>

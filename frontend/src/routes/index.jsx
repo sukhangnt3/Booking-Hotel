@@ -27,9 +27,6 @@ import RegisterForm from "@/components/auth/RegisterForm";
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import HotelApprovalPage from "@/pages/admin/HotelApprovalPage";
 import UserManagementPage from "@/pages/admin/UserManagementPage";
-import BookingManagementPage from "@/pages/admin/BookingManagementPage";
-import GlobalPromotionPage from "@/pages/admin/GlobalPromotionPage";
-import SystemReviewPage from "@/pages/admin/SystemReviewPage";
 
 // ─── 4. TRỌN BỘ 9 TRANG OWNER (CHỦ KHÁCH SẠN) ───
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
@@ -145,9 +142,7 @@ const router = createBrowserRouter([
           { path: "dashboard", element: <AdminDashboardPage /> },
           { path: "hotels", element: <HotelApprovalPage /> },
           { path: "users", element: <UserManagementPage /> },
-          { path: "bookings", element: <BookingManagementPage /> },
-          { path: "promotions", element: <GlobalPromotionPage /> },
-          { path: "reviews", element: <SystemReviewPage /> },
+        
         ],
       },
     ],

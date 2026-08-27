@@ -7,7 +7,6 @@ import {
   Menu,
   Bell,
   Search,
-  ShieldCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import Sidebar from "./Sidebar";
@@ -25,7 +24,7 @@ const AdminLayout = () => {
   const menuItems = [
     {
       path: "/admin/dashboard",
-      label: "Giám Sát Lưu Lượng Sàn",
+      label: "Tổng Quan Sàn",
       icon: <LayoutDashboard size={20} />,
     },
     {
@@ -82,7 +81,7 @@ const AdminLayout = () => {
             logout();
             navigate("/");
           }}
-          activeColor="bg-[#006ce4]"
+          activeColor="bg-[#059669]"
           roleName="Quản Trị Tối Cao"
         />
       </div>

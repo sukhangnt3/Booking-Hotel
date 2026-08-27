@@ -24,7 +24,7 @@ export const Badge = ({
     default: "bg-gray-100 text-gray-600 border-gray-200",
 
     // Màu thương hiệu (Blue)
-    primary: "bg-blue-50 text-[#006ce4] border-blue-100",
+    primary: "bg-blue-50 text-[#24a04e] border-blue-100",
 
     // Trạng thái thành công (Green)
     success: "bg-emerald-50 text-emerald-700 border-emerald-100",
