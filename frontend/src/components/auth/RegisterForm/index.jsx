@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import apiClient from "../../../services/apiClient";
 
 // Import toàn bộ các file thành phần
 import Step1GeneralAndRooms from "./Step1GeneralAndRooms";
@@ -181,26 +182,87 @@ export const RegisterForm = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Nộp hồ sơ chính thức
+  // Nộp hồ sơ chính thức → gọi API thật POST /partner/register
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
       return;
     }
-
     setLoading(true);
     try {
-      // Giả lập nộp lên Server 1.5 giây
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const payload = {
+        ownerName: formData.ownerName,
+        emailContact: formData.emailContact,
+        phoneContact: formData.phoneContact,
+        password: formData.password,
+        hotelNameVi: formData.hotelNameVi,
+        hotelNameEn: formData.hotelNameEn,
+        hotelType: formData.hotelType,
+        starRating: Number(formData.starRating) || 0,
+        website: formData.website,
+        description: formData.description,
+        province: formData.province,
+        district: formData.district,
+        ward: formData.ward,
+        streetAddress: formData.streetAddress,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
+        rooms: (formData.rooms || []).map((r) => ({
+          roomName: r.roomName,
+          bedType: r.bedType,
+          roomSize: Number(r.roomSize) || 0,
+          maxAdults: Number(r.maxAdults) || 0,
+          maxChildren: Number(r.maxChildren) || 0,
+          totalRooms: Number(r.totalRooms) || 0,
+          weekdayPrice: Number(r.weekdayPrice) || 0,
+          weekendPrice: Number(r.weekendPrice) || 0,
+          hasPrivateBathroom: !!r.hasPrivateBathroom,
+          hasBalcony: !!r.hasBalcony,
+          hasWindow: !!r.hasWindow,
+          roomAmenities: r.roomAmenities || [],
+        })),
+        hotelImages: formData.hotelImages || [],
+        businessType: formData.businessType,
+        legalDocuments: formData.legalDocuments || [],
+        signerName: formData.signerName,
+        signerPosition: formData.signerPosition,
+        signerIdNumber: formData.signerIdNumber,
+        signerPhone: formData.signerPhone,
+        signerEmail: formData.signerEmail,
+        taxCode: formData.taxCode,
+        bankCode: formData.bankCode,
+        bankName: formData.bankName,
+        bankAccount: formData.bankAccount,
+        bankAccountName: formData.bankAccountName,
+        bankBranch: formData.bankBranch,
+        payoutCycle: formData.payoutCycle,
+        commissionRate: Number(formData.commissionRate) || 0,
+        checkInFrom: formData.checkInFrom,
+        checkInTo: formData.checkInTo,
+        checkOutFrom: formData.checkOutFrom,
+        checkOutTo: formData.checkOutTo,
+        cancellationPolicy: formData.cancellationPolicy,
+        hasBreakfast: formData.hasBreakfast,
+        allowChildren: formData.allowChildren,
+        allowPets: formData.allowPets,
+        propertyAmenities: formData.propertyAmenities || [],
+      };
+
+      const response = await apiClient.post("/partner/register", payload);
 
       setSubmittedApplication({
-        applicationId: `GST-${Date.now().toString().slice(-6)}`,
+        applicationId: response?.data?.applicationId || response?.applicationId,
+        hotelId: response?.data?.hotelId || response?.hotelId,
         submittedAt: new Date().toISOString(),
         data: formData,
       });
       setIsReviewOpen(false);
     } catch (error) {
-      alert("Nộp hồ sơ thất bại, vui lòng thử lại!");
+      console.error("Lỗi nộp hồ sơ:", error);
+      alert(
+        "Nộp hồ sơ thất bại: " +
+          (error?.response?.data?.message || error.message || "Vui lòng thử lại."),
+      );
     } finally {
       setLoading(false);
     }

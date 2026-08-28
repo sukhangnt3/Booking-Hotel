@@ -21,7 +21,6 @@ import { Button, Badge, Modal } from "@/components/ui";
 import { LoadingSpinner, EmptyState } from "@/components/common";
 
 // Services
-import { hotelService } from "@/services";
 import apiClient from "@/services/apiClient";
 
 const STATUS_TABS = [
@@ -60,13 +59,8 @@ const HotelApprovalPage = () => {
       };
 
       let list = [];
-      if (hotelService?.getAll) {
-        const res = await hotelService.getAll(params);
-        list = Array.isArray(res) ? res : res?.data || res?.hotels || [];
-      } else {
-        const res = await apiClient.get("/admin/hotels", { params });
-        list = Array.isArray(res.data) ? res.data : res.data?.hotels || [];
-      }
+      const res = await apiClient.get("/admin/hotels", { params });
+      list = Array.isArray(res.data) ? res.data : res.data?.hotels || [];
       setHotels(list);
     } catch (err) {
       console.error("Lỗi tải danh sách duyệt khách sạn:", err);
@@ -84,13 +78,9 @@ const HotelApprovalPage = () => {
   const handleApprove = async (hotelId, hotelName) => {
     setActionLoadingId(hotelId);
     try {
-      if (hotelService?.updateStatus) {
-        await hotelService.updateStatus(hotelId, "approved");
-      } else {
-        await apiClient.patch(`/hotels/${hotelId}/status`, {
-          status: "approved",
-        });
-      }
+      await apiClient.patch(`/admin/hotels/${hotelId}/status`, {
+        status: "approved",
+      });
 
       showToast(`Đã duyệt khách sạn "${hotelName}" lên sàn!`);
       setSelectedHotel(null);
@@ -114,14 +104,10 @@ const HotelApprovalPage = () => {
 
     setActionLoadingId(hotelId);
     try {
-      if (hotelService?.updateStatus) {
-        await hotelService.updateStatus(hotelId, "rejected", { reason });
-      } else {
-        await apiClient.patch(`/hotels/${hotelId}/status`, {
-          status: "rejected",
-          reason,
-        });
-      }
+      await apiClient.patch(`/admin/hotels/${hotelId}/status`, {
+        status: "rejected",
+        reason,
+      });
 
       showToast(`Đã từ chối hồ sơ "${hotelName}".`, "info");
       setSelectedHotel(null);

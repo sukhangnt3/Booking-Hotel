@@ -1,0 +1,1 @@
+SELECT id, full_name, email, activate FROM users;

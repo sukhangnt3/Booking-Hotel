@@ -51,7 +51,7 @@ const AdminDashboardPage = () => {
       // 1. Lấy thống kê số liệu tổng quan
       let statsData = {};
       try {
-        const resStats = await apiClient.get("/admin/dashboard/stats", {
+        const resStats = await apiClient.get("/admin/stats", {
           params: { timeRange },
         });
         statsData = resStats?.data || resStats || {};
@@ -63,15 +63,13 @@ const AdminDashboardPage = () => {
       // 2. Lấy danh sách giao dịch gần đây & Khách sạn chờ duyệt
       const [bookingsRes, hotelsRes] = await Promise.all([
         bookingService.getAll?.({ limit: 5 }) || [],
-        hotelService.getAll?.({ status: "pending", limit: 5 }) || [],
+        apiClient.get("/admin/hotels", { params: { status: "pending" } }).then((r) => r.data || []).catch(() => []),
       ]);
 
       const bookingList = Array.isArray(bookingsRes)
         ? bookingsRes
         : bookingsRes?.data || [];
-      const hotelList = Array.isArray(hotelsRes)
-        ? hotelsRes
-        : hotelsRes?.data || [];
+      const hotelList = Array.isArray(hotelsRes) ? hotelsRes : [];
 
       // Tính tổng doanh thu từ danh sách nếu API chưa trả về con số tổng
       const calculatedGmv =

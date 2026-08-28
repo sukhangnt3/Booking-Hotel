@@ -2,3 +2,7 @@ node_modules/
 .env
 dist/
 *.local
+.vscode/
+.npm-cache/
+frontend/.npm-cache/
+api_docs.html

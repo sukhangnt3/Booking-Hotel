@@ -1,0 +1,18 @@
+{
+  "emailContact": "partner10@test.com",
+  "password": "123456",
+  "ownerName": "Test Owner",
+  "phoneContact": "0901234567",
+  "hotelNameVi": "Khach San Demo 10",
+  "starRating": 3,
+  "province": "Ho Chi Minh",
+  "district": "Quan 1",
+  "rooms": [
+    {
+      "roomName": "Phong Demo",
+      "bedType": "1 King",
+      "weekdayPrice": 500000,
+      "totalRooms": 2
+    }
+  ]
+}
