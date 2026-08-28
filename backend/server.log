@@ -1,0 +1,5 @@
+◇ injected env (12) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+Server chạy tại http://localhost:5000
+Đã kết nối PostgreSQL database: hotel_booking
+Allowed CORS origins: http://localhost:5173

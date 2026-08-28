@@ -313,10 +313,24 @@ async function listAdminHotels(req, res, next) {
          h.average_rating,
          h.review_count,
          h.owner_id,
+         h.commission_rate,
+         h.tax_code,
+         h.bank_name,
+         h.bank_account,
+         h.bank_account_holder,
+         h.contact_name,
+         h.contact_phone,
+         h.email,
+         h.phone,
          u.full_name AS owner_name,
          u.email AS owner_email,
+         u.phone AS owner_phone,
          thumb.path AS thumbnail,
-         h.created_at
+         h.created_at,
+         COALESCE(
+           (SELECT COUNT(*)::int FROM room r WHERE r.hotel_id = h.id AND r.deleted_at IS NULL),
+           0
+         ) AS room_count
        FROM hotel h
        LEFT JOIN users u ON u.id = h.owner_id
        LEFT JOIN image thumb ON thumb.hotel_id = h.id AND thumb.is_thumbnail = true
@@ -327,12 +341,47 @@ async function listAdminHotels(req, res, next) {
     );
 
     const hotels = result.rows.map((hotel) => ({
-      ...(formatHotel ? formatHotel(hotel) : hotel),
+      id: hotel.id,
+      hotel_id: hotel.id,
+      hotelNameVi: hotel.name,
+      name: hotel.name,
+      address: hotel.address,
+      city: hotel.city,
+      province: hotel.city,
+      district: "",
+      starRating: hotel.star_rating,
+      star_rating: hotel.star_rating,
+      status: hotel.status,
+      average_rating: hotel.average_rating,
+      review_count: hotel.review_count,
+      owner_id: hotel.owner_id,
       ownerName: hotel.owner_name,
       owner_name: hotel.owner_name,
       ownerEmail: hotel.owner_email,
       owner_email: hotel.owner_email,
-      status: hotel.status,
+      ownerPhone: hotel.owner_phone,
+      owner_phone: hotel.owner_phone,
+      thumbnail: hotel.thumbnail,
+      createdAt: hotel.created_at,
+      created_at: hotel.created_at,
+      commissionRate: hotel.commission_rate,
+      commission_rate: hotel.commission_rate,
+      taxCode: hotel.tax_code,
+      tax_code: hotel.tax_code,
+      bankName: hotel.bank_name,
+      bank_name: hotel.bank_name,
+      bankAccount: hotel.bank_account,
+      bank_account: hotel.bank_account,
+      bankAccountHolder: hotel.bank_account_holder,
+      bank_account_holder: hotel.bank_account_holder,
+      contactName: hotel.contact_name,
+      contact_name: hotel.contact_name,
+      contactPhone: hotel.contact_phone,
+      contact_phone: hotel.contact_phone,
+      emailContact: hotel.email,
+      phoneContact: hotel.phone,
+      roomCount: hotel.room_count,
+      room_count: hotel.room_count,
     }));
 
     return res.json({ data: hotels, hotels, total: result.rowCount });

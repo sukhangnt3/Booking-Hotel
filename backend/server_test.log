@@ -1,0 +1,16 @@
+◇ injected env (12) from .env // tip: ⌘ enable debugging { debug: true }
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+Server chạy tại http://localhost:5000
+Đã kết nối PostgreSQL database: hotel_booking
+Allowed CORS origins: http://localhost:5173
+TypeError: Cannot destructure property 'ownerName' of 'req.body' as it is undefined.
+    at registerPartner (c:\Users\DELL\Desktop\Booking_Hotel\backend\controllers\partner.controller.js:8:5)
+    at Layer.handleRequest (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\lib\layer.js:152:17)
+    at next (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\lib\route.js:117:3)
+    at handle (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\lib\layer.js:152:17)
+    at c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\index.js:295:15
+    at processParams (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\index.js:582:12)
+    at next (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\index.js:291:5)
+    at router.handle (c:\Users\DELL\Desktop\Booking_Hotel\backend\node_modules\router\index.js:186:3)
