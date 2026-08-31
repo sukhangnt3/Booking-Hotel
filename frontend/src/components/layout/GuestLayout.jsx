@@ -1,32 +1,27 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header";
 import Footer from "./Footer";
-import { useEffect } from "react";
 
 const GuestLayout = () => {
   const { pathname } = useLocation();
 
-  // Tự động cuộn lên đầu trang mỗi khi chuyển trang (Quan trọng cho SPA)
+  // Tự động cuộn lên đầu trang mỗi khi chuyển trang
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 font-sans">
-      {/* 
-         Header nên có z-index cao và có thể thêm sticky ở đây 
-         nếu file Header.jsx của bạn chưa có 
-      */}
+      {/* Header */}
       <header className="sticky top-0 z-40 w-full shadow-sm">
         <Header />
       </header>
 
       {/* 
-         Phần nội dung chính 
-         max-w-7xl (~1280px) là chuẩn chung cho các trang như Booking.com 
+        👉 ĐÃ SỬA: Bỏ max-w-7xl & padding ở đây để các banner có thể tràn toàn màn hình 
       */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 w-full">
         <Outlet />
       </main>
 

@@ -1,108 +1,60 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import {
-  CalendarCheck,
-  Search,
-  Building2,
-  CalendarDays,
-  Users,
-  DoorOpen,
-  CheckCircle2,
-  LogIn,
-  LogOut,
-  Clock,
-  XCircle,
-  ExternalLink,
-  Phone,
-} from "lucide-react";
-
-// Components
-import { Button, Badge, Input, Pagination } from "@/components/ui";
+import { Search, Phone, CalendarCheck, ChevronDown } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import { PaymentStatusBadge } from "@/components/payment";
-
-// Services
 import { bookingService, hotelService } from "@/services";
 
 const STATUS_TABS = [
   { id: "all", label: "Tất cả đơn" },
   { id: "pending", label: "Chờ xác nhận" },
   { id: "confirmed", label: "Đã xác nhận" },
-  { id: "checked_in", label: "Đang ở (Checked-in)" },
-  { id: "checked_out", label: "Đã trả phòng" },
-  { id: "cancelled", label: "Đã hủy" },
+  { id: "checked_in", label: "Đang lưu trú" },
+  { id: "checked_out", label: "Đã hoàn tất" },
 ];
 
 const BookingListPage = () => {
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // ─── 1. STATES ───
   const [hotels, setHotels] = useState([]);
-  const [selectedHotelId, setSelectedHotelId] = useState(
-    searchParams.get("hotelId") || "",
-  );
-  const [filterStatus, setFilterStatus] = useState(
-    searchParams.get("status") || "all",
-  );
+  const [selectedHotelId, setSelectedHotelId] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
   const [searchKeyword, setSearchKeyword] = useState("");
-
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // ─── 2. LOAD DANH SÁCH KHÁCH SẠN CỦA OWNER ───
+  // 1. Tải danh sách cơ sở
   useEffect(() => {
-    const fetchHotels = async () => {
+    const loadHotels = async () => {
       try {
         const res = await hotelService.getAll({ isOwner: true });
         const list = Array.isArray(res) ? res : res?.data || res?.hotels || [];
         setHotels(list);
-
-        if (list.length > 0 && !selectedHotelId) {
-          const firstId = String(list[0].id || list[0].hotel_id);
-          setSelectedHotelId(firstId);
-          setSearchParams({ hotelId: firstId });
-        }
       } catch (err) {
         console.error("Lỗi lấy danh sách khách sạn:", err);
       }
     };
-
-    fetchHotels();
+    loadHotels();
   }, []);
 
-  // ─── 3. FETCH DANH SÁCH BOOKING THỰC TẾ ───
+  // 2. Tải danh sách đơn đặt phòng thật từ Backend
   const fetchBookings = async () => {
-    if (!selectedHotelId) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     try {
       const params = {
-        hotelId: selectedHotelId,
-        status: filterStatus === "all" ? undefined : filterStatus,
-        q: searchKeyword.trim() || undefined,
-        page: currentPage,
-        limit: 10,
+        hotel_id: selectedHotelId !== "all" ? selectedHotelId : undefined,
+        status: filterStatus !== "all" ? filterStatus : undefined,
+        search: searchKeyword.trim() || undefined,
       };
 
-      const res = await bookingService.getOwnerBookings(
-        selectedHotelId,
-        params,
-      );
-      const list = Array.isArray(res) ? res : res?.data || res?.bookings || [];
+      const res = await (bookingService.getAll
+        ? bookingService.getAll(params)
+        : bookingService.getOwnerBookings(selectedHotelId, params));
 
+      const list = Array.isArray(res) ? res : res?.data || res?.bookings || [];
       setBookings(list);
-      setTotalPages(res?.totalPages || res?.total_pages || 1);
     } catch (err) {
-      console.error("Lỗi tải danh sách đặt phòng:", err);
+      console.error("Lỗi tải danh sách booking:", err);
       setBookings([]);
     } finally {
       setLoading(false);
@@ -111,21 +63,22 @@ const BookingListPage = () => {
 
   useEffect(() => {
     fetchBookings();
-  }, [selectedHotelId, filterStatus, currentPage]);
+  }, [selectedHotelId, filterStatus]);
 
-  // ─── 4. CÁC THAO TÁC DUYỆT / CHECK-IN / CHECK-OUT ───
-  const handleUpdateStatus = async (bookingId, action) => {
+  // 3. Xử lý chuyển trạng thái đơn (Xác nhận, Check-in, Check-out)
+  const handleUpdateStatus = async (bookingId, newStatus) => {
     setActionLoadingId(bookingId);
     try {
-      if (action === "confirm") {
+      if (newStatus === "confirmed" && bookingService.confirm) {
         await bookingService.confirm(bookingId);
-      } else if (action === "check_in") {
+      } else if (newStatus === "checked_in" && bookingService.checkIn) {
         await bookingService.checkIn(bookingId);
-      } else if (action === "check_out") {
+      } else if (newStatus === "checked_out" && bookingService.checkOut) {
         await bookingService.checkOut(bookingId);
+      } else if (bookingService.updateStatus) {
+        await bookingService.updateStatus(bookingId, newStatus);
       }
 
-      // Cập nhật lại danh sách booking
       await fetchBookings();
     } catch (err) {
       alert("Thao tác thất bại: " + (err.message || "Vui lòng thử lại"));
@@ -134,79 +87,60 @@ const BookingListPage = () => {
     }
   };
 
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    setCurrentPage(1);
-    fetchBookings();
-  };
+  const filteredBookings = bookings.filter((b) => {
+    const code = b.booking_code || String(b.id || "");
+    const name = b.customer_name || b.guest_name || b.customerName || "";
+    return (
+      code.toLowerCase().includes(searchKeyword.toLowerCase()) ||
+      name.toLowerCase().includes(searchKeyword.toLowerCase())
+    );
+  });
 
   return (
-    <div className="space-y-8 font-sans pb-16 text-slate-800">
-      {/* ─── HEADER & CHỌN KHÁCH SẠN ─── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-black uppercase text-emerald-600 tracking-wider">
-              Kênh Vận Hành
-            </span>
-            <Badge variant="primary" size="sm">
-              {bookings.length} Đơn đặt phòng
-            </Badge>
-          </div>
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-            Quản Lý Đặt Phòng (Bookings)
+    <div className="space-y-6 font-sans text-slate-800 pb-12">
+      {/* ── HEADER ── */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">
+            Quản lý Đặt phòng (Bookings)
           </h1>
-          <p className="text-xs text-slate-500 font-medium">
-            Theo dõi khách đặt phòng, kiểm tra trạng thái thanh toán và thực
-            hiện check-in/check-out.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Tiếp nhận đơn hàng, kiểm tra thanh toán và thực hiện
+            check-in/check-out trực tiếp
           </p>
         </div>
 
-        {/* Dropdown chọn khách sạn */}
-        {hotels.length > 0 && (
-          <div className="relative w-full md:w-64">
-            <select
-              value={selectedHotelId}
-              onChange={(e) => {
-                setSelectedHotelId(e.target.value);
-                setSearchParams({
-                  hotelId: e.target.value,
-                  status: filterStatus,
-                });
-                setCurrentPage(1);
-              }}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold px-4 py-3 rounded-2xl outline-none cursor-pointer focus:border-emerald-500 appearance-none"
-            >
-              {hotels.map((h) => (
-                <option key={h.id || h.hotel_id} value={h.id || h.hotel_id}>
-                  🏨 {h.name}
-                </option>
-              ))}
-            </select>
-            <Building2
-              size={16}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-            />
-          </div>
-        )}
+        <div className="relative w-full md:w-72">
+          <select
+            value={selectedHotelId}
+            onChange={(e) => setSelectedHotelId(e.target.value)}
+            className="w-full bg-white border border-slate-300 text-slate-800 text-xs font-medium px-3 py-2.5 rounded-lg outline-none focus:border-slate-900 appearance-none pr-8 cursor-pointer"
+          >
+            <option value="all">Tất cả chỗ nghỉ ({hotels.length})</option>
+            {hotels.map((h) => (
+              <option key={h.id || h.hotel_id} value={h.id || h.hotel_id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={15}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+          />
+        </div>
       </div>
 
-      {/* ─── BỘ LỌC STATUS & THANH TÌM KIẾM ─── */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-        {/* Status Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+      {/* ── BỘ LỌC & SEARCH ── */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+        <div className="flex items-center gap-1 border-b border-slate-100 pb-3 overflow-x-auto">
           {STATUS_TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => {
-                setFilterStatus(tab.id);
-                setSearchParams({ hotelId: selectedHotelId, status: tab.id });
-                setCurrentPage(1);
-              }}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              onClick={() => setFilterStatus(tab.id)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 filterStatus === tab.id
-                  ? "bg-[#006ce4] text-white shadow-md shadow-blue-100"
-                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
               }`}
             >
               {tab.label}
@@ -214,195 +148,145 @@ const BookingListPage = () => {
           ))}
         </div>
 
-        {/* Thanh tìm kiếm mã đơn / tên khách */}
-        <form onSubmit={handleSearchSubmit} className="flex gap-3">
-          <div className="relative flex-1">
-            <Input
-              placeholder="Tìm kiếm theo mã đơn (BK...), tên khách hàng hoặc số điện thoại..."
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              leftIcon={<Search size={16} className="text-slate-400" />}
-              className="bg-slate-50 border-slate-200 h-11"
-            />
-          </div>
-          <Button
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            fetchBookings();
+          }}
+          className="flex gap-2"
+        >
+          <input
+            placeholder="Tìm theo mã đơn (BK...), tên khách hoặc SĐT..."
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 text-xs px-3.5 py-2.5 rounded-lg focus:ring-1 focus:ring-slate-900 outline-none"
+          />
+          <button
             type="submit"
-            className="bg-slate-900 hover:bg-black text-white px-6 rounded-2xl text-xs font-bold"
+            className="bg-slate-900 text-white px-4 rounded-lg text-xs font-semibold cursor-pointer shrink-0"
           >
-            Tìm Kiếm
-          </Button>
+            Tìm
+          </button>
         </form>
       </div>
 
-      {/* ─── BẢNG DANH SÁCH ĐƠN HÀNG ─── */}
+      {/* ── BẢNG DANH SÁCH ĐƠN HÀNG THẬT ── */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border border-slate-200/80 shadow-sm">
+        <div className="py-24 flex justify-center bg-white rounded-xl border border-slate-200">
           <LoadingSpinner size="lg" label="Đang tải danh sách đặt phòng..." />
         </div>
-      ) : bookings.length > 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4">
+      ) : filteredBookings.length > 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
-              {/* Header Bảng */}
-              <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-100">
+              <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
                 <tr>
-                  <th className="p-4 pl-6">Mã Booking</th>
-                  <th className="p-4">Khách Hàng</th>
-                  <th className="p-4">Hạng Phòng & Số Lượng</th>
-                  <th className="p-4">Thời Gian Lưu Trú</th>
-                  <th className="p-4">Trạng Thái Đơn</th>
-                  <th className="p-4">Thanh Toán</th>
-                  <th className="p-4 text-right">Tổng Tiền</th>
-                  <th className="p-4 pr-6 text-center">Thao Tác</th>
+                  <th className="py-3 px-4">Mã Booking</th>
+                  <th className="py-3 px-4">Khách hàng</th>
+                  <th className="py-3 px-4">Hạng phòng & SL</th>
+                  <th className="py-3 px-4">Thời gian lưu trú</th>
+                  <th className="py-3 px-4">Trạng thái</th>
+                  <th className="py-3 px-4">Thanh toán</th>
+                  <th className="py-3 px-4 text-right">Tổng tiền</th>
+                  <th className="py-3 px-4 text-center">Thao tác</th>
                 </tr>
               </thead>
-
-              {/* Body Bảng */}
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {bookings.map((b) => {
-                  const id = b.booking_code || b.code || b.id;
-                  const isActionLoading = actionLoadingId === b.id;
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {filteredBookings.map((b) => {
+                  const id = b.id || b.booking_id;
+                  const isActionLoading = actionLoadingId === id;
                   const status = b.status || "pending";
 
                   return (
                     <tr
-                      key={b.id}
-                      className="hover:bg-slate-50/80 transition-colors"
+                      key={id}
+                      className="hover:bg-slate-50/70 transition-colors"
                     >
-                      {/* Mã Booking */}
-                      <td className="p-4 pl-6 font-mono font-black text-[#006ce4] text-sm">
-                        #{id}
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                        #{b.booking_code || id}
                       </td>
-
-                      {/* Thông tin khách hàng */}
-                      <td className="p-4">
-                        <div className="font-extrabold text-slate-900 text-sm">
-                          {b.customer_name || b.guestName || "Khách đặt"}
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-slate-900">
+                          {b.customer_name || b.guest_name || b.customerName}
                         </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Phone size={12} />{" "}
-                          {b.guest_phone || b.phone || "Chưa có SĐT"}
+                        <div className="text-[11px] text-slate-400">
+                          {b.guest_phone || b.phone}
                         </div>
                       </td>
-
-                      {/* Loại phòng */}
-                      <td className="p-4">
-                        <div className="font-bold text-slate-800">
-                          {b.room_name || b.roomType || "Phòng Tiêu Chuẩn"}
-                        </div>
-                        <span className="inline-block mt-0.5 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                      <td className="py-3.5 px-4">
+                        <span className="font-medium block">
+                          {b.room_name || b.roomType || "Phòng tiêu chuẩn"}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
                           Số lượng: {b.quantity || 1} phòng
                         </span>
                       </td>
-
-                      {/* Thời gian */}
-                      <td className="p-4 font-bold text-slate-600">
-                        <div className="flex items-center gap-1.5">
-                          <CalendarDays size={14} className="text-[#006ce4]" />
-                          <span>
-                            {b.checkin_date || b.checkIn} ➔{" "}
-                            {b.checkout_date || b.checkOut}
-                          </span>
-                        </div>
+                      <td className="py-3.5 px-4 font-medium text-slate-600">
+                        {b.checkin_date || b.checkIn} ➔{" "}
+                        {b.checkout_date || b.checkOut}
                       </td>
-
-                      {/* Trạng thái đơn */}
-                      <td className="p-4">
+                      <td className="py-3.5 px-4">
                         {status === "confirmed" ? (
-                          <Badge variant="primary" size="sm">
+                          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[11px] font-semibold">
                             Đã xác nhận
-                          </Badge>
+                          </span>
                         ) : status === "checked_in" ? (
-                          <Badge variant="success" size="sm" showDot>
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[11px] font-semibold">
                             Đang ở
-                          </Badge>
+                          </span>
                         ) : status === "checked_out" ? (
-                          <Badge variant="default" size="sm">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-semibold">
                             Đã trả phòng
-                          </Badge>
-                        ) : status === "cancelled" ? (
-                          <Badge variant="danger" size="sm">
-                            Đã hủy
-                          </Badge>
+                          </span>
                         ) : (
-                          <Badge variant="warning" size="sm" showDot>
+                          <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[11px] font-semibold">
                             Chờ duyệt
-                          </Badge>
+                          </span>
                         )}
                       </td>
-
-                      {/* Thanh toán */}
-                      <td className="p-4">
+                      <td className="py-3.5 px-4">
                         <PaymentStatusBadge
-                          status={
-                            b.payment_status || b.paymentStatus || "unpaid"
-                          }
+                          status={b.payment_status || b.paymentStatus}
                         />
                       </td>
-
-                      {/* Tổng tiền */}
-                      <td className="p-4 text-right font-black text-slate-900 text-sm">
+                      <td className="py-3.5 px-4 text-right font-bold text-slate-900">
                         {formatVND(b.total_price || b.totalPrice)}
                       </td>
-
-                      {/* Nút hành động */}
-                      <td className="p-4 pr-6 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {/* Nút Duyệt / Check-in / Check-out theo quy trình */}
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
                           {status === "pending" && (
-                            <Button
-                              size="sm"
-                              isLoading={isActionLoading}
+                            <button
+                              disabled={isActionLoading}
                               onClick={() =>
-                                handleUpdateStatus(b.id, "confirm")
+                                handleUpdateStatus(id, "confirmed")
                               }
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-sm"
+                              className="bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-xs px-2.5 py-1 rounded cursor-pointer disabled:opacity-50"
                             >
-                              Xác nhận
-                            </Button>
+                              {isActionLoading ? "..." : "Xác nhận"}
+                            </button>
                           )}
-
                           {status === "confirmed" && (
-                            <Button
-                              size="sm"
-                              isLoading={isActionLoading}
+                            <button
+                              disabled={isActionLoading}
                               onClick={() =>
-                                handleUpdateStatus(b.id, "check_in")
+                                handleUpdateStatus(id, "checked_in")
                               }
-                              className="bg-[#006ce4] hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-sm"
-                              leftIcon={<LogIn size={13} />}
+                              className="bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-2.5 py-1 rounded cursor-pointer disabled:opacity-50"
                             >
-                              Check-in
-                            </Button>
+                              {isActionLoading ? "..." : "Check-in"}
+                            </button>
                           )}
-
                           {status === "checked_in" && (
-                            <Button
-                              size="sm"
-                              isLoading={isActionLoading}
+                            <button
+                              disabled={isActionLoading}
                               onClick={() =>
-                                handleUpdateStatus(b.id, "check_out")
+                                handleUpdateStatus(id, "checked_out")
                               }
-                              className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-sm"
-                              leftIcon={<LogOut size={13} />}
+                              className="bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs px-2.5 py-1 rounded cursor-pointer disabled:opacity-50"
                             >
-                              Check-out
-                            </Button>
+                              {isActionLoading ? "..." : "Check-out"}
+                            </button>
                           )}
-
-                          {/* Xem chi tiết đơn */}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              navigate(
-                                `/owner/bookings/${b.id}?hotelId=${selectedHotelId}`,
-                              )
-                            }
-                            className="text-slate-600 border-slate-200 hover:bg-slate-100 text-xs font-bold px-3 py-1.5 rounded-xl"
-                          >
-                            Chi tiết
-                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -411,24 +295,13 @@ const BookingListPage = () => {
               </tbody>
             </table>
           </div>
-
-          {/* Phân trang */}
-          {totalPages > 1 && (
-            <div className="p-4 flex justify-center border-t border-slate-100">
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={(p) => setCurrentPage(p)}
-              />
-            </div>
-          )}
         </div>
       ) : (
         <EmptyState
           icon={CalendarCheck}
           title="Chưa có đơn đặt phòng nào"
-          description="Hiện tại khách sạn chưa nhận được đơn đặt phòng nào theo bộ lọc này."
-          actionLabel="Xem tất cả đơn"
+          description="Hệ thống chưa ghi nhận đơn đặt phòng nào theo tiêu chí tìm kiếm này."
+          actionLabel="Tải lại toàn bộ"
           onAction={() => {
             setFilterStatus("all");
             setSearchKeyword("");

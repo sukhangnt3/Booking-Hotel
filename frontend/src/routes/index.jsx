@@ -11,7 +11,7 @@ import AdminRoutes from "./AdminRoutes";
 import OwnerRoutes from "./OwnerRoutes";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
-// ─── 2. TRANG DÀNH CHO KHÁCH HÀNG & AUTH ───
+// ─── 2. GUEST & AUTH ───
 import HomePage from "@/pages/guest/HomePage";
 import HotelListPage from "@/pages/guest/HotelListPage";
 import HotelDetailPage from "@/pages/guest/HotelDetailPage";
@@ -23,38 +23,37 @@ import PromotionPage from "@/pages/guest/PromotionPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterForm from "@/components/auth/RegisterForm";
 
-// ─── 3. TRỌN BỘ 6 TRANG ADMIN (QUẢN TRỊ VIÊN) ───
+// ─── 3. ADMIN (3 TRANG) ───
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import HotelApprovalPage from "@/pages/admin/HotelApprovalPage";
 import UserManagementPage from "@/pages/admin/UserManagementPage";
 
-// ─── 4. TRỌN BỘ 9 TRANG OWNER (CHỦ KHÁCH SẠN) ───
+// ─── 4. CHỦ KHÁCH SẠN OWNER (ĐÚNG 4 TRANG CỦA BẠN) ───
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
-import HotelEditPage from "@/pages/owner/HotelEditPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
-import RoomEditPage from "@/pages/owner/RoomEditPage";
-import RoomNumberPage from "@/pages/owner/RoomNumberPage";
 import BookingListPage from "@/pages/owner/BookingListPage";
-import BookingDetailPage from "@/pages/owner/BookingDetailPage";
-import ServiceManagementPage from "@/pages/owner/ServiceManagementPage";
-import OwnerPromotionPage from "@/pages/owner/OwnerPromotionPage";
-import ReviewManagementPage from "@/pages/owner/ReviewManagementPage";
 
 // ─── 5. TRANG BÁO LỖI ───
 import { NotFoundPage, ServerErrorPage } from "@/pages/error";
 
 const router = createBrowserRouter([
   // ========================================================
-  // 1. PHÂN HỆ KHÁCH HÀNG (GUEST & CUSTOMER)
+  // 1. PHÂN HỆ KHÁCH HÀNG (GUEST)
   // ========================================================
   {
     path: "/",
     element: <GuestLayout />,
-    errorElement: <ServerErrorPage />, // Tự động bắt lỗi nếu render trang sập
+    errorElement: <ServerErrorPage />,
     children: [
       { index: true, element: <HomePage /> },
+
+      // Hỗ trợ tất cả link tìm kiếm
       { path: "hotels", element: <HotelListPage /> },
+      { path: "search", element: <HotelListPage /> },
+      { path: "search-results", element: <HotelListPage /> },
+      { path: "hotels/search", element: <HotelListPage /> },
+
       { path: "hotel/:id", element: <HotelDetailPage /> },
       { path: "promotions", element: <PromotionPage /> },
       { path: "booking", element: <BookingConfirmPage /> },
@@ -62,103 +61,72 @@ const router = createBrowserRouter([
       { path: "booking-success", element: <BookingSuccessPage /> },
       { path: "checkout", element: <CheckoutPage /> },
 
-      // Route yêu cầu đăng nhập đối với Khách hàng
+      // Trang cá nhân
       {
         element: <ProtectedRoute />,
         children: [
           { path: "profile", element: <UserProfilePage /> },
-          { path: "UserProfilePage", element: <UserProfilePage /> },
+          { path: "userprofile", element: <UserProfilePage /> },
+          { path: "user-profile", element: <UserProfilePage /> },
         ],
       },
     ],
   },
 
   // ========================================================
-  // 2. PHÂN HỆ ĐĂNG NHẬP / ĐĂNG KÝ
+  // 2. PHÂN HỆ AUTH (ĐĂNG NHẬP / ĐĂNG KÝ)
   // ========================================================
-  {
-    path: "/login",
-    element: <LoginPage />,
-  },
-  {
-    path: "/register",
-    element: <RegisterForm />,
-  },
-  {
-    path: "/register-owner",
-    element: <RegisterForm />,
-  },
+  { path: "/login", element: <LoginPage /> },
+  { path: "/register", element: <RegisterForm /> },
+  { path: "/register-owner", element: <RegisterForm /> },
 
   // ========================================================
-  // 3. PHÂN HỆ DÀNH CHO CHỦ KHÁCH SẠN (OWNER PORTAL)
+  // 3. PHÂN HỆ OWNER (ĐÚNG 4 TRANG HIỆN CÓ)
   // ========================================================
   {
     path: "/owner",
-    element: <OwnerRoutes />, // Bảo vệ quyền Chủ nhà
+    element: <OwnerRoutes />,
     errorElement: <ServerErrorPage />,
     children: [
       {
-        element: <OwnerLayout />, // Khung giao diện Sidebar Xanh Lá
+        element: <OwnerLayout />,
         children: [
           { index: true, element: <Navigate to="/owner/dashboard" replace /> },
           { path: "dashboard", element: <OwnerDashboardPage /> },
-
-          // Quản lý Khách sạn
           { path: "hotels", element: <HotelManagementPage /> },
-          { path: "hotels/edit/:id", element: <HotelEditPage /> },
-          { path: "register-hotel", element: <HotelEditPage /> },
-
-          // Quản lý Loại phòng & Sơ đồ số phòng
           { path: "rooms", element: <RoomManagementPage /> },
-          { path: "rooms/new", element: <RoomEditPage /> },
-          { path: "rooms/edit/:id", element: <RoomEditPage /> },
-          { path: "room-numbers", element: <RoomNumberPage /> },
-
-          // Vận hành Đặt phòng & Check-in/out
           { path: "bookings", element: <BookingListPage /> },
-          { path: "bookings/:id", element: <BookingDetailPage /> },
-
-          // Dịch vụ gia tăng, Khuyến mãi, Đánh giá
-          { path: "services", element: <ServiceManagementPage /> },
-          { path: "promotions", element: <OwnerPromotionPage /> },
-          { path: "reviews", element: <ReviewManagementPage /> },
         ],
       },
     ],
   },
 
   // ========================================================
-  // 4. PHÂN HỆ DÀNH CHO QUẢN TRỊ VIÊN TỐI CAO (ADMIN PORTAL)
+  // 4. PHÂN HỆ ADMIN (3 TRANG HIỆN CÓ)
   // ========================================================
   {
     path: "/admin",
-    element: <AdminRoutes />, // Bảo vệ quyền Admin
+    element: <AdminRoutes />,
     errorElement: <ServerErrorPage />,
     children: [
       {
-        element: <AdminLayout />, // Khung giao diện Sidebar Xanh Dương
+        element: <AdminLayout />,
         children: [
           { index: true, element: <Navigate to="/admin/dashboard" replace /> },
           { path: "dashboard", element: <AdminDashboardPage /> },
           { path: "hotels", element: <HotelApprovalPage /> },
           { path: "users", element: <UserManagementPage /> },
-        
         ],
       },
     ],
   },
 
   // ========================================================
-  // 5. TRANG BÁO LỖI 404 (KHI GÕ SAI ĐƯỜNG DẪN URL)
+  // 5. TRANG LỖI 404
   // ========================================================
-  {
-    path: "*",
-    element: <NotFoundPage />,
-  },
+  { path: "*", element: <NotFoundPage /> },
 ]);
 
-const AppRoutes = () => {
+export default function AppRoutes() {
   return <RouterProvider router={router} />;
-};
-
-export default AppRoutes;
+}

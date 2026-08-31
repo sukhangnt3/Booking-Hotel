@@ -1,159 +1,183 @@
 import React, { useState } from "react";
 import {
   CreditCard,
-  Wallet,
   Building2,
   CheckCircle2,
   ShieldCheck,
   Smartphone,
   ChevronRight,
+  Sparkles,
+  QrCode,
 } from "lucide-react";
-import { Badge } from "../ui";
 import { cn } from "@/utils/cn";
 
-const METHODS = [
-  {
-    id: "vnpay",
-    title: "Thanh toán qua VNPay",
-    description: "Cổng thanh toán hỗ trợ tất cả ngân hàng Việt Nam & Mã QR",
-    icon: (
-      <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 font-black italic">
-        VNP
-      </div>
-    ),
-    recommended: true,
-  },
-  {
-    id: "momo",
-    title: "Ví điện tử MoMo",
-    description: "Thanh toán nhanh chóng qua ứng dụng MoMo trên điện thoại",
-    icon: (
-      <div className="w-10 h-10 bg-pink-50 rounded-lg flex items-center justify-center text-pink-600 font-black italic">
-        Mo
-      </div>
-    ),
-  },
-  {
-    id: "card",
-    title: "Thẻ Quốc tế Visa / Mastercard",
-    description: "Hỗ trợ thẻ tín dụng và thẻ ghi nợ quốc tế",
-    icon: <CreditCard className="text-gray-600" size={32} strokeWidth={1.5} />,
-  },
-  {
-    id: "transfer",
-    title: "Chuyển khoản ngân hàng",
-    description: "Nhận thông tin tài khoản và thực hiện chuyển khoản 24/7",
-    icon: <Building2 className="text-gray-600" size={32} strokeWidth={1.5} />,
-  },
-  {
-    id: "at_hotel",
-    title: "Thanh toán tại chỗ nghỉ",
-    description: "Bạn sẽ trả tiền trực tiếp khi nhận phòng tại khách sạn",
-    icon: (
-      <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-        <CheckCircle2 size={24} />
-      </div>
-    ),
-  },
-];
-
-const PaymentMethodSelector = ({ onSelect, className = "" }) => {
-  const [selectedMethod, setSelectedMethod] = useState("vnpay");
+const PaymentMethodSelector = ({
+  onSelect,
+  allowPayAtHotel = true, // Cho phép khách sạn quyết định có hỗ trợ trả sau hay không
+  className = "",
+}) => {
+  const [selectedMethod, setSelectedMethod] = useState("transfer");
 
   const handleSelect = (id) => {
     setSelectedMethod(id);
     if (onSelect) onSelect(id);
   };
 
+  const ONLINE_METHODS = [
+    {
+      id: "transfer",
+      title: "Chuyển khoản VietQR 24/7 (Khuyên dùng)",
+      description:
+        "Quét mã QR tự động xác nhận trong 3 giây. Hỗ trợ tất cả ngân hàng.",
+      icon: (
+        <div className="w-10 h-10 bg-blue-50 text-[#006ce4] rounded-xl flex items-center justify-center font-bold">
+          <QrCode size={22} />
+        </div>
+      ),
+      badge: "Ưu đãi giá tốt nhất",
+      badgeColor: "bg-blue-100 text-blue-700",
+    },
+    {
+      id: "vnpay",
+      title: "Cổng thanh toán VNPAY",
+      description: "Hỗ trợ quét VNPAY-QR, thẻ ATM nội địa và Internet Banking",
+      icon: (
+        <div className="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center font-black italic text-xs">
+          VNPAY
+        </div>
+      ),
+    },
+    {
+      id: "card",
+      title: "Thẻ Quốc tế Visa / Mastercard / JCB",
+      description: "Thanh toán an toàn với mã hóa bảo mật SSL 256-bit",
+      icon: (
+        <div className="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center">
+          <CreditCard size={22} />
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className={cn("space-y-6", className)}>
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-bold text-gray-900">
-          Chọn phương thức thanh toán
+      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 className="text-lg font-black text-slate-900">
+          Chọn hình thức thanh toán
         </h3>
-        <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-xs uppercase tracking-wider">
+        <div className="flex items-center gap-1 text-emerald-600 font-bold text-xs">
           <ShieldCheck size={16} />
           Bảo mật 100%
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3">
-        {METHODS.map((method) => {
-          const isActive = selectedMethod === method.id;
+      {/* ─── NHÓM 1: THANH TOÁN ONLINE (TRẢ TRƯỚC) ─── */}
+      <div className="space-y-3">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+          Thanh toán trực tuyến (Xác nhận giữ phòng ngay)
+        </p>
 
+        {ONLINE_METHODS.map((method) => {
+          const isActive = selectedMethod === method.id;
           return (
             <div
               key={method.id}
               onClick={() => handleSelect(method.id)}
               className={cn(
-                "group relative flex items-center gap-4 p-5 rounded-2xl border-2 transition-all cursor-pointer",
+                "group relative flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer",
                 isActive
-                  ? "border-[#006ce4] bg-blue-50/50 shadow-md ring-1 ring-blue-600/20"
-                  : "border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm",
+                  ? "border-[#006ce4] bg-blue-50/40 shadow-sm ring-1 ring-blue-600/20"
+                  : "border-slate-200 bg-white hover:border-slate-300",
               )}
             >
-              {/* Icon Phương thức */}
-              <div className="shrink-0 transition-transform group-hover:scale-110">
-                {method.icon}
-              </div>
+              <div className="shrink-0">{method.icon}</div>
 
-              {/* Thông tin chữ */}
               <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h4 className="font-bold text-gray-900 text-sm sm:text-base">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="font-bold text-slate-900 text-sm">
                     {method.title}
                   </h4>
-                  {method.recommended && (
-                    <Badge
-                      variant="primary"
-                      size="sm"
-                      className="text-[9px] px-1.5 py-0 uppercase"
+                  {method.badge && (
+                    <span
+                      className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
+                        method.badgeColor,
+                      )}
                     >
-                      Khuyên dùng
-                    </Badge>
+                      {method.badge}
+                    </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                <p className="text-xs text-slate-500 mt-0.5">
                   {method.description}
                 </p>
               </div>
 
-              {/* Radio Button Giả định */}
               <div
                 className={cn(
-                  "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
+                  "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
                   isActive
                     ? "border-[#006ce4] bg-[#006ce4]"
-                    : "border-gray-300",
+                    : "border-slate-300",
                 )}
               >
-                {isActive && (
-                  <div className="w-2.5 h-2.5 bg-white rounded-full animate-in zoom-in" />
-                )}
+                {isActive && <div className="w-2 h-2 bg-white rounded-full" />}
               </div>
-
-              {/* Mũi tên (Chỉ hiện khi không chọn) */}
-              {!isActive && (
-                <ChevronRight
-                  className="text-gray-300 group-hover:translate-x-1 transition-transform"
-                  size={20}
-                />
-              )}
             </div>
           );
         })}
       </div>
 
-      {/* FOOTER BẢO MẬT */}
-      <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex items-start gap-3">
-        <Smartphone className="text-gray-400 mt-0.5 shrink-0" size={18} />
-        <p className="text-[11px] text-gray-500 leading-relaxed font-medium">
-          Mọi giao dịch thanh toán đều được thực hiện thông qua kết nối mã hóa
-          SSL. GoStay không lưu trữ thông tin thẻ của bạn. Bằng cách chọn thanh
-          toán, bạn đồng ý với{" "}
-          <span className="text-blue-600 underline">Điều khoản dịch vụ</span>.
-        </p>
-      </div>
+      {/* ─── NHÓM 2: THANH TOÁN TẠI KHÁCH SẠN (TRẢ SAU) ─── */}
+      {allowPayAtHotel && (
+        <div className="space-y-3 pt-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Thanh toán tại chỗ nghỉ (Trả sau)
+          </p>
+
+          <div
+            onClick={() => handleSelect("at_hotel")}
+            className={cn(
+              "group relative flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer",
+              selectedMethod === "at_hotel"
+                ? "border-emerald-600 bg-emerald-50/40 shadow-sm ring-1 ring-emerald-600/20"
+                : "border-slate-200 bg-white hover:border-slate-300",
+            )}
+          >
+            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-bold">
+              <Building2 size={22} />
+            </div>
+
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h4 className="font-bold text-slate-900 text-sm">
+                  Thanh toán tại khách sạn khi nhận phòng
+                </h4>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-emerald-100 text-emerald-800">
+                  Linh hoạt
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Bạn không cần trả trước. Thanh toán bằng tiền mặt hoặc thẻ tại
+                quầy lễ tân khi check-in.
+              </p>
+            </div>
+
+            <div
+              className={cn(
+                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                selectedMethod === "at_hotel"
+                  ? "border-emerald-600 bg-emerald-600"
+                  : "border-slate-300",
+              )}
+            >
+              {selectedMethod === "at_hotel" && (
+                <div className="w-2 h-2 bg-white rounded-full" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

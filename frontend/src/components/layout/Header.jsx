@@ -31,7 +31,7 @@ const Header = () => {
   const isAdmin = role.includes("admin") || user?.role_id === 1;
   const isOwner = role.includes("owner") || role.includes("partner");
 
-  // ─── 2. TÍNH TOÁN TÊN HIỂN THỊ CHUẨN XÁC ───
+  // ─── 2. TÍNH TOÁN TÊN HIỂN THỊ ───
   const displayName =
     user?.full_name ||
     user?.fullName ||
@@ -40,15 +40,17 @@ const Header = () => {
     user?.email?.split("@")[0] ||
     "Khách hàng";
 
-  // Màu Avatar đổi theo Role
   const roleBgColor = isAdmin ? "4F46E5" : isOwner ? "059669" : "006CE4";
 
-  // ─── 3. BÓC TÁCH LINK ẢNH THẬT (LOẠI BỎ PLACEHOLDER VÔ DỤNG) ───
+  // ─── 3. BÓC TÁCH AVATAR GOOGLE & HỆ THỐNG CHUẨN XÁC ───
   const getCleanAvatar = () => {
     const rawAvatar =
-      user?.avatar || user?.picture || user?.photoURL || user?.image;
+      user?.avatar ||
+      user?.avatar_url || // Google / Supabase
+      user?.picture || // Google OAuth tiêu chuẩn
+      user?.photoURL || // Firebase
+      user?.image;
 
-    // Nếu là link ảnh thật hợp lệ (không chứa chữ placeholder)
     if (
       rawAvatar &&
       typeof rawAvatar === "string" &&
@@ -59,7 +61,6 @@ const Header = () => {
       return rawAvatar;
     }
 
-    // Tự động tạo Avatar màu sắc theo Role và chữ cái tên người dùng
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=${roleBgColor}&color=fff&bold=true`;
   };
 
@@ -89,7 +90,6 @@ const Header = () => {
 
         {/* 2. ACTIONS GÓC PHẢI */}
         <div className="flex items-center gap-2 sm:gap-4">
-          {/* Nút Đăng chỗ nghỉ (Chỉ hiện khi chưa là Admin/Owner) */}
           {!isAdmin && !isOwner && (
             <Button
               variant="text"
@@ -100,7 +100,6 @@ const Header = () => {
             </Button>
           )}
 
-          {/* Tiền tệ & Ngôn ngữ */}
           <div className="hidden sm:flex items-center">
             <button className="p-2 hover:bg-white/10 rounded-full transition font-bold text-sm">
               VND
@@ -111,7 +110,6 @@ const Header = () => {
           </div>
 
           {isAuthenticated ? (
-            /* ─── GIAO DIỆN KHI ĐÃ ĐĂNG NHẬP ─── */
             <div className="relative">
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -122,11 +120,12 @@ const Header = () => {
                     : "hover:bg-white/10",
                 )}
               >
-                {/* 👈 THÊM KEY ĐỂ ÉP REACT TẢI LẠI AVATAR KHI ĐỔI TÀI KHOẢN */}
+                {/* 👈 ĐÃ THÊM referrerPolicy="no-referrer" ĐỂ HIỂN THỊ AVATAR GOOGLE */}
                 <img
-                  key={user?.id || user?.email}
+                  key={user?.id || user?.email || avatarUrl}
                   src={avatarUrl}
                   alt={displayName}
+                  referrerPolicy="no-referrer"
                   onError={(e) => {
                     e.currentTarget.onerror = null;
                     e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=${roleBgColor}&color=fff&bold=true`;
@@ -134,7 +133,6 @@ const Header = () => {
                   className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-white object-cover shadow-sm shrink-0"
                 />
 
-                {/* TÊN & DANH HIỆU */}
                 <div className="hidden sm:block text-left mr-1">
                   <p className="text-xs font-bold leading-tight line-clamp-1 max-w-[120px]">
                     {displayName}
@@ -153,7 +151,7 @@ const Header = () => {
                 />
               </button>
 
-              {/* ─── MENU THẢ XUỐNG ─── */}
+              {/* MENU THẢ XUỐNG */}
               {isMenuOpen && (
                 <>
                   <div
@@ -170,7 +168,6 @@ const Header = () => {
                       </p>
                     </div>
 
-                    {/* Link dành cho Admin */}
                     {isAdmin && (
                       <button
                         onClick={() => {
@@ -183,7 +180,6 @@ const Header = () => {
                       </button>
                     )}
 
-                    {/* Link dành cho Owner */}
                     {isOwner && (
                       <button
                         onClick={() => {
@@ -196,11 +192,10 @@ const Header = () => {
                       </button>
                     )}
 
-                    {/* Hồ sơ cá nhân */}
                     <button
                       onClick={() => {
                         setIsMenuOpen(false);
-                        navigate("/UserProfilePage");
+                        navigate("/profile");
                       }}
                       className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 transition font-semibold cursor-pointer"
                     >
@@ -210,7 +205,6 @@ const Header = () => {
 
                     <div className="border-t border-gray-100 my-1"></div>
 
-                    {/* Đăng xuất */}
                     <button
                       onClick={handleLogout}
                       className="w-full text-left px-4 py-3 text-sm text-rose-600 font-bold hover:bg-rose-50 flex items-center gap-3 transition cursor-pointer"
@@ -222,7 +216,6 @@ const Header = () => {
               )}
             </div>
           ) : (
-            /* ─── KHI CHƯA ĐĂNG NHẬP ─── */
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
