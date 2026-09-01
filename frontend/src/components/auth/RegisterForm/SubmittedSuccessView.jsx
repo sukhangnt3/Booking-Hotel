@@ -1,23 +1,30 @@
 import React from "react";
-import { CheckCircle2, Clock, Printer, RotateCcw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { CheckCircle2, Clock, Printer, Home } from "lucide-react";
 
 export const SubmittedSuccessView = ({
   application = {},
   onReset = () => {},
 }) => {
-  // Lấy an toàn các trường dữ liệu, tự động tạo mã hồ sơ nếu chưa có
+  const navigate = useNavigate();
   const data = application?.data || {};
   const applicationId =
     application?.applicationId || `GST-${Date.now().toString().slice(-6)}`;
   const submittedAt = application?.submittedAt || new Date().toISOString();
-  const rooms = data?.rooms || [];
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🟢 VỀ TRANG CHỦ: GIỮ NGUYÊN PHIÊN ĐĂNG NHẬP CỦA TÀI KHOẢN KHÁCH HÀNG
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleGoHome = () => {
+    navigate("/"); // Chuyển về trang chủ bình thường, giữ nguyên đăng nhập
+  };
 
   const handlePrint = () => {
     window.print();
   };
 
   return (
-    <div className="max-w-3xl mx-auto py-10 px-4 space-y-8 animate-fadeIn">
+    <div className="max-w-3xl mx-auto py-10 px-4 space-y-8 animate-fadeIn font-sans text-slate-800">
       {/* SUCCESS HERO CARD */}
       <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-10 shadow-sm text-center relative overflow-hidden">
         <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5">
@@ -32,11 +39,12 @@ export const SubmittedSuccessView = ({
           Hồ Sơ Đã Được Tiếp Nhận Vào Hệ Thống!
         </h1>
         <p className="text-sm text-slate-500 max-w-lg mx-auto leading-relaxed">
-          Cảm ơn bạn đã lựa chọn trở thành Đối tác của GoStay. Hệ thống đã tạo
-          mã hồ sơ thẩm định và gửi thư xác nhận đến email của bạn.
+          Cảm ơn bạn đã đăng ký trở thành Đối tác của GoStay. Ban quản trị hệ
+          thống sẽ thẩm định hồ sơ pháp lý và kích hoạt tài khoản của bạn trong
+          24h - 48h.
         </p>
 
-        {/* APPLICATION CODE BOX */}
+        {/* TRACKING CODE */}
         <div className="mt-6 inline-flex flex-col items-center bg-slate-900 text-white px-8 py-4 rounded-xl shadow-sm">
           <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-widest">
             Mã Hồ Sơ Đối Tác (Tracking Code)
@@ -50,7 +58,7 @@ export const SubmittedSuccessView = ({
         </div>
       </div>
 
-      {/* 4-STAGE AUDIT TIMELINE */}
+      {/* 4 BƯỚC THẨM ĐỊNH */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
           <Clock className="w-5 h-5 text-blue-600" /> Quy trình 4 Bước Thẩm Định
@@ -68,19 +76,19 @@ export const SubmittedSuccessView = ({
             {
               step: 2,
               title: "Thẩm định pháp lý",
-              desc: "Kiểm tra GPKD & Số tài khoản ngân hàng (24-48h)",
+              desc: "Kiểm tra GPKD & Tài khoản ngân hàng",
               status: "active",
             },
             {
               step: 3,
               title: "Ký hợp đồng E-sign",
-              desc: "Gửi hợp đồng điện tử tới email người ký",
+              desc: "Gửi hợp đồng điện tử qua email",
               status: "pending",
             },
             {
               step: 4,
               title: "Mở bán trên OTA",
-              desc: "Bàn giao tài khoản Portal & đón lượt đặt đầu tiên",
+              desc: "Kích hoạt tài khoản Owner Portal",
               status: "pending",
             },
           ].map((s) => (
@@ -123,59 +131,22 @@ export const SubmittedSuccessView = ({
         </div>
       </div>
 
-      {/* SUMMARY DETAILS */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4 text-xs text-slate-700">
-        <h3 className="font-bold text-sm text-slate-900 border-b border-slate-100 pb-2">
-          Tóm tắt thông tin đăng ký
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <p>
-            🏢 <b className="text-slate-900">Tên chỗ nghỉ:</b>{" "}
-            {data?.hotelNameVi || data?.hotelNameEn || "Chưa đặt tên"}
-          </p>
-          <p>
-            📍 <b className="text-slate-900">Địa chỉ:</b>{" "}
-            {data?.streetAddress || "N/A"}
-            {data?.district && `, ${data.district}`}
-            {data?.province && `, ${data.province}`}
-          </p>
-          <p>
-            👤 <b className="text-slate-900">Người đại diện:</b>{" "}
-            {data?.signerName || "N/A"} ({data?.signerPhone || "N/A"})
-          </p>
-          <p>
-            💳 <b className="text-slate-900">Tài khoản thụ hưởng:</b>{" "}
-            {data?.bankName || "N/A"} - {data?.bankAccount || "N/A"}
-          </p>
-          <p>
-            📊 <b className="text-slate-900">Số lượng loại phòng:</b>{" "}
-            {rooms.length} hạng phòng
-          </p>
-          <p>
-            🤝 <b className="text-slate-900">Tỷ lệ hoa hồng thỏa thuận:</b>{" "}
-            <span className="text-blue-600 font-bold">
-              {data?.commissionRate || 18}%
-            </span>
-          </p>
-        </div>
-      </div>
-
-      {/* ACTIONS */}
+      {/* CÁC NÚT ĐIỀU HƯỚNG */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4">
+        <button
+          type="button"
+          onClick={handleGoHome}
+          className="w-full sm:w-auto px-8 h-11 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer shadow-md"
+        >
+          <Home className="w-4 h-4" /> Về trang chủ GoStay
+        </button>
+
         <button
           type="button"
           onClick={handlePrint}
           className="w-full sm:w-auto px-6 h-11 border border-slate-200 hover:bg-slate-50 rounded-xl font-bold text-xs text-slate-700 flex items-center justify-center gap-2 transition cursor-pointer"
         >
           <Printer className="w-4 h-4" /> In phiếu đăng ký
-        </button>
-
-        <button
-          type="button"
-          onClick={onReset}
-          className="w-full sm:w-auto px-8 h-11 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-200 transition flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <RotateCcw className="w-4 h-4" /> Tạo đơn đăng ký mới / Thử nghiệm lại
         </button>
       </div>
     </div>

@@ -17,27 +17,47 @@ export const Step2MediaAndLegal = ({
 }) => {
   const photoInputRef = useRef(null);
 
-  // Khởi tạo an toàn cho mảng ảnh và tài liệu
   const hotelImages = data?.hotelImages || [];
   const legalDocuments = data?.legalDocuments || [];
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // 📸 CHUYỂN FILE ẢNH THẬT TỪ MÁY THÀNH DỮ LIỆU CHUẨN
+  // ════════════════════════════════════════════════════════════════════════════
   const handlePhotoUpload = (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newImages = [];
     Array.from(files).forEach((file, index) => {
-      const url = URL.createObjectURL(file);
-      newImages.push({
-        id: `img-${Date.now()}-${index}`,
-        file,
-        preview: url,
-        category: "room",
-        title: file.name.replace(/\.[^/.]+$/, ""),
-      });
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const maxWidth = 1200;
+          const scale = Math.min(maxWidth / img.width, 1);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const realImageData = canvas.toDataURL("image/jpeg", 0.85);
+
+          const newImgObj = {
+            id: `img-${Date.now()}-${index}`,
+            url: realImageData,
+            preview: realImageData,
+            category: "exterior",
+            title: file.name.replace(/\.[^/.]+$/, ""),
+          };
+
+          onChange({ hotelImages: [...(data?.hotelImages || []), newImgObj] });
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
     });
 
-    onChange({ hotelImages: [...hotelImages, ...newImages] });
+    e.target.value = null;
   };
 
   const handleDeletePhoto = (id) => {
@@ -55,19 +75,22 @@ export const Step2MediaAndLegal = ({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newDocs = [];
     Array.from(files).forEach((file) => {
-      const url = URL.createObjectURL(file);
-      newDocs.push({
-        name: file.name,
-        file,
-        preview: url,
-        docType: docType || "business_license",
-        uploadDate: new Date().toISOString().split("T")[0],
-      });
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const newDoc = {
+          name: file.name,
+          url: event.target.result,
+          preview: event.target.result,
+          docType: docType || "business_license",
+          uploadDate: new Date().toISOString().split("T")[0],
+        };
+        onChange({ legalDocuments: [...(data?.legalDocuments || []), newDoc] });
+      };
+      reader.readAsDataURL(file);
     });
 
-    onChange({ legalDocuments: [...legalDocuments, ...newDocs] });
+    e.target.value = null;
   };
 
   const handleDeleteDoc = (index) => {
@@ -77,8 +100,8 @@ export const Step2MediaAndLegal = ({
   };
 
   return (
-    <div className="space-y-8 animate-fadeIn">
-      {/* SECTION 1: BỘ SƯU TẬP HÌNH ẢNH */}
+    <div className="space-y-8 animate-fadeIn font-sans text-slate-800">
+      {/* ── 1. THƯ VIỆN HÌNH ẢNH ── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -87,11 +110,11 @@ export const Step2MediaAndLegal = ({
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900">
-                1. Thư viện Hình ảnh Chỗ nghỉ
+                1. Thư Viện Hình Ảnh Chỗ Nghỉ
               </h2>
               <p className="text-xs text-slate-500">
-                Tải lên tối thiểu 2 - 4 ảnh chất lượng cao (Mặt tiền, Sảnh,
-                Phòng ngủ, Phòng tắm)
+                Tải lên ít nhất 3 bức ảnh sắc nét (Mặt tiền, Sảnh lễ tân, Phòng
+                ngủ, Phòng tắm, Tiện ích)
               </p>
             </div>
           </div>
@@ -106,7 +129,6 @@ export const Step2MediaAndLegal = ({
           </div>
         )}
 
-        {/* DROPZONE AREA */}
         <div
           onClick={() => photoInputRef.current?.click()}
           className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50/20 rounded-2xl p-8 text-center cursor-pointer transition flex flex-col items-center justify-center gap-3"
@@ -124,25 +146,24 @@ export const Step2MediaAndLegal = ({
           </div>
           <div>
             <p className="text-sm font-bold text-slate-800">
-              Nhấp để chọn ảnh hoặc kéo thả vào đây
+              Nhấp để chọn ảnh từ máy tính hoặc điện thoại
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              Hỗ trợ JPG, PNG, WEBP (Kích thước đề xuất 1200x800 px, tối đa
-              10MB/ảnh)
+              Ảnh sẽ được tự động đồng bộ và lưu trữ trên toàn hệ thống.
             </p>
           </div>
         </div>
 
-        {/* IMAGE PREVIEW GRID */}
+        {/* IMAGE PREVIEWS */}
         {hotelImages.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">
             {hotelImages.map((img, idx) => (
               <div
                 key={img.id || idx}
-                className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
+                className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-sm"
               >
                 <img
-                  src={img.preview}
+                  src={img.preview || img.url}
                   alt={img.title || `Hotel Image ${idx + 1}`}
                   className="w-full h-40 object-cover"
                 />
@@ -150,13 +171,13 @@ export const Step2MediaAndLegal = ({
                   type="button"
                   onClick={() => handleDeletePhoto(img.id)}
                   title="Xóa ảnh"
-                  className="absolute top-2 right-2 w-7 h-7 bg-red-500/90 hover:bg-red-600 text-white rounded-lg flex items-center justify-center opacity-90 hover:opacity-100 transition shadow-sm cursor-pointer"
+                  className="absolute top-2 right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-lg flex items-center justify-center shadow transition cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
                 <div className="p-2.5 bg-white border-t border-slate-100">
                   <select
-                    value={img.category || "room"}
+                    value={img.category || "exterior"}
                     onChange={(e) =>
                       handleUpdatePhotoCategory(img.id, e.target.value)
                     }
@@ -178,7 +199,7 @@ export const Step2MediaAndLegal = ({
         )}
       </div>
 
-      {/* SECTION 2: HỒ SƠ PHÁP LÝ & GIẤY PHÉP KINH DOANH */}
+      {/* ── 2. HỒ SƠ PHÁP LÝ & GIẤY PHÉP KINH DOANH ── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
           <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
@@ -186,20 +207,14 @@ export const Step2MediaAndLegal = ({
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-900">
-              2. Xác thực Pháp lý & Giấy phép Hoạt động
+              2. Xác Thực Pháp Lý & Giấy Phép Hoạt Động
             </h2>
             <p className="text-xs text-slate-500">
-              Cung cấp hồ sơ pháp lý theo quy định lưu trú du lịch của Bộ Văn
-              hóa, Thể thao & Du lịch
+              Cung cấp hồ sơ pháp lý theo quy định kinh doanh dịch vụ lưu trú du
+              lịch
             </p>
           </div>
         </div>
-
-        {errors?.legalDocuments && (
-          <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-medium">
-            {errors.legalDocuments}
-          </div>
-        )}
 
         {/* LOẠI HÌNH PHÁP NHÂN */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -223,8 +238,7 @@ export const Step2MediaAndLegal = ({
               )}
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Dành cho Công ty TNHH, Cổ phần, Doanh nghiệp tư nhân sở hữu Giấy
-              chứng nhận Đăng ký kinh doanh.
+              Dành cho Công ty TNHH, Cổ phần sở hữu Giấy ĐKKD.
             </p>
           </div>
 
@@ -248,107 +262,54 @@ export const Step2MediaAndLegal = ({
               )}
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Dành cho chủ hộ kinh doanh cá thể, Homestay, Villa tự doanh có
-              ĐKKD hộ cá thể hoặc CCCD chính chủ.
+              Dành cho chủ hộ kinh doanh, Homestay, Villa tự doanh.
             </p>
           </div>
         </div>
 
-        {/* UPLOAD TỪNG LOẠI TÀI LIỆU PHÁP LÝ */}
-        <div className="space-y-4 pt-2">
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">
-            Danh mục tài liệu cần thẩm định (Tải lên file PDF hoặc Ảnh chụp sắc
-            nét):
-          </label>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* GPKD / ĐKKD */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between space-y-3">
-              <div>
-                <div className="flex items-center gap-2 text-slate-900 font-bold text-xs">
-                  <FileCheck className="w-4 h-4 text-blue-600" />
-                  <span>Giấy phép Đăng ký Kinh doanh (ĐKKD) *</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Bản quét hoặc ảnh chụp mặt chính có dấu đỏ của Sở Kế hoạch &
-                  Đầu tư hoặc UBND Quận/Huyện.
-                </p>
+        {/* UPLOAD TÀI LIỆU SCAN */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-xs">
+                <FileCheck className="w-4 h-4 text-blue-600" />
+                <span>Giấy phép Đăng ký Kinh doanh (ĐKKD) *</span>
               </div>
-              <label className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 cursor-pointer shadow-2xs transition">
-                <Upload className="w-3.5 h-3.5" /> Tải lên Giấy ĐKKD
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => handleLegalDocUpload(e, "business_license")}
-                  className="hidden"
-                />
-              </label>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Bản chụp hoặc quét sắc nét giấy ĐKKD.
+              </p>
             </div>
-
-            {/* CCCD / HỘ CHIẾU NGƯỜI ĐẠI DIỆN */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between space-y-3">
-              <div>
-                <div className="flex items-center gap-2 text-slate-900 font-bold text-xs">
-                  <FileCheck className="w-4 h-4 text-blue-600" />
-                  <span>CCCD / Hộ chiếu Người đại diện *</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Mặt trước và mặt sau Căn cước công dân gắn chip của người đứng
-                  tên ký kết hợp đồng.
-                </p>
-              </div>
-              <label className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 cursor-pointer shadow-2xs transition">
-                <Upload className="w-3.5 h-3.5" /> Tải lên CCCD / Hộ chiếu
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => handleLegalDocUpload(e, "id_card_front")}
-                  className="hidden"
-                />
-              </label>
-            </div>
+            <label className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 cursor-pointer shadow-2xs transition">
+              <Upload className="w-3.5 h-3.5" /> Tải lên Giấy ĐKKD
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => handleLegalDocUpload(e, "business_license")}
+                className="hidden"
+              />
+            </label>
           </div>
 
-          {/* LIST OF UPLOADED DOCUMENTS */}
-          {legalDocuments.length > 0 && (
-            <div className="space-y-2 pt-2">
-              <span className="text-xs font-bold text-slate-700">
-                Tài liệu đã đính kèm:
-              </span>
-              <div className="space-y-2">
-                {legalDocuments.map((doc, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl text-xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-900">{doc.name}</p>
-                        <p className="text-[11px] text-slate-400">
-                          Loại:{" "}
-                          {doc.docType === "business_license"
-                            ? "Giấy phép ĐKKD"
-                            : "CCCD / Hộ chiếu"}{" "}
-                          • Ngày tải: {doc.uploadDate}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteDoc(idx)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 transition cursor-pointer"
-                      title="Xóa tài liệu"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-xs">
+                <FileCheck className="w-4 h-4 text-blue-600" />
+                <span>CCCD / Hộ chiếu Người đại diện *</span>
               </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Mặt trước và mặt sau CCCD gắn chip.
+              </p>
             </div>
-          )}
+            <label className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg border border-slate-200 cursor-pointer shadow-2xs transition">
+              <Upload className="w-3.5 h-3.5" /> Tải lên CCCD / Hộ chiếu
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => handleLegalDocUpload(e, "id_card_front")}
+                className="hidden"
+              />
+            </label>
+          </div>
         </div>
       </div>
     </div>

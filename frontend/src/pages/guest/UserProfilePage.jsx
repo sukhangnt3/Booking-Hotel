@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   CalendarDays,
   Users,
@@ -19,6 +19,8 @@ import {
   Phone,
   Mail,
   User,
+  Clock,
+  Ticket,
 } from "lucide-react";
 
 import { authService, bookingService, hotelService } from "@/services";
@@ -26,10 +28,13 @@ import { useAuthStore } from "@/stores/authStore";
 
 export default function UserProfilePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, updateUser } = useAuthStore();
   const fileInputRef = useRef(null);
 
-  const [activeMainTab, setActiveMainTab] = useState("profile"); // Mặc định mở tab hồ sơ
+  // Mở tab "trips" nếu có param ?tab=trips hoặc mặc định mở chuyến đi
+  const initialTab = searchParams.get("tab") || "trips";
+  const [activeMainTab, setActiveMainTab] = useState(initialTab);
   const [tripSubTab, setTripSubTab] = useState("upcoming");
   const [bookings, setBookings] = useState([]);
   const [favorites, setFavorites] = useState([]);
@@ -37,7 +42,7 @@ export default function UserProfilePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
 
-  // Form State khớp chuẩn bảng `users`
+  // Form State
   const [profileForm, setProfileForm] = useState({
     full_name: "",
     email: "",
@@ -53,7 +58,9 @@ export default function UserProfilePage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ─── 1. FETCH DỮ LIỆU TỪ DATABASE ───
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🔍 1. FETCH DỮ LIỆU ĐỒNG BỘ CẢ API + LOCAL (HIỆN CẢ ĐƠN CHƯA THANH TOÁN)
+  // ════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     const fetchRealData = async () => {
       setIsLoading(true);
@@ -96,37 +103,85 @@ export default function UserProfilePage() {
           });
         }
 
-        // Tải đơn đặt & yêu thích
-        const [bookingsRes, favoritesRes] = await Promise.allSettled([
-          bookingService?.getHistory
-            ? bookingService.getHistory()
-            : Promise.resolve([]),
-          hotelService?.getFavorites
-            ? hotelService.getFavorites()
-            : Promise.resolve([]),
-        ]);
+        // 1. Lấy đơn đặt phòng từ API
+        let apiBookings = [];
+        try {
+          if (bookingService?.getHistory) {
+            const res = await bookingService.getHistory();
+            apiBookings = Array.isArray(res)
+              ? res
+              : res?.data?.data || res?.data || res?.bookings || [];
+          }
+        } catch (e) {}
 
-        if (bookingsRes.status === "fulfilled" && bookingsRes.value) {
-          const rawB = bookingsRes.value;
-          setBookings(
-            Array.isArray(rawB)
-              ? rawB
-              : rawB?.data?.data || rawB?.data || rawB?.bookings || [],
-          );
-        }
+        // 2. Lấy đơn đặt phòng từ LocalStorage (Đơn giữ chỗ văn phòng, đơn chưa thanh toán)
+        const localBookings = JSON.parse(
+          localStorage.getItem("all_bookings") || "[]",
+        );
 
-        if (favoritesRes.status === "fulfilled" && favoritesRes.value) {
-          const rawF = favoritesRes.value;
-          setFavorites(
-            Array.isArray(rawF)
-              ? rawF
-              : rawF?.data?.data || rawF?.data || rawF?.favorites || [],
-          );
-        } else {
+        // 3. Gộp và lọc đơn của người dùng hiện tại
+        const combined = [...localBookings, ...apiBookings];
+        const uniqueBookingsMap = new Map();
+
+        combined.forEach((b) => {
+          const code = String(
+            b.booking_code || b.code || b.id || b._id || "",
+          ).trim();
+          const bookingEmail = String(
+            b.customer_email || b.email || b.user?.email || "",
+          )
+            .toLowerCase()
+            .trim();
+          const userEmail = String(currentUser?.email || "")
+            .toLowerCase()
+            .trim();
+
+          const isMine =
+            !userEmail || !bookingEmail || bookingEmail === userEmail;
+
+          if (code && isMine && !uniqueBookingsMap.has(code)) {
+            uniqueBookingsMap.set(code, {
+              ...b,
+              id: code,
+              code: code,
+              booking_code: code,
+              hotel_name:
+                b.hotel_name ||
+                b.hotelName ||
+                b.hotel?.name ||
+                "Khách sạn nghỉ dưỡng",
+              room_name:
+                b.room_name || b.roomType || b.room?.name || "Phòng Tiêu Chuẩn",
+              total_price: Number(
+                b.total_price || b.totalPrice || b.amount || 650000,
+              ),
+              status: b.status || "pending",
+              payment_status: b.payment_status || "unpaid",
+              payment_method: b.payment_method || "office",
+              checkin_date: b.check_in || b.checkIn || b.checkin_date,
+              checkout_date: b.check_out || b.checkOut || b.checkout_date,
+            });
+          }
+        });
+
+        setBookings(Array.from(uniqueBookingsMap.values()));
+
+        // Tải danh sách yêu thích
+        try {
+          if (hotelService?.getFavorites) {
+            const favRes = await hotelService.getFavorites();
+            const favList = Array.isArray(favRes)
+              ? favRes
+              : favRes?.data?.data || favRes?.data || [];
+            setFavorites(favList);
+          } else {
+            setFavorites(JSON.parse(localStorage.getItem("favorites") || "[]"));
+          }
+        } catch {
           setFavorites(JSON.parse(localStorage.getItem("favorites") || "[]"));
         }
       } catch (err) {
-        console.error("Lỗi khi tải dữ liệu:", err);
+        console.error("Lỗi tải dữ liệu Profile:", err);
       } finally {
         setIsLoading(false);
       }
@@ -135,9 +190,7 @@ export default function UserProfilePage() {
     fetchRealData();
   }, [user]);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 📸 2. ĐỔI ẢNH ĐẠI DIỆN TRỰC TIẾP KHI NHẤP VÀO AVATAR (TỰ ĐỘNG NÉN SIÊU NHẸ)
-  // ════════════════════════════════════════════════════════════════════════════
+  // 📸 ĐỔI AVATAR
   const handleAvatarFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -159,10 +212,8 @@ export default function UserProfilePage() {
 
         const compressedAvatar = canvas.toDataURL("image/jpeg", 0.85);
 
-        // 1. Cập nhật giao diện tức thì
         setProfileForm((prev) => ({ ...prev, avatar: compressedAvatar }));
 
-        // 2. Đồng bộ vào Store & LocalStorage
         if (updateUser) updateUser({ avatar: compressedAvatar });
         const savedUser = JSON.parse(localStorage.getItem("user") || "{}");
         localStorage.setItem(
@@ -170,7 +221,6 @@ export default function UserProfilePage() {
           JSON.stringify({ ...savedUser, avatar: compressedAvatar }),
         );
 
-        // 3. Gửi lên Backend chạy ngầm
         try {
           if (authService?.updateProfile) {
             authService
@@ -187,9 +237,7 @@ export default function UserProfilePage() {
     e.target.value = null;
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 💾 3. LƯU THÔNG TIN HỒ SƠ (CHỐNG TREO/ĐƠ 100%)
-  // ════════════════════════════════════════════════════════════════════════════
+  // 💾 LƯU THÔNG TIN HỒ SƠ
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -203,7 +251,6 @@ export default function UserProfilePage() {
       avatar: profileForm.avatar || null,
     };
 
-    // 1. Luôn đồng bộ ngay vào Store & LocalStorage (chống mất dữ liệu)
     try {
       if (updateUser) updateUser(updatePayload);
       const currentUserObj =
@@ -218,19 +265,13 @@ export default function UserProfilePage() {
         authStorage.state.user = updatedUser;
         localStorage.setItem("auth-storage", JSON.stringify(authStorage));
       }
-    } catch (localErr) {
-      console.warn("Lưu LocalStorage:", localErr);
-    }
+    } catch (localErr) {}
 
-    // 2. Gửi API với cơ chế Timeout 2.5s (tránh bị đứng màn hình)
     try {
       const apiCall = authService?.updateProfile
         ? authService.updateProfile(updatePayload)
-        : authService?.update
-          ? authService.update(updatePayload)
-          : Promise.resolve(true);
+        : Promise.resolve(true);
 
-      // Nếu backend phản hồi lâu quá 2.5s -> Tự động kết thúc thành công
       await Promise.race([
         apiCall,
         new Promise((resolve) => setTimeout(resolve, 2500)),
@@ -238,54 +279,58 @@ export default function UserProfilePage() {
 
       showToast("Cập nhật thông tin hồ sơ thành công!");
     } catch (err) {
-      console.warn("API Backend chậm/lỗi, đã lưu offline:", err);
       showToast("Đã lưu thông tin hồ sơ!");
     } finally {
-      setIsSubmitting(false); // 👈 ĐẢM BẢO NÚT BẤM KHÔNG BAO GIỜ BỊ KẸT
+      setIsSubmitting(false);
     }
   };
 
-  // ─── 4. HỦY ĐƠN ĐẶT PHÒNG THẬT ───
-  const handleCancelBooking = async (e, bookingCode, bookingId) => {
+  // 🗑️ HỦY ĐƠN ĐẶT PHÒNG
+  const handleCancelBooking = async (e, bookingCode) => {
     e.stopPropagation();
-    const idToCancel = bookingId || bookingCode;
 
-    if (
-      !window.confirm(
-        `Bạn có chắc chắn muốn hủy đơn đặt phòng #${bookingCode}?`,
-      )
-    )
-      return;
+    if (!window.confirm(`Xác nhận hủy đơn đặt phòng #${bookingCode}?`)) return;
 
     try {
-      if (bookingService?.cancel) {
-        await bookingService.cancel(idToCancel);
-      } else if (bookingService?.updateStatus) {
-        await bookingService.updateStatus(idToCancel, {
-          status: "cancelled",
-          payment_status: "cancelled",
-        });
-      }
+      try {
+        if (bookingService?.cancel) {
+          await bookingService.cancel(bookingCode);
+        }
+      } catch (apiErr) {}
 
+      // Cập nhật State
       setBookings((prev) =>
         prev.map((b) => {
-          const code = b.booking_code || b.code || b.id || b._id;
-          if (
-            String(code) === String(bookingCode) ||
-            String(b.id) === String(bookingId)
-          ) {
+          if (b.code === bookingCode || b.booking_code === bookingCode) {
             return { ...b, status: "cancelled", payment_status: "cancelled" };
           }
           return b;
         }),
       );
+
+      // Cập nhật LocalStorage
+      const localBookings = JSON.parse(
+        localStorage.getItem("all_bookings") || "[]",
+      );
+      const updatedLocal = localBookings.map((b) => {
+        if (
+          b.code === bookingCode ||
+          b.booking_code === bookingCode ||
+          b.id === bookingCode
+        ) {
+          return { ...b, status: "cancelled", payment_status: "cancelled" };
+        }
+        return b;
+      });
+      localStorage.setItem("all_bookings", JSON.stringify(updatedLocal));
+
       showToast("Đã hủy đơn đặt phòng thành công!");
     } catch (err) {
       showToast("Không thể hủy đơn lúc này, vui lòng thử lại.", "error");
     }
   };
 
-  // ─── 5. XÓA YÊU THÍCH THẬT ───
+  // 🗑️ XÓA YÊU THÍCH
   const handleRemoveFavorite = async (e, hotelId) => {
     e.stopPropagation();
     try {
@@ -302,7 +347,7 @@ export default function UserProfilePage() {
     showToast("Đã xóa khỏi danh sách yêu thích");
   };
 
-  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " đ";
+  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "N/A";
@@ -310,23 +355,21 @@ export default function UserProfilePage() {
       return new Date(dateStr).toLocaleDateString("vi-VN", {
         weekday: "short",
         day: "numeric",
-        month: "short",
+        month: "numeric",
+        year: "numeric",
       });
     } catch {
       return dateStr;
     }
   };
 
+  // 🛑 PHÂN LOẠI CHUYẾN ĐI (CHƯA THANH TOÁN VẪN NẰM Ở CHUYẾN ĐI SẮP TỚI ĐỂ THEO DÕI)
   const upcomingBookings = bookings.filter((b) => {
-    const isCancelled =
-      b.status === "cancelled" || b.payment_status === "cancelled";
-    return !isCancelled;
+    return b.status !== "cancelled" && b.payment_status !== "cancelled";
   });
 
   const historyBookings = bookings.filter((b) => {
-    const isCancelled =
-      b.status === "cancelled" || b.payment_status === "cancelled";
-    return isCancelled;
+    return b.status === "cancelled" || b.payment_status === "cancelled";
   });
 
   const displayAvatar =
@@ -335,7 +378,6 @@ export default function UserProfilePage() {
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24">
-      {/* ẨN INPUT TẢI FILE TỪ MÁY */}
       <input
         type="file"
         ref={fileInputRef}
@@ -355,28 +397,22 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      {/* ─── BANNER TRÊN CÙNG (BẤM VÀO ĐỔI AVATAR TỪ MÁY TÍNH) ─── */}
+      {/* ─── BANNER TRÊN CÙNG ─── */}
       <div className="bg-[#003580] text-white py-8 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 flex items-center justify-between">
           <div className="flex items-center gap-5">
-            {/* AVATAR BẤM VÀO ĐỔI ẢNH */}
             <div
               className="relative group cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
-              title="Nhấp để tải ảnh từ máy tính"
+              title="Nhấp để đổi ảnh đại diện"
             >
               <img
                 src={displayAvatar}
                 alt=""
-                referrerPolicy="no-referrer"
                 className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-white object-cover bg-white shadow-md group-hover:opacity-90 transition"
               />
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
                 className="absolute bottom-0 right-0 p-1.5 bg-white text-slate-800 rounded-full shadow border border-slate-200 hover:text-[#00a89d] transition cursor-pointer"
               >
                 <Camera size={13} />
@@ -407,33 +443,35 @@ export default function UserProfilePage() {
         <div className="flex gap-8 border-b border-slate-200 text-sm font-bold text-slate-500 mb-6">
           <button
             onClick={() => setActiveMainTab("trips")}
-            className={`pb-3 transition cursor-pointer ${
+            className={`pb-3 transition cursor-pointer flex items-center gap-2 ${
               activeMainTab === "trips"
-                ? "text-[#00a89d] border-b-2 border-[#00a89d]"
+                ? "text-[#003580] border-b-2 border-[#003580] font-black"
                 : "hover:text-slate-900"
             }`}
           >
-            Chuyến đi của tôi ({bookings.length})
+            <Ticket size={16} /> Chuyến đi của tôi ({bookings.length})
           </button>
+
           <button
             onClick={() => setActiveMainTab("favorites")}
-            className={`pb-3 transition cursor-pointer ${
+            className={`pb-3 transition cursor-pointer flex items-center gap-2 ${
               activeMainTab === "favorites"
-                ? "text-[#00a89d] border-b-2 border-[#00a89d]"
+                ? "text-[#003580] border-b-2 border-[#003580] font-black"
                 : "hover:text-slate-900"
             }`}
           >
-            Khách sạn yêu thích ({favorites.length})
+            <Heart size={16} /> Khách sạn yêu thích ({favorites.length})
           </button>
+
           <button
             onClick={() => setActiveMainTab("profile")}
-            className={`pb-3 transition cursor-pointer ${
+            className={`pb-3 transition cursor-pointer flex items-center gap-2 ${
               activeMainTab === "profile"
-                ? "text-[#00a89d] border-b-2 border-[#00a89d]"
+                ? "text-[#003580] border-b-2 border-[#003580] font-black"
                 : "hover:text-slate-900"
             }`}
           >
-            Hồ sơ cá nhân
+            <User size={16} /> Hồ sơ cá nhân
           </button>
         </div>
 
@@ -441,15 +479,15 @@ export default function UserProfilePage() {
           <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3">
             <Loader2
               size={32}
-              className="text-[#00a89d] animate-spin mx-auto"
+              className="text-[#003580] animate-spin mx-auto"
             />
             <p className="text-sm font-bold text-slate-600">
-              Đang tải dữ liệu...
+              Đang tải dữ liệu chuyến đi...
             </p>
           </div>
         ) : (
           <>
-            {/* ══════════ TAB 1: CHUYẾN ĐI CỦA TÔI (THẬT 100%) ══════════ */}
+            {/* ══════════ TAB 1: CHUYẾN ĐI CỦA TÔI (HIỆN CẢ ĐƠN CHỜ THANH TOÁN VĂN PHÒNG) ══════════ */}
             {activeMainTab === "trips" && (
               <div className="space-y-6 animate-in fade-in">
                 <div className="flex gap-6 text-sm font-bold text-slate-600">
@@ -457,7 +495,7 @@ export default function UserProfilePage() {
                     onClick={() => setTripSubTab("upcoming")}
                     className={`pb-1.5 transition cursor-pointer ${
                       tripSubTab === "upcoming"
-                        ? "text-[#00a89d] border-b-2 border-[#00a89d]"
+                        ? "text-[#003580] border-b-2 border-[#003580] font-black"
                         : "hover:text-slate-900 text-slate-500"
                     }`}
                   >
@@ -467,11 +505,11 @@ export default function UserProfilePage() {
                     onClick={() => setTripSubTab("history")}
                     className={`pb-1.5 transition cursor-pointer ${
                       tripSubTab === "history"
-                        ? "text-[#00a89d] border-b-2 border-[#00a89d]"
+                        ? "text-[#003580] border-b-2 border-[#003580] font-black"
                         : "hover:text-slate-900 text-slate-500"
                     }`}
                   >
-                    Lịch sử chuyến đi ({historyBookings.length})
+                    Lịch sử đã hủy ({historyBookings.length})
                   </button>
                 </div>
 
@@ -484,141 +522,106 @@ export default function UserProfilePage() {
                       ? upcomingBookings
                       : historyBookings
                     ).map((b) => {
-                      const bookingCode =
-                        b.booking_code || b.code || b.id || b._id;
-                      const hotelId = b.hotel_id || b.hotel?.id || b.hotel?._id;
-                      const hotelName =
-                        b.hotel_name || b.hotel?.name || "Khách sạn nghỉ dưỡng";
-                      const hotelImage =
-                        b.hotel_image ||
-                        b.hotel?.image ||
-                        b.hotel?.images?.[0]?.path ||
-                        b.hotel?.images?.[0]?.url ||
-                        "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400";
-                      const totalPrice =
-                        b.total_price || b.totalPrice || b.amount || 0;
+                      const bookingCode = b.code || b.booking_code || b.id;
                       const isPaid =
                         b.payment_status === "paid" || b.status === "confirmed";
                       const isCancelled =
                         b.status === "cancelled" ||
                         b.payment_status === "cancelled";
-                      const isAtHotel =
-                        b.payment_method === "at_hotel" ||
-                        b.payment_status === "at_hotel";
+                      const isOfficePayment =
+                        b.payment_method === "office" && !isPaid;
+                      const isQrPending = b.payment_method === "qr" && !isPaid;
 
                       return (
                         <div
                           key={bookingCode}
-                          className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition"
+                          className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition"
                         >
-                          <div className="bg-[#eef1f5] px-5 py-2.5 flex justify-between items-center text-xs font-semibold border-b border-slate-100">
+                          {/* THANH TRẠNG THÁI ĐƠN HÀNG */}
+                          <div className="bg-slate-50 px-5 py-3 flex justify-between items-center text-xs font-semibold border-b border-slate-100 flex-wrap gap-2">
                             <span className="text-slate-600">
-                              Mã đơn hàng:{" "}
-                              <strong className="text-[#003580] font-black text-sm">
+                              Mã đơn đặt phòng:{" "}
+                              <strong className="text-[#003580] font-mono font-black text-sm">
                                 {bookingCode}
                               </strong>
                             </span>
 
-                            {!isPaid && !isCancelled && !isAtHotel && (
-                              <span className="text-[#d93025] font-bold">
-                                {b.expire_time
-                                  ? `Thanh toán trước ${b.expire_time}`
-                                  : "Chờ thanh toán"}
-                              </span>
-                            )}
-                            {isAtHotel && !isCancelled && (
-                              <span className="text-[#006ce4] font-bold">
-                                🏨 Thanh toán khi nhận phòng
-                              </span>
-                            )}
                             {isPaid && (
-                              <span className="text-emerald-700 font-bold">
-                                ✓ Đã thanh toán xác nhận
+                              <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-full border border-emerald-200">
+                                <CheckCircle2 size={13} /> Đã thanh toán & Xác
+                                nhận
                               </span>
                             )}
+
+                            {isOfficePayment && (
+                              <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 text-amber-800 font-bold rounded-full border border-amber-300 animate-pulse">
+                                <Clock size={13} /> Chờ thanh toán tại văn phòng
+                                (Giữ chỗ)
+                              </span>
+                            )}
+
+                            {isQrPending && (
+                              <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-800 font-bold rounded-full border border-blue-200">
+                                <Clock size={13} /> Chờ chuyển khoản QR
+                              </span>
+                            )}
+
                             {isCancelled && (
-                              <span className="text-slate-400 font-bold">
-                                ✕ Đã hủy đơn
+                              <span className="inline-flex items-center gap-1 px-3 py-1 bg-rose-50 text-rose-700 font-bold rounded-full border border-rose-200">
+                                <XCircle size={13} /> Đã hủy đơn
                               </span>
                             )}
                           </div>
 
+                          {/* NỘI DUNG CHI TIẾT ĐƠN HÀNG */}
                           <div className="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
-                            <div className="flex flex-col sm:flex-row gap-4 items-start flex-1">
-                              <img
-                                src={hotelImage}
-                                alt=""
-                                onClick={() =>
-                                  hotelId && navigate(`/hotel/${hotelId}`)
-                                }
-                                className="w-28 h-20 rounded-lg object-cover border border-slate-100 shrink-0 cursor-pointer hover:opacity-90 transition"
-                              />
+                            <div className="flex-1 space-y-3">
+                              <h4 className="font-extrabold text-[#003580] text-base">
+                                🏨 {b.hotel_name}
+                              </h4>
 
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h4
-                                    onClick={() =>
-                                      hotelId && navigate(`/hotel/${hotelId}`)
-                                    }
-                                    className="font-black text-[#003580] text-base hover:text-blue-600 transition cursor-pointer"
-                                  >
-                                    {hotelName}
-                                  </h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-slate-600 font-medium">
+                                <div className="flex items-center gap-2">
+                                  <CalendarDays
+                                    size={14}
+                                    className="text-blue-600 shrink-0"
+                                  />
+                                  <span>
+                                    {formatDate(b.checkin_date)} &rarr;{" "}
+                                    {formatDate(b.checkout_date)}
+                                  </span>
                                 </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-slate-600 font-medium">
-                                  {b.checkin_date && (
-                                    <div className="flex items-center gap-2">
-                                      <CalendarDays
-                                        size={14}
-                                        className="text-slate-400 shrink-0"
-                                      />
-                                      <span>
-                                        {formatDate(b.checkin_date)} &rarr;{" "}
-                                        {formatDate(b.checkout_date)}
-                                      </span>
-                                    </div>
-                                  )}
-                                  <div className="flex items-center gap-2">
-                                    <Users
-                                      size={14}
-                                      className="text-slate-400 shrink-0"
-                                    />
-                                    <span>
-                                      {b.guests_count
-                                        ? `${b.guests_count} khách`
-                                        : "2 người lớn"}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <BedDouble
-                                      size={14}
-                                      className="text-slate-400 shrink-0"
-                                    />
-                                    <span>
-                                      {b.room_name ||
-                                        b.room_type ||
-                                        "Phòng tiêu chuẩn"}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Coffee
-                                      size={14}
-                                      className="text-slate-400 shrink-0"
-                                    />
-                                    <span>
-                                      {b.included_breakfast
-                                        ? "Gồm ăn sáng"
-                                        : "Chưa gồm ăn sáng"}
-                                    </span>
-                                  </div>
+                                <div className="flex items-center gap-2">
+                                  <BedDouble
+                                    size={14}
+                                    className="text-blue-600 shrink-0"
+                                  />
+                                  <span>{b.room_name}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Users
+                                    size={14}
+                                    className="text-blue-600 shrink-0"
+                                  />
+                                  <span>
+                                    Khách: {b.customer_name || "Quý khách"} (
+                                    {b.customer_phone || "N/A"})
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Coffee
+                                    size={14}
+                                    className="text-emerald-600 shrink-0"
+                                  />
+                                  <span>Bao gồm bữa sáng miễn phí</span>
                                 </div>
                               </div>
                             </div>
 
+                            {/* CỘT GIÁ TIỀN & THAO TÁC */}
                             <div className="w-full md:w-auto flex md:flex-col justify-between items-end gap-2.5 border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
-                              <span className="text-xl font-black text-[#ff6a00] tracking-tight">
-                                {formatVND(totalPrice)}
+                              <span className="text-2xl font-black text-[#ff6a00] tracking-tight">
+                                {formatVND(b.total_price)}
                               </span>
 
                               {!isPaid && !isCancelled ? (
@@ -626,25 +629,24 @@ export default function UserProfilePage() {
                                   <button
                                     type="button"
                                     onClick={(e) =>
-                                      handleCancelBooking(e, bookingCode, b.id)
+                                      handleCancelBooking(e, bookingCode)
                                     }
-                                    className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                                    className="px-3.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
                                   >
                                     Hủy đơn
                                   </button>
-                                  {!isAtHotel && (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        navigate(
-                                          `/checkout?code=${bookingCode}&amount=${totalPrice}`,
-                                        )
-                                      }
-                                      className="px-6 py-2.5 bg-[#ff6a00] hover:bg-[#e55f00] text-white font-black text-sm rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
-                                    >
-                                      Thanh toán ngay
-                                    </button>
-                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      navigate(
+                                        `/checkout?code=${bookingCode}&amount=${b.total_price}`,
+                                      )
+                                    }
+                                    className="px-5 py-2 bg-[#ff6a00] hover:bg-[#e55f00] text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
+                                  >
+                                    Thanh toán ngay
+                                  </button>
                                 </div>
                               ) : isPaid ? (
                                 <button
@@ -654,13 +656,13 @@ export default function UserProfilePage() {
                                       `/booking-success?code=${bookingCode}`,
                                     )
                                   }
-                                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg transition cursor-pointer"
+                                  className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-900 font-bold text-xs rounded-xl transition cursor-pointer"
                                 >
                                   Xem vé điện tử
                                 </button>
                               ) : (
                                 <span className="text-xs font-bold text-slate-400 italic">
-                                  Đã đóng
+                                  Đã đóng đơn
                                 </span>
                               )}
                             </div>
@@ -672,7 +674,7 @@ export default function UserProfilePage() {
                     <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 space-y-3">
                       <Receipt size={40} className="mx-auto text-slate-300" />
                       <p className="text-base font-bold text-slate-700">
-                        Chưa có đơn đặt phòng nào
+                        Chưa có chuyến đi nào trong mục này
                       </p>
                       <button
                         onClick={() => navigate("/hotels")}
@@ -686,7 +688,7 @@ export default function UserProfilePage() {
               </div>
             )}
 
-            {/* ══════════ TAB 2: YÊU THÍCH (THẬT 100%) ══════════ */}
+            {/* ══════════ TAB 2: YÊU THÍCH ══════════ */}
             {activeMainTab === "favorites" && (
               <div className="space-y-4 animate-in fade-in">
                 {favorites.length > 0 ? (
@@ -700,11 +702,9 @@ export default function UserProfilePage() {
                         hotel.image ||
                         hotel.images?.[0]?.path ||
                         hotel.images?.[0]?.url ||
-                        hotel.thumbnail ||
-                        "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=500";
+                        "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500";
                       const hotelAddress =
                         hotel.address || hotel.city || "Việt Nam";
-                      const hotelRating = hotel.rating || hotel.star_rating;
                       const hotelPrice = Number(
                         hotel.min_price || hotel.base_price || hotel.price || 0,
                       );
@@ -732,15 +732,10 @@ export default function UserProfilePage() {
                               >
                                 <Trash2 size={15} />
                               </button>
-                              {hotelRating && (
-                                <div className="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-md text-white px-2 py-0.5 rounded text-xs font-bold flex items-center gap-1">
-                                  ⭐ {hotelRating}
-                                </div>
-                              )}
                             </div>
 
                             <div className="p-4 space-y-1">
-                              <h4 className="font-bold text-[#003580] text-base group-hover:text-[#00a89d] transition line-clamp-1">
+                              <h4 className="font-bold text-[#003580] text-base group-hover:text-blue-600 transition line-clamp-1">
                                 {hotelName}
                               </h4>
                               <p className="text-xs text-slate-500 flex items-center gap-1 line-clamp-1">
@@ -764,7 +759,7 @@ export default function UserProfilePage() {
                                   : "Xem chi tiết"}
                               </span>
                             </div>
-                            <span className="text-xs font-bold text-[#00a89d] flex items-center gap-0.5 group-hover:translate-x-1 transition-transform">
+                            <span className="text-xs font-bold text-blue-600 flex items-center gap-0.5 group-hover:translate-x-1 transition-transform">
                               Xem phòng <ChevronRight size={14} />
                             </span>
                           </div>
@@ -789,7 +784,7 @@ export default function UserProfilePage() {
               </div>
             )}
 
-            {/* ══════════ TAB 3: HỒ SƠ CÁ NHÂN (CHUẨN BẢNG USERS) ══════════ */}
+            {/* ══════════ TAB 3: HỒ SƠ CÁ NHÂN ══════════ */}
             {activeMainTab === "profile" && (
               <div className="max-w-2xl space-y-6 animate-in fade-in">
                 <form
@@ -802,7 +797,7 @@ export default function UserProfilePage() {
                         Thông tin tài khoản
                       </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Cập nhật thông tin tài khoản của bạn.
+                        Cập nhật thông tin cá nhân của bạn.
                       </p>
                     </div>
 
@@ -817,7 +812,6 @@ export default function UserProfilePage() {
                   </div>
 
                   <div className="space-y-4">
-                    {/* Cột full_name */}
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1.5">
                         Họ và tên <span className="text-rose-500">*</span>
@@ -842,7 +836,6 @@ export default function UserProfilePage() {
                       </div>
                     </div>
 
-                    {/* Cột email */}
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1.5">
                         Địa chỉ Email
@@ -859,12 +852,8 @@ export default function UserProfilePage() {
                           className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-sm font-medium cursor-not-allowed"
                         />
                       </div>
-                      <span className="text-[10px] text-slate-400 mt-1 block">
-                        * Email đăng nhập cố định (Không thể thay đổi).
-                      </span>
                     </div>
 
-                    {/* Cột phone */}
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1.5">
                         Số điện thoại
@@ -889,7 +878,6 @@ export default function UserProfilePage() {
                       </div>
                     </div>
 
-                    {/* Cột dob */}
                     <div>
                       <label className="text-xs font-bold text-slate-700 block mb-1.5">
                         Ngày sinh
@@ -918,7 +906,7 @@ export default function UserProfilePage() {
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="px-8 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-sm rounded-xl transition shadow-md shadow-blue-900/10 cursor-pointer disabled:opacity-50"
+                      className="px-8 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-sm rounded-xl transition shadow-md cursor-pointer disabled:opacity-50"
                     >
                       {isSubmitting ? "Đang lưu..." : "Lưu thay đổi hồ sơ"}
                     </button>

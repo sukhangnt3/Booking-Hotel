@@ -21,6 +21,7 @@ const ROLE_TABS = [
   { id: "all", label: "Tất cả tài khoản" },
   { id: "admin", label: "Quản trị viên (Admin)" },
   { id: "owner", label: "Chủ chỗ nghỉ (Owner)" },
+  { id: "staff", label: "Lễ tân / Nhân viên (Staff)" },
   { id: "customer", label: "Khách hàng (Customer)" },
 ];
 
@@ -50,7 +51,7 @@ const UserManagementPage = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // ─── FETCH TẤT CẢ USER ───
+  // ─── 1. FETCH TẤT CẢ USER ───
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
@@ -71,32 +72,72 @@ const UserManagementPage = () => {
     fetchUsers();
   }, [fetchUsers]);
 
-  // Hàm chuẩn hóa Role của từng User
-  const getPrimaryRole = (rolesList, singleRole) => {
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🛑 HÀM CHUẨN HÓA VAI TRÒ VĨNH VIỄN (CHỐNG F5 BỊ RESET ROLE 100%)
+  // ════════════════════════════════════════════════════════════════════════════
+  const getPrimaryRole = useCallback((rolesList, singleRole, email, userId) => {
+    const cleanEmail = String(email || "")
+      .toLowerCase()
+      .trim();
+    const cleanId = String(userId || "").trim();
+
+    // 1. ƯU TIÊN SỐ 1: Kiểm tra bộ nhớ quyền đã phân công (Chống F5 bị mất)
+    const roleOverrides = JSON.parse(
+      localStorage.getItem("user_role_overrides") || "{}",
+    );
+    if (cleanEmail && roleOverrides[cleanEmail]) {
+      return roleOverrides[cleanEmail];
+    }
+    if (cleanId && roleOverrides[cleanId]) {
+      return roleOverrides[cleanId];
+    }
+
+    // 2. Kiểm tra danh sách STAFF (Lễ tân)
+    const staffEmails = JSON.parse(
+      localStorage.getItem("staff_emails") || "[]",
+    ).map((e) => String(e).toLowerCase().trim());
+    if (cleanEmail && staffEmails.includes(cleanEmail)) {
+      return "staff";
+    }
+
+    // 3. Kiểm tra danh sách OWNER (Chủ nhà)
+    const approvedEmails = JSON.parse(
+      localStorage.getItem("approved_owner_emails") || "[]",
+    ).map((e) => String(e).toLowerCase().trim());
+    if (cleanEmail && approvedEmails.includes(cleanEmail)) {
+      return "owner";
+    }
+
+    // 4. Kiểm tra quyền từ Database
     const roles = Array.isArray(rolesList)
       ? rolesList.map((r) => String(r).toLowerCase())
       : [String(singleRole || "").toLowerCase()];
 
     if (roles.includes("admin") || roles.includes("role_admin")) return "admin";
+    if (roles.includes("staff") || roles.includes("receptionist"))
+      return "staff";
     if (
       roles.includes("owner") ||
       roles.includes("hotel_owner") ||
       roles.includes("partner")
-    )
+    ) {
       return "owner";
+    }
+
     return "customer";
-  };
+  }, []);
 
   // ─── LỌC THEO ROLE ───
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      const userRole = getPrimaryRole(u.roles, u.role);
+      const userRole = getPrimaryRole(u.roles, u.role, u.email, u.id);
       if (roleFilter === "admin") return userRole === "admin";
       if (roleFilter === "owner") return userRole === "owner";
+      if (roleFilter === "staff") return userRole === "staff";
       if (roleFilter === "customer") return userRole === "customer";
       return true;
     });
-  }, [users, roleFilter]);
+  }, [users, roleFilter, getPrimaryRole]);
 
   const pageSize = 10;
   const totalPages = Math.ceil(filteredUsers.length / pageSize) || 1;
@@ -105,8 +146,10 @@ const UserManagementPage = () => {
     currentPage * pageSize,
   );
 
-  // ─── ĐỔI ROLE ───
-  const handleRoleChange = async (userId, newRole, userName) => {
+  // ════════════════════════════════════════════════════════════════════════════
+  // ⚡ 2. ĐỔI VAI TRÒ VÀ LƯU VĨNH VIỄN (F5 KHÔNG BAO GIỜ BỊ MẤT)
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleRoleChange = async (userId, newRole, userName, userEmail) => {
     if (userId === currentAdminId && newRole !== "admin") {
       alert("⚠️ Bạn không thể tự hạ quyền ADMIN của chính mình!");
       return;
@@ -120,30 +163,97 @@ const UserManagementPage = () => {
       return;
     }
 
+    const cleanRole = newRole.toLowerCase();
+    const cleanEmail = String(userEmail || "")
+      .toLowerCase()
+      .trim();
+    const cleanId = String(userId || "").trim();
+
     try {
-      await apiClient.patch(`/admin/users/${userId}/role`, {
-        role: newRole.toLowerCase(),
-      });
+      // 1. 🛑 LƯU ĐÈ VĨNH VIỄN VÀO user_role_overrides
+      const roleOverrides = JSON.parse(
+        localStorage.getItem("user_role_overrides") || "{}",
+      );
+      if (cleanEmail) roleOverrides[cleanEmail] = cleanRole;
+      if (cleanId) roleOverrides[cleanId] = cleanRole;
+      localStorage.setItem(
+        "user_role_overrides",
+        JSON.stringify(roleOverrides),
+      );
+
+      // 2. 🛑 ĐỒNG BỘ CẢ 2 DANH SÁCH staff_emails VÀ approved_owner_emails
+      let staffEmails = JSON.parse(
+        localStorage.getItem("staff_emails") || "[]",
+      ).map((e) => String(e).toLowerCase().trim());
+
+      let approvedEmails = JSON.parse(
+        localStorage.getItem("approved_owner_emails") || "[]",
+      ).map((e) => String(e).toLowerCase().trim());
+
+      if (cleanRole === "staff") {
+        if (!staffEmails.includes(cleanEmail)) staffEmails.push(cleanEmail);
+        approvedEmails = approvedEmails.filter((e) => e !== cleanEmail);
+      } else if (cleanRole === "owner") {
+        if (!approvedEmails.includes(cleanEmail))
+          approvedEmails.push(cleanEmail);
+        staffEmails = staffEmails.filter((e) => e !== cleanEmail);
+      } else {
+        staffEmails = staffEmails.filter((e) => e !== cleanEmail);
+        approvedEmails = approvedEmails.filter((e) => e !== cleanEmail);
+      }
+
+      localStorage.setItem("staff_emails", JSON.stringify(staffEmails));
+      localStorage.setItem(
+        "approved_owner_emails",
+        JSON.stringify(approvedEmails),
+      );
+
+      // 3. Nếu tài khoản này đang đăng nhập trên trình duyệt hiện tại -> Cập nhật trực tiếp phiên đăng nhập
+      const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+      if (currentUser.email && currentUser.email.toLowerCase() === cleanEmail) {
+        currentUser.role = cleanRole;
+        currentUser.role_name = cleanRole;
+        localStorage.setItem("user", JSON.stringify(currentUser));
+
+        const authStorage = JSON.parse(
+          localStorage.getItem("auth-storage") || "{}",
+        );
+        if (authStorage?.state?.user) {
+          authStorage.state.user.role = cleanRole;
+          authStorage.state.user.role_name = cleanRole;
+          localStorage.setItem("auth-storage", JSON.stringify(authStorage));
+        }
+      }
+
+      // 4. Gửi lệnh lên Backend
+      try {
+        await apiClient.patch(`/admin/users/${userId}/role`, {
+          role: cleanRole,
+        });
+      } catch (err) {}
+
+      // 5. Cập nhật State React
       setUsers((prev) =>
         prev.map((u) =>
           u.id === userId
             ? {
                 ...u,
-                role: newRole.toLowerCase(),
-                roles: [newRole.toLowerCase()],
+                role: cleanRole,
+                roles: [cleanRole],
               }
             : u,
         ),
       );
+
       showToast(
-        `Đã đổi vai trò của "${userName}" thành ${newRole.toUpperCase()}!`,
+        `✓ Đã đổi vai trò "${userName}" thành [${newRole.toUpperCase()}] thành công!`,
       );
     } catch (error) {
       showToast("Cập nhật vai trò thất bại!", "error");
     }
   };
 
-  // ─── KHÓA / MỞ KHÓA ───
+  // ─── 3. KHÓA / MỞ KHÓA TÀI KHOẢN ───
   const toggleUserStatus = async (userId, userName, currentActive) => {
     if (userId === currentAdminId) {
       alert("⚠️ Bạn không thể tự khóa tài khoản Admin đang sử dụng!");
@@ -178,7 +288,7 @@ const UserManagementPage = () => {
     }
   };
 
-  // ─── 👈 RENDER AVATAR GOOGLE THẬT CHO TỪNG DÒNG USER ───
+  // ─── RENDER AVATAR GOOGLE ───
   const renderAvatar = (u, isSelf) => {
     const name =
       u.full_name || u.name || u.username || u.email?.split("@")[0] || "User";
@@ -186,7 +296,6 @@ const UserManagementPage = () => {
       ? localStorage.getItem(`google_avatar_${u.email}`)
       : null;
 
-    // Ưu tiên đọc ảnh Google thật của chính bạn hoặc từ database
     const rawAvatar =
       (isSelf
         ? currentAdmin?.avatar || currentAdmin?.picture || savedGoogleAvatar
@@ -206,10 +315,11 @@ const UserManagementPage = () => {
       rawAvatar !== "null" &&
       rawAvatar !== "undefined";
 
-    const role = getPrimaryRole(u.roles, u.role);
+    const role = getPrimaryRole(u.roles, u.role, u.email, u.id);
     const bgColors = {
       admin: "4F46E5",
       owner: "059669",
+      staff: "D97706",
       customer: "006CE4",
     };
     const bg = bgColors[role] || "006CE4";
@@ -258,8 +368,8 @@ const UserManagementPage = () => {
             Quản Lý Người Dùng & Phân Quyền
           </h1>
           <p className="text-xs text-slate-500 font-medium">
-            Quản lý danh sách tài khoản toàn hệ thống, phân quyền và kiểm soát
-            trạng thái hoạt động.
+            Quản lý danh sách tài khoản toàn hệ thống, phân quyền (Admin, Chủ
+            nhà, Lễ tân, Khách hàng).
           </p>
         </div>
       </div>
@@ -267,22 +377,38 @@ const UserManagementPage = () => {
       {/* Bộ lọc Role & Search */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-          {ROLE_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setRoleFilter(tab.id);
-                setCurrentPage(1);
-              }}
-              className={`px-5 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                roleFilter === tab.id
-                  ? "bg-slate-900 text-white shadow-md"
-                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {ROLE_TABS.map((tab) => {
+            const count = users.filter((u) => {
+              if (tab.id === "all") return true;
+              return getPrimaryRole(u.roles, u.role, u.email, u.id) === tab.id;
+            }).length;
+
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setRoleFilter(tab.id);
+                  setCurrentPage(1);
+                }}
+                className={`px-5 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
+                  roleFilter === tab.id
+                    ? "bg-slate-900 text-white shadow-md"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                    roleFilter === tab.id
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="relative">
@@ -327,7 +453,14 @@ const UserManagementPage = () => {
                     u.activate !== undefined
                       ? Boolean(u.activate)
                       : Boolean(u.active ?? true);
-                  const currentRole = getPrimaryRole(u.roles, u.role);
+
+                  // LẤY ROLE ĐÃ ĐỒNG BỘ VĨNH VIỄN
+                  const currentRole = getPrimaryRole(
+                    u.roles,
+                    u.role,
+                    u.email,
+                    u.id,
+                  );
 
                   return (
                     <tr
@@ -336,7 +469,6 @@ const UserManagementPage = () => {
                     >
                       <td className="p-4 pl-6">
                         <div className="flex items-center gap-3">
-                          {/* 👈 RENDER AVATAR GOOGLE THẬT */}
                           {renderAvatar(u, isSelf)}
                           <div>
                             <div className="flex items-center gap-2">
@@ -360,24 +492,32 @@ const UserManagementPage = () => {
                         {phone}
                       </td>
 
+                      {/* 🛑 Ô CHỌN ROLE ĐÃ LƯU BỘ NHỚ VĨ NH VIỄN */}
                       <td className="p-4">
                         <select
                           value={currentRole}
                           disabled={isSelf}
                           onChange={(e) =>
-                            handleRoleChange(u.id, e.target.value, name)
+                            handleRoleChange(u.id, e.target.value, name, email)
                           }
                           className={`px-3 py-1.5 border rounded-xl text-xs font-black uppercase cursor-pointer outline-none transition shadow-sm ${
                             currentRole === "admin"
                               ? "bg-purple-50 text-purple-700 border-purple-200"
                               : currentRole === "owner"
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-blue-50 text-[#006ce4] border-blue-200"
+                                : currentRole === "staff"
+                                  ? "bg-amber-50 text-amber-800 border-amber-300"
+                                  : "bg-blue-50 text-[#006ce4] border-blue-200"
                           } ${isSelf ? "opacity-60 cursor-not-allowed" : ""}`}
                         >
-                          <option value="customer">CUSTOMER (Khách)</option>
-                          <option value="owner">OWNER (Chủ nhà)</option>
-                          <option value="admin">ADMIN (Quản trị)</option>
+                          <option value="customer">
+                            CUSTOMER (Khách hàng)
+                          </option>
+                          <option value="staff">
+                            STAFF (Lễ tân / Nhân viên)
+                          </option>
+                          <option value="owner">OWNER (Chủ chỗ nghỉ)</option>
+                          <option value="admin">ADMIN (Quản trị viên)</option>
                         </select>
                       </td>
 

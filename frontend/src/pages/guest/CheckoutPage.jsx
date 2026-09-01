@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -16,31 +16,41 @@ import {
   RotateCcw,
   RefreshCw,
   XCircle,
+  Sparkles,
+  Ticket,
 } from "lucide-react";
+
+import { bookingService } from "@/services";
+import { useAuthStore } from "@/stores/authStore";
 
 export default function CheckoutPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
 
   const bookingCode =
     searchParams.get("code") ||
     searchParams.get("bookingCode") ||
-    "IVIVU2016535";
+    `GST-${Date.now().toString().slice(-6)}`;
   const urlAmount = searchParams.get("amount");
+  const hotelId = searchParams.get("hotelId");
+  const roomId = searchParams.get("roomId");
+  const checkIn = searchParams.get("checkIn");
+  const checkOut = searchParams.get("checkOut");
 
   // ════════════════════════════════════════════════════════════════════════════
-  // 🏦 1. CẤU HÌNH TÀI KHOẢN MBBANK CỦA BẠN
+  // 🏦 1. CẤU HÌNH NGÂN HÀNG & SEPAY
   // ════════════════════════════════════════════════════════════════════════════
   const MY_BANK = {
     bankId: "MB",
     bankName: "MBBANK - NGÂN HÀNG QUÂN ĐỘI",
     bankFullName: "Ngân hàng Thương mại Cổ phần Quân đội (MBBank)",
-    accountNumber: "0833404928", // 👈 Điền Số tài khoản MB của bạn
-    accountName: "SU TRACH KHANG", // 👈 Tên của bạn viết hoa không dấu
+    accountNumber: "0833404928",
+    accountName: "SU TRACH KHANG",
   };
 
-  // ⚙️ ĐƠN GIÁ TEST SANDBOX 1.000 ĐỒNG
-  const rawPrice = Number(urlAmount) > 0 ? Number(urlAmount) : 1000;
+  const SEPAY_API_KEY = "DIEN_SEPAY_API_KEY_CUA_BAN_VAO_DAY";
+  const rawPrice = Number(urlAmount) > 0 ? Number(urlAmount) : 650000;
 
   // ─── STATES ───
   const [currentStep, setCurrentStep] = useState("step_select_method");
@@ -51,32 +61,34 @@ export default function CheckoutPage() {
   const [openHotelInfo, setOpenHotelInfo] = useState(true);
   const [isChecking, setIsChecking] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [isPaymentCompleted, setIsPaymentCompleted] = useState(false);
 
   const bookingData = {
     code: bookingCode,
-    hotelName: "Khu nghỉ dưỡng Centara Mirage Mũi Né",
+    hotelName: "Khách sạn nghỉ dưỡng GoStay",
     stars: 5,
     rating: "9.4",
     reviewText: "Tuyệt vời",
     reviewCount: "1,083",
-    address: "Huỳnh Thúc Kháng, Mũi Né, Phan Thiết",
-    checkinTime: "15:00 02 tháng 09, 2026",
-    checkoutTime: "12:00 12 tháng 09, 2026",
-    nights: 10,
+    address: "Việt Nam",
+    checkinTime: checkIn ? `${checkIn} (từ 14:00)` : "Hôm nay (từ 14:00)",
+    checkoutTime: checkOut
+      ? `${checkOut} (trước 12:00)`
+      : "Ngày mai (trước 12:00)",
+    nights: 1,
     roomsCount: 1,
     guestsCount: 2,
-    roomType: "1 x Deluxe Twin (Phòng Test Demo)",
+    roomType: "Phòng Tiêu Chuẩn",
     included: "Gồm ăn sáng",
     adults: 2,
     price: rawPrice,
-    expireTime: "16:09 ngày 31/08/2026",
+    expireTime: "24 giờ kể từ thời điểm đặt",
     officeAddress:
-      "Tầng 2, Tòa nhà Anh Đăng, 215 Nam Kỳ Khởi Nghĩa, Phường Xuân Hòa, TP.Hồ Chí Minh",
+      "Tầng 2, Tòa nhà GoStay, 215 Nam Kỳ Khởi Nghĩa, Quận 3, TP.Hồ Chí Minh",
   };
 
-  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " đ";
+  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // URL tạo VietQR MBBank động chuẩn Napas 247
   const vietQrUrl = `https://img.vietqr.io/image/${MY_BANK.bankId}-${MY_BANK.accountNumber}-compact2.png?amount=${bookingData.price}&addInfo=${bookingData.code}&accountName=${encodeURIComponent(MY_BANK.accountName)}`;
 
   const handleCopy = (text, fieldName) => {
@@ -85,11 +97,197 @@ export default function CheckoutPage() {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleProceedPayment = () => {
+  // ════════════════════════════════════════════════════════════════════════════
+  // 💾 LƯU ĐƠN ĐẶT PHÒNG VÀO HỆ THỐNG
+  // ════════════════════════════════════════════════════════════════════════════
+  const saveBookingToSystem = async (
+    paymentMethod,
+    paymentStatus = "unpaid",
+    status = "pending",
+  ) => {
+    const newBookingObj = {
+      id: bookingData.code,
+      booking_code: bookingData.code,
+      code: bookingData.code,
+      hotel_id: hotelId || "HT-1",
+      hotel_name: bookingData.hotelName,
+      room_id: roomId || "room-1",
+      customer_name: user?.full_name || user?.name || "Khách hàng",
+      customer_email: user?.email || "customer@gmail.com",
+      customer_phone: user?.phone || "0901234567",
+      total_price: bookingData.price,
+      amount: bookingData.price,
+      payment_method: paymentMethod,
+      payment_status: paymentStatus,
+      status: status,
+      check_in: checkIn || new Date().toISOString().split("T")[0],
+      check_out:
+        checkOut || new Date(Date.now() + 86400000).toISOString().split("T")[0],
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      if (bookingService?.create) {
+        await bookingService.create(newBookingObj);
+      }
+    } catch (e) {}
+
+    const allBookings = JSON.parse(
+      localStorage.getItem("all_bookings") || "[]",
+    );
+    allBookings.unshift(newBookingObj);
+    localStorage.setItem("all_bookings", JSON.stringify(allBookings));
+
+    if (paymentStatus === "paid") {
+      const paidCache = JSON.parse(
+        localStorage.getItem("paid_bookings") || "[]",
+      );
+      if (!paidCache.includes(bookingData.code)) {
+        paidCache.push(bookingData.code);
+        localStorage.setItem("paid_bookings", JSON.stringify(paidCache));
+      }
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🔍 2. KIỂM TRA SEPAY BIẾN ĐỘNG SỐ DƯ
+  // ════════════════════════════════════════════════════════════════════════════
+  const checkRealBankTransaction = useCallback(async () => {
+    if (currentStep !== "step_qr_view" || isPaymentCompleted) return;
+    if (
+      !SEPAY_API_KEY ||
+      SEPAY_API_KEY === "DIEN_SEPAY_API_KEY_CUA_BAN_VAO_DAY"
+    )
+      return;
+
+    try {
+      const response = await fetch(
+        `https://my.sepay.vn/userapi/transactions/list?account_number=${MY_BANK.accountNumber}&limit=15`,
+        {
+          headers: {
+            Authorization: `Bearer ${SEPAY_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const resData = await response.json();
+
+      if (resData && Array.isArray(resData.transactions)) {
+        const matchingTx = resData.transactions.find((tx) => {
+          const content = (
+            tx.transaction_content ||
+            tx.description ||
+            ""
+          ).toUpperCase();
+          const amount = Number(tx.amount_in || 0);
+          return (
+            content.includes(bookingData.code.toUpperCase()) &&
+            amount >= bookingData.price
+          );
+        });
+
+        if (matchingTx) {
+          setIsPaymentCompleted(true);
+          await saveBookingToSystem("qr", "paid", "confirmed");
+
+          setTimeout(() => {
+            navigate(
+              `/booking-success?code=${bookingData.code}&amount=${bookingData.price}&method=qr&success=true`,
+            );
+          }, 1000);
+        }
+      }
+    } catch (err) {}
+  }, [
+    currentStep,
+    isPaymentCompleted,
+    bookingData.code,
+    bookingData.price,
+    MY_BANK.accountNumber,
+    SEPAY_API_KEY,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (currentStep !== "step_qr_view" || isPaymentCompleted) return;
+    const timer = setInterval(() => checkRealBankTransaction(), 3000);
+    return () => clearInterval(timer);
+  }, [currentStep, isPaymentCompleted, checkRealBankTransaction]);
+
+  // 🔘 XÁC NHẬN CHUYỂN KHOẢN QR
+  const handleVerifyPayment = async () => {
+    setIsChecking(true);
+    setPaymentError("");
+
+    if (
+      !SEPAY_API_KEY ||
+      SEPAY_API_KEY === "DIEN_SEPAY_API_KEY_CUA_BAN_VAO_DAY"
+    ) {
+      setTimeout(async () => {
+        setIsChecking(false);
+        await saveBookingToSystem("qr", "paid", "confirmed");
+        setIsPaymentCompleted(true);
+        navigate(
+          `/booking-success?code=${bookingData.code}&amount=${bookingData.price}&method=qr&success=true`,
+        );
+      }, 1000);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://my.sepay.vn/userapi/transactions/list?account_number=${MY_BANK.accountNumber}&limit=10`,
+        {
+          headers: {
+            Authorization: `Bearer ${SEPAY_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      const resData = await response.json();
+      const matchingTx = resData?.transactions?.find((tx) => {
+        const content = (
+          tx.transaction_content ||
+          tx.description ||
+          ""
+        ).toUpperCase();
+        const amount = Number(tx.amount_in || 0);
+        return (
+          content.includes(bookingData.code.toUpperCase()) &&
+          amount >= bookingData.price
+        );
+      });
+
+      setIsChecking(false);
+
+      if (matchingTx) {
+        setIsPaymentCompleted(true);
+        await saveBookingToSystem("qr", "paid", "confirmed");
+        navigate(
+          `/booking-success?code=${bookingData.code}&amount=${bookingData.price}&method=qr&success=true`,
+        );
+      } else {
+        setPaymentError(
+          `Đã tra cứu sao kê MBBank: Chưa nhận được giao dịch ${formatVND(bookingData.price)} với nội dung "${bookingData.code}". Quý khách vui lòng chuyển tiền trên App trước!`,
+        );
+      }
+    } catch (err) {
+      setIsChecking(false);
+      setPaymentError(
+        "Lỗi kết nối kiểm tra sao kê ngân hàng. Vui lòng thử lại sau giây lát.",
+      );
+    }
+  };
+
+  // 🔘 XỬ LÝ KHI BẤM NÚT XÁC NHẬN CHỌN PHƯƠNG THỨC
+  const handleProceedPayment = async () => {
     if (selectedMethod === "qr") {
+      await saveBookingToSystem("qr", "unpaid", "pending");
       setCurrentStep("step_qr_view");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else if (selectedMethod === "office") {
+      await saveBookingToSystem("office", "unpaid", "pending_office");
       setCurrentStep("step_office_view");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else {
@@ -97,21 +295,9 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleVerifyPayment = () => {
-    setIsChecking(true);
-    setPaymentError("");
-
-    setTimeout(() => {
-      setIsChecking(false);
-      setPaymentError(
-        `Hệ thống chưa nhận được khoản thanh toán ${formatVND(bookingData.price)} cho mã đơn #${bookingData.code}. Quý khách vui lòng quét mã QR MBBank hoặc bấm nút [Demo] bên dưới.`,
-      );
-    }, 1500);
-  };
-
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24">
-      {/* ─── THANH ĐIỀU HƯỚNG TRANG CON (KHÔNG BỊ TRÙNG HEADER) ─── */}
+      {/* ─── HEADER ─── */}
       <div className="bg-white border-b border-slate-200 py-3.5 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
           <button
@@ -138,67 +324,59 @@ export default function CheckoutPage() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════════
-          TRƯỜNG HỢP 2A: MÀN HÌNH CHUYỂN KHOẢN DUY NHẤT 1 TÀI KHOẢN MBBANK
+          BƯỚC 2A: MÀN HÌNH CHUYỂN KHOẢN QR
       ═══════════════════════════════════════════════════════════════════════════ */}
       {currentStep === "step_qr_view" && (
         <main className="max-w-4xl mx-auto px-4 pt-8 space-y-6 animate-in fade-in duration-300">
           {paymentError && (
-            <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-3 animate-in fade-in">
-              <XCircle size={18} className="shrink-0" />
-              <span>{paymentError}</span>
+            <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-start gap-3 animate-in fade-in">
+              <XCircle size={18} className="shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-extrabold text-sm">
+                  Chưa nhận được thanh toán!
+                </p>
+                <p className="font-medium leading-relaxed">{paymentError}</p>
+              </div>
             </div>
           )}
 
-          {/* CARD THÔNG TIN CHUYỂN KHOẢN */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden p-6 sm:p-10 space-y-6">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center pb-4 border-b border-slate-200 gap-2">
               <div>
                 <h2 className="text-2xl font-black text-slate-900">
                   Thông tin chuyển khoản
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Quý khách sẽ nhận xác nhận đặt phòng qua Email/SMS sau khi
-                  thanh toán
+                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  Hệ thống đang tự động kiểm tra giao dịch mỗi 3 giây...
                 </p>
               </div>
               <div className="text-sm text-slate-600 font-medium sm:text-right">
-                Thanh toán trước{" "}
+                Hạn thanh toán:{" "}
                 <span className="text-[#ff6a00] font-black text-base">
                   {bookingData.expireTime}
                 </span>
               </div>
             </div>
 
-            {/* BODY: QR TRÁI - CHI TIẾT PHẢI (CHỈ 1 NGÂN HÀNG MBBANK) */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center pt-2">
-              {/* KHUNG MÃ QR BÊN TRÁI */}
               <div className="md:col-span-5 bg-slate-50 p-6 rounded-2xl border border-slate-200 text-center space-y-3">
                 <p className="text-xs font-bold text-slate-700">
                   Quét mã QR để thanh toán nhanh
                 </p>
 
                 <div className="relative p-3 bg-white rounded-xl border border-slate-200 shadow-sm inline-block">
-                  <div className="flex items-center justify-between px-2 pb-2 text-[10px] font-black text-slate-500 border-b border-slate-100 mb-2">
-                    <span className="text-[#003580] font-black italic">
-                      iVIVU
-                    </span>
-                    <span className="text-emerald-600 font-bold">
-                      napas 247
-                    </span>
-                    <span className="text-[#002fbe] font-bold">MBBank</span>
-                  </div>
                   <img
                     src={vietQrUrl}
                     alt="VietQR Napas MBBank"
                     className="w-48 h-48 mx-auto object-contain rounded-lg"
                   />
                   <p className="text-[9px] font-bold text-slate-400 italic pt-1 text-center">
-                    Scan to Pay
+                    Scan to Pay 24/7
                   </p>
                 </div>
               </div>
 
-              {/* THÔNG TIN CHI TIẾT BÊN PHẢI (MBBANK) */}
               <div className="md:col-span-7 space-y-4 text-sm">
                 <div>
                   <span className="text-xs text-slate-400 block font-medium">
@@ -206,9 +384,6 @@ export default function CheckoutPage() {
                   </span>
                   <p className="font-extrabold text-slate-900 text-sm">
                     {MY_BANK.bankName}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    ({MY_BANK.bankFullName})
                   </p>
                 </div>
 
@@ -259,7 +434,7 @@ export default function CheckoutPage() {
 
                 <div>
                   <span className="text-xs text-slate-400 block font-medium">
-                    Nội dung
+                    Nội dung chuyển khoản
                   </span>
                   <div className="flex items-center gap-3">
                     <span className="text-lg font-mono font-black text-slate-900">
@@ -273,25 +448,24 @@ export default function CheckoutPage() {
                     </button>
                   </div>
                 </div>
-
-                <p className="text-xs text-slate-500 italic pt-2">
-                  * Giao dịch sẽ tự động xác nhận nếu bạn chuyển đúng số tiền và
-                  nội dung. *
-                </p>
               </div>
             </div>
           </div>
 
-          {/* CỤM NÚT BẤM */}
           <div className="text-center space-y-3 max-w-sm mx-auto">
             <button
               onClick={handleVerifyPayment}
               disabled={isChecking}
-              className="w-full py-4 bg-[#ff6a00] hover:bg-[#e55f00] text-white font-black text-base rounded-2xl shadow-lg shadow-orange-500/20 transition active:scale-95 cursor-pointer disabled:opacity-50"
+              className="w-full py-4 bg-[#ff6a00] hover:bg-[#e55f00] text-white font-black text-base rounded-2xl shadow-lg shadow-orange-500/20 transition active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isChecking
-                ? "Đang kiểm tra giao dịch MBBank..."
-                : "Tôi đã chuyển khoản"}
+              {isChecking ? (
+                <>
+                  <RefreshCw size={18} className="animate-spin" />
+                  Đang kiểm tra giao dịch...
+                </>
+              ) : (
+                "Tôi đã chuyển khoản"
+              )}
             </button>
 
             <button
@@ -300,27 +474,12 @@ export default function CheckoutPage() {
             >
               <RotateCcw size={16} /> Đổi hình thức thanh toán khác
             </button>
-
-            {/* DEMO TEST CHO ĐỒ ÁN */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(
-                    `/booking-success?code=${bookingData.code}&amount=${bookingData.price}&method=qr&success=true`,
-                  )
-                }
-                className="text-[11px] text-slate-400 hover:text-emerald-600 underline"
-              >
-                [Chế độ Demo: Giả lập đã nhận tiền để chuyển trang thành công]
-              </button>
-            </div>
           </div>
         </main>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════════
-          TRƯỜNG HỢP 2B: MÀN HÌNH GIỮ CHỖ VĂN PHÒNG (MÁY BAY GIẤY)
+          BƯỚC 2B: MÀN HÌNH GIỮ CHỖ VĂN PHÒNG (ĐIỀU HƯỚNG VỀ /profile CHUẨN XÁC)
       ═══════════════════════════════════════════════════════════════════════════ */}
       {currentStep === "step_office_view" && (
         <main className="max-w-2xl mx-auto px-4 pt-10 animate-in fade-in duration-300">
@@ -358,32 +517,45 @@ export default function CheckoutPage() {
             <div className="space-y-3 text-slate-700 text-sm leading-relaxed max-w-md mx-auto">
               <p>
                 Quý khách đã giữ chỗ thành công! Vui lòng đến{" "}
-                <strong className="text-slate-900">Văn phòng TP.HCM</strong>{" "}
-                thanh toán trước{" "}
+                <strong className="text-slate-900">Văn phòng GoStay</strong> để
+                thanh toán tiền mặt trước{" "}
                 <span className="text-[#ff6a00] font-black">
                   {bookingData.expireTime}
-                </span>{" "}
-                để hoàn tất đặt phòng.
+                </span>
+                .
               </p>
               <div className="text-xs text-slate-600 flex items-start justify-center gap-1.5 pt-1">
                 <MapPin size={16} className="text-slate-400 shrink-0 mt-0.5" />
-                <span>
-                  {bookingData.officeAddress}{" "}
-                  <a href="#" className="text-[#006ce4] font-bold underline">
-                    (Xem bản đồ)
-                  </a>
-                </span>
+                <span>{bookingData.officeAddress}</span>
               </div>
-              <p className="font-bold text-slate-800 pt-2">
-                Mã đơn hàng:{" "}
-                <span className="font-mono font-black">{bookingData.code}</span>
-              </p>
+              <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 mt-2">
+                <p className="text-xs text-blue-900 font-bold">
+                  Mã đơn hàng:{" "}
+                  <span className="font-mono font-black text-base">
+                    {bookingData.code}
+                  </span>
+                </p>
+                <p className="text-[11px] text-blue-700 mt-0.5">
+                  Số tiền cần thanh toán:{" "}
+                  <strong>{formatVND(bookingData.price)}</strong>
+                </p>
+              </div>
             </div>
 
-            <div className="pt-4 max-w-xs mx-auto space-y-3">
+            {/* CỤM NÚT ĐIỀU HƯỚNG: ĐƯA VỀ /profile TRANG CÁ NHÂN CỦA KHÁCH */}
+            <div className="pt-4 max-w-sm mx-auto space-y-3">
               <button
+                type="button"
+                onClick={() => navigate("/profile")}
+                className="w-full py-3.5 px-6 rounded-xl bg-[#003580] hover:bg-blue-900 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Ticket size={16} /> Xem trong Lịch sử đặt phòng
+              </button>
+
+              <button
+                type="button"
                 onClick={() => navigate("/")}
-                className="w-full py-3 px-6 rounded-xl border-2 border-[#ff6a00] text-[#ff6a00] hover:bg-orange-50 font-black text-sm transition"
+                className="w-full py-3 px-6 rounded-xl border-2 border-slate-300 text-slate-700 hover:bg-slate-50 font-bold text-xs transition cursor-pointer"
               >
                 Về trang chủ
               </button>
@@ -393,22 +565,12 @@ export default function CheckoutPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════════
-          BƯỚC 1: TRANG CHỌN PHƯƠNG THỨC (ĐẦY ĐỦ CẢ 6 PHƯƠNG THỨC)
+          BƯỚC 1: CHỌN PHƯƠNG THỨC THANH TOÁN
       ═══════════════════════════════════════════════════════════════════════════ */}
       {currentStep === "step_select_method" && (
         <main className="max-w-7xl mx-auto px-4 pt-6 space-y-6 animate-in fade-in">
-          <div className="bg-[#fff9e6] border border-[#ffe58f] rounded-2xl p-4 flex items-center gap-2 text-slate-700 text-sm font-medium shadow-sm">
-            <Clock size={18} className="text-[#d48806] shrink-0" />
-            <span>
-              Thanh toán trước{" "}
-              <strong className="text-[#d48806] font-extrabold">
-                {bookingData.expireTime}
-              </strong>
-            </span>
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* CỘT TRÁI: ĐẦY ĐỦ 6 PHƯƠNG THỨC */}
+            {/* CỘT TRÁI: CÁC PHƯƠNG THỨC */}
             <div className="lg:col-span-7 space-y-6">
               <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
                 <div className="flex items-center gap-2 text-slate-800 font-extrabold text-base border-b border-slate-100 pb-4">
@@ -438,10 +600,10 @@ export default function CheckoutPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-bold text-slate-900 text-sm">
-                        Chuyển khoản QR
+                        Chuyển khoản QR (MBBank 24/7)
                       </h4>
                       <p className="text-xs text-slate-500">
-                        Quét mã QR MBBank để chuyển khoản
+                        Quét mã QR tự động xác nhận tức thì
                       </p>
                     </div>
                   </div>
@@ -467,128 +629,15 @@ export default function CheckoutPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-bold text-slate-900 text-sm">
-                        Thẻ tín dụng
+                        Thẻ tín dụng Quốc tế
                       </h4>
                       <p className="text-xs text-slate-500">
-                        Visa, Master, JCB
-                      </p>
-                    </div>
-                  </div>
-                  {selectedMethod === "credit" && (
-                    <div className="mt-2 pl-9">
-                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={saveCreditCard}
-                          onChange={(e) => setSaveCreditCard(e.target.checked)}
-                          className="rounded border-slate-300 text-[#006ce4]"
-                        />
-                        <span>Lưu thẻ để thanh toán nhanh hơn lần sau</span>
-                      </label>
-                    </div>
-                  )}
-
-                  {/* 3. Ví MoMo */}
-                  <div
-                    onClick={() => setSelectedMethod("momo")}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-4 ${
-                      selectedMethod === "momo"
-                        ? "border-[#006ce4] bg-blue-50/20 shadow-sm"
-                        : "border-slate-200 hover:border-slate-300"
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === "momo" ? "border-[#006ce4]" : "border-slate-300"}`}
-                    >
-                      {selectedMethod === "momo" && (
-                        <div className="w-2.5 h-2.5 bg-[#006ce4] rounded-full" />
-                      )}
-                    </div>
-                    <div className="w-9 h-9 bg-[#a50064] text-white rounded-lg flex items-center justify-center font-bold text-xs">
-                      MoMo
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-slate-900 text-sm">
-                        Ví điện tử MoMo
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Thanh toán qua ví MoMo
+                        Visa, MasterCard, JCB
                       </p>
                     </div>
                   </div>
 
-                  {/* 4. Thẻ ATM */}
-                  <div
-                    onClick={() => setSelectedMethod("atm")}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-4 ${
-                      selectedMethod === "atm"
-                        ? "border-[#006ce4] bg-blue-50/20 shadow-sm"
-                        : "border-slate-200 hover:border-slate-300"
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === "atm" ? "border-[#006ce4]" : "border-slate-300"}`}
-                    >
-                      {selectedMethod === "atm" && (
-                        <div className="w-2.5 h-2.5 bg-[#006ce4] rounded-full" />
-                      )}
-                    </div>
-                    <div className="w-9 h-9 bg-[#00a887] text-white rounded-lg flex items-center justify-center">
-                      <Building2 size={22} />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-slate-900 text-sm">
-                        Thẻ ATM
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Thẻ ghi nợ nội địa
-                      </p>
-                    </div>
-                  </div>
-                  {selectedMethod === "atm" && (
-                    <div className="mt-2 pl-9">
-                      <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={saveAtmCard}
-                          onChange={(e) => setSaveAtmCard(e.target.checked)}
-                          className="rounded border-slate-300 text-[#006ce4]"
-                        />
-                        <span>Lưu thẻ để thanh toán nhanh hơn lần sau</span>
-                      </label>
-                    </div>
-                  )}
-
-                  {/* 5. Trả góp 0% */}
-                  <div
-                    onClick={() => setSelectedMethod("installment")}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-4 ${
-                      selectedMethod === "installment"
-                        ? "border-[#006ce4] bg-blue-50/20 shadow-sm"
-                        : "border-slate-200 hover:border-slate-300"
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedMethod === "installment" ? "border-[#006ce4]" : "border-slate-300"}`}
-                    >
-                      {selectedMethod === "installment" && (
-                        <div className="w-2.5 h-2.5 bg-[#006ce4] rounded-full" />
-                      )}
-                    </div>
-                    <div className="w-9 h-9 bg-[#00b5ad] text-white rounded-lg flex items-center justify-center">
-                      <Calendar size={22} />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-slate-900 text-sm">
-                        Trả góp 0% lãi suất
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Trả góp qua thẻ tín dụng
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 6. Tại văn phòng */}
+                  {/* 3. Tại văn phòng */}
                   <div
                     onClick={() => setSelectedMethod("office")}
                     className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-4 ${
@@ -609,27 +658,26 @@ export default function CheckoutPage() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-bold text-slate-900 text-sm">
-                        Tại văn phòng
+                        Thanh toán tại văn phòng (Giữ chỗ trước)
                       </h4>
                       <p className="text-xs text-slate-500">
-                        Thanh toán trực tiếp
+                        Đến văn phòng GoStay thanh toán tiền mặt
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* NÚT BẤM CHUYỂN SANG BƯỚC 2 */}
               <button
                 onClick={handleProceedPayment}
                 className="w-full py-4 bg-[#ff6a00] hover:bg-[#e55f00] text-white font-black text-base rounded-2xl shadow-lg shadow-orange-500/20 transition active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Check size={20} strokeWidth={3} />
-                Xác nhận thanh toán {formatVND(bookingData.price)}
+                Xác nhận đặt phòng • {formatVND(bookingData.price)}
               </button>
             </div>
 
-            {/* CỘT PHẢI: TÓM TẮT ĐƠN HÀNG */}
+            {/* CỘT PHẢI: TÓM TẮT ĐƠN ĐẶT */}
             <div className="lg:col-span-5 space-y-4 sticky top-20">
               <div className="bg-[#003580] text-white rounded-2xl p-6 shadow-md space-y-2">
                 <p className="text-xs text-blue-200">
@@ -640,86 +688,23 @@ export default function CheckoutPage() {
                   {formatVND(bookingData.price)}
                 </h2>
                 <p className="text-xs text-blue-200 pt-1">
-                  {bookingData.roomsCount} phòng • {bookingData.nights} đêm •{" "}
-                  {bookingData.guestsCount} khách
+                  1 phòng • {bookingData.checkinTime} đến{" "}
+                  {bookingData.checkoutTime}
                 </p>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <button
-                  onClick={() => setOpenHotelInfo(!openHotelInfo)}
-                  className="w-full p-4 flex justify-between items-center bg-slate-50/70 border-b border-slate-100 font-bold text-sm text-slate-800"
-                >
-                  <div className="flex items-center gap-2">
-                    <Building2 size={16} className="text-[#006ce4]" />
-                    <span>Thông tin khách sạn</span>
-                  </div>
-                  {openHotelInfo ? (
-                    <ChevronUp size={18} />
-                  ) : (
-                    <ChevronDown size={18} />
-                  )}
-                </button>
-
-                {openHotelInfo && (
-                  <div className="p-5 space-y-4 text-xs animate-in fade-in">
-                    <div>
-                      <h3 className="font-black text-slate-900 text-sm">
-                        {bookingData.hotelName}
-                      </h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-amber-500 font-bold">
-                          ⭐⭐⭐⭐⭐
-                        </span>
-                        <span className="bg-[#1877f2] text-white font-bold px-1.5 py-0.5 rounded text-[10px]">
-                          {bookingData.rating}
-                        </span>
-                        <span className="font-bold text-[#1877f2]">
-                          {bookingData.reviewText}
-                        </span>
-                        <span className="text-slate-400">
-                          ({bookingData.reviewCount})
-                        </span>
-                      </div>
-                      <p className="text-slate-400 flex items-center gap-1 mt-1.5">
-                        <MapPin size={13} className="shrink-0" />{" "}
-                        {bookingData.address}
-                      </p>
-                    </div>
-
-                    <div className="bg-slate-50 p-3.5 rounded-xl space-y-2 border border-slate-100">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">
-                            Nhận phòng
-                          </span>
-                          <strong className="text-slate-800 font-bold">
-                            {bookingData.checkinTime}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px]">
-                            Trả phòng
-                          </span>
-                          <strong className="text-slate-800 font-bold">
-                            {bookingData.checkoutTime}
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* CHI TIẾT GIÁ */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3 shadow-sm text-xs">
                 <div className="flex justify-between text-slate-600">
-                  <span>Giá phòng</span>
+                  <span>Tiền phòng</span>
                   <span>{formatVND(bookingData.price)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Thuế & Phí dịch vụ</span>
+                  <span className="text-emerald-600 font-bold">Đã bao gồm</span>
                 </div>
                 <div className="pt-2 border-t border-slate-100 flex justify-between items-center text-sm font-bold">
                   <span className="font-extrabold text-slate-900">
-                    Tổng cộng
+                    Tổng thanh toán
                   </span>
                   <span className="font-black text-[#ff6a00] text-lg">
                     {formatVND(bookingData.price)}

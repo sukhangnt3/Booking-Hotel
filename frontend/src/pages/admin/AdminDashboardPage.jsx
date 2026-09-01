@@ -1,377 +1,461 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  DollarSign,
-  TrendingUp,
   Building2,
   Users,
-  Receipt,
-  ShieldCheck,
   CheckCircle2,
   Clock,
-  ArrowUpRight,
-  AlertTriangle,
-  Calendar,
-  Wallet,
+  TrendingUp,
+  DollarSign,
+  ShieldCheck,
+  MapPin,
+  XCircle,
 } from "lucide-react";
 
-// Components
-import { Button, Badge } from "@/components/ui";
 import { LoadingSpinner } from "@/components/common";
-import { PaymentStatusBadge } from "@/components/payment";
-
-// Services
+import { bookingService } from "@/services";
 import apiClient from "@/services/apiClient";
-import { hotelService, bookingService } from "@/services";
 
-const AdminDashboardPage = () => {
+export default function AdminDashboardPage() {
   const navigate = useNavigate();
-  const [timeRange, setTimeRange] = useState("this_month");
 
-  // ─── 1. STATES DỮ LIỆU THỰC TẾ ───
-  const [stats, setStats] = useState({
-    totalGmv: 0, // Tổng tiền giao dịch toàn sàn
-    commissionRevenue: 0, // Hoa hồng thực tế sàn nhận
-    commissionRate: 10, // 10%
-    totalBookings: 0,
-    pendingHotelsCount: 0,
-    growthRate: "+0.0%",
-  });
-
-  const [recentBookings, setRecentBookings] = useState([]);
-  const [pendingHotels, setPendingHotels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalHotels: 0,
+    activeHotels: 0,
+    pendingHotels: 0,
+    totalPartners: 0,
+    totalGrossRevenue: 0,
+    platformCommission: 0,
+    totalPaidBookings: 0,
+  });
+  const [recentPartners, setRecentPartners] = useState([]);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🔍 1. FETCH & ĐỒNG BỘ THỐNG KÊ (ĐẾM CHUẨN XÁC HỒ SƠ CHỜ THẨM ĐỊNH)
+  // ════════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        let apiHotels = [];
+        try {
+          const res = await apiClient.get("/admin/hotels");
+          apiHotels = Array.isArray(res.data)
+            ? res.data
+            : res.data?.hotels || res.data?.data || [];
+        } catch (e) {
+          console.warn("API hotels error:", e);
+        }
+
+        const localApps = JSON.parse(
+          localStorage.getItem("pending_partner_applications") || "[]",
+        );
+        const approvedHotelIds = JSON.parse(
+          localStorage.getItem("approved_hotel_ids") || "[]",
+        ).map(String);
+        const rejectedHotelIds = JSON.parse(
+          localStorage.getItem("rejected_hotel_ids") || "[]",
+        ).map(String);
+        const deletedHotelIds = JSON.parse(
+          localStorage.getItem("deleted_hotel_ids") || "[]",
+        ).map(String);
+
+        // Gộp cả 2 nguồn
+        const combined = [...localApps, ...apiHotels];
+        const uniqueHotelsMap = new Map();
+
+        combined.forEach((h) => {
+          const hotelId = String(
+            h.id || h._id || h.applicationId || h.hotel_id || "",
+          ).trim();
+          const hotelAppId = String(h.applicationId || "").trim();
+          const hotelName = String(h.hotelNameVi || h.name || "").trim();
+          const ownerEmail = String(
+            h.emailContact || h.email || h.user?.email || h.signerEmail || "",
+          )
+            .toLowerCase()
+            .trim();
+
+          // 🛑 1. Bỏ qua nếu đã bị xóa
+          if (
+            !hotelId ||
+            deletedHotelIds.includes(hotelId) ||
+            deletedHotelIds.includes(hotelName) ||
+            Boolean(h.is_deleted || h.isDeleted || h.deletedAt) ||
+            h.status === "deleted"
+          ) {
+            return;
+          }
+
+          const dedupeKey = hotelName.toLowerCase() || hotelId;
+
+          if (!uniqueHotelsMap.has(dedupeKey)) {
+            let finalStatus = "pending";
+
+            // 🛑 2. Kiểm tra Từ chối
+            const isRejected =
+              rejectedHotelIds.includes(hotelId) ||
+              (hotelAppId && rejectedHotelIds.includes(hotelAppId)) ||
+              h.status === "rejected";
+
+            // 🛑 3. Kiểm tra Đã duyệt (CHỈ KHI MÃ ID ĐÃ ĐƯỢC ADMIN BẤM DUYỆT THẬT)
+            const isApproved =
+              !isRejected &&
+              (approvedHotelIds.includes(hotelId) ||
+                (hotelAppId && approvedHotelIds.includes(hotelAppId)) ||
+                (h.status === "approved" &&
+                  h.is_approved === true &&
+                  !h.status?.includes("pending")));
+
+            if (isRejected) {
+              finalStatus = "rejected";
+            } else if (isApproved) {
+              finalStatus = "approved";
+            } else {
+              finalStatus = "pending"; // 👈 HỒ SƠ MỚI NỘP LUÔN LÀ PENDING ĐỂ TÍNH VÀO KPI CHỜ THẨM ĐỊNH
+            }
+
+            uniqueHotelsMap.set(dedupeKey, {
+              ...h,
+              id: hotelId,
+              name: hotelName || "Cơ sở lưu trú",
+              ownerName:
+                h.ownerName || h.signerName || h.user?.full_name || "Chủ cơ sở",
+              emailContact: ownerEmail || "Chưa có email",
+              phoneContact: h.phoneContact || h.signerPhone || h.phone || "N/A",
+              city: h.province || h.city || "Hồ Chí Minh",
+              status: finalStatus,
+              created_at:
+                h.created_at || h.submittedAt || new Date().toISOString(),
+            });
+          }
+        });
+
+        const allList = Array.from(uniqueHotelsMap.values());
+        const activeList = allList.filter((h) => h.status === "approved");
+        const pendingList = allList.filter((h) => h.status === "pending");
+
+        // ══════════════════════════════════════════════════════════════════════
+        // 🏆 2. ĐẾM SỐ LƯỢNG ĐỐI TÁC ĐÃ CÓ CƠ SỞ HOẠT ĐỘNG
+        // ══════════════════════════════════════════════════════════════════════
+        const activePartnersEmailSet = new Set();
+        allList.forEach((h) => {
+          if (h.status === "approved" && h.emailContact) {
+            activePartnersEmailSet.add(h.emailContact);
+          }
+        });
+
+        // 3. Doanh thu
+        let allBookingsList = [];
+        try {
+          if (bookingService?.getHistory) {
+            const bRes = await bookingService.getHistory();
+            allBookingsList = Array.isArray(bRes)
+              ? bRes
+              : bRes?.data || bRes?.bookings || [];
+          }
+        } catch (e) {}
+
+        const paidCache = JSON.parse(
+          localStorage.getItem("paid_bookings") || "[]",
+        );
+        const realPaidBookings = allBookingsList.filter((b) => {
+          const code = b.booking_code || b.id;
+          return (
+            b.payment_status === "paid" ||
+            b.status === "confirmed" ||
+            paidCache.includes(code)
+          );
+        });
+
+        const totalGross = realPaidBookings.reduce((sum, b) => {
+          const price = Number(b.total_price || b.totalPrice || b.amount || 0);
+          return sum + price;
+        }, 0);
+
+        const totalCommission = Math.round(totalGross * 0.18);
+
+        // 🛑 CẬP NHẬT CHUẨN XÁC CẢ 4 THẺ KPI
+        setStats({
+          totalHotels: activeList.length + pendingList.length,
+          activeHotels: activeList.length,
+          pendingHotels: pendingList.length, // 👈 SẼ NHẢY SỐ > 0 KHI CÓ HỒ SƠ MỚI
+          totalPartners:
+            activePartnersEmailSet.size || (activeList.length > 0 ? 1 : 0),
+          totalGrossRevenue: totalGross,
+          platformCommission: totalCommission,
+          totalPaidBookings: realPaidBookings.length,
+        });
+
+        const activeAndPendingOnly = allList.filter(
+          (h) => h.status !== "rejected",
+        );
+        setRecentPartners(activeAndPendingOnly);
+      } catch (err) {
+        console.error("Lỗi tải dashboard:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // ─── 2. FETCH TOÀN BỘ SỐ LIỆU TỪ BACKEND ───
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      // 1. Lấy thống kê số liệu tổng quan
-      let statsData = {};
-      try {
-        const resStats = await apiClient.get("/admin/stats", {
-          params: { timeRange },
-        });
-        statsData = resStats?.data || resStats || {};
-      } catch {
-        // Fallback tự tính toán nếu Backend chưa có route tổng hợp
-        statsData = {};
-      }
-
-      // 2. Lấy danh sách giao dịch gần đây & Khách sạn chờ duyệt
-      const [bookingsRes, hotelsRes] = await Promise.all([
-        bookingService.getAll?.({ limit: 5 }) || [],
-        apiClient.get("/admin/hotels", { params: { status: "pending" } }).then((r) => r.data || []).catch(() => []),
-      ]);
-
-      const bookingList = Array.isArray(bookingsRes)
-        ? bookingsRes
-        : bookingsRes?.data || [];
-      const hotelList = Array.isArray(hotelsRes) ? hotelsRes : [];
-
-      // Tính tổng doanh thu từ danh sách nếu API chưa trả về con số tổng
-      const calculatedGmv =
-        statsData.totalGmv ||
-        bookingList.reduce((sum, b) => sum + Number(b.total_price || 0), 0);
-      const commission = statsData.commissionRevenue || calculatedGmv * 0.1;
-
-      setStats({
-        totalGmv: calculatedGmv,
-        commissionRevenue: commission,
-        commissionRate: statsData.commissionRate || 10,
-        totalBookings: statsData.totalBookings || bookingList.length,
-        pendingHotelsCount:
-          statsData.pendingHotelsCount ||
-          hotelList.filter((h) => h.status === "pending").length,
-        growthRate: statsData.growthRate || "+15.2%",
-      });
-
-      setRecentBookings(bookingList);
-      setPendingHotels(hotelList.filter((h) => h.status === "pending"));
-    } catch (err) {
-      console.error("Lỗi khi tải dữ liệu Admin Dashboard:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, [timeRange]);
-
   return (
-    <div className="space-y-8 font-sans pb-16 text-slate-800">
-      {/* ─── HEADER & BỘ LỌC THỜI GIAN ─── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-black uppercase text-black-600 tracking-wider">
-              Hệ Thống Quản Trị Trung Tâm
-            </span>
-            <Badge variant="primary" size="sm"  >
-              Super Admin
-            </Badge>
+    <div className="space-y-8 font-sans text-slate-800 pb-16">
+      {/* ── HEADER ── */}
+      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider mb-1">
+            <ShieldCheck size={16} /> Bảng Điều Khiển Tổng Quan (Super Admin)
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-            Thống Kê Toàn Sàn GoStay
+            Tổng Quan Hoạt Động Toàn Sàn GoStay
           </h1>
-          <p className="text-xs text-slate-500 font-medium">
-            Theo dõi dòng tiền GMV, doanh thu hoa hồng sàn và xử lý hồ sơ đối
-            tác mới.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Dữ liệu doanh thu và đối tác được tổng hợp độc lập theo từng cơ sở
+            lưu trú
           </p>
         </div>
 
-        {/* Dropdown chọn khoảng thời gian */}
-        <div className="relative flex items-center">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-black px-4 py-3 rounded-2xl outline-none cursor-pointer focus:border-blue-600 focus:ring-4 focus:ring-blue-50 transition-all appearance-none pr-10"
-          >
-            <option value="today">Hôm nay</option>
-            <option value="this_week">Tuần này</option>
-            <option value="this_month">Tháng này (Hiện tại)</option>
-            <option value="last_month">Tháng trước</option>
-            <option value="this_year">Toàn bộ năm nay</option>
-          </select>
-          <Calendar
-            size={16}
-            className="absolute right-3.5 text-slate-400 pointer-events-none"
-          />
-        </div>
+        <button
+          onClick={() => navigate("/admin/hotels")}
+          className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer"
+        >
+          <span>Kiểm duyệt cơ sở</span>
+          {stats.pendingHotels > 0 && (
+            <span className="bg-amber-400 text-amber-950 font-black text-[10px] px-2 py-0.5 rounded-full animate-pulse">
+              {stats.pendingHotels} chờ duyệt
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* ─── 4 METRIC CARDS (KPI TÀI CHÍNH TOÀN SÀN) ─── */}
       {loading ? (
-        <div className="py-20 flex justify-center bg-white rounded-3xl border border-slate-200">
-          <LoadingSpinner size="lg" label="Đang đối soát số liệu hệ thống..." />
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-slate-200">
+          <LoadingSpinner size="lg" label="Đang đối soát dữ liệu sàn..." />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* CARD 1: TỔNG GMV (TỔNG TIỀN GIAO DỊCH) */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-3 relative overflow-hidden group hover:shadow-md transition-all">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Tổng GMV Toàn Sàn
-              </span>
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
-                <DollarSign size={20} />
+        <>
+          {/* ══════════════════════════════════════════════════════════════════
+              📊 4 THẺ KPI ĐỒNG BỘ THỰC TẾ (HỒ SƠ CHỜ THẨM ĐỊNH > 0)
+          ══════════════════════════════════════════════════════════════════ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {/* 1. Tổng Đối Tác */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Tổng Số Đối Tác
+                </span>
+                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-bold">
+                  <Users size={20} />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-3xl font-black text-slate-900 tracking-tight">
+                  {stats.totalPartners}
+                </h3>
+                <p className="text-xs text-emerald-600 font-bold mt-1 flex items-center gap-1">
+                  <TrendingUp size={14} /> Đối tác chính thức
+                </p>
               </div>
             </div>
-            <div>
-              <div className="text-2xl md:text-3xl font-black text-slate-900">
-                {formatVND(stats.totalGmv)}
+
+            {/* 2. Đang Mở Bán */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Cơ Sở Đang Mở Bán
+                </span>
+                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-bold">
+                  <CheckCircle2 size={20} />
+                </div>
               </div>
-              <p className="text-xs font-bold text-emerald-600 mt-1 flex items-center gap-1">
-                <TrendingUp size={13} /> {stats.growthRate} tăng trưởng
-              </p>
+              <div>
+                <h3 className="text-3xl font-black text-emerald-600 tracking-tight">
+                  {stats.activeHotels}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Đã phê duyệt mở bán
+                </p>
+              </div>
             </div>
-            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-emerald-500 h-full rounded-full w-4/5" />
+
+            {/* 3. Hồ Sơ Chờ Thẩm Định (NHẢY SỐ CHUẨN XÁC) */}
+            <div
+              onClick={() => navigate("/admin/hotels")}
+              className={`bg-white p-6 rounded-3xl border-2 shadow-sm space-y-3 cursor-pointer transition group ${
+                stats.pendingHotels > 0
+                  ? "border-amber-400 bg-amber-50/20 hover:bg-amber-50/40"
+                  : "border-slate-200"
+              }`}
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-700">
+                  Hồ Sơ Chờ Thẩm Định
+                </span>
+                <div className="w-10 h-10 bg-amber-100 text-amber-700 rounded-xl flex items-center justify-center font-bold">
+                  <Clock
+                    size={20}
+                    className={stats.pendingHotels > 0 ? "animate-pulse" : ""}
+                  />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-3xl font-black text-amber-600 tracking-tight">
+                  {stats.pendingHotels}
+                </h3>
+                <p className="text-xs text-blue-700 font-bold mt-1 group-hover:underline flex items-center gap-1">
+                  {stats.pendingHotels > 0
+                    ? "Nhấp để duyệt ngay →"
+                    : "Đã thẩm định hết ✓"}
+                </p>
+              </div>
+            </div>
+
+            {/* 4. Tổng Doanh Thu Sàn */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Tổng Doanh Thu Sàn
+                </span>
+                <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center font-bold">
+                  <DollarSign size={20} />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+                  {formatVND(stats.totalGrossRevenue)}
+                </h3>
+                <p className="text-xs text-emerald-700 font-extrabold mt-1">
+                  Hoa hồng 18% thực thu: {formatVND(stats.platformCommission)}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* CARD 2: HOA HỒNG THỰC NHẬN CỦA SÀN */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-3 relative overflow-hidden group hover:shadow-md transition-all">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Hoa Hồng Sàn ({stats.commissionRate}%)
-              </span>
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <Wallet size={20} />
+          {/* ══════════════════════════════════════════════════════════════════
+              📋 BẢNG DANH SÁCH TẤT CẢ CƠ SỞ
+          ══════════════════════════════════════════════════════════════════ */}
+          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm space-y-4 p-6">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">
+                  Cơ Sở Lưu Trú & Đối Tác Đang Hoạt Động (
+                  {recentPartners.length})
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Danh sách các cơ sở đang mở bán hoặc đang chờ phê duyệt trên
+                  hệ thống
+                </p>
               </div>
-            </div>
-            <div>
-              <div className="text-2xl md:text-3xl font-black text-emerald-600">
-                {formatVND(stats.commissionRevenue)}
-              </div>
-              <p className="text-xs font-bold text-slate-500 mt-1">
-                Lợi nhuận ròng sau thuế
-              </p>
-            </div>
-            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-emerald-500 h-full rounded-full w-full" />
-            </div>
-          </div>
 
-          {/* CARD 3: TỔNG LƯỢT ĐẶT PHÒNG */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-3 relative overflow-hidden group hover:shadow-md transition-all">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Tổng Lượt Đặt Phòng
-              </span>
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
-                <Receipt size={20} />
-              </div>
-            </div>
-            <div>
-              <div className="text-2xl md:text-3xl font-black text-slate-900">
-                {stats.totalBookings} Đơn
-              </div>
-              <p className="text-xs font-bold text-emerald-500 mt-1">
-                Khách đã giao dịch thành công
-              </p>
-            </div>
-            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-emerald-500 h-full rounded-full w-3/4" />
-            </div>
-          </div>
-
-          {/* CARD 4: HỒ SƠ CHỜ DUYỆT */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-3 relative overflow-hidden group hover:shadow-md transition-all">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Chỗ Nghỉ Chờ Duyệt
-              </span>
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-500 flex items-center justify-center">
-                <Clock size={20} />
-              </div>
-            </div>
-            <div>
-              <div className="text-2xl md:text-3xl font-black text-emerald-500">
-                {stats.pendingHotelsCount} Hồ sơ
-              </div>
               <button
                 onClick={() => navigate("/admin/hotels")}
-                className="text-xs font-bold text-[#006ce4] hover:underline mt-1 flex items-center gap-1"
+                className="text-xs text-[#003580] font-bold hover:underline flex items-center gap-1 cursor-pointer"
               >
-                Xử lý phê duyệt ngay <ArrowUpRight size={13} />
+                Xem tất cả hồ sơ &rarr;
               </button>
             </div>
-            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className="bg-emerald-500 h-full rounded-full w-1/2" />
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ─── 2 BẢNG VẬN HÀNH THỜI GIAN THỰC ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* BẢNG 1: HỒ SƠ KHÁCH SẠN MỚI ĐĂNG KÝ (5 COLS) */}
-        <div className="lg:col-span-5 bg-white p-6 md:p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="font-black text-lg text-slate-900 flex items-center gap-2">
-                <Building2 size={18} className="text-amber-500" />
-                Đối Tác Chờ Phê Duyệt
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Khách sạn vừa đăng ký lên sàn
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigate("/admin/hotels")}
-              className="text-xs font-bold border-slate-200 rounded-xl"
-            >
-              Xem tất cả
-            </Button>
-          </div>
-
-          {pendingHotels.length > 0 ? (
-            <div className="space-y-4">
-              {pendingHotels.map((h) => (
-                <div
-                  key={h.id}
-                  className="p-4 bg-slate-50 rounded-2xl border border-slate-200/60 flex items-center justify-between gap-3 hover:bg-slate-100/80 transition-colors"
-                >
-                  <div className="space-y-1 flex-1">
-                    <h4 className="font-extrabold text-slate-900 text-sm line-clamp-1">
-                      {h.name}
-                    </h4>
-                    <p className="text-xs text-slate-400">
-                      {h.city} • Chủ:{" "}
-                      {h.owner_name || h.owner?.name || "Đối tác"}
-                    </p>
-                  </div>
-
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(`/admin/hotels`)}
-                    className="bg-[#006ce4] text-white text-xs font-black px-4 rounded-xl shrink-0 shadow-sm"
-                  >
-                    Duyệt
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-12 text-center text-slate-400 text-xs font-bold italic">
-              ✓ Hiện không có hồ sơ nào chờ phê duyệt.
-            </div>
-          )}
-        </div>
-
-        {/* BẢNG 2: GIAO DỊCH ĐẶT PHÒNG GẦN NHẤT (7 COLS) */}
-        <div className="lg:col-span-7 bg-white p-6 md:p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="font-black text-lg text-slate-900 flex items-center gap-2">
-                <Receipt size={18} className="text-blue-600" />
-                Giao Dịch Đặt Phòng Gần Nhất
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Dòng tiền vừa thanh toán qua hệ thống
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigate("/admin/bookings")}
-              className="text-xs font-bold border-slate-200 rounded-xl"
-            >
-              Toàn bộ đơn
-            </Button>
-          </div>
-
-          {recentBookings.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-100">
-                  <tr>
-                    <th className="pb-3">Mã Đơn</th>
-                    <th className="pb-3">Chỗ Nghỉ</th>
-                    <th className="pb-3">Thanh Toán</th>
-                    <th className="pb-3 text-right">Tổng Tiền</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {recentBookings.map((b) => (
-                    <tr
-                      key={b.id}
-                      className="hover:bg-slate-50/80 transition-colors"
-                    >
-                      <td className="py-3 font-mono font-black text-[#006ce4]">
-                        #{b.booking_code || b.id}
-                      </td>
-                      <td className="py-3 font-bold text-slate-800">
-                        {b.hotel_name || b.hotel?.name || "Khách sạn"}
-                      </td>
-                      <td className="py-3">
-                        <PaymentStatusBadge
-                          status={b.payment_status || "paid"}
-                        />
-                      </td>
-                      <td className="py-3 text-right font-black text-slate-900 text-sm">
-                        {formatVND(b.total_price || b.totalPrice)}
-                      </td>
+            {recentPartners.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4">Tên Chỗ Nghỉ</th>
+                      <th className="py-3 px-4">Chủ Cơ Sở</th>
+                      <th className="py-3 px-4">Email Đăng Nhập</th>
+                      <th className="py-3 px-4">Khu Vực</th>
+                      <th className="py-3 px-4 text-center">Trạng Thái</th>
+                      <th className="py-3 px-4 text-center">Thao Tác</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="py-12 text-center text-slate-400 text-xs font-bold italic">
-              Chưa có giao dịch nào gần đây.
-            </div>
-          )}
-        </div>
-      </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {recentPartners.map((h) => {
+                      const isApproved = h.status === "approved";
+                      const isPending = h.status === "pending";
+
+                      return (
+                        <tr
+                          key={h.id}
+                          className="hover:bg-slate-50/70 transition"
+                        >
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 bg-blue-50 text-blue-700 rounded-lg flex items-center justify-center font-bold shrink-0">
+                                <Building2 size={16} />
+                              </div>
+                              <div>
+                                <strong className="font-extrabold text-slate-900 block text-sm">
+                                  {h.name}
+                                </strong>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  #{h.id}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4 font-bold text-slate-800">
+                            {h.ownerName}
+                          </td>
+
+                          <td className="py-3.5 px-4 font-mono text-blue-900">
+                            {h.emailContact}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="flex items-center gap-1 text-slate-600">
+                              <MapPin
+                                size={13}
+                                className="text-slate-400 shrink-0"
+                              />
+                              {h.city}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-center">
+                            {isApproved ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 size={12} /> Đang Mở Bán
+                              </span>
+                            ) : isPending ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
+                                <Clock size={12} /> Chờ Thẩm Định
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                <XCircle size={12} /> Đã Từ Chối
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-center">
+                            <button
+                              onClick={() => navigate("/admin/hotels")}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-[#003580] hover:text-white text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
+                            >
+                              Xử lý duyệt
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-10 text-center text-slate-400 text-xs">
+                Hiện chưa có đối tác nào trên hệ thống.
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
-};
-
-export default AdminDashboardPage;
+}

@@ -28,7 +28,7 @@ import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import HotelApprovalPage from "@/pages/admin/HotelApprovalPage";
 import UserManagementPage from "@/pages/admin/UserManagementPage";
 
-// ─── 4. CHỦ KHÁCH SẠN OWNER (ĐÚNG 4 TRANG CỦA BẠN) ───
+// ─── 4. CHỦ KHÁCH SẠN OWNER (4 TRANG) ───
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
@@ -61,13 +61,16 @@ const router = createBrowserRouter([
       { path: "booking-success", element: <BookingSuccessPage /> },
       { path: "checkout", element: <CheckoutPage /> },
 
-      // Trang cá nhân
+      // Trang cá nhân & Lịch sử đặt phòng (Có đủ các route dự phòng)
       {
         element: <ProtectedRoute />,
         children: [
           { path: "profile", element: <UserProfilePage /> },
           { path: "userprofile", element: <UserProfilePage /> },
           { path: "user-profile", element: <UserProfilePage /> },
+          { path: "my-bookings", element: <UserProfilePage /> },
+          { path: "bookings", element: <UserProfilePage /> },
+          { path: "user/bookings", element: <UserProfilePage /> },
         ],
       },
     ],
@@ -81,7 +84,7 @@ const router = createBrowserRouter([
   { path: "/register-owner", element: <RegisterForm /> },
 
   // ========================================================
-  // 3. PHÂN HỆ OWNER (ĐÚNG 4 TRANG HIỆN CÓ)
+  // 3. PHÂN HỆ OWNER (CHỦ CƠ SỞ)
   // ========================================================
   {
     path: "/owner",
@@ -102,7 +105,7 @@ const router = createBrowserRouter([
   },
 
   // ========================================================
-  // 4. PHÂN HỆ ADMIN (3 TRANG HIỆN CÓ)
+  // 4. PHÂN HỆ ADMIN (QUẢN TRỊ VIÊN)
   // ========================================================
   {
     path: "/admin",

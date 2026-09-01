@@ -1,36 +1,65 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
+/**
+ * Tự động đồng bộ quyền Admin, Owner, Staff (Lễ tân)
+ */
+const resolveEffectiveUser = (user) => {
+  if (!user || !user.email) return user;
+
+  const currentRole = String(user.role || user.role_name || "").toLowerCase();
+  if (currentRole === "admin") return user;
+
+  const userEmail = String(user.email).toLowerCase().trim();
+
+  try {
+    // 1. Kiểm tra danh sách STAFF (Lễ tân)
+    const staffEmails = JSON.parse(
+      localStorage.getItem("staff_emails") || "[]",
+    ).map((e) => String(e).toLowerCase().trim());
+
+    if (
+      staffEmails.includes(userEmail) ||
+      currentRole === "staff" ||
+      currentRole === "receptionist"
+    ) {
+      return { ...user, role: "staff", role_name: "staff" };
+    }
+
+    // 2. Kiểm tra danh sách OWNER (Chủ nhà)
+    const approvedEmails = JSON.parse(
+      localStorage.getItem("approved_owner_emails") || "[]",
+    ).map((e) => String(e).toLowerCase().trim());
+
+    if (approvedEmails.includes(userEmail) || currentRole === "owner") {
+      return { ...user, role: "owner", role_name: "owner" };
+    }
+  } catch (e) {
+    console.warn("Lỗi đồng bộ role:", e);
+  }
+
+  return user;
+};
+
 export const useAuthStore = create()(
   persist(
     (set, get) => ({
-      // --- STATE ---
-      user: null, // Thông tin người dùng {id, name, email, role, avatar...}
-      token: null, // Access Token (JWT)
-      refreshToken: null, // Token để làm mới phiên đăng nhập
+      user: null,
+      token: null,
+      refreshToken: null,
       isAuthenticated: false,
-      isRehydrated: false, // Trạng thái đã khôi phục xong dữ liệu từ localStorage chưa
+      isRehydrated: false,
 
-      // --- ACTIONS ---
-
-      /**
-       * Lưu thông tin đăng nhập
-       * @param {Object} user
-       * @param {String} token
-       * @param {String} refreshToken
-       */
       login: (user, token, refreshToken = null) => {
+        const effectiveUser = resolveEffectiveUser(user);
         set({
-          user,
+          user: effectiveUser,
           token,
           refreshToken,
           isAuthenticated: true,
         });
       },
 
-      /**
-       * Đăng xuất - Xoá sạch trắng dữ liệu
-       */
       logout: () => {
         set({
           user: null,
@@ -38,42 +67,45 @@ export const useAuthStore = create()(
           refreshToken: null,
           isAuthenticated: false,
         });
-        // Có thể clear thêm các store khác nếu cần (ví dụ: bookingStore)
       },
 
-      /**
-       * Cập nhật thông tin User (dùng khi sửa Profile, đổi Avatar)
-       */
       updateUser: (userData) => {
         const currentUser = get().user;
+        const mergedUser = { ...currentUser, ...userData };
         set({
-          user: { ...currentUser, ...userData },
+          user: resolveEffectiveUser(mergedUser),
         });
       },
 
-      /**
-       * Cập nhật Token mới (dùng cho cơ chế Refresh Token)
-       */
       setToken: (newToken) => set({ token: newToken }),
 
-      /**
-       * Kiểm tra Role nhanh
-       */
       checkRole: (roleName) => {
-        const user = get().user;
+        const user = resolveEffectiveUser(get().user);
         if (!user) return false;
         const currentRole = String(
           user.role || user.role_name || "",
         ).toLowerCase();
-        return currentRole === roleName.toLowerCase();
+        return currentRole === String(roleName).toLowerCase();
+      },
+
+      syncRole: () => {
+        const currentUser = get().user;
+        if (!currentUser) return;
+        set({
+          user: resolveEffectiveUser(currentUser),
+        });
       },
     }),
     {
-      name: "auth-storage", // Tên key trong LocalStorage
+      name: "auth-storage",
       storage: createJSONStorage(() => localStorage),
-      // Khi dữ liệu được khôi phục từ localStorage thành công
       onRehydrateStorage: () => (state) => {
-        state.isRehydrated = true;
+        if (state) {
+          state.isRehydrated = true;
+          if (state.user) {
+            state.user = resolveEffectiveUser(state.user);
+          }
+        }
       },
     },
   ),
