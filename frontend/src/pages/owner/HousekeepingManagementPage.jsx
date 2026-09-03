@@ -1,740 +1,720 @@
-// src/pages/owner/HousekeepingManagementPage.jsx
+// src/pages/owner/HousekeepingPage.jsx
 import React, { useState, useEffect, useMemo } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   Sparkles,
   CheckCircle2,
   Clock,
-  AlertTriangle,
   AlertCircle,
+  Plus,
   RefreshCw,
   Search,
-  Brush,
-  FileEdit,
-  X,
+  Check,
+  Building2,
   BedDouble,
-  PlusCircle,
+  UserCheck,
+  Send,
+  X,
+  Smartphone,
+  Printer,
+  User,
 } from "lucide-react";
-import { LoadingSpinner, EmptyState } from "@/components/common";
 import { useAuthStore } from "@/stores/authStore";
-import PropertySearchSelector from "@/components/common/PropertySearchSelector";
 
-export default function HousekeepingManagementPage() {
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+export default function HousekeepingPage() {
   const { user } = useAuthStore();
-
   const userRole = String(user?.role || user?.role_name || "").toLowerCase();
+  const isReceptionist = userRole === "receptionist" || userRole === "staff";
   const isAdmin = userRole.includes("admin") || user?.role_id === 1;
   const userEmail = String(user?.email || "")
     .toLowerCase()
     .trim();
 
   const [myHotels, setMyHotels] = useState([]);
-  const [selectedHotelId, setSelectedHotelId] = useState(
-    searchParams.get("hotelId") || "",
-  );
+  const [selectedHotelId, setSelectedHotelId] = useState("");
 
-  const [rooms, setRooms] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState([]);
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterFloor, setFilterFloor] = useState("all");
+  const [filterCleaner, setFilterCleaner] = useState("all"); // Lọc theo nhân viên
   const [search, setSearch] = useState("");
 
-  const [editingNoteRoom, setEditingNoteRoom] = useState(null);
-  const [noteContent, setNoteContent] = useState("");
-  const [editingStaffRoom, setEditingStaffRoom] = useState(null);
-  const [staffInput, setStaffInput] = useState("");
+  // 👥 Danh sách nhân viên buồng phòng
+  const cleanersList = [
+    {
+      id: "CL-1",
+      name: "Nguyễn Thị Lan",
+      area: "Tầng 1 - 2",
+      phone: "0912.345.671",
+    },
+    {
+      id: "CL-2",
+      name: "Trần Văn Nam",
+      area: "Tầng 3 - 4",
+      phone: "0912.345.672",
+    },
+    {
+      id: "CL-3",
+      name: "Lê Thị Hoa",
+      area: "Ca tối & Đột xuất",
+      phone: "0912.345.673",
+    },
+  ];
 
-  // 1. Đồng bộ danh sách cơ sở CHUẨN XÁC từ HotelManagementPage
+  // Modal cử nhân viên dọn phòng
+  const [assignModalTask, setAssignModalTask] = useState(null);
+  const [selectedCleanerName, setSelectedCleanerName] = useState("");
+
+  // Modal tạo yêu cầu dọn phòng mới
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newRoomNumber, setNewRoomNumber] = useState("");
+  const [newRoomType, setNewRoomType] = useState("Phòng Tiêu Chuẩn");
+  const [newNotes, setNewNotes] = useState("");
+  const [newPriority, setNewPriority] = useState("normal");
+  const [assignedCleanerOnCreate, setAssignedCleanerOnCreate] = useState("");
+
+  // 1. TẢI CƠ SỞ
   const loadScopedHotels = () => {
-    try {
-      const localApps = JSON.parse(
-        localStorage.getItem("pending_partner_applications") || "[]",
-      );
-      const approvedIds = JSON.parse(
-        localStorage.getItem("approved_hotel_ids") || "[]",
-      ).map(String);
-      const rejectedIds = JSON.parse(
-        localStorage.getItem("rejected_hotel_ids") || "[]",
-      ).map(String);
+    const localApps = JSON.parse(
+      localStorage.getItem("pending_partner_applications") || "[]",
+    );
+    const approvedIds = JSON.parse(
+      localStorage.getItem("approved_hotel_ids") || "[]",
+    ).map(String);
+    const rejectedIds = JSON.parse(
+      localStorage.getItem("rejected_hotel_ids") || "[]",
+    ).map(String);
 
-      // Lọc cơ sở của user và ĐÃ ĐƯỢC DUYỆT (hoặc admin)
-      const ownedApprovedHotels = localApps
-        .filter((h) => {
-          const hId = String(h.id || h.applicationId || "").trim();
-          const hEmail = String(h.emailContact || h.email || "")
-            .toLowerCase()
-            .trim();
-          const isMine = !userEmail || hEmail === userEmail || isAdmin;
-          const isApproved =
-            approvedIds.includes(hId) || h.status === "approved";
-          const isRejected =
-            rejectedIds.includes(hId) || h.status === "rejected";
+    let scopedList = [];
 
-          // Admin thấy tất cả đã duyệt, Owner thấy cơ sở của mình đã duyệt (hoặc chưa từ chối)
-          return isMine && (isApproved || isAdmin) && !isRejected;
-        })
-        .map((h, idx) => {
-          const id = String(h.id || h.applicationId || `HT-${idx + 1}`).trim();
-          return {
-            id,
-            name: h.name || h.hotelNameVi || "Cơ sở lưu trú",
-            city: h.province || h.city || "Việt Nam",
-            address: h.address || h.streetAddress || "",
-            image:
-              h.image ||
-              "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600",
-          };
-        });
+    const approvedHotels = localApps
+      .filter(
+        (h) =>
+          approvedIds.includes(String(h.id || h.applicationId)) &&
+          !rejectedIds.includes(String(h.id || h.applicationId)) &&
+          h.status === "approved",
+      )
+      .map((h) => ({
+        id: String(h.id || h.applicationId),
+        name: h.name || h.hotelNameVi || h.hotel_name || "Cơ sở lưu trú",
+        city: h.province || h.city || "Việt Nam",
+      }));
 
-      setMyHotels(ownedApprovedHotels);
+    if (isReceptionist) {
+      const assignedHotelId = String(user?.hotel_id || "");
+      const matched = approvedHotels.find((h) => h.id === assignedHotelId);
 
-      // Tự động chọn khách sạn đầu tiên nếu chưa chọn hoặc ID không hợp lệ
-      let activeId = searchParams.get("hotelId") || selectedHotelId;
-      const exists = ownedApprovedHotels.some(
-        (h) => String(h.id) === String(activeId),
-      );
-
-      if ((!activeId || !exists) && ownedApprovedHotels.length > 0) {
-        activeId = String(ownedApprovedHotels[0].id);
-        setSelectedHotelId(activeId);
-        setSearchParams({ hotelId: activeId });
-      } else if (exists) {
-        setSelectedHotelId(activeId);
+      if (matched) {
+        scopedList = [matched];
+      } else if (user?.hotel_name) {
+        scopedList = [
+          {
+            id: assignedHotelId || "HT-1",
+            name: user.hotel_name,
+            city: "Việt Nam",
+          },
+        ];
+      } else {
+        scopedList =
+          approvedHotels.length > 0
+            ? approvedHotels
+            : localApps.map((h) => ({
+                id: String(h.id || h.applicationId),
+                name: h.name || h.hotelNameVi || "Cơ sở lưu trú",
+                city: h.province || "Việt Nam",
+              }));
       }
-
-      return activeId;
-    } catch (err) {
-      console.error("Lỗi nạp cơ sở:", err);
-      setMyHotels([]);
-      return "";
-    }
-  };
-
-  // 2. Nạp danh sách phòng thật của cơ sở đang chọn
-  const loadRoomsForHotel = (hotelId) => {
-    setLoading(true);
-    try {
-      if (!hotelId) {
-        setRooms([]);
-        setLoading(false);
-        return;
-      }
-
-      const masterRooms = JSON.parse(
-        localStorage.getItem("pms_hotel_rooms_master") || "[]",
-      );
-      const savedHk = JSON.parse(
-        localStorage.getItem("pms_housekeeping_rooms") || "[]",
-      );
-
-      // Lọc phòng thuộc đúng khách sạn đã chọn
-      const matchedMaster = masterRooms.filter(
-        (mr) =>
-          String(mr.hotel_id || mr.hotelId).trim() === String(hotelId).trim(),
-      );
-
-      const combinedRooms = matchedMaster.map((mr) => {
-        const hkData = savedHk.find(
-          (h) =>
-            String(h.id) === String(mr.id) &&
-            String(h.hotel_id) === String(hotelId),
+    } else if (isAdmin) {
+      scopedList =
+        approvedHotels.length > 0
+          ? approvedHotels
+          : localApps.map((h) => ({
+              id: String(h.id || h.applicationId),
+              name: h.name || h.hotelNameVi || "Cơ sở lưu trú",
+              city: h.province || "Việt Nam",
+            }));
+    } else {
+      scopedList = approvedHotels.filter((h) => {
+        const app = localApps.find(
+          (a) => String(a.id || a.applicationId) === h.id,
         );
-
-        return {
-          id: mr.id,
-          hotel_id: String(mr.hotel_id || hotelId),
-          hotel_name: mr.hotel_name || "",
-          number: mr.room_number || mr.number || `P.${mr.id}`,
-          type: mr.category || mr.name || mr.room_type || "Phòng tiêu chuẩn",
-          floor: mr.floor
-            ? String(mr.floor).includes("Tầng")
-              ? mr.floor
-              : `Tầng ${mr.floor}`
-            : "Tầng 1",
-          status: hkData?.status || mr.room_status || mr.status || "clean",
-          housekeeper: hkData?.housekeeper || "Chưa phân công",
-          notes: hkData?.notes || mr.description || "",
-          lastCleaned:
-            hkData?.lastCleaned ||
-            new Date().toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-        };
+        const ownerMail = String(app?.emailContact || app?.email || "")
+          .toLowerCase()
+          .trim();
+        return ownerMail === userEmail;
       });
+    }
 
-      setRooms(combinedRooms);
-    } catch (err) {
-      console.error("Lỗi nạp danh sách phòng:", err);
-      setRooms([]);
-    } finally {
-      setLoading(false);
+    setMyHotels(scopedList);
+    if (scopedList.length > 0) {
+      setSelectedHotelId(String(scopedList[0].id));
+    }
+    return scopedList;
+  };
+
+  // 2. TẢI CÁC PHIẾU DỌN DẸP
+  const loadTasks = () => {
+    const hotelsList = loadScopedHotels();
+    const currentHotelName = hotelsList[0]?.name || user?.hotel_name || "KS2";
+
+    const savedTasks = JSON.parse(
+      localStorage.getItem("housekeeping_tasks") || "[]",
+    );
+
+    if (savedTasks.length === 0) {
+      const initial = [
+        {
+          id: "HK-101",
+          hotel_id: hotelsList[0]?.id || "1",
+          hotel_name: currentHotelName,
+          room_number: "P.101",
+          room_type: "Deluxe King Hướng Biển",
+          status: "dirty",
+          priority: "urgent",
+          assigned_to: "Chưa phân công",
+          created_at: "10:30 Hôm nay",
+          notes: "Khách vừa check-out, cần thay toàn bộ ga gối và khử khuẩn",
+        },
+        {
+          id: "HK-102",
+          hotel_id: hotelsList[0]?.id || "1",
+          hotel_name: currentHotelName,
+          room_number: "P.202",
+          room_type: "Phòng Suite Gia Đình",
+          status: "cleaning",
+          priority: "normal",
+          assigned_to: "Nguyễn Thị Lan",
+          created_at: "09:15 Hôm nay",
+          notes: "Đang hút bụi, bổ sung 2 chai nước và set trà",
+        },
+        {
+          id: "HK-103",
+          hotel_id: hotelsList[0]?.id || "1",
+          hotel_name: currentHotelName,
+          room_number: "P.301",
+          room_type: "Phòng Tiêu Chuẩn Giường Đôi",
+          status: "clean",
+          priority: "normal",
+          assigned_to: "Trần Văn Nam",
+          created_at: "08:00 Hôm nay",
+          notes: "Đã dọn sạch sẽ, thơm tho, sẵn sàng đón khách mới",
+        },
+      ];
+      localStorage.setItem("housekeeping_tasks", JSON.stringify(initial));
+      setTasks(initial);
+    } else {
+      setTasks(savedTasks);
     }
   };
 
-  // Chạy khi khởi động hoặc đổi user
   useEffect(() => {
-    const activeHotelId = loadScopedHotels();
-    loadRoomsForHotel(activeHotelId);
+    loadTasks();
   }, [user]);
 
-  // Khi đổi khách sạn trên selector
-  useEffect(() => {
-    if (selectedHotelId) {
-      loadRoomsForHotel(selectedHotelId);
-    }
-  }, [selectedHotelId]);
+  const selectedHotelObj =
+    myHotels.find((h) => String(h.id) === String(selectedHotelId)) ||
+    myHotels[0];
 
-  const selectedHotelObj = myHotels.find(
-    (h) => String(h.id) === String(selectedHotelId),
-  );
-
-  // 3. Cập nhật trạng thái dọn dẹp trực tiếp
-  const updateRoomStatus = (roomId, newStatus) => {
-    const updated = rooms.map((r) => {
-      if (r.id === roomId) {
-        return {
-          ...r,
-          status: newStatus,
-          lastCleaned:
-            newStatus === "clean"
-              ? new Date().toLocaleTimeString("vi-VN", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : r.lastCleaned,
-        };
-      }
-      return r;
-    });
-
-    setRooms(updated);
-
-    // Đồng bộ vào pms_housekeeping_rooms
-    const allHk = JSON.parse(
-      localStorage.getItem("pms_housekeeping_rooms") || "[]",
-    ).filter((h) => String(h.hotel_id) !== String(selectedHotelId));
-    localStorage.setItem(
-      "pms_housekeeping_rooms",
-      JSON.stringify([...allHk, ...updated]),
+  const updateTaskStatus = (taskId, newStatus) => {
+    const updated = tasks.map((t) =>
+      t.id === taskId ? { ...t, status: newStatus } : t,
     );
-
-    // Đồng bộ trạng thái sang pms_hotel_rooms_master để bên Quản lý phòng cũng thấy
-    const masterRooms = JSON.parse(
-      localStorage.getItem("pms_hotel_rooms_master") || "[]",
-    );
-    const updatedMaster = masterRooms.map((mr) =>
-      mr.id === roomId ? { ...mr, room_status: newStatus } : mr,
-    );
-    localStorage.setItem(
-      "pms_hotel_rooms_master",
-      JSON.stringify(updatedMaster),
-    );
+    setTasks(updated);
+    localStorage.setItem("housekeeping_tasks", JSON.stringify(updated));
   };
 
-  // 4. Lưu người phụ trách dọn phòng
-  const handleSaveHousekeeper = (roomId, staffName) => {
-    const name = staffName.trim() || "Chưa phân công";
-    const updated = rooms.map((r) =>
-      r.id === roomId ? { ...r, housekeeper: name } : r,
-    );
-    setRooms(updated);
+  // 🎯 CỬ NHÂN VIÊN ĐẾN DỌN PHÒNG
+  const handleAssignCleaner = () => {
+    if (!assignModalTask || !selectedCleanerName) return;
 
-    const allHk = JSON.parse(
-      localStorage.getItem("pms_housekeeping_rooms") || "[]",
-    ).filter((h) => String(h.hotel_id) !== String(selectedHotelId));
-    localStorage.setItem(
-      "pms_housekeeping_rooms",
-      JSON.stringify([...allHk, ...updated]),
+    const updated = tasks.map((t) =>
+      t.id === assignModalTask.id
+        ? {
+            ...t,
+            assigned_to: selectedCleanerName,
+            status: "cleaning",
+            assigned_time: new Date().toLocaleTimeString("vi-VN"),
+          }
+        : t,
     );
-    setEditingStaffRoom(null);
+    setTasks(updated);
+    localStorage.setItem("housekeeping_tasks", JSON.stringify(updated));
+    alert(
+      `✓ Đã gửi thông báo giao phòng ${assignModalTask.room_number} cho nhân viên [${selectedCleanerName}]!`,
+    );
+    setAssignModalTask(null);
+    setSelectedCleanerName("");
   };
 
-  // 5. Lưu ghi chú dọn phòng
-  const handleSaveNote = (e) => {
+  // TẠO PHIẾU YÊU CẦU MỚI
+  const handleCreateTask = (e) => {
     e.preventDefault();
-    if (!editingNoteRoom) return;
+    if (!newRoomNumber) return;
 
-    const updated = rooms.map((r) =>
-      r.id === editingNoteRoom.id ? { ...r, notes: noteContent } : r,
-    );
-    setRooms(updated);
+    const newTask = {
+      id: `HK-${Date.now().toString().slice(-4)}`,
+      hotel_id: String(selectedHotelObj?.id || user?.hotel_id || ""),
+      hotel_name: selectedHotelObj?.name || user?.hotel_name || "Cơ sở lưu trú",
+      room_number: newRoomNumber,
+      room_type: newRoomType,
+      status: assignedCleanerOnCreate ? "cleaning" : "dirty",
+      priority: newPriority,
+      assigned_to: assignedCleanerOnCreate || "Chưa phân công",
+      created_at: new Date().toLocaleTimeString("vi-VN"),
+      notes: newNotes || "Lễ tân yêu cầu dọn phòng",
+    };
 
-    const allHk = JSON.parse(
-      localStorage.getItem("pms_housekeeping_rooms") || "[]",
-    ).filter((h) => String(h.hotel_id) !== String(selectedHotelId));
-    localStorage.setItem(
-      "pms_housekeeping_rooms",
-      JSON.stringify([...allHk, ...updated]),
-    );
-
-    setEditingNoteRoom(null);
+    const updated = [newTask, ...tasks];
+    setTasks(updated);
+    localStorage.setItem("housekeeping_tasks", JSON.stringify(updated));
+    setIsModalOpen(false);
+    setNewRoomNumber("");
+    setNewNotes("");
+    setAssignedCleanerOnCreate("");
+    alert(`✓ Đã phát lệnh dọn phòng [${newRoomNumber}]!`);
   };
 
-  // Tầng thực tế của các phòng hiện có
-  const availableFloors = useMemo(() => {
-    const floors = new Set(rooms.map((r) => r.floor).filter(Boolean));
-    return Array.from(floors).sort();
-  }, [rooms]);
+  // LỌC DANH SÁCH
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (selectedHotelObj?.id) {
+        const matchId = String(t.hotel_id) === String(selectedHotelObj.id);
+        const matchName =
+          selectedHotelObj?.name &&
+          String(t.hotel_name || "")
+            .toLowerCase()
+            .trim() === String(selectedHotelObj.name).toLowerCase().trim();
+        if (!matchId && !matchName && myHotels.length > 1) return false;
+      }
 
-  // Bộ lọc
-  const scopedRooms = useMemo(() => {
-    return rooms.filter((r) => {
-      if (filterStatus !== "all" && r.status !== filterStatus) return false;
-      if (filterFloor !== "all" && r.floor !== filterFloor) return false;
+      if (filterStatus !== "all" && t.status !== filterStatus) return false;
+
+      // 🎯 LỌC THEO NHÂN VIÊN ĐƯỢC GIAO
+      if (filterCleaner !== "all" && t.assigned_to !== filterCleaner)
+        return false;
 
       if (search.trim()) {
-        const q = search.toLowerCase();
+        const q = search.toLowerCase().trim();
         return (
-          r.number.toLowerCase().includes(q) ||
-          r.type.toLowerCase().includes(q) ||
-          r.housekeeper.toLowerCase().includes(q)
+          t.room_number?.toLowerCase().includes(q) ||
+          t.room_type?.toLowerCase().includes(q) ||
+          t.assigned_to?.toLowerCase().includes(q) ||
+          t.notes?.toLowerCase().includes(q)
         );
       }
+
       return true;
     });
-  }, [rooms, filterStatus, filterFloor, search]);
-
-  const totalRoomsCount = scopedRooms.length;
-  const cleanCount = scopedRooms.filter((r) => r.status === "clean").length;
-  const dirtyCount = scopedRooms.filter((r) => r.status === "dirty").length;
-  const inProgressCount = scopedRooms.filter(
-    (r) => r.status === "in_progress",
-  ).length;
-  const maintenanceCount = scopedRooms.filter(
-    (r) => r.status === "maintenance",
-  ).length;
-  const completionRate =
-    totalRoomsCount > 0 ? Math.round((cleanCount / totalRoomsCount) * 100) : 0;
-
-  const statusConfig = {
-    clean: {
-      label: "Sạch sẽ",
-      color: "bg-emerald-50 text-emerald-700 border-emerald-300",
-      icon: CheckCircle2,
-    },
-    dirty: {
-      label: "Cần dọn",
-      color: "bg-rose-50 text-rose-700 border-rose-300",
-      icon: AlertTriangle,
-    },
-    in_progress: {
-      label: "Đang dọn",
-      color: "bg-amber-50 text-amber-800 border-amber-300",
-      icon: Clock,
-    },
-    maintenance: {
-      label: "Bảo trì",
-      color: "bg-slate-100 text-slate-700 border-slate-300",
-      icon: Brush,
-    },
-  };
+  }, [tasks, selectedHotelObj, filterStatus, filterCleaner, search, myHotels]);
 
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* Header */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
+      {/* ── HEADER ── */}
+      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
-            <Sparkles size={16} /> Quản Trị Buồng Phòng Theo Từng Cơ Sở
+            <Sparkles size={16} /> Điều Phối & Phân Việc Buồng Phòng
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            Theo Dõi Vệ Sinh Buồng Phòng
+            Nhiệm Vụ Dọn Phòng Của Nhân Viên
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Đang giám sát buồng phòng tại:{" "}
-            <strong className="text-blue-900 font-black">
-              {selectedHotelObj?.name || "Chưa chọn cơ sở"}
+            Cơ sở:{" "}
+            <strong className="text-blue-900 font-bold">
+              {selectedHotelObj?.name || user?.hotel_name}
             </strong>
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-          {myHotels.length > 0 && (
-            <PropertySearchSelector
-              hotels={myHotels}
-              selectedHotelId={selectedHotelId}
-              onSelectHotel={(id) => {
-                setSelectedHotelId(id);
-                setSearchParams({ hotelId: id });
-              }}
-              showAllOption={false}
-              placeholder="Chọn cơ sở để quản lý..."
-            />
-          )}
+        <div className="flex flex-wrap gap-2.5 items-center">
+          {/* Nút In danh sách giao việc cầm tay */}
+          <button
+            onClick={() => window.print()}
+            className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl transition flex items-center gap-1.5 cursor-pointer"
+            title="In bảng phân công việc"
+          >
+            <Printer size={15} /> In Phiếu Phân Việc
+          </button>
 
           <button
-            onClick={() => {
-              const id = loadScopedHotels();
-              loadRoomsForHotel(id);
-            }}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer flex items-center justify-center shrink-0"
-            title="Làm mới"
+            onClick={() => setIsModalOpen(true)}
+            className="px-5 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-2xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
           >
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            <Plus size={16} /> + Phát Lệnh Dọn Phòng
+          </button>
+
+          <button
+            onClick={loadTasks}
+            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer"
+            title="Tải lại dữ liệu"
+          >
+            <RefreshCw size={16} />
           </button>
         </div>
       </div>
 
-      {/* Trường hợp chưa có cơ sở nào được duyệt */}
-      {myHotels.length === 0 ? (
-        <EmptyState
-          icon={AlertCircle}
-          title="Chưa có cơ sở nào đang mở bán"
-          description="Cơ sở của bạn cần ở trạng thái 'Đang Mở Bán' (Admin đã duyệt) để bắt đầu điều phối buồng phòng."
-          actionLabel="Xem Danh Sách Chỗ Nghỉ"
-          onAction={() => navigate("/owner/hotels")}
-        />
-      ) : (
-        <>
-          {/* Dashboard chỉ số */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-              <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200">
-                <span className="text-[10px] font-bold text-emerald-800 uppercase block">
-                  SẠCH SẴN SÀNG
-                </span>
-                <h3 className="text-2xl font-black text-emerald-900 mt-1">
-                  {cleanCount} / {totalRoomsCount}
-                </h3>
-                <span className="text-[10px] text-emerald-700">
-                  Phòng đón khách
-                </span>
-              </div>
-
-              <div className="p-3.5 bg-rose-50 rounded-2xl border border-rose-200">
-                <span className="text-[10px] font-bold text-rose-800 uppercase block">
-                  CẦN DỌN DẸP
-                </span>
-                <h3 className="text-2xl font-black text-rose-900 mt-1">
-                  {dirtyCount}
-                </h3>
-                <span className="text-[10px] text-rose-700">Chờ vệ sinh</span>
-              </div>
-
-              <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200">
-                <span className="text-[10px] font-bold text-amber-800 uppercase block">
-                  ĐANG VỆ SINH
-                </span>
-                <h3 className="text-2xl font-black text-amber-900 mt-1">
-                  {inProgressCount}
-                </h3>
-                <span className="text-[10px] text-amber-700">
-                  Đang thực hiện
-                </span>
-              </div>
-
-              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-600 uppercase block">
-                  ĐANG BẢO TRÌ
-                </span>
-                <h3 className="text-2xl font-black text-slate-800 mt-1">
-                  {maintenanceCount}
-                </h3>
-                <span className="text-[10px] text-slate-500">
-                  Đang sửa chữa
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5 pt-1 border-t border-slate-100">
-              <div className="flex justify-between items-center text-xs font-bold">
-                <span className="text-slate-700">
-                  Tiến độ buồng phòng sạch:
-                </span>
-                <span className="text-emerald-700 font-black text-sm">
-                  {completionRate}%
-                </span>
-              </div>
-              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${completionRate}%` }}
-                />
-              </div>
-            </div>
+      {/* ── THANH CHỌN XEM VIỆC CỦA TỪNG NHÂN VIÊN (GIÚP NHÂN VIÊN BIẾT MÌNH ĐƯỢC GIAO PHÒNG NÀO) ── */}
+      <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-5 rounded-3xl shadow-md space-y-3">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Smartphone size={20} className="text-amber-400" />
+            <h3 className="text-sm font-black tracking-tight">
+              Giao Diện Tra Cứu Việc Của Từng Nhân Viên Buồng Phòng
+            </h3>
           </div>
+          <span className="text-[11px] text-blue-200">
+            (Nhân viên mở máy chỉ cần bấm vào tên mình để xem việc)
+          </span>
+        </div>
 
-          {/* Thanh lọc */}
-          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-2xs flex flex-col md:flex-row gap-3 items-center justify-between">
-            <div className="flex gap-2 overflow-x-auto w-full md:w-auto pb-1 no-scrollbar">
-              {[
-                { id: "all", label: "Tất cả" },
-                { id: "clean", label: "🟢 Sạch" },
-                { id: "dirty", label: "🔴 Cần Dọn" },
-                { id: "in_progress", label: "🟡 Đang Dọn" },
-                { id: "maintenance", label: "⚪ Bảo Trì" },
-              ].map((st) => (
-                <button
-                  key={st.id}
-                  onClick={() => setFilterStatus(st.id)}
-                  className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap cursor-pointer transition ${
-                    filterStatus === st.id
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  {st.label}
-                </button>
-              ))}
-            </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          <button
+            onClick={() => setFilterCleaner("all")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              filterCleaner === "all"
+                ? "bg-amber-400 text-slate-950 font-black shadow-sm"
+                : "bg-white/10 text-white hover:bg-white/20"
+            }`}
+          >
+            👥 Tất cả nhân viên
+          </button>
 
-            <div className="flex gap-2 w-full md:w-auto">
-              <select
-                value={filterFloor}
-                onChange={(e) => setFilterFloor(e.target.value)}
-                className="px-3 py-2 text-xs font-bold bg-slate-50 border rounded-xl outline-none cursor-pointer"
+          {cleanersList.map((cleaner) => {
+            const cleanerTasksCount = tasks.filter(
+              (t) => t.assigned_to === cleaner.name && t.status !== "clean",
+            ).length;
+
+            return (
+              <button
+                key={cleaner.id}
+                onClick={() => setFilterCleaner(cleaner.name)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                  filterCleaner === cleaner.name
+                    ? "bg-amber-400 text-slate-950 font-black shadow-md"
+                    : "bg-white/10 text-white hover:bg-white/20"
+                }`}
               >
-                <option value="all">Tất cả tầng</option>
-                {availableFloors.map((fl) => (
-                  <option key={fl} value={fl}>
-                    {fl}
-                  </option>
-                ))}
-              </select>
+                <span>
+                  👤 {cleaner.name} ({cleaner.area})
+                </span>
+                {cleanerTasksCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                    {cleanerTasksCount} phòng
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-              <div className="relative flex-1 md:w-64">
-                <Search
-                  size={16}
-                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="text"
-                  placeholder="Tìm phòng, nhân viên..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-600"
-                />
-              </div>
-            </div>
+      {/* ── BỘ LỌC TRẠNG THÁI & TÌM KIẾM ── */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row justify-between gap-3 items-center">
+        <div className="flex gap-2 overflow-x-auto w-full sm:w-auto pb-1 no-scrollbar">
+          <button
+            onClick={() => setFilterStatus("all")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition cursor-pointer ${
+              filterStatus === "all"
+                ? "bg-slate-900 text-white"
+                : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            Tất cả ({tasks.length})
+          </button>
+          <button
+            onClick={() => setFilterStatus("dirty")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              filterStatus === "dirty"
+                ? "bg-rose-600 text-white"
+                : "bg-rose-50 text-rose-700"
+            }`}
+          >
+            <span>🧹 Cần dọn</span>
+          </button>
+          <button
+            onClick={() => setFilterStatus("cleaning")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              filterStatus === "cleaning"
+                ? "bg-amber-500 text-slate-950"
+                : "bg-amber-50 text-amber-800"
+            }`}
+          >
+            <span>⏳ Đang dọn dẹp</span>
+          </button>
+          <button
+            onClick={() => setFilterStatus("clean")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              filterStatus === "clean"
+                ? "bg-emerald-600 text-white"
+                : "bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            <span>✨ Phòng đã sạch</span>
+          </button>
+        </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search
+            size={15}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <input
+            type="text"
+            placeholder="Tìm số phòng, tên nhân viên..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-slate-50 border rounded-xl text-xs outline-none focus:border-blue-600"
+          />
+        </div>
+      </div>
+
+      {/* ── THÔNG BÁO NẾU ĐANG LỌC RIÊNG CỦA MỘT NHÂN VIÊN ── */}
+      {filterCleaner !== "all" && (
+        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-950 flex justify-between items-center text-xs">
+          <div>
+            Đang hiển thị danh sách phòng được giao cho: <b>{filterCleaner}</b>
           </div>
-
-          {/* Danh sách phòng */}
-          {loading ? (
-            <div className="py-24 flex justify-center bg-white rounded-3xl border">
-              <LoadingSpinner
-                size="lg"
-                label="Đang nạp danh sách buồng phòng..."
-              />
-            </div>
-          ) : scopedRooms.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {scopedRooms.map((room) => {
-                const cfg = statusConfig[room.status] || statusConfig.clean;
-                const Icon = cfg.icon;
-
-                return (
-                  <div
-                    key={room.id}
-                    className="bg-white rounded-3xl border border-slate-200 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
-                  >
-                    <div>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="text-xl font-black text-slate-900">
-                            {room.number}
-                          </h3>
-                          <p className="text-xs text-slate-500 font-medium">
-                            {room.type} • {room.floor}
-                          </p>
-                        </div>
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-full border ${cfg.color}`}
-                        >
-                          <Icon
-                            size={13}
-                            className={
-                              room.status === "in_progress"
-                                ? "animate-spin"
-                                : ""
-                            }
-                          />
-                          {cfg.label}
-                        </span>
-                      </div>
-
-                      <div className="mt-3.5 p-3 bg-slate-50 rounded-2xl border text-xs space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-slate-500">Phụ trách:</span>
-                          <button
-                            onClick={() => {
-                              setEditingStaffRoom(room);
-                              setStaffInput(
-                                room.housekeeper === "Chưa phân công"
-                                  ? ""
-                                  : room.housekeeper,
-                              );
-                            }}
-                            className="font-bold text-blue-900 hover:underline bg-white px-2 py-1 rounded-lg border border-slate-200 text-[11px] cursor-pointer"
-                          >
-                            👤 {room.housekeeper}
-                          </button>
-                        </div>
-
-                        <p className="flex justify-between text-slate-500">
-                          <span>Dọn lần cuối:</span>
-                          <span className="font-mono text-slate-700 font-semibold">
-                            {room.lastCleaned}
-                          </span>
-                        </p>
-
-                        <div className="pt-2 border-t border-slate-200">
-                          <div className="flex justify-between items-center mb-0.5">
-                            <span className="text-slate-400 font-bold text-[10px] uppercase">
-                              Ghi chú buồng phòng:
-                            </span>
-                            <button
-                              onClick={() => {
-                                setEditingNoteRoom(room);
-                                setNoteContent(room.notes || "");
-                              }}
-                              className="text-[10px] text-blue-600 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
-                            >
-                              <FileEdit size={11} /> Sửa
-                            </button>
-                          </div>
-                          <p className="text-slate-700 italic text-[11px] leading-relaxed line-clamp-2">
-                            {room.notes || "Không có ghi chú"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-100 flex gap-2">
-                      <button
-                        onClick={() => updateRoomStatus(room.id, "clean")}
-                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition cursor-pointer"
-                      >
-                        Sạch
-                      </button>
-                      <button
-                        onClick={() => updateRoomStatus(room.id, "dirty")}
-                        className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition cursor-pointer"
-                      >
-                        Cần dọn
-                      </button>
-                      <button
-                        onClick={() => updateRoomStatus(room.id, "in_progress")}
-                        className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl transition cursor-pointer"
-                      >
-                        Đang dọn
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState
-              icon={BedDouble}
-              title={`Cơ sở "${selectedHotelObj?.name}" chưa có phòng nào`}
-              description="Hãy vào mục 'Quản lý phòng' để tạo danh sách phòng cho cơ sở này trước khi giám sát buồng phòng."
-              actionLabel="+ Đi đến Quản Lý Phòng"
-              onAction={() =>
-                navigate(`/owner/rooms?hotelId=${selectedHotelId}`)
-              }
-            />
-          )}
-        </>
+          <button
+            onClick={() => setFilterCleaner("all")}
+            className="font-bold underline text-blue-900 cursor-pointer"
+          >
+            Xem tất cả
+          </button>
+        </div>
       )}
 
-      {/* Modal đổi nhân viên phụ trách */}
-      {editingStaffRoom && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-black text-base text-slate-900">
-                Phân Công Nhân Viên - {editingStaffRoom.number}
+      {/* ── DANH SÁCH CÁC THẺ PHÒNG ── */}
+      {filteredTasks.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredTasks.map((task) => (
+            <div
+              key={task.id}
+              className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3 relative hover:shadow-md transition"
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-2xl font-black text-slate-900 block">
+                    {task.room_number}
+                  </span>
+                  <span className="text-xs text-slate-500 font-semibold">
+                    {task.room_type}
+                  </span>
+                </div>
+                <span
+                  className={`px-3 py-1 rounded-full text-[11px] font-black uppercase ${
+                    task.status === "dirty"
+                      ? "bg-rose-50 text-rose-700 border border-rose-200"
+                      : task.status === "cleaning"
+                        ? "bg-amber-50 text-amber-800 border border-amber-300"
+                        : "bg-emerald-50 text-emerald-700 border border-emerald-300"
+                  }`}
+                >
+                  {task.status === "dirty"
+                    ? "Chưa Dọn"
+                    : task.status === "cleaning"
+                      ? "Đang Dọn"
+                      : "Phòng Sạch"}
+                </span>
+              </div>
+
+              {/* NHÂN VIÊN ĐƯỢC CỬ PHỤ TRÁCH */}
+              <div className="p-3 bg-blue-50/70 rounded-2xl border border-blue-100 space-y-1 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">
+                    Nhân viên được giao:
+                  </span>
+                  <strong
+                    className={
+                      task.assigned_to === "Chưa phân công"
+                        ? "text-rose-600 font-bold"
+                        : "text-blue-900 font-black"
+                    }
+                  >
+                    {task.assigned_to}
+                  </strong>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <b>Ghi chú:</b> {task.notes}
+              </p>
+
+              {/* CÁC THAO TÁC THỰC THI */}
+              <div className="pt-2 border-t flex flex-col gap-2">
+                {task.status === "dirty" && (
+                  <button
+                    onClick={() => {
+                      setAssignModalTask(task);
+                      setSelectedCleanerName(cleanersList[0]?.name || "");
+                    }}
+                    className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <UserCheck size={15} /> Cử nhân viên dọn phòng
+                  </button>
+                )}
+
+                {task.status === "cleaning" && (
+                  <button
+                    onClick={() => updateTaskStatus(task.id, "clean")}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <Check size={15} /> Xác nhận đã dọn sạch
+                  </button>
+                )}
+
+                {task.status === "clean" && (
+                  <button
+                    onClick={() => updateTaskStatus(task.id, "dirty")}
+                    className="w-full py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    Đánh dấu bẩn lại
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white p-12 text-center rounded-3xl border border-slate-200 space-y-3">
+          <Sparkles size={40} className="mx-auto text-slate-300" />
+          <p className="text-base font-bold text-slate-700">
+            {filterCleaner !== "all"
+              ? `Nhân viên ${filterCleaner} hiện không có phòng nào cần dọn!`
+              : "Tất cả các phòng đều đã sạch sẽ sẵn sàng đón khách!"}
+          </p>
+        </div>
+      )}
+
+      {/* ── MODAL: CỬ NHÂN VIÊN RA DỌN PHÒNG ── */}
+      {assignModalTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
+                <UserCheck size={18} className="text-blue-600" /> Điều Phối Nhân
+                Viên Dọn Phòng
               </h3>
               <button
-                onClick={() => setEditingStaffRoom(null)}
-                className="cursor-pointer text-slate-400 hover:text-slate-700"
+                onClick={() => setAssignModalTask(null)}
+                className="cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-700">
-                Tên nhân viên dọn dẹp:
+
+            <p className="text-slate-600">
+              Phòng cần dọn:{" "}
+              <b className="text-blue-900 text-sm">
+                {assignModalTask.room_number}
+              </b>{" "}
+              ({assignModalTask.room_type})
+            </p>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1.5">
+                Chọn nhân viên trực tiếp làm nhiệm vụ:
               </label>
-              <input
-                type="text"
-                value={staffInput}
-                onChange={(e) => setStaffInput(e.target.value)}
-                placeholder="VD: Nguyễn Văn A, Tổ dọn 1..."
-                className="w-full p-2.5 border rounded-xl text-xs outline-none focus:border-blue-600"
-                autoFocus
-              />
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingStaffRoom(null)}
-                  className="px-4 py-2 border rounded-xl text-xs font-bold"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSaveHousekeeper(editingStaffRoom.id, staffInput)
-                  }
-                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold"
-                >
-                  Lưu
-                </button>
-              </div>
+              <select
+                value={selectedCleanerName}
+                onChange={(e) => setSelectedCleanerName(e.target.value)}
+                className="w-full p-3 bg-slate-50 border rounded-xl font-bold text-slate-800 outline-none cursor-pointer"
+              >
+                {cleanersList.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    👤 {c.name} ({c.area} - {c.phone})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900">
+              💡 Sau khi bấm <b>Giao Việc Ngay</b>, nhân viên sẽ thấy phòng này
+              xuất hiện trong mục việc cá nhân của họ để đến làm.
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setAssignModalTask(null)}
+                className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleAssignCleaner}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Send size={14} /> Giao Việc Ngay
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal ghi chú */}
-      {editingNoteRoom && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
-                <FileEdit size={16} className="text-blue-600" /> Ghi Chú Buồng
-                Phòng - {editingNoteRoom.number}
-              </h3>
-              <button
-                onClick={() => setEditingNoteRoom(null)}
-                className="cursor-pointer text-slate-400 hover:text-slate-700"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveNote} className="space-y-3.5 text-xs">
+      {/* ── MODAL: TẠO LỆNH DỌN PHÒNG MỚI ── */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
+            <h3 className="font-black text-base text-slate-900">
+              Phát Lệnh Dọn Phòng Mới
+            </h3>
+            <form onSubmit={handleCreateTask} className="space-y-3">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  Nội dung ghi chú cho nhân viên dọn:
+                  Số phòng *
+                </label>
+                <input
+                  required
+                  placeholder="VD: P.102, P.305"
+                  value={newRoomNumber}
+                  onChange={(e) => setNewRoomNumber(e.target.value)}
+                  className="w-full p-2.5 border rounded-xl font-bold text-blue-900"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Cử sẵn nhân viên (Tùy chọn)
+                </label>
+                <select
+                  value={assignedCleanerOnCreate}
+                  onChange={(e) => setAssignedCleanerOnCreate(e.target.value)}
+                  className="w-full p-2.5 border rounded-xl font-medium cursor-pointer"
+                >
+                  <option value="">Chưa phân công (Cử người sau)</option>
+                  {cleanersList.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      👤 {c.name} ({c.area})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Ghi chú công việc
                 </label>
                 <textarea
                   rows={3}
-                  required
-                  value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
-                  placeholder="VD: Khách check-in sớm lúc 12:00, bổ sung 2 gối thêm..."
-                  className="w-full p-2.5 border rounded-2xl outline-none focus:border-blue-600"
+                  placeholder="Khách yêu cầu bổ sung 2 khăn tắm và dọn phòng khách..."
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  className="w-full p-2.5 border rounded-xl font-medium"
                 />
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <button
                   type="button"
-                  onClick={() => setEditingNoteRoom(null)}
+                  onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold cursor-pointer"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer"
                 >
-                  Lưu Ghi Chú
+                  Phát Lệnh Dọn
                 </button>
               </div>
             </form>

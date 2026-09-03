@@ -1,9 +1,10 @@
+// src/components/auth/LoginForm.jsx (hoặc LoginForm.jsx của bạn)
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGoogleLogin } from "@react-oauth/google";
 import { useAuthStore } from "@/stores/authStore";
 import { authService } from "@/services/authService";
-import { Button, Input } from "../ui"; // 👈 Sử dụng bộ UI đã tạo
+import { Button, Input } from "../ui";
 import { ArrowLeft } from "lucide-react";
 
 const LoginForm = () => {
@@ -11,12 +12,12 @@ const LoginForm = () => {
   const [password, setPassword] = useState("");
   const [step, setStep] = useState("EMAIL");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(""); // 👈 Quản lý lỗi trực quan
+  const [error, setError] = useState("");
 
   const navigate = useNavigate();
   const loginStore = useAuthStore((state) => state.login);
 
-  // --- ĐIỀU HƯỚNG THEO ROLE (Dùng navigate thay vì window.location) ---
+  // --- 🎯 ĐIỀU HƯỚNG CHÍNH XÁC THEO ROLE (ĐÃ BỔ SUNG LỄ TÂN) ---
   const redirectByUserRole = (user) => {
     const rawRole =
       user?.role ||
@@ -24,22 +25,43 @@ const LoginForm = () => {
       (Array.isArray(user?.roles) ? user.roles[0] : "");
     const role = String(rawRole).toLowerCase();
 
+    // 1. Kiểm tra Lễ tân: vào thẳng Kênh Đặt phòng
+    const staffEmails = JSON.parse(
+      localStorage.getItem("staff_emails") || "[]",
+    ).map((e) => String(e).toLowerCase().trim());
+
+    const isStaff =
+      role === "staff" ||
+      role === "receptionist" ||
+      (user?.email && staffEmails.includes(user.email.toLowerCase().trim()));
+
+    if (isStaff) {
+      navigate("/owner/bookings");
+      return;
+    }
+
+    // 2. Admin
     if (role.includes("admin")) {
       navigate("/admin/dashboard");
-    } else if (role.includes("owner") || role.includes("hotel_owner")) {
-      navigate("/owner/dashboard");
-    } else {
-      navigate("/");
+      return;
     }
+
+    // 3. Chủ nhà (Owner)
+    if (role.includes("owner") || role.includes("hotel_owner")) {
+      navigate("/owner/dashboard");
+      return;
+    }
+
+    // 4. Khách hàng thông thường
+    navigate("/");
   };
 
-  // --- ĐĂNG NHẬP GOOGLE ---
+  // --- 🌐 ĐĂNG NHẬP GOOGLE ---
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
       setError("");
       try {
-        // 1. Lấy thông tin Google thật
         const googleUserRes = await fetch(
           "https://www.googleapis.com/oauth2/v3/userinfo",
           {
@@ -48,7 +70,6 @@ const LoginForm = () => {
         );
         const googleUserInfo = await googleUserRes.json();
 
-        // 2. Gọi API Backend
         const response = await authService.googleLogin(
           tokenResponse.access_token,
         );
@@ -65,9 +86,8 @@ const LoginForm = () => {
           picture: googleUserInfo.picture,
         };
 
-        loginStore(finalUser, systemToken);
+        if (loginStore) loginStore(finalUser, systemToken);
 
-        // Cập nhật ảnh đại diện lên server nếu cần
         if (googleUserInfo.picture && authService.updateProfile) {
           authService
             .updateProfile({ avatar: googleUserInfo.picture })
@@ -84,7 +104,7 @@ const LoginForm = () => {
     onError: () => setError("Xác thực Google bị hủy bỏ"),
   });
 
-  // --- ĐĂNG NHẬP EMAIL ---
+  // --- 🔑 ĐĂNG NHẬP EMAIL & MẬT KHẨU ---
   const handleEmailNext = (e) => {
     e.preventDefault();
     if (!email) return;
@@ -96,15 +116,110 @@ const LoginForm = () => {
     e.preventDefault();
     setLoading(true);
     setError("");
+
+    const cleanEmail = email.toLowerCase().trim();
+
     try {
-      const response = await authService.login(email, password);
-      const user = response?.user || response?.data?.user || response?.data;
-      const systemToken =
-        response?.systemToken || response?.token || response?.data?.token;
+      // ─── 1. KIỂM TRA TÀI KHOẢN LỄ TÂN ĐƯỢC CHỦ NHÀ CẤP TẠI QUẦY ───
+      const pmsUsers = JSON.parse(
+        localStorage.getItem("pms_users_master") || "[]",
+      );
+      const regUsers = JSON.parse(
+        localStorage.getItem("registered_users") || "[]",
+      );
+      const staffEmails = JSON.parse(
+        localStorage.getItem("staff_emails") || "[]",
+      ).map((e) => String(e).toLowerCase().trim());
 
-      if (!user) throw new Error("Sai tài khoản hoặc mật khẩu");
+      const allUsers = [...pmsUsers, ...regUsers];
+      const matchedStaff = allUsers.find(
+        (u) => u.email?.toLowerCase().trim() === cleanEmail,
+      );
 
-      loginStore(user, systemToken);
+      const isStaffAccount =
+        matchedStaff?.role === "receptionist" ||
+        matchedStaff?.role === "staff" ||
+        staffEmails.includes(cleanEmail);
+
+      if (matchedStaff && isStaffAccount) {
+        // Kiểm tra xem có bị tạm khóa ca trực không
+        if (matchedStaff.active === false) {
+          throw new Error(
+            "Tài khoản lễ tân đã bị Chủ khách sạn tạm khóa quyền truy cập!",
+          );
+        }
+
+        // Kiểm tra mật khẩu do Chủ nhà tạo
+        if (matchedStaff.password && matchedStaff.password !== password) {
+          throw new Error("Mật khẩu tài khoản lễ tân không chính xác!");
+        }
+
+        // Tạo object đăng nhập hoàn chỉnh cho Lễ tân
+        const nowTime =
+          new Date().toLocaleTimeString("vi-VN") +
+          " " +
+          new Date().toLocaleDateString("vi-VN");
+
+        const staffUserObj = {
+          ...matchedStaff,
+          role: "receptionist",
+          role_name: "receptionist",
+          last_login: nowTime,
+        };
+
+        const staffToken = "receptionist-session-token-" + Date.now();
+
+        // Lưu thông tin đăng nhập vào Store & LocalStorage
+        if (loginStore) loginStore(staffUserObj, staffToken);
+        localStorage.setItem("user", JSON.stringify(staffUserObj));
+        localStorage.setItem("token", staffToken);
+
+        // Cập nhật lại thời gian vào ca trong danh sách nhân sự
+        const updatedPms = pmsUsers.map((u) =>
+          u.email?.toLowerCase().trim() === cleanEmail
+            ? { ...u, last_login: nowTime }
+            : u,
+        );
+        localStorage.setItem("pms_users_master", JSON.stringify(updatedPms));
+
+        // Điều hướng thẳng vào Kênh lễ tân
+        redirectByUserRole(staffUserObj);
+        return;
+      }
+
+      // ─── 2. ĐĂNG NHẬP API BACKEND (DÀNH CHO KHÁCH & CHỦ NHÀ / ADMIN) ───
+      let user = null;
+      let systemToken = null;
+
+      try {
+        const response = await authService.login(cleanEmail, password);
+        user = response?.user || response?.data?.user || response?.data;
+        systemToken =
+          response?.systemToken || response?.token || response?.data?.token;
+      } catch (apiErr) {
+        // Fallback: nếu Backend chưa chạy hoặc tài khoản mock local
+        const localMatched = allUsers.find(
+          (u) => u.email?.toLowerCase().trim() === cleanEmail,
+        );
+        if (localMatched) {
+          if (localMatched.password && localMatched.password !== password) {
+            throw new Error("Mật khẩu không chính xác!");
+          }
+          user = localMatched;
+          systemToken = "local-session-token-" + Date.now();
+        } else {
+          throw new Error(
+            apiErr.message || "Tài khoản hoặc mật khẩu không chính xác",
+          );
+        }
+      }
+
+      if (!user) throw new Error("Tài khoản hoặc mật khẩu không chính xác");
+
+      if (loginStore) loginStore(user, systemToken);
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("token", systemToken);
+
       redirectByUserRole(user);
     } catch (err) {
       setError(err.message || "Tài khoản hoặc mật khẩu không chính xác");
@@ -114,7 +229,7 @@ const LoginForm = () => {
   };
 
   return (
-    <div className="w-full max-w-sm mx-auto py-12 px-4">
+    <div className="w-full max-w-sm mx-auto py-12 px-4 font-sans">
       {/* Nút quay lại khi ở bước nhập mật khẩu */}
       {step === "PASSWORD" && (
         <button
@@ -125,16 +240,16 @@ const LoginForm = () => {
         </button>
       )}
 
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">
+      <h1 className="text-2xl font-black text-gray-900 mb-2 tracking-tight">
         {step === "EMAIL" ? "Đăng nhập hoặc tạo tài khoản" : "Nhập mật khẩu"}
       </h1>
-      <p className="text-sm text-gray-600 mb-8 leading-relaxed">
+      <p className="text-sm text-gray-600 mb-8 leading-relaxed font-medium">
         Sử dụng tài khoản GoStay của bạn để trải nghiệm các dịch vụ tốt nhất.
       </p>
 
       {/* Hiển thị lỗi nếu có */}
       {error && (
-        <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg font-medium animate-in fade-in slide-in-from-top-1">
+        <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl font-bold animate-in fade-in slide-in-from-top-1">
           ⚠️ {error}
         </div>
       )}
@@ -150,18 +265,22 @@ const LoginForm = () => {
             placeholder="Nhập địa chỉ email của bạn"
             clearable
           />
-          <Button type="submit" className="w-full" isLoading={loading}>
+          <Button
+            type="submit"
+            className="w-full font-bold"
+            isLoading={loading}
+          >
             Tiếp tục với email
           </Button>
         </form>
       ) : (
         <form onSubmit={handleFinalSubmit} className="space-y-6">
-          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 flex justify-between items-center">
-            <span className="text-sm font-medium text-gray-600">{email}</span>
+          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex justify-between items-center">
+            <span className="text-sm font-bold text-gray-700">{email}</span>
             <button
               type="button"
               onClick={() => setStep("EMAIL")}
-              className="text-xs text-blue-600 font-bold hover:underline"
+              className="text-xs text-blue-600 font-bold hover:underline cursor-pointer"
             >
               Sửa
             </button>
@@ -174,7 +293,11 @@ const LoginForm = () => {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Nhập mật khẩu"
           />
-          <Button type="submit" className="w-full" isLoading={loading}>
+          <Button
+            type="submit"
+            className="w-full font-bold"
+            isLoading={loading}
+          >
             Đăng nhập
           </Button>
         </form>
@@ -195,7 +318,7 @@ const LoginForm = () => {
         type="button"
         onClick={() => handleGoogleLogin()}
         disabled={loading}
-        className="w-full h-12 border border-gray-300 rounded-xl flex items-center justify-center hover:bg-gray-50 transition-all gap-3 shadow-sm active:scale-[0.98] cursor-pointer group"
+        className="w-full h-12 border border-gray-300 rounded-xl flex items-center justify-center hover:bg-gray-50 transition-all gap-3 shadow-xs active:scale-[0.98] cursor-pointer group"
       >
         <svg
           className="w-5 h-5 transition-transform group-hover:scale-110"

@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   X,
   RefreshCw,
+  Copy,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import { useAuthStore } from "@/stores/authStore";
@@ -31,6 +32,7 @@ export default function StaffManagementPage() {
 
   // Modal tạo tài khoản lễ tân
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createdStaffInfo, setCreatedStaffInfo] = useState(null); // Modal hiện thông tin vừa tạo để copy
   const [createForm, setCreateForm] = useState({
     full_name: "",
     email: "",
@@ -84,7 +86,7 @@ export default function StaffManagementPage() {
     loadData();
   }, [user]);
 
-  // ➕ 2. CHỦ NHÀ CẤP TÀI KHOẢN LỄ TÂN MỚI
+  // ➕ 2. CHỦ NHÀ CẤP TÀI KHOẢN LỄ TÂN MỚI (LƯU VÀO CẢ HỆ THỐNG AUTH ĐĂNG NHẬP)
   const handleCreateStaff = (e) => {
     e.preventDefault();
     const cleanEmail = createForm.email.toLowerCase().trim();
@@ -96,18 +98,22 @@ export default function StaffManagementPage() {
     const newStaffUser = {
       id: `STAFF-${Date.now().toString().slice(-4)}`,
       full_name: createForm.full_name,
+      name: createForm.full_name,
       email: cleanEmail,
       phone: createForm.phone,
-      role: "receptionist", // 👈 Tự động gắn quyền Lễ tân
-      hotel_id: createForm.hotel_id,
-      hotel_name: selectedHotelObj?.name || createForm.hotel_name,
+      password: createForm.password, // Mật khẩu để Lễ tân đăng nhập
+      role: "receptionist",
+      role_name: "receptionist",
+      hotel_id: String(createForm.hotel_id),
+      hotel_name:
+        selectedHotelObj?.name || createForm.hotel_name || "Cơ sở lưu trú",
       active: true,
       created_by: userEmail,
       created_at: new Date().toISOString().split("T")[0],
       last_login: "Chưa vào ca",
     };
 
-    // 1. Lưu vào danh sách tài khoản toàn hệ thống
+    // 1. Lưu vào danh sách quản lý nhân sự PMS
     const allUsers = JSON.parse(
       localStorage.getItem("pms_users_master") || "[]",
     );
@@ -117,23 +123,39 @@ export default function StaffManagementPage() {
     ];
     localStorage.setItem("pms_users_master", JSON.stringify(updatedUsers));
 
-    // 2. Thêm email vào danh sách lễ tân được phép truy cập
+    // 2. 🎯 ĐỒNG BỘ VÀO HỆ THỐNG AUTH ĐỂ TRANG LOGIN ĐĂNG NHẬP ĐƯỢC
+    const registeredUsers = JSON.parse(
+      localStorage.getItem("registered_users") || "[]",
+    );
+    const updatedRegUsers = [
+      newStaffUser,
+      ...registeredUsers.filter(
+        (u) => u.email?.toLowerCase().trim() !== cleanEmail,
+      ),
+    ];
+    localStorage.setItem("registered_users", JSON.stringify(updatedRegUsers));
+
+    // 3. Thêm email vào danh sách lễ tân được phép truy cập
     const staffEmails = JSON.parse(
       localStorage.getItem("staff_emails") || "[]",
     );
     if (!staffEmails.includes(cleanEmail)) staffEmails.push(cleanEmail);
     localStorage.setItem("staff_emails", JSON.stringify(staffEmails));
 
-    // 3. Ghi nhớ phân quyền role vĩnh viễn
+    // 4. Ghi nhớ phân quyền role vĩnh viễn
     const roleOverrides = JSON.parse(
       localStorage.getItem("user_role_overrides") || "{}",
     );
     roleOverrides[cleanEmail] = "receptionist";
     localStorage.setItem("user_role_overrides", JSON.stringify(roleOverrides));
 
-    alert(
-      `✓ Đã cấp tài khoản Lễ tân thành công cho [${newStaffUser.full_name}]!\nEmail: ${cleanEmail}\nNhân viên có thể đăng nhập ngay để trực ca.`,
-    );
+    // Mở popup hiển thị thông tin tài khoản cho chủ nhà gửi cho lễ tân
+    setCreatedStaffInfo({
+      full_name: newStaffUser.full_name,
+      email: cleanEmail,
+      password: createForm.password,
+      hotel_name: newStaffUser.hotel_name,
+    });
 
     setIsCreateModalOpen(false);
     setCreateForm({
@@ -165,6 +187,15 @@ export default function StaffManagementPage() {
     );
     localStorage.setItem("pms_users_master", JSON.stringify(updated));
 
+    // Cập nhật cả ở registered_users
+    const regUsers = JSON.parse(
+      localStorage.getItem("registered_users") || "[]",
+    );
+    const updatedReg = regUsers.map((u) =>
+      u.email === staff.email ? { ...u, active: !u.active } : u,
+    );
+    localStorage.setItem("registered_users", JSON.stringify(updatedReg));
+
     loadData();
   };
 
@@ -178,6 +209,14 @@ export default function StaffManagementPage() {
     );
     const updatedUsers = allUsers.filter((u) => u.email !== staff.email);
     localStorage.setItem("pms_users_master", JSON.stringify(updatedUsers));
+
+    const regUsers = JSON.parse(
+      localStorage.getItem("registered_users") || "[]",
+    );
+    localStorage.setItem(
+      "registered_users",
+      JSON.stringify(regUsers.filter((u) => u.email !== staff.email)),
+    );
 
     const staffEmails = JSON.parse(
       localStorage.getItem("staff_emails") || "[]",
@@ -317,8 +356,8 @@ export default function StaffManagementPage() {
                   </td>
 
                   <td className="py-4 px-4">
-                    <span className="font-bold text-blue-900 bg-blue-50 px-2 py-1 rounded-lg border text-[11px] inline-flex items-center gap-1">
-                      <Building2 size={12} /> {s.hotel_name || "BezTower Hotel"}
+                    <span className="font-bold text-blue-900 bg-blue-50 px-2.5 py-1 rounded-lg border text-[11px] inline-flex items-center gap-1">
+                      <Building2 size={12} /> {s.hotel_name}
                     </span>
                   </td>
 
@@ -329,7 +368,11 @@ export default function StaffManagementPage() {
 
                   <td className="py-4 px-4 text-center">
                     <span
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${s.active ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                        s.active
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-rose-50 text-rose-700 border border-rose-200"
+                      }`}
                     >
                       {s.active ? "Đang trực ca" : "Tạm khóa"}
                     </span>
@@ -339,14 +382,18 @@ export default function StaffManagementPage() {
                     <div className="flex justify-end gap-1.5">
                       <button
                         onClick={() => handleToggleLockStaff(s)}
-                        className={`p-2 rounded-xl transition ${s.active ? "bg-rose-50 text-rose-600 hover:bg-rose-100" : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"}`}
+                        className={`p-2 rounded-xl transition cursor-pointer ${
+                          s.active
+                            ? "bg-rose-50 text-rose-600 hover:bg-rose-100"
+                            : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                        }`}
                         title={s.active ? "Khóa tài khoản" : "Mở khóa"}
                       >
                         {s.active ? <Lock size={15} /> : <Unlock size={15} />}
                       </button>
                       <button
                         onClick={() => handleDeleteStaff(s)}
-                        className="p-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 rounded-xl transition"
+                        className="p-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 rounded-xl transition cursor-pointer"
                         title="Xóa nhân viên"
                       >
                         <Trash2 size={15} />
@@ -377,7 +424,10 @@ export default function StaffManagementPage() {
                 <UserCheck size={18} className="text-amber-600" /> Cấp Tài Khoản
                 Lễ Tân Khách Sạn
               </h3>
-              <button onClick={() => setIsCreateModalOpen(false)}>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="cursor-pointer"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -435,13 +485,13 @@ export default function StaffManagementPage() {
                   </label>
                   <input
                     required
-                    type="password"
+                    type="text"
                     placeholder="Tối thiểu 6 ký tự"
                     value={createForm.password}
                     onChange={(e) =>
                       setCreateForm({ ...createForm, password: e.target.value })
                     }
-                    className="w-full p-2.5 border rounded-xl font-mono"
+                    className="w-full p-2.5 border rounded-xl font-mono font-bold text-[#003580]"
                   />
                 </div>
               </div>
@@ -471,8 +521,7 @@ export default function StaffManagementPage() {
               <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
                 Tài khoản này sẽ có quyền:{" "}
                 <b>
-                  Check-in, Check-out khách, ghi nợ Minibar và yêu cầu dọn buồng
-                  phòng
+                  Check-in, Check-out khách, xếp phòng và yêu cầu buồng phòng
                 </b>
                 . Không xem được doanh thu hay tài khoản ngân hàng của chủ nhà.
               </div>
@@ -481,18 +530,75 @@ export default function StaffManagementPage() {
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold"
+                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl font-bold shadow-md"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl font-bold shadow-md cursor-pointer"
                 >
                   Cấp Tài Khoản Ngay
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── 📋 MODAL HIỂN THỊ THÔNG TIN ĐỂ CHỦ NHÀ GỬI CHO LỄ TÂN ── */}
+      {createdStaffInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
+            <div className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
+              <CheckCircle2 size={20} /> Cấp Tài Khoản Lễ Tân Thành Công!
+            </div>
+
+            <p className="text-slate-600">
+              Hãy sao chép thông tin này gửi cho nhân viên lễ tân để đăng nhập
+              vào làm việc:
+            </p>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 font-mono text-xs">
+              <p>
+                <b>Họ và tên:</b> {createdStaffInfo.full_name}
+              </p>
+              <p>
+                <b>Cơ sở:</b> {createdStaffInfo.hotel_name}
+              </p>
+              <p>
+                <b>Email đăng nhập:</b>{" "}
+                <span className="text-blue-700 font-bold">
+                  {createdStaffInfo.email}
+                </span>
+              </p>
+              <p>
+                <b>Mật khẩu:</b>{" "}
+                <span className="text-rose-600 font-bold">
+                  {createdStaffInfo.password}
+                </span>
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(
+                    `Thông tin tài khoản Lễ tân GoStay:\nCơ sở: ${createdStaffInfo.hotel_name}\nEmail: ${createdStaffInfo.email}\nMật khẩu: ${createdStaffInfo.password}`,
+                  );
+                  alert("Đã sao chép thông tin tài khoản!");
+                }}
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
+              >
+                <Copy size={14} /> Sao chép
+              </button>
+              <button
+                onClick={() => setCreatedStaffInfo(null)}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-black text-white font-bold rounded-xl cursor-pointer"
+              >
+                Đã hiểu & Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
