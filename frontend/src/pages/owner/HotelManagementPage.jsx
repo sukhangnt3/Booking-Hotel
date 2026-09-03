@@ -1,3 +1,4 @@
+// src/pages/owner/HotelManagementPage.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -12,156 +13,74 @@ import {
   ShieldCheck,
   AlertCircle,
   Trash2,
+  BedDouble,
+  Sparkles,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
-import { hotelService } from "@/services";
 import { useAuthStore } from "@/stores/authStore";
 
-const HotelManagementPage = () => {
+export default function HotelManagementPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [hotels, setHotels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🔍 1. FETCH VÀ XỬ LÝ TRẠNG THÁI (CHƯA ĐƯỢC ADMIN DUYỆT = CHỜ DUYỆT 100%)
-  // ════════════════════════════════════════════════════════════════════════════
-  const fetchMyHotels = async () => {
+  const userEmail = String(user?.email || "")
+    .toLowerCase()
+    .trim();
+
+  // 1. Tải toàn bộ danh sách khách sạn thuộc sở hữu của tài khoản này
+  const fetchMyHotels = () => {
     setLoading(true);
     try {
-      const currentUserId =
-        user?.id || JSON.parse(localStorage.getItem("user") || "{}")?.id;
-      const currentUserEmail = String(
-        user?.email ||
-          JSON.parse(localStorage.getItem("user") || "{}")?.email ||
-          "",
-      )
-        .toLowerCase()
-        .trim();
-
-      // 1. Lấy danh sách từ API Backend
-      let apiList = [];
-      try {
-        const res = await hotelService.getAll({
-          isOwner: true,
-          owner_id: currentUserId,
-        });
-        apiList = Array.isArray(res) ? res : res?.data || res?.hotels || [];
-      } catch (e) {
-        console.error("Lỗi API hotels:", e);
-      }
-
-      // 2. Lấy dữ liệu LocalStorage
       const localApps = JSON.parse(
         localStorage.getItem("pending_partner_applications") || "[]",
       );
-      const approvedHotelIds = JSON.parse(
+      const approvedIds = JSON.parse(
         localStorage.getItem("approved_hotel_ids") || "[]",
       ).map(String);
-      const rejectedHotelIds = JSON.parse(
+      const rejectedIds = JSON.parse(
         localStorage.getItem("rejected_hotel_ids") || "[]",
       ).map(String);
-      const deletedHotelIds = JSON.parse(
-        localStorage.getItem("deleted_hotel_ids") || "[]",
-      ).map(String);
 
-      // Gộp API và Local
-      const combined = [...apiList, ...localApps];
-      const myHotelsMap = new Map();
+      // Lọc các khách sạn khớp với Email của Owner
+      const myOwnedHotels = localApps
+        .filter((h) => {
+          const hEmail = String(h.emailContact || h.email || "")
+            .toLowerCase()
+            .trim();
+          return !userEmail || hEmail === userEmail || user?.role === "admin";
+        })
+        .map((h, idx) => {
+          const id = String(h.id || h.applicationId || `HT-${idx + 1}`).trim();
+          let status = "pending";
 
-      combined.forEach((h) => {
-        const hotelId = String(
-          h.id || h._id || h.hotel_id || h.applicationId || "",
-        ).trim();
-        const hotelName = String(h.hotelNameVi || h.name || "").trim();
-        const hotelOwnerId = String(
-          h.owner_id || h.user_id || h.userId || h.ownerId || "",
-        ).trim();
-        const hotelEmail = String(
-          h.emailContact || h.email || h.signerEmail || h.user?.email || "",
-        )
-          .toLowerCase()
-          .trim();
-
-        // 🛑 BỎ QUA NẾU NẰM TRONG DANH SÁCH ĐÃ XOÁ
-        if (
-          !hotelId ||
-          deletedHotelIds.includes(hotelId) ||
-          deletedHotelIds.includes(hotelName) ||
-          Boolean(h.is_deleted || h.isDeleted || h.deletedAt) ||
-          h.status === "deleted"
-        ) {
-          return;
-        }
-
-        // Kiểm tra quyền sở hữu của user
-        const isBelongToMe =
-          !currentUserEmail ||
-          (hotelEmail && hotelEmail === currentUserEmail) ||
-          (currentUserId &&
-            hotelOwnerId &&
-            hotelOwnerId === String(currentUserId)) ||
-          (!hotelEmail && !hotelOwnerId);
-
-        if (isBelongToMe) {
-          // 🛑 🛑 QUY TẮC PHÂN DUYỆT NGHIÊM NGẶT (CHẶN TUYỆT ĐỐI TỰ ĐỘNG MỞ BÁN) 🛑 🛑
-          let finalStatus = "pending";
-
-          // 1. Kiểm tra Từ chối
-          if (
-            rejectedHotelIds.includes(hotelId) ||
-            h.status === "rejected" ||
-            h.approval_status === "rejected"
-          ) {
-            finalStatus = "rejected";
-          }
-          // 2. CHỈ ĐƯỢC "approved" khi Admin đã thực sự duyệt (ID có trong approvedHotelIds hoặc approval_status === "approved")
-          else if (
-            approvedHotelIds.includes(hotelId) ||
-            h.approval_status === "approved" ||
-            (h.status === "approved" &&
-              h.is_approved === true &&
-              !h.is_new_registration)
-          ) {
-            finalStatus = "approved";
-          }
-          // 3. Mọi trường hợp còn lại (mới đăng ký, đang thẩm định) BẮT BUỘC là pending
-          else {
-            finalStatus = "pending";
+          if (rejectedIds.includes(id) || h.status === "rejected") {
+            status = "rejected";
+          } else if (approvedIds.includes(id) || h.status === "approved") {
+            status = "approved";
           }
 
-          const dedupeKey = hotelName.toLowerCase() || hotelId;
+          return {
+            ...h,
+            id,
+            name: h.name || h.hotelNameVi || "Cơ sở lưu trú của tôi",
+            city: h.city || h.province || "Việt Nam",
+            address: h.address || h.streetAddress || "Địa chỉ chỗ nghỉ",
+            status,
+            starRating: h.starRating || 5,
+            type: h.hotelType || h.type || "Khách sạn",
+            image:
+              h.image ||
+              "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600",
+            totalRooms: h.rooms?.length || 1,
+          };
+        });
 
-          // Nếu chưa có hoặc bản ghi mới là bản ghi có ID thật thì cập nhật
-          if (
-            !myHotelsMap.has(dedupeKey) ||
-            (h.id && !String(h.id).startsWith("app_"))
-          ) {
-            myHotelsMap.set(dedupeKey, {
-              ...h,
-              id: hotelId,
-              name: hotelName || "Khách sạn của tôi",
-              status: finalStatus, // 👈 Đảm bảo hiển thị "Chờ Admin Duyệt" khi chưa duyệt
-              type: h.hotelType || h.type || "Khách sạn",
-              address: h.streetAddress || h.address || "Địa chỉ chỗ nghỉ",
-              city: h.province || h.city || "Hồ Chí Minh",
-              image:
-                h.image ||
-                h.hotelImages?.[0]?.url ||
-                h.hotelImages?.[0]?.preview ||
-                h.hotelImages?.[0] ||
-                "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600",
-              total_rooms: h.rooms?.length || h.total_rooms || 1,
-              star_rating: h.starRating || h.star_rating || 5,
-            });
-          }
-        }
-      });
-
-      setHotels(Array.from(myHotelsMap.values()));
-    } catch (error) {
-      console.error("Lỗi tải danh sách cơ sở:", error);
+      setHotels(myOwnedHotels);
+    } catch (err) {
+      console.error(err);
       setHotels([]);
     } finally {
       setLoading(false);
@@ -172,103 +91,40 @@ const HotelManagementPage = () => {
     fetchMyHotels();
   }, [user]);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🗑️ 2. HÀM XÓA CƠ SỞ
-  // ════════════════════════════════════════════════════════════════════════════
-  const handleDelete = async (hotelObj) => {
-    const hotelId = String(
-      hotelObj?.id || hotelObj?.hotel_id || hotelObj?.applicationId || "",
-    ).trim();
-    const hotelName = String(
-      hotelObj?.name || hotelObj?.hotelNameVi || "cơ sở này",
-    ).trim();
+  const handleDeleteHotel = (hotel) => {
+    if (!window.confirm(`Xác nhận xóa cơ sở "${hotel.name}"?`)) return;
 
-    if (
-      !window.confirm(
-        `Xác nhận xóa hoàn toàn cơ sở lưu trú "${hotelName}"?\nSau khi xóa, cơ sở sẽ bị gỡ bỏ vĩnh viễn khỏi hệ thống.`,
-      )
-    )
-      return;
+    const localApps = JSON.parse(
+      localStorage.getItem("pending_partner_applications") || "[]",
+    );
+    const updated = localApps.filter(
+      (h) => String(h.id || h.applicationId) !== String(hotel.id),
+    );
+    localStorage.setItem(
+      "pending_partner_applications",
+      JSON.stringify(updated),
+    );
 
-    try {
-      try {
-        if (hotelService?.delete) {
-          await hotelService.delete(hotelId);
-        }
-      } catch (apiErr) {
-        console.warn("Backend delete:", apiErr);
-      }
-
-      // Thêm vào danh sách xoá
-      const deletedList = JSON.parse(
-        localStorage.getItem("deleted_hotel_ids") || "[]",
-      ).map(String);
-      if (hotelId && !deletedList.includes(hotelId)) deletedList.push(hotelId);
-      if (hotelName && !deletedList.includes(hotelName))
-        deletedList.push(hotelName);
-      localStorage.setItem("deleted_hotel_ids", JSON.stringify(deletedList));
-
-      // Xóa khỏi State ngay lập tức
-      setHotels((prev) =>
-        prev.filter((h) => {
-          const currentId = String(
-            h.id || h.hotel_id || h.applicationId || "",
-          ).trim();
-          const currentName = String(h.name || h.hotelNameVi || "").trim();
-          return currentId !== hotelId && currentName !== hotelName;
-        }),
-      );
-
-      // Xóa khỏi LocalStorage
-      const localApps = JSON.parse(
-        localStorage.getItem("pending_partner_applications") || "[]",
-      );
-      const updatedApps = localApps.filter((a) => {
-        const aId = String(a.id || a.applicationId || a.hotel_id || "").trim();
-        const aName = String(a.name || a.hotelNameVi || "").trim();
-        return aId !== hotelId && aName !== hotelName;
-      });
-      localStorage.setItem(
-        "pending_partner_applications",
-        JSON.stringify(updatedApps),
-      );
-
-      // Xóa khỏi danh sách đã duyệt
-      const approvedHotelIds = JSON.parse(
-        localStorage.getItem("approved_hotel_ids") || "[]",
-      ).map(String);
-      const updatedApprovedIds = approvedHotelIds.filter(
-        (id) => id !== hotelId && id !== hotelName,
-      );
-      localStorage.setItem(
-        "approved_hotel_ids",
-        JSON.stringify(updatedApprovedIds),
-      );
-
-      alert(`✓ Đã xóa vĩnh viễn cơ sở lưu trú "${hotelName}"!`);
-    } catch (err) {
-      console.error("Lỗi khi xóa:", err);
-      alert("Lỗi khi xóa cơ sở: " + (err.message || "Vui lòng thử lại"));
-    }
+    fetchMyHotels();
   };
 
-  // Lọc theo trạng thái
   const filteredHotels = hotels.filter((h) => {
-    if (statusFilter === "approved") return h.status === "approved";
-    if (statusFilter === "pending") return h.status === "pending";
-    if (statusFilter === "rejected") return h.status === "rejected";
-    return true;
+    if (statusFilter === "all") return true;
+    return h.status === statusFilter;
   });
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 pb-16">
-      {/* ── 1. HEADER ── */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-6 font-sans pb-16 text-slate-800">
+      {/* ── HEADER & NÚT ĐĂNG KÝ THÊM CƠ SỞ MỚI ── */}
+      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900">
-            Quản Lý Danh Sách Cơ Sở Lưu Trú ({hotels.length} Cơ sở)
+          <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider mb-1">
+            <Building2 size={16} /> Chuỗi Cơ Sở Lưu Trú Của Bạn
+          </div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            Quản Lý Danh Sách Chỗ Nghỉ ({hotels.length} Cơ sở)
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5">
             Chủ cơ sở:{" "}
             <strong className="text-blue-900">
               {user?.full_name || user?.email}
@@ -276,28 +132,29 @@ const HotelManagementPage = () => {
           </p>
         </div>
 
+        {/* 🚀 NÚT BẤM ĐĂNG KÝ THÊM CƠ SỞ MỚI DÀNH CHO OWNER */}
         <button
           onClick={() => navigate("/register-owner")}
-          className="bg-[#003580] hover:bg-blue-900 text-white text-xs font-bold px-5 py-3 rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
+          className="px-5 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-2xl shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95 shrink-0"
         >
-          <Plus size={16} /> Đăng Ký Thêm Cơ Sở Mới
+          <Plus size={16} /> + Đăng Ký Thêm Cơ Sở Mới
         </button>
       </div>
 
-      {/* ── 2. THANH THÔNG BÁO ── */}
+      {/* ── THÔNG BÁO HƯỚNG DẪN ── */}
       <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-start gap-3 text-xs text-blue-900">
         <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
         <div className="space-y-0.5">
-          <p className="font-bold">Quy trình thẩm định từng cơ sở độc lập:</p>
+          <p className="font-bold">Đăng ký chuỗi cơ sở độc lập:</p>
           <p className="text-blue-800 text-[11px] leading-relaxed">
-            Mỗi cơ sở sau khi đăng ký sẽ được Admin duyệt riêng biệt. Cơ sở nào
-            được duyệt sẽ chuyển sang <strong>"Đang Mở Bán"</strong>, cơ sở mới
-            thêm sẽ hiển thị <strong>"Chờ Admin Duyệt"</strong>.
+            Bạn có thể đăng ký không giới hạn số lượng khách sạn, resort,
+            homestay. Mỗi cơ sở sau khi nộp sẽ được Admin thẩm định riêng biệt
+            và tự động xuất hiện trong menu quản lý của bạn.
           </p>
         </div>
       </div>
 
-      {/* ── 3. BỘ LỌC TRẠNG THÁI ── */}
+      {/* ── TABS TRẠNG THÁI ── */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto text-xs font-bold">
         {[
           { id: "all", label: `Tất cả cơ sở (${hotels.length})` },
@@ -319,41 +176,40 @@ const HotelManagementPage = () => {
         ))}
       </div>
 
-      {/* ── 4. DANH SÁCH CÁC CƠ SỞ ── */}
+      {/* ── DANH SÁCH CÁC KHÁCH SẠN CỦA OWNER ── */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-2xl border border-slate-200">
+        <div className="py-24 flex justify-center bg-white rounded-3xl border">
           <LoadingSpinner
             size="lg"
-            label="Đang tải danh sách cơ sở của bạn..."
+            label="Đang tải danh sách chỗ nghỉ của bạn..."
           />
         </div>
       ) : filteredHotels.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {filteredHotels.map((hotel) => {
-            const id = hotel.id;
-            const status = hotel.status;
+            const isApproved = hotel.status === "approved";
+            const isPending = hotel.status === "pending";
 
             return (
               <div
-                key={id}
-                className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-all flex flex-col justify-between"
+                key={hotel.id}
+                className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-2xs hover:shadow-lg transition-all flex flex-col justify-between"
               >
                 <div>
-                  <div className="relative h-48 w-full bg-slate-100">
+                  <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
                     <img
                       src={hotel.image}
-                      alt={hotel.name}
+                      alt=""
                       className="w-full h-full object-cover"
                     />
-
                     <div className="absolute top-3 right-3">
-                      {status === "approved" ? (
+                      {isApproved ? (
                         <span className="bg-emerald-600 text-white font-bold text-[11px] px-3 py-1 rounded-full shadow flex items-center gap-1.5">
                           <CheckCircle2 size={13} /> Đang Mở Bán
                         </span>
-                      ) : status === "pending" ? (
+                      ) : isPending ? (
                         <span className="bg-amber-500 text-white font-bold text-[11px] px-3 py-1 rounded-full shadow flex items-center gap-1.5 animate-pulse">
-                          <Clock size={13} /> Chờ Admin Duyệt
+                          <Clock size={13} /> Chờ Admin Thẩm Định
                         </span>
                       ) : (
                         <span className="bg-rose-600 text-white font-bold text-[11px] px-3 py-1 rounded-full shadow flex items-center gap-1.5">
@@ -363,76 +219,71 @@ const HotelManagementPage = () => {
                     </div>
                   </div>
 
-                  <div className="p-5 space-y-3">
+                  <div className="p-6 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md">
-                        {hotel.type || "Khách sạn"}
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md">
+                        {hotel.type} • ⭐ {hotel.starRating} Sao
                       </span>
-                      {hotel.star_rating > 0 && (
-                        <div className="flex items-center text-amber-500 text-xs font-bold">
-                          <Star size={13} className="fill-amber-400 mr-0.5" />
-                          {hotel.star_rating} Sao
-                        </div>
-                      )}
+                      <span className="text-xs text-slate-400 font-mono">
+                        #{hotel.id}
+                      </span>
                     </div>
 
-                    <h3 className="font-extrabold text-slate-900 text-base line-clamp-1">
+                    <h3 className="font-extrabold text-slate-900 text-lg leading-snug">
                       {hotel.name}
                     </h3>
-
-                    <div className="flex items-center gap-1 text-xs text-slate-500 line-clamp-1">
-                      <MapPin size={13} className="text-slate-400 shrink-0" />
+                    <p className="text-xs text-slate-500 flex items-center gap-1">
+                      <MapPin size={13} className="text-blue-600 shrink-0" />{" "}
                       {hotel.address}, {hotel.city}
-                    </div>
+                    </p>
 
-                    {status === "pending" && (
-                      <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-[11px] flex items-center gap-2">
+                    {isPending && (
+                      <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
                         <AlertCircle
-                          size={14}
+                          size={15}
                           className="shrink-0 text-amber-600"
                         />
                         <span>
-                          Cơ sở này đang được Admin thẩm định trong 24h.
+                          Cơ sở này đang được Ban Quản Trị thẩm định trong 24h.
                         </span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="p-5 pt-0 border-t border-slate-100 mt-2">
-                  <div className="flex items-center justify-between pt-3">
+                <div className="p-6 pt-0 border-t border-slate-100 mt-2 flex items-center justify-between pt-3">
+                  <button
+                    onClick={() => handleDeleteHotel(hotel)}
+                    className="text-xs text-rose-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 size={13} /> Xóa cơ sở
+                  </button>
+
+                  <div className="flex gap-2">
                     <button
-                      onClick={() => handleDelete(hotel)}
-                      className="text-xs text-rose-600 hover:text-rose-700 hover:underline font-bold cursor-pointer flex items-center gap-1 transition"
+                      onClick={() => navigate(`/hotel/${hotel.id}`)}
+                      className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1"
                     >
-                      <Trash2 size={13} /> Xóa cơ sở
+                      Xem trang web <ExternalLink size={12} />
                     </button>
 
-                    <div className="flex gap-2">
+                    {isApproved ? (
                       <button
-                        onClick={() => navigate(`/hotel/${id}`)}
-                        className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold cursor-pointer transition flex items-center gap-1"
+                        onClick={() =>
+                          navigate(`/owner/bookings?hotelId=${hotel.id}`)
+                        }
+                        className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                       >
-                        Xem trước <ExternalLink size={12} />
+                        Quản lý đơn phòng
                       </button>
-
-                      {status === "approved" ? (
-                        <button
-                          onClick={() => navigate(`/owner/rooms?hotelId=${id}`)}
-                          className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-sm"
-                        >
-                          Quản lý phòng
-                        </button>
-                      ) : (
-                        <button
-                          disabled
-                          className="px-4 py-2 bg-slate-100 text-slate-400 rounded-xl text-xs font-bold cursor-not-allowed"
-                          title="Cơ sở phải được Admin duyệt mới có thể mở bán phòng"
-                        >
-                          Chờ kích hoạt
-                        </button>
-                      )}
-                    </div>
+                    ) : (
+                      <button
+                        disabled
+                        className="px-4 py-2 bg-slate-100 text-slate-400 rounded-xl text-xs font-bold cursor-not-allowed"
+                      >
+                        Chờ duyệt mở bán
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -442,14 +293,12 @@ const HotelManagementPage = () => {
       ) : (
         <EmptyState
           icon={Building2}
-          title="Chưa có cơ sở nào trong mục này"
-          description="Đăng ký thêm cơ sở mới để mở rộng chuỗi chỗ nghỉ của bạn."
-          actionLabel="Đăng ký cơ sở mới"
+          title="Chưa có cơ sở lưu trú nào"
+          description="Bấm nút '+ Đăng Ký Thêm Cơ Sở Mới' để đăng ký khách sạn đầu tiên của bạn."
+          actionLabel="+ Đăng ký cơ sở ngay"
           onAction={() => navigate("/register-owner")}
         />
       )}
     </div>
   );
-};
-
-export default HotelManagementPage;
+}

@@ -1,641 +1,390 @@
-import React, { useState, useEffect } from "react";
+// src/pages/owner/BookingListPage.jsx
+import React, { useState, useEffect, useMemo } from "react";
 import {
-  CalendarDays,
-  Users,
-  BedDouble,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Search,
+  CalendarCheck,
   Building2,
-  DollarSign,
-  Ticket,
-  CreditCard,
-  MapPin,
+  Search,
   RefreshCw,
+  Plus,
+  Download,
+  Calendar,
+  Eye,
   Key,
   LogOut as LogOutIcon,
   Printer,
   X,
-  FileText,
+  Ticket,
   ShieldCheck,
-  FileCheck,
-  Download,
-  Wine,
-  RotateCcw,
-  Plus,
-  Coins,
-  ArrowRightLeft,
-  Utensils,
-  Car,
-  Sparkles,
-  HeartHandshake,
-  Receipt,
-  Bell,
-  Package,
-  Gift,
-  ChevronRight,
-  TrendingUp,
-  UserCheck,
-  Layers,
-  CalendarCheck,
 } from "lucide-react";
-
 import { LoadingSpinner, EmptyState } from "@/components/common";
-import { bookingService } from "@/services";
+import { useAuthStore } from "@/stores/authStore";
+import PropertySearchSelector from "@/components/common/PropertySearchSelector";
 
-const TABS = [
+const STATUS_TABS = [
   { id: "all", label: "Tất cả đơn đặt" },
-  { id: "pending_office", label: "Chờ thu tiền tại quầy" },
-  { id: "confirmed", label: "Chờ Check-in" },
-  { id: "checked_in", label: "Đang lưu trú (In-house)" },
-  { id: "checked_out", label: "Đã Check-out (Hoàn tất)" },
-  { id: "cancelled", label: "Đã hủy" },
+  { id: "pending", label: "Chờ xác nhận (Pending)" },
+  { id: "confirmed", label: "Đã xác nhận (Confirmed)" },
+  { id: "checked_in", label: "Đang lưu trú (Checked In)" },
+  { id: "checked_out", label: "Đã trả phòng (Checked Out)" },
+  { id: "cancelled", label: "Đã hủy (Cancelled)" },
 ];
 
-function docSoThanhChu(so) {
-  if (!so || so === 0) return "Không đồng";
-  if (so < 1000000) {
-    return `${Math.round(so / 1000).toLocaleString("vi-VN")} nghìn đồng chẵn`;
-  }
-  return `${(so / 1000000).toFixed(2)} triệu đồng chẵn`;
-}
-
 export default function BookingListPage() {
+  const { user } = useAuthStore();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+
+  // Phân quyền Admin vs Owner
+  const userRole = String(user?.role || user?.role_name || "").toLowerCase();
+  const isAdmin = userRole.includes("admin") || user?.role_id === 1;
+  const userEmail = String(user?.email || "")
+    .toLowerCase()
+    .trim();
+
+  // 🏢 1. QUẢN LÝ DANH SÁCH CƠ SỞ (ĐÃ KHÓA BẢO MẬT CHỈ HIỆN CƠ SỞ CỦA OWNER)
+  const [myHotels, setMyHotels] = useState([]);
+  const [selectedHotelId, setSelectedHotelId] = useState("");
+
+  // 🔍 2. BỘ LỌC
   const [statusTab, setStatusTab] = useState("all");
-  const [toast, setToast] = useState(null);
+  const [search, setSearch] = useState("");
+  const [startDateFilter, setStartDateFilter] = useState("");
+  const [endDateFilter, setEndDateFilter] = useState("");
 
-  // ── MODALS ──
-  const [checkInModalBooking, setCheckInModalBooking] = useState(null);
-  const [assignedRoomNumber, setAssignedRoomNumber] = useState("Phòng 101");
-  const [depositAmount, setDepositAmount] = useState(500000);
-  const [checkInNote, setCheckInNote] = useState("Đã kiểm tra CCCD & Nhận cọc");
-
-  const [roomMoveBooking, setRoomMoveBooking] = useState(null);
-  const [newRoomNumber, setNewRoomNumber] = useState("Phòng 201");
-  const [roomMoveReason, setRoomMoveReason] = useState(
-    "Khách yêu cầu đổi view thoáng",
-  );
-
-  const [extraServiceBooking, setExtraServiceBooking] = useState(null);
-  const [serviceCategory, setServiceCategory] = useState("minibar");
-  const [serviceName, setServiceName] = useState("2 Lon Bia Tiger & Snack");
-  const [servicePrice, setServicePrice] = useState(60000);
-
-  const [conciergeModalBooking, setConciergeModalBooking] = useState(null);
-  const [conciergeType, setConciergeType] = useState("wake_up");
-  const [conciergeContent, setConciergeContent] = useState("");
-
-  const [checkOutModalBooking, setCheckOutModalBooking] = useState(null);
-
-  const [dossierBooking, setDossierBooking] = useState(null);
-  const [dossierTab, setDossierTab] = useState("bill");
-
-  const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
-
-  const [vatTaxRate, setVatTaxRate] = useState(8);
-  const [companyVatInfo, setCompanyVatInfo] = useState({
-    buyerName: "",
-    companyName: "CÔNG TY CỔ PHẦN TẬP ĐOÀN ĐẦU TƯ DU LỊCH VIỆT NAM",
-    taxCode: "0108991234",
-    companyAddress:
-      "Số 123 Đường Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh",
-    buyerEmail: "ketoan.congty@gmail.com",
+  const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
+  const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
+  const [walkInForm, setWalkInForm] = useState({
+    guestName: "",
+    guestPhone: "",
+    guestEmail: "",
+    roomName: "Deluxe King Hướng Biển",
+    assignedRoom: "P.101",
+    checkIn: new Date().toISOString().split("T")[0],
+    checkOut: new Date(Date.now() + 86400000).toISOString().split("T")[0],
+    totalPrice: 850000,
+    depositAmount: 500000,
+    paymentMethod: "Tiền mặt tại quầy (Cash)",
+    autoCheckIn: true,
   });
 
-  const showToast = (message, type = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const [checkInModalBooking, setCheckInModalBooking] = useState(null);
+  const [assignedRoomNumber, setAssignedRoomNumber] = useState("P.101");
+  const [depositAmount, setDepositAmount] = useState(500000);
+
+  const [checkOutModalBooking, setCheckOutModalBooking] = useState(null);
+  const [dossierBooking, setDossierBooking] = useState(null);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🔍 1. FETCH & ĐỒNG BỘ DỮ LIỆU
-  // ════════════════════════════════════════════════════════════════════════════
-  const fetchBookings = async () => {
-    setLoading(true);
-    try {
-      let apiBookings = [];
-      try {
-        if (bookingService?.getHistory) {
-          const res = await bookingService.getHistory();
-          apiBookings = Array.isArray(res)
-            ? res
-            : res?.data?.data || res?.data || res?.bookings || [];
-        }
-      } catch (e) {}
+  // ── 🏢 TẢI DANH SÁCH CƠ SỞ (BẢO MẬT ĐỘC LẬP THEO EMAIL CỦA OWNER) ──
+  const loadScopedHotels = () => {
+    const localApps = JSON.parse(
+      localStorage.getItem("pending_partner_applications") || "[]",
+    );
 
-      const localBookings = JSON.parse(
-        localStorage.getItem("all_bookings") || "[]",
-      );
-      const paidCache = JSON.parse(
-        localStorage.getItem("paid_bookings") || "[]",
-      );
+    let scopedList = [];
 
-      const combined = [...localBookings, ...apiBookings];
-      const uniqueMap = new Map();
+    if (isAdmin) {
+      // 👑 ADMIN: Xem được tất cả cơ sở
+      scopedList = localApps.map((h) => ({
+        id: String(h.id || h.applicationId),
+        name: h.name || h.hotelNameVi || "Cơ sở lưu trú",
+        city: h.city || h.province || "Việt Nam",
+        image: h.image,
+      }));
+    } else {
+      // 🏨 OWNER: CHỈ XEM ĐƯỢC CƠ SỞ CỦA CHÍNH MÌNH (KHỚP EMAIL)
+      scopedList = localApps
+        .filter((h) => {
+          const hEmail = String(
+            h.emailContact || h.email || h.signerEmail || "",
+          )
+            .toLowerCase()
+            .trim();
+          return hEmail === userEmail;
+        })
+        .map((h) => ({
+          id: String(h.id || h.applicationId),
+          name: h.name || h.hotelNameVi || "Cơ sở của tôi",
+          city: h.city || h.province || "Việt Nam",
+          image: h.image,
+        }));
+    }
 
-      combined.forEach((b) => {
-        const code = String(b.code || b.booking_code || b.id || "").trim();
-        if (code && !uniqueMap.has(code)) {
-          const isPaid =
-            b.payment_status === "paid" ||
-            b.status === "confirmed" ||
-            b.status === "checked_in" ||
-            b.status === "checked_out" ||
-            paidCache.includes(code);
+    setMyHotels(scopedList);
 
-          const isCancelled =
-            b.status === "cancelled" || b.payment_status === "cancelled";
-
-          let finalStatus = b.status || "pending";
-          if (isCancelled) finalStatus = "cancelled";
-          else if (b.status === "checked_out") finalStatus = "checked_out";
-          else if (b.status === "checked_in") finalStatus = "checked_in";
-          else if (isPaid) finalStatus = "confirmed";
-
-          uniqueMap.set(code, {
-            ...b,
-            code,
-            customer_name: b.customer_name || b.user?.name || "Khách hàng",
-            customer_phone: b.customer_phone || b.user?.phone || "0901234567",
-            customer_email: b.customer_email || b.user?.email || "N/A",
-            hotel_name:
-              b.hotel_name || b.hotel?.name || "Khách sạn nghỉ dưỡng GoStay",
-            room_name: b.room_name || b.roomType || "Phòng Tiêu Chuẩn",
-            assigned_room: b.assigned_room || b.room_number || "Chưa xếp phòng",
-            total_price: Number(b.total_price || b.amount || 650000),
-            deposit_amount: Number(b.deposit_amount || 0),
-            extra_services: b.extra_services || [],
-            concierge_logs: b.concierge_logs || [],
-            payment_status: isPaid
-              ? "paid"
-              : isCancelled
-                ? "cancelled"
-                : "unpaid",
-            payment_method: b.payment_method || "office",
-            status: finalStatus,
-            check_in:
-              b.check_in || b.checkIn || new Date().toISOString().split("T")[0],
-            check_out:
-              b.check_out ||
-              b.checkOut ||
-              new Date(Date.now() + 86400000).toISOString().split("T")[0],
-            created_at: b.created_at || new Date().toISOString(),
-          });
-        }
-      });
-
-      setBookings(Array.from(uniqueMap.values()));
-    } catch (err) {
-      console.error("Lỗi tải đơn:", err);
-    } finally {
-      setLoading(false);
+    // Mặc định chọn cơ sở đầu tiên của Owner (hoặc 'all' nếu là Admin)
+    if (scopedList.length > 0) {
+      setSelectedHotelId(isAdmin ? "all" : String(scopedList[0].id));
     }
   };
 
-  useEffect(() => {
-    fetchBookings();
-  }, []);
-
-  // ── THU TIỀN TẠI QUẦY ──
-  const handleConfirmOfficePayment = async (bookingCode) => {
-    if (!window.confirm(`Xác nhận đã thu tiền cho đơn #${bookingCode}?`))
-      return;
-
-    const localBookings = JSON.parse(
+  const loadBookings = () => {
+    setLoading(true);
+    const realBookings = JSON.parse(
       localStorage.getItem("all_bookings") || "[]",
     );
-    const updatedBookings = localBookings.map((b) => {
-      if (b.code === bookingCode || b.booking_code === bookingCode) {
-        return { ...b, payment_status: "paid", status: "confirmed" };
-      }
-      return b;
-    });
-    localStorage.setItem("all_bookings", JSON.stringify(updatedBookings));
-
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.code === bookingCode
-          ? { ...b, payment_status: "paid", status: "confirmed" }
-          : b,
-      ),
-    );
-
-    showToast(`✓ Đã thu tiền thành công đơn #${bookingCode}!`);
+    setBookings(realBookings);
+    loadScopedHotels();
+    setLoading(false);
   };
 
-  // ── CHECK-IN ──
+  useEffect(() => {
+    loadBookings();
+  }, [user]);
+
+  const saveAndSync = (updatedList) => {
+    setBookings(updatedList);
+    localStorage.setItem("all_bookings", JSON.stringify(updatedList));
+  };
+
+  const selectedHotelObj = myHotels.find(
+    (h) => String(h.id) === String(selectedHotelId),
+  );
+
+  const handleUpdateStatus = (bookingCode, newStatus) => {
+    const updated = bookings.map((b) =>
+      b.code === bookingCode ? { ...b, status: newStatus } : b,
+    );
+    saveAndSync(updated);
+    alert(
+      `✓ Đã cập nhật trạng thái đơn #${bookingCode} thành [${newStatus.toUpperCase()}]!`,
+    );
+    if (selectedBookingDetails && selectedBookingDetails.code === bookingCode) {
+      setSelectedBookingDetails((prev) => ({ ...prev, status: newStatus }));
+    }
+  };
+
+  const handleExportCSV = () => {
+    let csv = "\uFEFF";
+    csv +=
+      "Cơ Sở,Mã Đơn,Tên Khách Hàng,Số Điện Thoại,Email,Hạng Phòng,Số Phòng,Ngày Nhận,Ngày Trả,Tổng Tiền (VND),Trạng Thái,Phương Thức\n";
+
+    filteredBookings.forEach((b) => {
+      csv += `"${b.hotel_name || ""}","${b.code}","${b.customer_name}","${b.customer_phone}","${b.customer_email}","${b.room_name}","${b.assigned_room || ""}","${b.check_in}","${b.check_out}",${b.total_price},"${b.status}","${b.payment_method}"\n`;
+    });
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Don_Dat_Phong_${selectedHotelObj?.name || "Co_So"}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   const handleConfirmCheckIn = () => {
     if (!checkInModalBooking) return;
-    const bookingCode = checkInModalBooking.code;
-
-    const localBookings = JSON.parse(
-      localStorage.getItem("all_bookings") || "[]",
+    const updated = bookings.map((b) =>
+      b.code === checkInModalBooking.code
+        ? {
+            ...b,
+            status: "checked_in",
+            assigned_room: assignedRoomNumber,
+            deposit_amount: Number(depositAmount),
+          }
+        : b,
     );
-    const updatedBookings = localBookings.map((b) => {
-      if (b.code === bookingCode || b.booking_code === bookingCode) {
-        return {
-          ...b,
-          status: "checked_in",
-          assigned_room: assignedRoomNumber,
-          deposit_amount: Number(depositAmount),
-          checkin_note: checkInNote,
-          checked_in_at: new Date().toISOString(),
-        };
-      }
-      return b;
-    });
-    localStorage.setItem("all_bookings", JSON.stringify(updatedBookings));
-
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.code === bookingCode
-          ? {
-              ...b,
-              status: "checked_in",
-              assigned_room: assignedRoomNumber,
-              deposit_amount: Number(depositAmount),
-              checkin_note: checkInNote,
-              checked_in_at: new Date().toISOString(),
-            }
-          : b,
-      ),
-    );
-
-    showToast(
-      `✓ Check-in thành công! Giao ${assignedRoomNumber} & Nhận cọc ${formatVND(depositAmount)}.`,
+    saveAndSync(updated);
+    alert(
+      `✓ Check-in thành công đơn #${checkInModalBooking.code}! Giao ${assignedRoomNumber}.`,
     );
     setCheckInModalBooking(null);
   };
 
-  // ── ĐỔI PHÒNG ──
-  const handleConfirmRoomMove = () => {
-    if (!roomMoveBooking) return;
-    const bookingCode = roomMoveBooking.code;
-
-    const localBookings = JSON.parse(
-      localStorage.getItem("all_bookings") || "[]",
-    );
-    const updatedBookings = localBookings.map((b) => {
-      if (b.code === bookingCode || b.booking_code === bookingCode) {
-        return { ...b, assigned_room: newRoomNumber };
-      }
-      return b;
-    });
-    localStorage.setItem("all_bookings", JSON.stringify(updatedBookings));
-
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.code === bookingCode ? { ...b, assigned_room: newRoomNumber } : b,
-      ),
-    );
-
-    showToast(`✓ Đã chuyển sang ${newRoomNumber} thành công!`);
-    setRoomMoveBooking(null);
-  };
-
-  // ── THÊM DỊCH VỤ ──
-  const handleAddExtraService = (e) => {
-    e.preventDefault();
-    if (!extraServiceBooking) return;
-    const bookingCode = extraServiceBooking.code;
-
-    const newServiceItem = {
-      id: `srv-${Date.now()}`,
-      category: serviceCategory,
-      name: serviceName,
-      price: Number(servicePrice),
-      time: new Date().toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    };
-
-    const localBookings = JSON.parse(
-      localStorage.getItem("all_bookings") || "[]",
-    );
-    const updatedBookings = localBookings.map((b) => {
-      if (b.code === bookingCode || b.booking_code === bookingCode) {
-        const currentServices = b.extra_services || [];
-        const newTotal = Number(b.total_price || 0) + Number(servicePrice);
-        return {
-          ...b,
-          extra_services: [...currentServices, newServiceItem],
-          total_price: newTotal,
-        };
-      }
-      return b;
-    });
-    localStorage.setItem("all_bookings", JSON.stringify(updatedBookings));
-
-    setBookings((prev) =>
-      prev.map((b) => {
-        if (b.code === bookingCode) {
-          const currentServices = b.extra_services || [];
-          const newTotal = Number(b.total_price || 0) + Number(servicePrice);
-          return {
-            ...b,
-            extra_services: [...currentServices, newServiceItem],
-            total_price: newTotal,
-          };
-        }
-        return b;
-      }),
-    );
-
-    showToast(
-      `✓ Đã ghi nợ "${serviceName}" (+${formatVND(servicePrice)}) vào phòng!`,
-    );
-    setExtraServiceBooking(null);
-  };
-
-  // ── NHẬT KÝ LỄ TÂN ──
-  const handleAddConciergeLog = (e) => {
-    e.preventDefault();
-    if (!conciergeModalBooking) return;
-    const bookingCode = conciergeModalBooking.code;
-
-    const newLogItem = {
-      id: `log-${Date.now()}`,
-      type: conciergeType,
-      content: conciergeContent,
-      time: new Date().toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      date: new Date().toLocaleDateString("vi-VN"),
-    };
-
-    const localBookings = JSON.parse(
-      localStorage.getItem("all_bookings") || "[]",
-    );
-    const updatedBookings = localBookings.map((b) => {
-      if (b.code === bookingCode || b.booking_code === bookingCode) {
-        const currentLogs = b.concierge_logs || [];
-        return { ...b, concierge_logs: [newLogItem, ...currentLogs] };
-      }
-      return b;
-    });
-    localStorage.setItem("all_bookings", JSON.stringify(updatedBookings));
-
-    setBookings((prev) =>
-      prev.map((b) => {
-        if (b.code === bookingCode) {
-          const currentLogs = b.concierge_logs || [];
-          return { ...b, concierge_logs: [newLogItem, ...currentLogs] };
-        }
-        return b;
-      }),
-    );
-
-    showToast(
-      `✓ Đã lưu sổ nhật ký lễ tân phòng ${conciergeModalBooking.assigned_room}!`,
-    );
-    setConciergeModalBooking(null);
-    setConciergeContent("");
-  };
-
-  // ── CHECK-OUT ──
-  const handleConfirmFinalCheckOut = () => {
+  const handleConfirmCheckOut = () => {
     if (!checkOutModalBooking) return;
-    const bookingCode = checkOutModalBooking.code;
-
-    const localBookings = JSON.parse(
-      localStorage.getItem("all_bookings") || "[]",
+    const updated = bookings.map((b) =>
+      b.code === checkOutModalBooking.code
+        ? { ...b, status: "checked_out" }
+        : b,
     );
-    const updatedBookings = localBookings.map((b) => {
-      if (b.code === bookingCode || b.booking_code === bookingCode) {
-        return {
-          ...b,
-          status: "checked_out",
-          checked_out_at: new Date().toISOString(),
-        };
-      }
-      return b;
-    });
-    localStorage.setItem("all_bookings", JSON.stringify(updatedBookings));
-
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.code === bookingCode ? { ...b, status: "checked_out" } : b,
-      ),
-    );
-
-    showToast(
-      `✓ Check-out thành công đơn #${bookingCode}! Đã hoàn tất đối soát.`,
-    );
+    saveAndSync(updated);
+    alert(`✓ Check-out thành công đơn #${checkOutModalBooking.code}!`);
     setCheckOutModalBooking(null);
   };
 
-  // ── MỞ HỒ SƠ THANH TOÁN (GUEST FOLIO) ──
-  const handleOpenDossier = (booking, defaultTab = "bill") => {
-    setDossierBooking(booking);
-    setDossierTab(defaultTab);
-    setCompanyVatInfo({
-      buyerName: booking.customer_name || "",
-      companyName: "CÔNG TY CỔ PHẦN TẬP ĐOÀN ĐẦU TƯ DU LỊCH VIỆT NAM",
-      taxCode: "0108991234",
-      companyAddress:
-        "Số 123 Đường Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh",
-      buyerEmail: booking.customer_email || "ketoan.congty@gmail.com",
-    });
+  const statusBadge = {
+    pending: {
+      label: "Chờ xác nhận (Pending)",
+      color: "bg-amber-50 text-amber-800 border-amber-300",
+    },
+    confirmed: {
+      label: "Đã xác nhận (Confirmed)",
+      color: "bg-blue-50 text-blue-700 border-blue-200",
+    },
+    checked_in: {
+      label: "Đang lưu trú (In-House)",
+      color: "bg-emerald-50 text-emerald-700 border-emerald-300",
+    },
+    checked_out: {
+      label: "Đã trả phòng (Checked Out)",
+      color: "bg-slate-100 text-slate-700 border-slate-300",
+    },
+    cancelled: {
+      label: "Đã hủy (Cancelled)",
+      color: "bg-rose-50 text-rose-700 border-rose-200",
+    },
   };
 
-  // ── BÁO CÁO GIAO CA ──
-  const cashTotalToday = bookings
-    .filter(
-      (b) =>
-        b.payment_method === "office" &&
-        (b.payment_status === "paid" || b.status === "confirmed"),
-    )
-    .reduce((sum, b) => sum + Number(b.total_price || 0), 0);
+  // ── 🔍 3. LỌC ĐƠN PHÒNG CHÍNH XÁC THEO CƠ SỞ CỦA OWNER (KHÔNG LỘ ĐƠN CỦA KHÁCH SẠN KHÁC) ──
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      // Nếu là Owner -> Bắt buộc đơn phải thuộc cơ sở của Owner
+      if (!isAdmin) {
+        if (!selectedHotelId) return false;
+        const matchId = String(b.hotel_id) === String(selectedHotelId);
+        const matchName =
+          selectedHotelObj?.name &&
+          b.hotel_name
+            ?.toLowerCase()
+            .includes(selectedHotelObj.name.toLowerCase());
+        if (!matchId && !matchName) return false;
+      } else {
+        // Nếu là Admin và chọn cơ sở cụ thể
+        if (selectedHotelId !== "all") {
+          const matchId = String(b.hotel_id) === String(selectedHotelId);
+          const matchName =
+            selectedHotelObj?.name &&
+            b.hotel_name
+              ?.toLowerCase()
+              .includes(selectedHotelObj.name.toLowerCase());
+          if (!matchId && !matchName) return false;
+        }
+      }
 
-  const qrTotalToday = bookings
-    .filter(
-      (b) =>
-        b.payment_method === "qr" &&
-        (b.payment_status === "paid" || b.status === "confirmed"),
-    )
-    .reduce((sum, b) => sum + Number(b.total_price || 0), 0);
+      // Lọc theo trạng thái tab
+      if (statusTab !== "all" && b.status !== statusTab) return false;
+      // Lọc theo ngày
+      if (startDateFilter && b.check_in < startDateFilter) return false;
+      if (endDateFilter && b.check_out > endDateFilter) return false;
 
-  const totalDepositHeld = bookings
-    .filter((b) => b.status === "checked_in")
-    .reduce((sum, b) => sum + Number(b.deposit_amount || 0), 0);
+      // Tìm kiếm
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        const bGuest = String(b.customer_name || "").toLowerCase();
+        const bPhone = String(b.customer_phone || "");
+        const bCode = String(b.code || "").toLowerCase();
+        const bRoom = String(
+          b.assigned_room || b.room_name || "",
+        ).toLowerCase();
+        return (
+          bGuest.includes(q) ||
+          bPhone.includes(q) ||
+          bCode.includes(q) ||
+          bRoom.includes(q)
+        );
+      }
 
-  const waitingCheckInCount = bookings.filter(
-    (b) =>
-      (b.payment_status === "paid" || b.status === "confirmed") &&
-      b.status === "confirmed",
-  ).length;
-  const inHouseCount = bookings.filter((b) => b.status === "checked_in").length;
-  const checkedOutCount = bookings.filter(
-    (b) => b.status === "checked_out",
-  ).length;
-
-  const filteredBookings = bookings.filter((b) => {
-    const isPaid = b.payment_status === "paid" || b.status === "confirmed";
-    const isCancelled =
-      b.status === "cancelled" || b.payment_status === "cancelled";
-    const isOfficePending =
-      b.payment_method === "office" && !isPaid && !isCancelled;
-    const isWaitingCheckIn = isPaid && b.status === "confirmed";
-    const isCheckedIn = b.status === "checked_in";
-    const isCheckedOut = b.status === "checked_out";
-
-    if (statusTab === "pending_office") return isOfficePending;
-    if (statusTab === "confirmed") return isWaitingCheckIn;
-    if (statusTab === "checked_in") return isCheckedIn;
-    if (statusTab === "checked_out") return isCheckedOut;
-    if (statusTab === "cancelled") return isCancelled;
-
-    if (search.trim()) {
-      const q = search.toLowerCase().trim();
-      return (
-        b.code.toLowerCase().includes(q) ||
-        b.customer_name.toLowerCase().includes(q) ||
-        b.customer_phone.includes(q) ||
-        (b.assigned_room && b.assigned_room.toLowerCase().includes(q))
-      );
-    }
-    return true;
-  });
+      return true;
+    });
+  }, [
+    bookings,
+    selectedHotelId,
+    selectedHotelObj,
+    statusTab,
+    startDateFilter,
+    endDateFilter,
+    search,
+    isAdmin,
+  ]);
 
   return (
-    <div className="space-y-7 font-sans text-slate-800 pb-20">
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-2xl text-white font-bold text-sm bg-slate-950 border border-slate-700 animate-in slide-in-from-bottom-5">
-          <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
-          <span>{toast.message}</span>
-        </div>
-      )}
-
-      {/* ── 1. HEADER CHÍNH ── */}
-      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-xs flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-bold text-xs">
-            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-            Hệ Thống Lễ Tân & Thu Ngân 24/7 (PMS v2.5)
+    <div className="space-y-6 font-sans pb-16 text-slate-800">
+      {/* ── 1. HEADER & BỘ CHỌN CƠ SỞ (ĐÃ BẢO MẬT) ── */}
+      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
+        <div>
+          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
+            <ShieldCheck size={16} />{" "}
+            {isAdmin
+              ? "Ban Quản Trị Hệ Thống (Admin)"
+              : "Kênh Quản Trị Của Chủ Cơ Sở (Owner PMS)"}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            Quản Lý Đặt Phòng & Vận Hành Lưu Trú
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            Xử Lý Đơn Đặt Phòng Theo Cơ Sở
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium">
-            Trung tâm điều phối đón khách, giao nhận phòng, phục vụ minibar và
-            in hóa đơn GTGT
+          <p className="text-xs text-slate-500 mt-0.5">
+            {isAdmin
+              ? "Quản lý và kiểm soát toàn bộ đơn phòng của các khách sạn trên sàn"
+              : `Quản trị buồng phòng và đón khách tại: ${selectedHotelObj?.name || "Cơ sở của bạn"}`}
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+          {/* 🏢 BỘ CHỌN CƠ SỞ (CHỈ HIỆN CƠ SỞ CỦA OWNER, ẨN MỤC TOÀN SÀN NẾU KHÔNG PHẢI ADMIN) */}
+          {myHotels.length > 0 && (
+            <PropertySearchSelector
+              hotels={myHotels}
+              selectedHotelId={selectedHotelId}
+              onSelectHotel={(id) => setSelectedHotelId(id)}
+              showAllOption={isAdmin} // 👈 CHỈ ADMIN MỚI CÓ NÚT "TOÀN SÀN", OWNER BỊ ẨN
+              placeholder="Chọn cơ sở của bạn..."
+            />
+          )}
+
           <button
-            type="button"
-            onClick={() => setIsShiftModalOpen(true)}
-            className="flex-1 sm:flex-none px-4 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-2xl transition flex items-center justify-center gap-2 shadow-sm cursor-pointer active:scale-95"
+            onClick={() => setIsWalkInModalOpen(true)}
+            className="px-4 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 active:scale-95"
           >
-            <Coins size={16} /> Báo Cáo Két Tiền
+            <Plus size={15} /> + Đặt Tại Quầy
           </button>
 
           <button
-            onClick={fetchBookings}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer active:scale-95"
-            title="Làm mới dữ liệu"
+            onClick={handleExportCSV}
+            className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
           >
-            <RefreshCw size={16} />
+            <Download size={14} /> Xuất CSV
           </button>
         </div>
       </div>
 
-      {/* ── 2. BẢNG 4 CHỈ SỐ KPI VẬN HÀNH TRONG NGÀY ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex justify-between items-center text-slate-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">
-              Khách sắp đến
-            </span>
-            <Clock size={18} className="text-blue-500" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <h3 className="text-3xl font-black text-blue-900">
-              {waitingCheckInCount}
-            </h3>
-            <span className="text-xs text-slate-400 font-bold">đơn</span>
-          </div>
+      {/* ── 2. BỘ LỌC ── */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+        <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100">
+          <span className="font-bold text-slate-600">
+            Đang hiển thị đơn phòng của:{" "}
+            <strong className="text-blue-900 font-black text-sm">
+              {isAdmin && selectedHotelId === "all"
+                ? "Tất cả các cơ sở lưu trú (Toàn sàn)"
+                : selectedHotelObj?.name || "Cơ sở của bạn"}
+            </strong>
+          </span>
+          <span className="text-slate-400 font-semibold">
+            {filteredBookings.length} Đơn đặt phòng
+          </span>
         </div>
 
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex justify-between items-center text-slate-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">
-              Đang lưu trú
-            </span>
-            <BedDouble size={18} className="text-emerald-500" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <h3 className="text-3xl font-black text-emerald-600">
-              {inHouseCount}
-            </h3>
-            <span className="text-xs text-slate-400 font-bold">phòng</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex justify-between items-center text-slate-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">
-              Đã Check-out
-            </span>
-            <CheckCircle2 size={18} className="text-slate-500" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <h3 className="text-3xl font-black text-slate-700">
-              {checkedOutCount}
-            </h3>
-            <span className="text-xs text-slate-400 font-bold">lượt</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex justify-between items-center text-slate-400">
-            <span className="text-[11px] font-bold uppercase tracking-wider">
-              Tiền mặt tại két
-            </span>
-            <DollarSign size={18} className="text-amber-500" />
-          </div>
-          <div className="flex items-baseline gap-1">
-            <h3 className="text-2xl font-black text-amber-700 tracking-tight">
-              {formatVND(cashTotalToday)}
-            </h3>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 3. TOOLBAR: TABS & TÌM KIẾM ── */}
-      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-          {TABS.map((tab) => {
+        {/* Status Tabs đếm số lượng */}
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {STATUS_TABS.map((tab) => {
             const count = bookings.filter((b) => {
-              const isPaid =
-                b.payment_status === "paid" || b.status === "confirmed";
-              const isCancelled =
-                b.status === "cancelled" || b.payment_status === "cancelled";
-              if (tab.id === "all") return true;
-              if (tab.id === "pending_office")
-                return b.payment_method === "office" && !isPaid && !isCancelled;
-              if (tab.id === "confirmed")
-                return isPaid && b.status === "confirmed";
-              if (tab.id === "checked_in") return b.status === "checked_in";
-              if (tab.id === "checked_out") return b.status === "checked_out";
-              if (tab.id === "cancelled") return isCancelled;
-              return true;
+              if (!isAdmin) {
+                if (!selectedHotelId) return false;
+                const matchId = String(b.hotel_id) === String(selectedHotelId);
+                const matchName =
+                  selectedHotelObj?.name &&
+                  b.hotel_name
+                    ?.toLowerCase()
+                    .includes(selectedHotelObj.name.toLowerCase());
+                if (!matchId && !matchName) return false;
+              } else if (selectedHotelId !== "all") {
+                const matchId = String(b.hotel_id) === String(selectedHotelId);
+                const matchName =
+                  selectedHotelObj?.name &&
+                  b.hotel_name
+                    ?.toLowerCase()
+                    .includes(selectedHotelObj.name.toLowerCase());
+                if (!matchId && !matchName) return false;
+              }
+              return tab.id === "all" ? true : b.status === tab.id;
             }).length;
 
             return (
               <button
                 key={tab.id}
                 onClick={() => setStatusTab(tab.id)}
-                className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                   statusTab === tab.id
                     ? "bg-slate-900 text-white shadow-sm"
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100"
@@ -643,11 +392,7 @@ export default function BookingListPage() {
               >
                 <span>{tab.label}</span>
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
-                    statusTab === tab.id
-                      ? "bg-white/20 text-white"
-                      : "bg-slate-200 text-slate-700"
-                  }`}
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${statusTab === tab.id ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"}`}
                 >
                   {count}
                 </span>
@@ -656,540 +401,312 @@ export default function BookingListPage() {
           })}
         </div>
 
-        <div className="relative">
-          <Search
-            size={18}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm nhanh theo Mã đơn (#GST-...), Tên khách hàng, Số điện thoại hoặc Số phòng..."
-            className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold focus:border-blue-600 focus:bg-white transition outline-none"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          <div className="md:col-span-6 relative">
+            <Search
+              size={16}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              type="text"
+              placeholder="Tìm theo Tên khách, Số điện thoại, Số phòng hoặc Mã đơn..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-600 focus:bg-white"
+            />
+          </div>
+
+          <div className="md:col-span-6 flex items-center gap-2 text-xs font-medium">
+            <Calendar size={15} className="text-slate-400 shrink-0" />
+            <span className="text-slate-500 font-bold shrink-0">Lọc ngày:</span>
+            <input
+              type="date"
+              value={startDateFilter}
+              onChange={(e) => setStartDateFilter(e.target.value)}
+              className="px-2.5 py-1.5 bg-slate-50 border rounded-xl outline-none text-xs flex-1"
+            />
+            <span className="text-slate-400">&rarr;</span>
+            <input
+              type="date"
+              value={endDateFilter}
+              onChange={(e) => setEndDateFilter(e.target.value)}
+              className="px-2.5 py-1.5 bg-slate-50 border rounded-xl outline-none text-xs flex-1"
+            />
+          </div>
         </div>
       </div>
 
-      {/* ── 4. BẢNG DỮ LIỆU ĐƠN PHÒNG CHUẨN PMS ── */}
+      {/* ── 3. BẢNG DANH SÁCH ĐƠN PHÒNG ── */}
       {loading ? (
-        <div className="py-28 flex justify-center bg-white rounded-3xl border border-slate-200 shadow-2xs">
-          <LoadingSpinner size="lg" label="Đang đối soát dữ liệu phòng..." />
+        <div className="py-24 flex justify-center bg-white rounded-3xl border">
+          <LoadingSpinner
+            size="lg"
+            label="Đang tải danh sách đơn đặt phòng..."
+          />
         </div>
       ) : filteredBookings.length > 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-2xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead className="bg-slate-50/80 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-100">
-                <tr>
-                  <th className="py-4 px-5">Đơn Hàng & Khách</th>
-                  <th className="py-4 px-4">Hạng Phòng & Bàn Giao</th>
-                  <th className="py-4 px-4">Khung Giờ Lưu Trú</th>
-                  <th className="py-4 px-4">Tiền Cọc (Deposit)</th>
-                  <th className="py-4 px-4 text-right">Tổng Tiền</th>
-                  <th className="py-4 px-4 text-center">Trạng Thái</th>
-                  <th className="py-4 px-5 text-center">Nghiệp Vụ Lễ Tân</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredBookings.map((b) => {
-                  const isPaid =
-                    b.payment_status === "paid" || b.status === "confirmed";
-                  const isCancelled =
-                    b.status === "cancelled" ||
-                    b.payment_status === "cancelled";
-                  const isOfficePending =
-                    b.payment_method === "office" && !isPaid && !isCancelled;
-                  const isWaitingCheckIn = isPaid && b.status === "confirmed";
-                  const isCheckedIn = b.status === "checked_in";
-                  const isCheckedOut = b.status === "checked_out";
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b">
+              <tr>
+                <th className="py-4 px-5">Mã Đơn & Khách Hàng</th>
+                <th className="py-4 px-4">Cơ Sở Lưu Trú</th>
+                <th className="py-4 px-4">Hạng Phòng & Số Phòng</th>
+                <th className="py-4 px-4">Lưu Trú</th>
+                <th className="py-4 px-4 text-right">Tổng Tiền</th>
+                <th className="py-4 px-4 text-center">Trạng Thái</th>
+                <th className="py-4 px-5 text-center">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {filteredBookings.map((b) => {
+                const st = statusBadge[b.status] || statusBadge.pending;
+                return (
+                  <tr
+                    key={b.code}
+                    onClick={() => setSelectedBookingDetails(b)}
+                    className="hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                  >
+                    <td className="py-4 px-5">
+                      <span className="font-mono font-black text-blue-900 text-xs tracking-wider bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 inline-block mb-1">
+                        #{b.code}
+                      </span>
+                      <strong className="text-slate-900 block text-sm font-extrabold group-hover:text-blue-700 transition-colors">
+                        {b.customer_name}
+                      </strong>
+                      <span className="text-slate-400 font-mono text-[11px]">
+                        {b.customer_phone}
+                      </span>
+                    </td>
 
-                  return (
-                    <tr
-                      key={b.code}
-                      className="hover:bg-slate-50/80 transition-colors"
+                    <td className="py-4 px-4">
+                      <span className="font-bold text-blue-900 block text-xs bg-slate-50 px-2 py-1 rounded-lg border">
+                        🏨{" "}
+                        {b.hotel_name ||
+                          selectedHotelObj?.name ||
+                          "Cơ sở lưu trú"}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <strong className="text-slate-800 block">
+                        {b.room_name}
+                      </strong>
+                      <span className="text-slate-500 text-[11px] font-semibold">
+                        {b.assigned_room || "Chưa xếp phòng"}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4 text-slate-600">
+                      <p className="text-slate-900 font-bold">{b.check_in}</p>
+                      <p className="text-[11px] text-slate-400">
+                        đến {b.check_out}
+                      </p>
+                    </td>
+
+                    <td className="py-4 px-4 text-right">
+                      <strong className="text-sm font-black text-[#ff6a00] block">
+                        {formatVND(b.total_price)}
+                      </strong>
+                      <span className="text-[10px] text-slate-400">
+                        {b.payment_method}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4 text-center">
+                      <span
+                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${st.color}`}
+                      >
+                        {st.label.split(" ")[0]}
+                      </span>
+                    </td>
+
+                    <td
+                      className="py-4 px-5 text-center"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {/* Mã đơn & Khách */}
-                      <td className="py-4 px-5">
-                        <div className="space-y-0.5">
-                          <span className="font-mono font-black text-blue-900 text-xs tracking-wider bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 inline-block mb-1">
-                            #{b.code}
-                          </span>
-                          <strong className="text-slate-900 block text-sm font-extrabold">
-                            {b.customer_name}
-                          </strong>
-                          <p className="text-[11px] text-slate-400 font-mono">
-                            {b.customer_phone}
-                          </p>
-                        </div>
-                      </td>
-
-                      {/* Hạng phòng & Phòng bàn giao */}
-                      <td className="py-4 px-4">
-                        <div className="space-y-1">
-                          <strong className="text-slate-800 block">
-                            {b.room_name}
-                          </strong>
-                          {isCheckedIn ? (
-                            <span className="inline-flex items-center gap-1.5 font-black text-xs text-blue-700 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200">
-                              <Key size={13} /> {b.assigned_room}
-                            </span>
-                          ) : isCheckedOut ? (
-                            <span className="text-slate-400 text-[11px] font-semibold italic">
-                              Đã trả ({b.assigned_room})
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-[11px] italic">
-                              Chưa xếp phòng
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Ngày nhận / trả */}
-                      <td className="py-4 px-4 text-xs font-semibold text-slate-600">
-                        <div className="space-y-0.5">
-                          <p className="text-slate-900 font-bold">
-                            {b.check_in}
-                          </p>
-                          <p className="text-slate-400 text-[11px]">
-                            đến {b.check_out}
-                          </p>
-                        </div>
-                      </td>
-
-                      {/* Tiền cọc */}
-                      <td className="py-4 px-4">
-                        {b.deposit_amount > 0 ? (
-                          <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
-                            🛡️ {formatVND(b.deposit_amount)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-[11px] italic">
-                            Chưa thu cọc
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Tổng tiền */}
-                      <td className="py-4 px-4 text-right">
-                        <strong className="text-sm font-black text-[#ff6a00] block">
-                          {formatVND(b.total_price)}
-                        </strong>
-                        {b.extra_services && b.extra_services.length > 0 && (
-                          <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded-md inline-block mt-0.5">
-                            +{b.extra_services.length} dịch vụ
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Trạng thái */}
-                      <td className="py-4 px-4 text-center">
-                        {isOfficePending ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 animate-pulse">
-                            <Clock size={13} /> Chờ thu tiền
-                          </span>
-                        ) : isWaitingCheckIn ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                            <Clock size={13} /> Chờ Check-in
-                          </span>
-                        ) : isCheckedIn ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <BedDouble size={13} /> Đang ở
-                          </span>
-                        ) : isCheckedOut ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                            <CheckCircle2 size={13} /> Đã Check-out
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            <XCircle size={13} /> Đã hủy
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Cụm Nghiệp vụ Lễ tân */}
-                      <td className="py-4 px-5 text-center">
-                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                          {isOfficePending && (
-                            <button
-                              type="button"
-                              onClick={() => handleConfirmOfficePayment(b.code)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1 cursor-pointer"
-                            >
-                              <DollarSign size={13} /> Thu tiền
-                            </button>
-                          )}
-
-                          {isWaitingCheckIn && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCheckInModalBooking(b);
-                                setAssignedRoomNumber("Phòng 101");
-                                setDepositAmount(500000);
-                              }}
-                              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1 cursor-pointer"
-                            >
-                              <Key size={13} /> Check-in
-                            </button>
-                          )}
-
-                          {isCheckedIn && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setExtraServiceBooking(b)}
-                                className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer"
-                                title="Thêm Minibar, Giặt là, Thuê xe..."
-                              >
-                                <Wine size={13} /> + Minibar
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setRoomMoveBooking(b);
-                                  setNewRoomNumber("Phòng 202");
-                                }}
-                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer"
-                                title="Hỗ trợ chuyển phòng"
-                              >
-                                <ArrowRightLeft size={14} />
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setConciergeModalBooking(b)}
-                                className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl transition cursor-pointer"
-                                title="Nhật ký báo thức / Bưu phẩm / Phàn nàn"
-                              >
-                                <Bell size={14} />
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setCheckOutModalBooking(b)}
-                                className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center gap-1 cursor-pointer"
-                              >
-                                <LogOutIcon size={13} /> Check-out
-                              </button>
-                            </>
-                          )}
-
-                          {/* 🛑 ĐÃ ĐỔI TÊN THÀNH HỒ SƠ THANH TOÁN CHUẨN XỊN */}
+                      <div className="flex items-center justify-center gap-1.5">
+                        {b.status === "pending" && (
                           <button
-                            type="button"
-                            onClick={() => handleOpenDossier(b, "bill")}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition flex items-center gap-1 cursor-pointer"
-                            title="Hồ sơ quyết toán & Hóa đơn VAT"
+                            onClick={() =>
+                              handleUpdateStatus(b.code, "confirmed")
+                            }
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
                           >
-                            <FileText size={13} /> Hồ Sơ Thanh Toán
+                            Duyệt
                           </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        )}
+                        {b.status === "confirmed" && (
+                          <button
+                            onClick={() => {
+                              setCheckInModalBooking(b);
+                              setAssignedRoomNumber("P.101");
+                              setDepositAmount(500000);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+                          >
+                            Check-in
+                          </button>
+                        )}
+                        {b.status === "checked_in" && (
+                          <button
+                            onClick={() => setCheckOutModalBooking(b)}
+                            className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs transition"
+                          >
+                            Check-out
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setSelectedBookingDetails(b)}
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
+                          title="Xem chi tiết"
+                        >
+                          <Eye size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
         <EmptyState
           icon={Ticket}
-          title="Không tìm thấy đơn đặt phòng nào"
-          description="Hiện tại không có đơn nào phù hợp với bộ lọc tìm kiếm này."
-          actionLabel="Xem tất cả đơn đặt"
-          onAction={() => {
-            setStatusTab("all");
-            setSearch("");
-          }}
+          title={`Không có đơn đặt phòng nào của cơ sở "${selectedHotelObj?.name || "Cơ sở của bạn"}"`}
+          description="Khách đặt phòng tại cơ sở này sẽ tự động hiển thị ở đây."
+          actionLabel="Tạo đơn tại quầy ngay"
+          onAction={() => setIsWalkInModalOpen(true)}
         />
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          🔑 MODAL CHECK-IN & THU CỌC
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {checkInModalBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in font-sans">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-5 bg-blue-600 text-white flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <Key className="w-5 h-5" />
-                <h3 className="font-extrabold text-sm">
-                  Thủ Tục Check-in & Giao Phòng
-                </h3>
-              </div>
-              <button
-                onClick={() => setCheckInModalBooking(null)}
-                className="text-blue-200 hover:text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4 text-xs">
-              <div className="p-3.5 bg-blue-50/60 rounded-2xl border border-blue-100 space-y-1">
-                <p>
-                  <b>Khách hàng:</b>{" "}
-                  <strong className="text-blue-950">
-                    {checkInModalBooking.customer_name}
-                  </strong>{" "}
-                  ({checkInModalBooking.customer_phone})
-                </p>
-                <p>
-                  <b>Hạng phòng:</b> {checkInModalBooking.room_name}
-                </p>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Chọn số phòng bàn giao cho khách:
-                </label>
-                <select
-                  value={assignedRoomNumber}
-                  onChange={(e) => setAssignedRoomNumber(e.target.value)}
-                  className="w-full h-11 border-2 border-blue-500 rounded-xl px-3.5 font-bold text-blue-900 bg-white outline-none cursor-pointer"
-                >
-                  <option value="Phòng 101">
-                    🔑 Phòng 101 (Tầng 1 - View Vườn)
-                  </option>
-                  <option value="Phòng 102">
-                    🔑 Phòng 102 (Tầng 1 - View Vườn)
-                  </option>
-                  <option value="Phòng 201">
-                    🔑 Phòng 201 (Tầng 2 - Ban công)
-                  </option>
-                  <option value="Phòng 202">
-                    🔑 Phòng 202 (Tầng 2 - Ban công)
-                  </option>
-                  <option value="Phòng 301">
-                    🔑 Phòng 301 (Tầng 3 - VIP Ocean)
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Thu tiền đặt cọc (Deposit VNĐ):
-                </label>
-                <input
-                  type="number"
-                  step="50000"
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(Number(e.target.value))}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3.5 font-extrabold text-emerald-700 text-sm outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Ghi chú lễ tân:
-                </label>
-                <input
-                  type="text"
-                  value={checkInNote}
-                  onChange={(e) => setCheckInNote(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3.5 outline-none font-medium"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  onClick={() => setCheckInModalBooking(null)}
-                  className="px-4 py-2.5 border border-slate-300 rounded-xl font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  onClick={handleConfirmCheckIn}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl shadow-md cursor-pointer"
-                >
-                  Xác nhận Check-in
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          🚪 MODAL CHECK-OUT & QUYẾT TOÁN CỌC
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {checkOutModalBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in font-sans">
-          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-5 bg-slate-900 text-white flex justify-between items-center">
-              <h3 className="font-extrabold text-sm flex items-center gap-2">
-                <Receipt size={18} /> Quyết Toán & Tiễn Khách (Check-out)
+      {/* MODAL CHI TIẾT ĐƠN */}
+      {selectedBookingDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border space-y-4 text-xs">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="font-black text-base text-blue-950">
+                Chi Tiết Đơn #{selectedBookingDetails.code}
               </h3>
-              <button
-                onClick={() => setCheckOutModalBooking(null)}
-                className="text-slate-400 hover:text-white cursor-pointer"
-              >
+              <button onClick={() => setSelectedBookingDetails(null)}>
                 <X size={18} />
               </button>
             </div>
-
-            <div className="p-6 space-y-4 text-xs text-slate-800">
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Tiền phòng lưu trú:</span>
-                  <strong className="text-slate-900">
-                    {formatVND(checkOutModalBooking.total_price)}
-                  </strong>
-                </div>
-
-                {checkOutModalBooking.extra_services?.length > 0 && (
-                  <div className="space-y-1 pt-1.5 border-t border-slate-200">
-                    <span className="font-bold text-purple-700 block">
-                      Dịch vụ phụ phát sinh (
-                      {checkOutModalBooking.extra_services.length} mục):
-                    </span>
-                    {checkOutModalBooking.extra_services.map((srv, i) => (
-                      <div
-                        key={i}
-                        className="flex justify-between text-[11px] text-slate-600 pl-2"
-                      >
-                        <span>
-                          • {srv.name} ({srv.time}):
-                        </span>
-                        <strong className="font-mono">
-                          +{formatVND(srv.price)}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex justify-between pt-2 border-t border-slate-200 text-emerald-800 font-bold">
-                  <span>Tiền cọc đã nhận lúc Check-in (Deposit):</span>
-                  <span>
-                    -{formatVND(checkOutModalBooking.deposit_amount || 0)}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center pt-2.5 border-t-2 border-slate-900 text-sm">
-                  <strong className="text-slate-900">
-                    Số tiền cọc cần hoàn trả cho khách:
-                  </strong>
-                  <strong className="text-base font-black text-emerald-700 font-mono">
-                    {formatVND(
-                      Math.max(0, checkOutModalBooking.deposit_amount || 0),
-                    )}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  onClick={() => setCheckOutModalBooking(null)}
-                  className="px-4 py-2.5 border border-slate-300 rounded-xl font-bold cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  onClick={handleConfirmFinalCheckOut}
-                  className="px-6 py-2.5 bg-slate-900 hover:bg-black text-white font-extrabold rounded-xl shadow-md cursor-pointer"
-                >
-                  Hoàn cọc & Check-out
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          🍷 MODAL GHI NỢ DỊCH VỤ / MINIBAR
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {extraServiceBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in font-sans">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-5 bg-purple-600 text-white flex justify-between items-center">
-              <h3 className="font-extrabold text-sm flex items-center gap-2">
-                <Wine size={18} /> Ghi Nợ Dịch Vụ / Minibar Vào Phòng
-              </h3>
-              <button
-                onClick={() => setExtraServiceBooking(null)}
-                className="text-purple-200 hover:text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <form
-              onSubmit={handleAddExtraService}
-              className="p-6 space-y-4 text-xs"
-            >
+            <div className="space-y-2">
               <p>
-                <b>Khách hàng:</b> {extraServiceBooking.customer_name} (
-                {extraServiceBooking.assigned_room})
+                <b>Cơ sở lưu trú:</b>{" "}
+                <strong className="text-blue-900">
+                  {selectedBookingDetails.hotel_name || selectedHotelObj?.name}
+                </strong>
               </p>
+              <p>
+                <b>Khách hàng:</b> {selectedBookingDetails.customer_name} (
+                {selectedBookingDetails.customer_phone})
+              </p>
+              <p>
+                <b>Hạng phòng:</b> {selectedBookingDetails.room_name} (
+                {selectedBookingDetails.assigned_room})
+              </p>
+              <p>
+                <b>Lưu trú:</b> {selectedBookingDetails.check_in} &rarr;{" "}
+                {selectedBookingDetails.check_out}
+              </p>
+              <p>
+                <b>Tổng tiền:</b>{" "}
+                <strong className="text-rose-600 text-sm">
+                  {formatVND(selectedBookingDetails.total_price)}
+                </strong>
+              </p>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedBookingDetails(null)}
+                className="px-5 py-2 bg-slate-900 text-white font-bold rounded-xl"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Loại dịch vụ:
-                </label>
-                <select
-                  value={serviceCategory}
-                  onChange={(e) => setServiceCategory(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3.5 bg-white font-semibold outline-none cursor-pointer"
-                >
-                  <option value="minibar">
-                    🍷 Minibar (Nước ngọt, Bia, Snack)
-                  </option>
-                  <option value="laundry">👔 Dịch vụ Giặt ủi (Laundry)</option>
-                  <option value="vehicle">🛵 Thuê xe máy / Ô tô</option>
-                  <option value="dining">
-                    🍽️ Ăn uống tại phòng / Nhà hàng
-                  </option>
-                  <option value="spa">💆 Dịch vụ Spa & Massage</option>
-                  <option value="damage">
-                    ⚠️ Bồi thường hư hỏng trang thiết bị
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Tên dịch vụ chi tiết:
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={serviceName}
-                  onChange={(e) => setServiceName(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3.5 bg-white outline-none font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Số tiền (VNĐ):
-                </label>
-                <input
-                  type="number"
-                  step="5000"
-                  required
-                  value={servicePrice}
-                  onChange={(e) => setServicePrice(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3.5 bg-white font-extrabold text-purple-700 text-sm outline-none"
-                />
-              </div>
-
+      {/* MODAL WALK-IN */}
+      {isWalkInModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
+            <h3 className="font-black text-base text-slate-900">
+              Tạo Đơn Đặt Phòng Tại Quầy
+            </h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const newBooking = {
+                  code: `GST-${Date.now().toString().slice(-6)}`,
+                  hotel_id: selectedHotelId || "HT-1",
+                  hotel_name: selectedHotelObj?.name || "Cơ sở của tôi",
+                  customer_name: walkInForm.guestName,
+                  customer_phone: walkInForm.guestPhone,
+                  customer_email: walkInForm.guestEmail || "walkin@guest.com",
+                  room_name: walkInForm.roomName,
+                  assigned_room: walkInForm.assignedRoom,
+                  total_price: Number(walkInForm.totalPrice),
+                  payment_method: walkInForm.paymentMethod,
+                  payment_status: "paid",
+                  status: walkInForm.autoCheckIn ? "checked_in" : "confirmed",
+                  check_in: walkInForm.checkIn,
+                  check_out: walkInForm.checkOut,
+                };
+                saveAndSync([newBooking, ...bookings]);
+                alert(`✓ Đã tạo thành công đơn #${newBooking.code}!`);
+                setIsWalkInModalOpen(false);
+              }}
+              className="space-y-3"
+            >
+              <input
+                required
+                placeholder="Tên khách hàng *"
+                value={walkInForm.guestName}
+                onChange={(e) =>
+                  setWalkInForm({ ...walkInForm, guestName: e.target.value })
+                }
+                className="w-full p-2.5 border rounded-xl font-bold"
+              />
+              <input
+                required
+                placeholder="Số điện thoại *"
+                value={walkInForm.guestPhone}
+                onChange={(e) =>
+                  setWalkInForm({ ...walkInForm, guestPhone: e.target.value })
+                }
+                className="w-full p-2.5 border rounded-xl font-mono"
+              />
+              <input
+                required
+                type="number"
+                placeholder="Tiền phòng (VND) *"
+                value={walkInForm.totalPrice}
+                onChange={(e) =>
+                  setWalkInForm({
+                    ...walkInForm,
+                    totalPrice: Number(e.target.value),
+                  })
+                }
+                className="w-full p-2.5 border rounded-xl font-bold text-emerald-700"
+              />
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setExtraServiceBooking(null)}
-                  className="px-4 py-2.5 border border-slate-300 rounded-xl font-bold cursor-pointer"
+                  onClick={() => setIsWalkInModalOpen(false)}
+                  className="px-4 py-2 border rounded-xl"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl shadow-md cursor-pointer"
+                  className="px-5 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl"
                 >
-                  Xác nhận ghi nợ
+                  Tạo Đơn
                 </button>
               </div>
             </form>
@@ -1197,567 +714,110 @@ export default function BookingListPage() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          🛎️ MODAL NHẬT KÝ CHĂM SÓC KHÁCH HÀNG (CONCIERGE)
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {conciergeModalBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in font-sans">
-          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-5 bg-blue-700 text-white flex justify-between items-center">
-              <h3 className="font-extrabold text-sm flex items-center gap-2">
-                <Bell size={18} /> Nhật Ký Chăm Sóc & Yêu Cầu Của Khách
-              </h3>
+      {/* MODAL CHECK-IN */}
+      {checkInModalBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
+            <h3 className="font-black text-base text-emerald-700">
+              Check-in Giao Phòng ({checkInModalBooking.hotel_name})
+            </h3>
+            <p>
+              Khách: <b>{checkInModalBooking.customer_name}</b>
+            </p>
+            <input
+              placeholder="Số phòng (VD: P.101)"
+              value={assignedRoomNumber}
+              onChange={(e) => setAssignedRoomNumber(e.target.value)}
+              className="w-full p-2.5 border rounded-xl font-bold"
+            />
+            <div className="flex justify-end gap-2 pt-2">
               <button
-                onClick={() => setConciergeModalBooking(null)}
-                className="text-blue-200 hover:text-white cursor-pointer"
+                onClick={() => setCheckInModalBooking(null)}
+                className="px-4 py-2 border rounded-xl"
               >
-                <X size={18} />
+                Hủy
               </button>
-            </div>
-
-            <div className="p-6 space-y-4 text-xs">
-              <p>
-                <b>Khách hàng:</b> {conciergeModalBooking.customer_name} (
-                {conciergeModalBooking.assigned_room})
-              </p>
-
-              {conciergeModalBooking.concierge_logs?.length > 0 && (
-                <div className="space-y-1.5 max-h-36 overflow-y-auto p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                  <span className="font-bold text-slate-600 block mb-1">
-                    Lịch sử yêu cầu đã lưu:
-                  </span>
-                  {conciergeModalBooking.concierge_logs.map((log, i) => (
-                    <div
-                      key={i}
-                      className="text-[11px] bg-white p-2.5 rounded-xl border border-slate-200 flex justify-between items-start"
-                    >
-                      <span>
-                        •{" "}
-                        <b>
-                          {log.type === "wake_up"
-                            ? "⏰ Báo thức"
-                            : log.type === "birthday"
-                              ? "🎂 Sinh nhật"
-                              : log.type === "complaint"
-                                ? "⚠️ Phàn nàn"
-                                : "📦 Bưu phẩm"}
-                          :
-                        </b>{" "}
-                        {log.content}
-                      </span>
-                      <span className="text-slate-400 font-mono text-[10px] shrink-0 ml-2">
-                        {log.time}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <form
-                onSubmit={handleAddConciergeLog}
-                className="space-y-3 pt-2 border-t border-slate-100"
+              <button
+                onClick={handleConfirmCheckIn}
+                className="px-5 py-2 bg-emerald-600 text-white font-bold rounded-xl"
               >
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1.5">
-                    Loại nghiệp vụ chăm sóc:
-                  </label>
-                  <select
-                    value={conciergeType}
-                    onChange={(e) => setConciergeType(e.target.value)}
-                    className="w-full h-11 border border-slate-300 rounded-xl px-3.5 bg-white font-semibold outline-none cursor-pointer"
-                  >
-                    <option value="wake_up">
-                      ⏰ Hẹn giờ báo thức (Wake-up call)
-                    </option>
-                    <option value="package">
-                      📦 Nhận giữ thư từ / Bưu phẩm
-                    </option>
-                    <option value="birthday">
-                      🎂 Quà tặng sinh nhật khách VIP
-                    </option>
-                    <option value="housekeeping">
-                      🧹 Yêu cầu thêm chăn/gối/dọn phòng
-                    </option>
-                    <option value="complaint">
-                      ⚠️ Tiếp nhận & Giải quyết phàn nàn
-                    </option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1.5">
-                    Nội dung chi tiết:
-                  </label>
-                  <textarea
-                    rows={2}
-                    required
-                    value={conciergeContent}
-                    onChange={(e) => setConciergeContent(e.target.value)}
-                    placeholder="VD: Hẹn báo thức lúc 06:00 sáng mai gọi taxi ra sân bay..."
-                    className="w-full border border-slate-300 rounded-xl p-3 outline-none focus:border-blue-600 font-medium"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setConciergeModalBooking(null)}
-                    className="px-4 py-2.5 border border-slate-300 rounded-xl font-bold cursor-pointer"
-                  >
-                    Đóng
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-extrabold rounded-xl shadow-md cursor-pointer"
-                  >
-                    Lưu vào sổ lễ tân
-                  </button>
-                </div>
-              </form>
+                Hoàn tất Check-in
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          📄 MODAL HỒ SƠ THANH TOÁN (GUEST FOLIO, VAT INVOICE, REGISTRATION, THANK YOU)
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {dossierBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in font-sans">
-          <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden border border-slate-200 max-h-[90vh] flex flex-col">
-            <div className="p-5 bg-slate-900 text-white flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-amber-400" />
-                <h3 className="font-extrabold text-sm">
-                  Hồ Sơ Quyết Toán & Hóa Đơn Điện Tử (Guest Folio)
-                </h3>
-              </div>
+      {/* MODAL CHECK-OUT */}
+      {checkOutModalBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
+            <h3 className="font-black text-base text-slate-900">
+              Check-out Quyết Toán
+            </h3>
+            <p>
+              Khách: <b>{checkOutModalBooking.customer_name}</b>
+            </p>
+            <p>
+              Tổng tiền: <b>{formatVND(checkOutModalBooking.total_price)}</b>
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
               <button
-                onClick={() => setDossierBooking(null)}
-                className="text-slate-400 hover:text-white cursor-pointer"
+                onClick={() => setCheckOutModalBooking(null)}
+                className="px-4 py-2 border rounded-xl"
               >
-                <X size={18} />
+                Hủy
+              </button>
+              <button
+                onClick={handleConfirmCheckOut}
+                className="px-5 py-2 bg-slate-900 text-white font-bold rounded-xl"
+              >
+                Check-out
               </button>
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* TAB SELECTOR */}
-            <div className="flex gap-2 p-3 bg-slate-100 border-b border-slate-200 overflow-x-auto shrink-0">
-              {[
-                { id: "bill", label: "1. Bảng kê chi phí (Guest Folio)" },
-                { id: "vat", label: "2. Hóa đơn GTGT (VAT MISA)" },
-                { id: "registration", label: "3. Phiếu đăng ký nhận phòng" },
-                { id: "thankyou", label: "4. Thư cảm ơn của Giám Đốc" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setDossierTab(tab.id)}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                    dossierTab === tab.id
-                      ? "bg-[#003580] text-white shadow-xs"
-                      : "bg-white text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+      {/* MODAL IN BILL */}
+      {dossierBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl border space-y-4 text-xs">
+            <div className="text-center border-b pb-2">
+              <h2 className="font-black text-base uppercase text-blue-900">
+                {dossierBooking.hotel_name}
+              </h2>
+              <p className="font-bold text-slate-500">
+                HÓA ĐƠN QUYẾT TOÁN (GUEST FOLIO)
+              </p>
             </div>
-
-            {/* NỘI DUNG TỪNG MÓN */}
-            <div
-              className="p-8 space-y-5 text-xs text-slate-800 overflow-y-auto flex-1 bg-white"
-              id="printable-dossier"
-            >
-              {dossierTab === "bill" && (
-                <div className="space-y-4">
-                  <div className="text-center border-b pb-3 space-y-0.5">
-                    <h2 className="font-black text-base uppercase text-[#003580]">
-                      {dossierBooking.hotel_name}
-                    </h2>
-                    <p className="font-bold text-xs uppercase text-slate-600">
-                      BẢNG TỔNG HỢP CHI PHÍ DỊCH VỤ (GUEST FOLIO)
-                    </p>
-                    <p className="text-[11px] text-slate-400 font-mono">
-                      Mã đơn: #{dossierBooking.code}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <p>
-                      <b>Khách hàng:</b> {dossierBooking.customer_name} (
-                      {dossierBooking.customer_phone})
-                    </p>
-                    <p>
-                      <b>Số phòng:</b> {dossierBooking.assigned_room} (
-                      {dossierBooking.room_name})
-                    </p>
-                    <p>
-                      <b>Nhận phòng:</b> {dossierBooking.check_in}
-                    </p>
-                    <p>
-                      <b>Trả phòng:</b> {dossierBooking.check_out}
-                    </p>
-                  </div>
-
-                  <table className="w-full border-collapse border border-slate-200 text-xs">
-                    <thead className="bg-slate-50 font-bold">
-                      <tr>
-                        <th className="border p-2.5 text-left">
-                          Dịch vụ sử dụng
-                        </th>
-                        <th className="border p-2.5 text-center w-28">
-                          Thời gian
-                        </th>
-                        <th className="border p-2.5 text-right w-36">
-                          Thành tiền
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border p-2.5">
-                          Tiền phòng lưu trú ({dossierBooking.room_name})
-                        </td>
-                        <td className="border p-2.5 text-center">
-                          {dossierBooking.check_in}
-                        </td>
-                        <td className="border p-2.5 text-right font-bold">
-                          {formatVND(dossierBooking.total_price)}
-                        </td>
-                      </tr>
-                      {dossierBooking.extra_services?.map((srv, idx) => (
-                        <tr key={idx}>
-                          <td className="border p-2.5">• {srv.name}</td>
-                          <td className="border p-2.5 text-center">
-                            {srv.time}
-                          </td>
-                          <td className="border p-2.5 text-right font-bold">
-                            +{formatVND(srv.price)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center text-sm font-bold border border-slate-200">
-                    <span>TỔNG TIỀN PHẢI THANH TOÁN:</span>
-                    <span className="text-xl font-black text-[#ff6a00]">
-                      {formatVND(dossierBooking.total_price)}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {dossierTab === "vat" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-12 gap-4 pb-4 border-b-2 border-slate-900">
-                    <div className="col-span-8 space-y-1">
-                      <h2 className="font-black text-base uppercase text-[#003580]">
-                        {dossierBooking.hotel_name}
-                      </h2>
-                      <p className="text-[11px]">
-                        <b>Mã số thuế:</b> 031581779-001
-                      </p>
-                      <p className="text-[11px]">
-                        <b>Địa chỉ:</b> Trung tâm du lịch, Việt Nam
-                      </p>
-                    </div>
-                    <div className="col-span-4 text-right">
-                      <p className="font-mono text-[10px]">
-                        Ký hiệu: <b>1C26MMS</b>
-                      </p>
-                      <p className="font-mono text-rose-600 font-bold text-xs">
-                        Số:{" "}
-                        <b>0000{dossierBooking.code?.slice(-4) || "1234"}</b>
-                      </p>
-                    </div>
-                  </div>
-
-                  <h1 className="text-center text-lg font-black uppercase text-slate-900">
-                    HÓA ĐƠN GIÁ TRỊ GIA TĂNG
-                  </h1>
-
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5">
-                    <p>
-                      <b>Đơn vị mua hàng:</b> {companyVatInfo.companyName}
-                    </p>
-                    <p>
-                      <b>Mã số thuế:</b>{" "}
-                      <span className="font-mono font-bold text-blue-900">
-                        {companyVatInfo.taxCode}
-                      </span>
-                    </p>
-                    <p>
-                      <b>Địa chỉ:</b> {companyVatInfo.companyAddress}
-                    </p>
-                  </div>
-
-                  {(() => {
-                    const totalPayment = Number(
-                      dossierBooking.total_price || 650000,
-                    );
-                    const preTaxAmount = Math.round(
-                      totalPayment / (1 + vatTaxRate / 100),
-                    );
-                    const vatAmount = totalPayment - preTaxAmount;
-                    return (
-                      <div className="space-y-2">
-                        <table className="w-full border-collapse border text-xs">
-                          <thead className="bg-slate-50 font-bold">
-                            <tr>
-                              <th className="border p-2">
-                                Tên Hàng Hóa, Dịch Vụ
-                              </th>
-                              <th className="border p-2 text-center w-16">
-                                ĐVT
-                              </th>
-                              <th className="border p-2 text-right w-36">
-                                Thành Tiền
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td className="border p-2">
-                                Dịch vụ lưu trú: {dossierBooking.room_name} (
-                                {dossierBooking.assigned_room})
-                              </td>
-                              <td className="border p-2 text-center">Đêm</td>
-                              <td className="border p-2 text-right font-mono font-bold">
-                                {formatVND(preTaxAmount)}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <div className="p-3.5 bg-slate-50 rounded-xl flex justify-between text-xs border">
-                          <span>
-                            Thuế GTGT ({vatTaxRate}%):{" "}
-                            <strong>+{formatVND(vatAmount)}</strong>
-                          </span>
-                          <span>
-                            Tổng cộng:{" "}
-                            <strong className="text-sm font-black text-blue-900">
-                              {formatVND(totalPayment)}
-                            </strong>
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {dossierTab === "registration" && (
-                <div className="space-y-4 text-center">
-                  <h2 className="font-black text-base uppercase text-[#003580]">
-                    {dossierBooking.hotel_name}
-                  </h2>
-                  <h3 className="font-bold text-sm uppercase text-slate-700">
-                    PHIẾU ĐĂNG KÝ NHẬN PHÒNG (REGISTRATION CARD)
-                  </h3>
-                  <div className="text-left p-4 bg-slate-50 rounded-2xl border space-y-2 text-xs">
-                    <p>
-                      <b>Khách hàng:</b> {dossierBooking.customer_name} (
-                      {dossierBooking.customer_phone})
-                    </p>
-                    <p>
-                      <b>Phòng:</b> {dossierBooking.assigned_room} (
-                      {dossierBooking.room_name})
-                    </p>
-                    <p>
-                      <b>Thời gian:</b> {dossierBooking.check_in} đến{" "}
-                      {dossierBooking.check_out}
-                    </p>
-                    <p>
-                      <b>Tiền cọc đã thu:</b>{" "}
-                      {formatVND(dossierBooking.deposit_amount || 0)}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {dossierTab === "thankyou" && (
-                <div className="space-y-4 p-6 bg-emerald-50/50 rounded-3xl border border-emerald-200">
-                  <div className="text-center border-b border-emerald-200 pb-3">
-                    <h2 className="font-black text-base uppercase text-emerald-950">
-                      {dossierBooking.hotel_name}
-                    </h2>
-                    <p className="text-[11px] text-slate-500 italic">
-                      THƯ TRI ÂN KHÁCH HÀNG
-                    </p>
-                  </div>
-                  <p>
-                    Kính gửi Quý khách{" "}
-                    <strong>{dossierBooking.customer_name}</strong>,
-                  </p>
-                  <p className="leading-relaxed">
-                    Ban Giám đốc và toàn thể nhân viên khách sạn{" "}
-                    <strong>{dossierBooking.hotel_name}</strong> xin gửi lời cảm
-                    ơn chân thành nhất vì Quý khách đã lựa chọn chúng tôi cho kỳ
-                    nghỉ vừa qua.
-                  </p>
-                  <p className="leading-relaxed">
-                    Kính chúc Quý khách có một hành trình tiếp theo thật nhiều
-                    niềm vui. Rất mong được đón tiếp Quý khách trong những
-                    chuyến đi sắp tới!
-                  </p>
-                  <div className="text-right pt-4">
-                    <strong className="text-slate-900 block">
-                      Ban Giám Đốc Khách Sạn
-                    </strong>
-                    <span className="text-[10px] text-slate-400 italic">
-                      Trân trọng cảm ơn,
-                    </span>
-                  </div>
-                </div>
-              )}
+            <div className="grid grid-cols-2 gap-2">
+              <p>
+                <b>Khách:</b> {dossierBooking.customer_name}
+              </p>
+              <p>
+                <b>Phòng:</b> {dossierBooking.assigned_room}
+              </p>
+              <p>
+                <b>Tổng thanh toán:</b>{" "}
+                <strong className="text-emerald-700">
+                  {formatVND(dossierBooking.total_price)}
+                </strong>
+              </p>
             </div>
-
-            {/* FOOTER */}
-            <div className="p-5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5 shrink-0">
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setDossierBooking(null)}
-                className="px-5 py-2.5 border border-slate-300 rounded-xl font-bold text-xs text-slate-600 hover:bg-white cursor-pointer"
+                className="px-4 py-2 border rounded-xl font-bold"
               >
                 Đóng
               </button>
               <button
                 onClick={() => window.print()}
-                className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md cursor-pointer"
+                className="px-5 py-2 bg-blue-900 text-white rounded-xl font-bold flex items-center gap-1"
               >
-                <Printer size={15} /> In phiếu này
+                <Printer size={14} /> In
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          📊 MODAL BÁO CÁO GIAO CA THU NGÂN
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {isShiftModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in font-sans">
-          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-5 bg-amber-500 text-amber-950 flex justify-between items-center font-bold text-sm">
-              <div className="flex items-center gap-2">
-                <Coins size={18} />
-                <span>Báo Cáo Bàn Giao Ca Trực & Két Tiền Hôm Nay</span>
-              </div>
-              <button
-                onClick={() => setIsShiftModalOpen(false)}
-                className="hover:text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4 text-xs text-slate-800">
-              <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 space-y-3">
-                <div className="flex justify-between items-center text-sm font-bold border-b border-amber-200 pb-2">
-                  <span>💵 Tiền mặt thực thu tại quầy:</span>
-                  <span className="text-xl font-black text-emerald-700">
-                    {formatVND(cashTotalToday)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>💳 Tiền chuyển khoản QR:</span>
-                  <strong className="font-mono font-bold text-blue-900">
-                    {formatVND(qrTotalToday)}
-                  </strong>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>🛡️ Tiền cọc đang giữ của khách đang ở:</span>
-                  <strong className="font-bold text-amber-800">
-                    {formatVND(totalDepositHeld)}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  onClick={() => setIsShiftModalOpen(false)}
-                  className="px-4 py-2.5 border border-slate-300 rounded-xl font-bold cursor-pointer"
-                >
-                  Đóng
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="px-5 py-2.5 bg-slate-900 text-white font-extrabold rounded-xl flex items-center gap-1 cursor-pointer shadow-md"
-                >
-                  <Printer size={15} /> In biên bản bàn giao ca
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════════
-          🔄 MODAL ĐỔI PHÒNG KHI ĐANG Ở
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {roomMoveBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in font-sans">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-5 bg-slate-900 text-white flex justify-between items-center">
-              <h3 className="font-extrabold text-sm flex items-center gap-2">
-                <ArrowRightLeft size={16} /> Đổi Phòng Cho Khách Đang Ở
-              </h3>
-              <button
-                onClick={() => setRoomMoveBooking(null)}
-                className="text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4 text-xs">
-              <p>
-                <b>Khách hàng:</b> {roomMoveBooking.customer_name}
-              </p>
-              <p>
-                <b>Phòng hiện tại:</b>{" "}
-                <span className="font-bold text-rose-600">
-                  {roomMoveBooking.assigned_room}
-                </span>
-              </p>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Chuyển sang số phòng mới:
-                </label>
-                <select
-                  value={newRoomNumber}
-                  onChange={(e) => setNewRoomNumber(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3.5 font-bold bg-white outline-none cursor-pointer"
-                >
-                  <option value="Phòng 102">🔑 Phòng 102 (Tầng 1)</option>
-                  <option value="Phòng 201">🔑 Phòng 201 (Tầng 2)</option>
-                  <option value="Phòng 202">🔑 Phòng 202 (Tầng 2)</option>
-                  <option value="Phòng 301">🔑 Phòng 301 (Tầng 3 VIP)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">
-                  Lý do chuyển buồng:
-                </label>
-                <input
-                  type="text"
-                  value={roomMoveReason}
-                  onChange={(e) => setRoomMoveReason(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3.5 font-medium outline-none"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  onClick={() => setRoomMoveBooking(null)}
-                  className="px-4 py-2.5 border border-slate-300 rounded-xl font-bold cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  onClick={handleConfirmRoomMove}
-                  className="px-5 py-2.5 bg-slate-900 text-white font-extrabold rounded-xl shadow-md cursor-pointer"
-                >
-                  Xác nhận đổi phòng
-                </button>
-              </div>
             </div>
           </div>
         </div>

@@ -1,3 +1,4 @@
+// src/components/layout/Sidebar.jsx
 import React from "react";
 import { NavLink, Link } from "react-router-dom";
 import {
@@ -6,6 +7,14 @@ import {
   LogOut,
   Home,
   LayoutDashboard,
+  Building2,
+  Users,
+  BedDouble,
+  CalendarCheck,
+  Receipt,
+  Sparkles,
+  BarChart3,
+  UserCheck,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 
@@ -19,127 +28,89 @@ const Sidebar = ({
   return (
     <aside
       className={cn(
-        "flex flex-col bg-[#ffffff] text-slate-400 transition-all duration-300 relative border-r border-slate-300 h-screen shrink-0 z-50 select-none",
+        "flex flex-col bg-white text-slate-400 transition-all duration-300 relative border-r border-slate-200 h-screen shrink-0 z-50 select-none",
         isCollapsed ? "w-20" : "w-72",
       )}
     >
-      {/* NÚT THU GỌN */}
+      {/* Toggle Button */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-10 z-[60] bg-neutral-200 text-emerald-600 rounded-full p-1.5 border border-stone-300 hover:bg-green-400 transition-all shadow-xl hidden lg:block cursor-pointer"
+        className="absolute -right-3 top-10 z-[60] bg-slate-100 text-slate-700 rounded-full p-1.5 border border-slate-300 hover:bg-slate-200 transition-all shadow-xl hidden lg:block cursor-pointer"
       >
-        {isCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+        {isCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
       </button>
 
-      {/* LOGO GOSTAY */}
+      {/* Brand */}
       <div
         className={cn(
-          "h-20 flex items-center px-6 mb-2 shrink-0 border-b border-slate-300/60",
+          "h-20 flex items-center px-6 mb-2 shrink-0 border-b border-slate-100",
           isCollapsed ? "justify-center px-0" : "justify-start",
         )}
       >
-        <Link to="/" className="flex items-center gap-3 group">
+        <Link to="/" className="flex items-center gap-3">
           <div
-            className={cn(
-              "p-2 rounded-2xl text-white shadow-lg shrink-0 transition-transform group-hover:scale-105",
-              activeColor,
-            )}
+            className={cn("p-2 rounded-2xl text-white shadow-md", activeColor)}
           >
-            <LayoutDashboard size={22} />
+            <Building2 size={22} />
           </div>
           {!isCollapsed && (
-            <span className="font-black text-black text-xl tracking-tight animate-in fade-in duration-500">
-              GoStay<span className="text-green-500">.</span>
+            <span className="font-black text-slate-900 text-xl tracking-tight">
+              BezTower<span className="text-blue-600">.PMS</span>
             </span>
           )}
         </Link>
       </div>
 
-      {/* DANH SÁCH MENU CHÍNH */}
-      <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto no-scrollbar py-4">
-        {!isCollapsed && (
-          <p className="px-4 mb-3 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-            Menu quản trị
-          </p>
-        )}
+      {/* Menu List */}
+      <nav className="flex-1 px-3 space-y-1.5 overflow-y-auto no-scrollbar py-3">
         {items.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-4 rounded-2xl transition-all duration-200 group relative",
+                "flex items-center gap-4 rounded-2xl transition-all duration-200",
                 isCollapsed
                   ? "justify-center h-12 w-12 mx-auto"
                   : "px-4 py-3.5",
                 isActive
-                  ? `${activeColor} text-white shadow-lg shadow-blue-900/40 font-bold`
-                  : "hover:bg-slate-800/50 hover:text-white font-semibold text-slate-950",
+                  ? `${activeColor} text-white shadow-md font-bold`
+                  : "hover:bg-slate-100 text-slate-700 font-semibold",
               )
             }
           >
-            {({ isActive }) => (
-              <>
-                <span
-                  className={cn(
-                    "shrink-0 transition-colors",
-                    isActive
-                      ? "text-white"
-                      : "text-slate-500 group-hover:text-white",
-                  )}
-                >
-                  {item.icon}
-                </span>
-
-                {!isCollapsed && (
-                  <span className="text-sm truncate tracking-wide">
-                    {item.label}
-                  </span>
-                )}
-
-                {isCollapsed && isActive && (
-                  <div className="absolute -left-1.5 w-1 h-8 bg-blue-500 rounded-r-full" />
-                )}
-              </>
+            <span className="shrink-0">{item.icon}</span>
+            {!isCollapsed && (
+              <span className="text-xs truncate tracking-wide">
+                {item.label}
+              </span>
             )}
           </NavLink>
         ))}
       </nav>
 
-      {/* ─── ĐÁY SIDEBAR: CHỈ GIỮ 2 NÚT THAO TÁC GỌN GÀNG ─── */}
-      <div className="p-4 border-t border-slate-300/60 bg-[#f8fafc] shrink-0">
-        <div
+      {/* Footer Actions */}
+      <div className="p-4 border-t border-slate-100 bg-slate-50/70 shrink-0 flex gap-2">
+        <Link
+          to="/"
           className={cn(
-            "flex gap-2",
-            isCollapsed ? "flex-col items-center" : "flex-row",
+            "flex items-center justify-center bg-slate-900 hover:bg-black text-white rounded-2xl",
+            isCollapsed ? "w-11 h-11" : "flex-1 py-3 text-xs font-bold gap-2",
           )}
         >
-          <Link
-            to="/"
-            title="Về trang chủ khách hàng"
-            className={cn(
-              "flex items-center justify-center bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white transition-all rounded-2xl border border-slate-800",
-              isCollapsed ? "w-11 h-11" : "flex-1 py-3 text-xs font-bold gap-2",
-            )}
-          >
-            <Home size={16} />
-            {!isCollapsed && "Trang chủ"}
-          </Link>
-
-          <button
-            onClick={onLogout}
-            title="Đăng xuất khỏi hệ thống"
-            className={cn(
-              "flex items-center justify-center bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white transition-all rounded-2xl border border-rose-500/20 cursor-pointer",
-              isCollapsed
-                ? "w-11 h-11"
-                : "flex-1 py-3 text-xs font-black gap-2",
-            )}
-          >
-            <LogOut size={16} />
-            {!isCollapsed && "Đăng xuất"}
-          </button>
-        </div>
+          <Home size={16} />
+          {!isCollapsed && "Trang chủ"}
+        </Link>
+        <button
+          onClick={onLogout}
+          className={cn(
+            "flex items-center justify-center bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-2xl border border-rose-200 cursor-pointer",
+            isCollapsed ? "w-11 h-11" : "flex-1 py-3 text-xs font-bold gap-2",
+          )}
+        >
+          <LogOut size={16} />
+          {!isCollapsed && "Đăng xuất"}
+        </button>
       </div>
     </aside>
   );
