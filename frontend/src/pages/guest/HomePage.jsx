@@ -708,7 +708,7 @@ const HomePage = () => {
                   <button
                     type="button"
                     onClick={handleSearchSubmit}
-                    className="md:col-span-2 h-full min-h-[48px] bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-[#0a2540] font-black text-base rounded-xl shadow-lg shadow-amber-500/30 flex items-center justify-center transition-all active:scale-[0.98] cursor-pointer"
+                    className="md:col-span-2 h-full min-h-[48px] bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-stone-700 font-black text-base rounded-xl shadow-lg shadow-amber-500/30 flex items-center justify-center transition-all active:scale-[0.98] cursor-pointer"
                   >
                     Tìm
                   </button>
@@ -717,7 +717,7 @@ const HomePage = () => {
             </div>
 
             {/* COMBO PROMO */}
-          <div className="lg:col-span-4 h-full flex items-end">
+            <div className="lg:col-span-4 h-full flex items-end">
               <div
                 onClick={() => handleSearchSubmit()}
                 className="w-full max-w-sm bg-white/95 backdrop-blur-md rounded-2xl p-5 shadow-2xl border border-white/50 space-y-2 cursor-pointer hover:bg-white transition-all group"
@@ -789,7 +789,7 @@ const HomePage = () => {
                     </h3>
                     <span className="text-xl">🇻🇳</span>
                     {place.isTop1 && (
-                      <span className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-[#0a2540] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full shadow shadow-amber-500/20">
+                      <span className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-stone-700 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full shadow shadow-amber-500/20">
                         🔥 Top 1 Thịnh Hành
                       </span>
                     )}
