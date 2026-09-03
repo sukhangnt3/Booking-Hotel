@@ -742,7 +742,7 @@ const HotelListPage = () => {
                             <p className="text-[10px] text-gray-400 uppercase font-medium">
                               Giá 1 đêm từ
                             </p>
-                            <p className="text-xl font-black text-rose-600 tracking-tight">
+                            <p className="text-xl font-black text-green-500 tracking-tight">
                               {salePrice > 0 ? formatVND(salePrice) : "Liên hệ"}
                             </p>
                             <p className="text-[10px] text-gray-400 italic">

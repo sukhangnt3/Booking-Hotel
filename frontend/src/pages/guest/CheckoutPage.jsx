@@ -4,13 +4,8 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   QrCode,
-  CheckCircle2,
-  Copy,
   Clock,
-  ShieldCheck,
   Check,
-  Building2,
-  Sparkles,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -214,7 +209,7 @@ function CheckoutPage() {
 
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex justify-between items-center">
                 <div>
-                  <span className="text-amber-700 block font-medium">
+                  <span className="text-amber-600 block font-medium">
                     Nội dung chuyển khoản (Bắt buộc)
                   </span>
                   <span className="font-mono font-black text-rose-600 text-sm">
@@ -223,7 +218,7 @@ function CheckoutPage() {
                 </div>
                 <button
                   onClick={() => handleCopy(bookingCode, "memo")}
-                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold cursor-pointer"
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-700 text-white rounded-lg font-bold cursor-pointer"
                 >
                   {copiedField === "memo" ? "✓ Đã chép" : "Sao chép"}
                 </button>
@@ -234,7 +229,7 @@ function CheckoutPage() {
           <div className="pt-4 max-w-sm mx-auto space-y-3">
             <button
               onClick={handleConfirmPaid}
-              className="w-full py-4 bg-[#ff6a00] hover:bg-[#e55f00] text-white font-black text-base rounded-2xl shadow-lg transition active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+              className="w-full py-4 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-stone-700 font-black text-base rounded-2xl shadow-lg shadow-amber-500/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
             >
               <Check size={20} strokeWidth={3} />
               Tôi đã chuyển khoản xong

@@ -714,7 +714,7 @@ const HotelDetailPage = () => {
               onClick={() =>
                 roomsRef.current?.scrollIntoView({ behavior: "smooth" })
               }
-              className="bg-[#ff5b00] hover:bg-[#e05000] text-white font-black px-7 py-2.5 rounded-xl shadow-md text-sm transition-transform active:scale-95 cursor-pointer"
+              className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-stone-700 font-black px-7 py-2.5 rounded-xl shadow-md shadow-amber-500/20 text-sm transition-all active:scale-95 cursor-pointer"
             >
               Đặt ngay
             </button>
@@ -1037,7 +1037,7 @@ const HotelDetailPage = () => {
               <button
                 type="button"
                 onClick={handleUpdateSearch}
-                className="w-full h-12 bg-[#ff5b00] hover:bg-[#e05000] text-white font-black text-xs rounded-xl shadow-md transition active:scale-95 flex items-center justify-center cursor-pointer"
+                className="w-full h-12 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-stone-700 font-black text-sm rounded-xl shadow-md shadow-amber-500/20 transition-all active:scale-95 flex items-center justify-center cursor-pointer"
               >
                 Cập nhật
               </button>
@@ -1144,14 +1144,10 @@ const HotelDetailPage = () => {
                           <span className="text-[11px] text-slate-400 block">
                             Giá {totalNights} đêm / 1 phòng
                           </span>
-                          <span className="text-2xl font-black text-[#ff5b00]">
+                          <span className="text-2xl font-black text-green-500">
                             {formatVND(totalRoomPrice)}
                           </span>
-                          {points > 0 && (
-                            <span className="flex items-center gap-1 text-[11px] text-amber-600 font-bold mt-0.5">
-                              <Coins size={12} /> Tích lũy {points} điểm
-                            </span>
-                          )}
+                         
                         </div>
                         <button
                           type="button"
@@ -1160,7 +1156,7 @@ const HotelDetailPage = () => {
                               `/checkout?hotelId=${hotel.id}&roomId=${room.id}&amount=${totalRoomPrice}&checkIn=${safeFormat(checkInDate, "yyyy-MM-dd")}&checkOut=${safeFormat(checkOutDate, "yyyy-MM-dd")}&adults=${adults}`,
                             )
                           }
-                          className="w-full sm:w-auto px-8 py-3 bg-[#ff5b00] hover:bg-[#e05000] text-white font-black text-sm rounded-xl shadow-lg transition active:scale-95 cursor-pointer"
+                          className="w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-stone-700 font-black text-sm rounded-xl shadow-lg shadow-amber-500/20 transition-all active:scale-95 cursor-pointer"
                         >
                           Đặt ngay
                         </button>

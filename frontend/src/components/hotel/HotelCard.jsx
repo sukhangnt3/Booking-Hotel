@@ -168,7 +168,7 @@ const HotelCard = ({
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
             Giá mỗi đêm từ
           </span>
-          <span className="text-xl font-black text-rose-600 tracking-tight">
+          <span className="text-xl font-black text-green-500 tracking-tight">
             {formatPrice(rawPrice)}
           </span>
           <span className="text-[10px] text-gray-400 italic">
