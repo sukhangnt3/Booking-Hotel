@@ -120,6 +120,7 @@ export const Step1GeneralAndRooms = ({
       setSelectedProvinceObj(found);
       onChange({
         province: provinceName,
+        city: provinceName, // 👈 ĐỒNG BỘ CẢ 2 TRƯỜNG ĐỂ KHÔNG BỊ DÍNH HCM
         district: found.districts[0] || "",
         latitude: found.coords.lat,
         longitude: found.coords.lng,

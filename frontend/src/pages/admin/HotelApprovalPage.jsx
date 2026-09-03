@@ -13,23 +13,18 @@ import {
   AlertCircle,
   RefreshCw,
   FileText,
+  FileBadge,
   FileCheck,
-  DollarSign,
-  Sparkles,
   User,
   Phone,
   Mail,
-  FileBadge,
-  Globe,
-  Navigation,
-  Check,
-  Trash2,
-  Calendar,
+  Sparkles,
+  X,
   Coffee,
   Baby,
   Dog,
   Compass,
-  X,
+  Check,
   Tag,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
@@ -46,13 +41,12 @@ export default function HotelApprovalPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("pending");
   const [selectedHotel, setSelectedHotel] = useState(null);
-  const [actionLoadingId, setActionLoadingId] = useState(null);
 
   const formatVND = (amount) =>
     Number(amount || 0).toLocaleString("vi-VN") + " ₫";
 
   // ════════════════════════════════════════════════════════════════════════════
-  // 🔍 1. TẢI TOÀN BỘ DỮ LIỆU ĐĂNG KÝ THỰC TẾ CỦA CHỦ CƠ SỞ
+  // 🔍 1. TẢI ĐẦY ĐỦ 100% CÁC TRƯỜNG DỮ LIỆU TỪ FORM ĐĂNG KÝ CỦA OWNER
   // ════════════════════════════════════════════════════════════════════════════
   const fetchHotels = () => {
     setLoading(true);
@@ -66,9 +60,6 @@ export default function HotelApprovalPage() {
       const rejectedIds = JSON.parse(
         localStorage.getItem("rejected_hotel_ids") || "[]",
       ).map(String);
-      const rejectedRecords = JSON.parse(
-        localStorage.getItem("rejected_owner_records") || "{}",
-      );
 
       const mappedList = localApps.map((item, index) => {
         const hotelId = String(
@@ -81,18 +72,17 @@ export default function HotelApprovalPage() {
         let finalStatus = "pending";
         let rejectReason = item.rejectReason || "";
 
-        if (rejectedIds.includes(hotelId) || item.status === "rejected") {
+        if (item.status === "approved" || approvedIds.includes(hotelId)) {
+          finalStatus = "approved";
+        } else if (item.status === "pending") {
+          finalStatus = "pending";
+        } else if (
+          rejectedIds.includes(hotelId) ||
+          item.status === "rejected"
+        ) {
           finalStatus = "rejected";
           rejectReason =
-            rejectedRecords[ownerEmail]?.reason ||
-            item.rejectReason ||
-            "Hồ sơ chưa đạt tiêu chuẩn pháp lý";
-        } else if (
-          approvedIds.includes(hotelId) ||
-          item.status === "approved" ||
-          item.is_approved === true
-        ) {
-          finalStatus = "approved";
+            item.rejectReason || "Hồ sơ chưa đạt tiêu chuẩn phê duyệt";
         } else {
           finalStatus = "pending";
         }
@@ -100,7 +90,7 @@ export default function HotelApprovalPage() {
         return {
           ...item,
           id: hotelId,
-          name: item.hotelNameVi || item.name || "Cơ sở lưu trú mới",
+          name: item.hotelNameVi || item.name || "Cơ sở lưu trú",
           ownerName: item.ownerName || item.signerName || "Chủ cơ sở",
           emailContact: ownerEmail || "Chưa cập nhật email",
           phoneContact: item.phoneContact || item.signerPhone || "0901234567",
@@ -108,9 +98,41 @@ export default function HotelApprovalPage() {
           address: item.streetAddress || item.address || "Địa chỉ chỗ nghỉ",
           status: finalStatus,
           rejectReason: rejectReason,
+
+          // 7 Khối dữ liệu KYC đầy đủ
+          description: item.description || "",
+          businessType: item.businessType || "company",
+          taxCode: item.taxCode || "",
+          signerName: item.signerName || item.ownerName || "",
+          signerPosition: item.signerPosition || "Chủ sở hữu",
+          signerIdNumber: item.signerIdNumber || "",
+          signerPhone: item.signerPhone || item.phoneContact || "",
+          signerEmail: item.signerEmail || ownerEmail,
+          legalDocuments: item.legalDocuments || [],
+
+          bankName: item.bankName || "MBBank",
+          bankAccount: item.bankAccount || "",
+          bankAccountName: item.bankAccountName || item.ownerName || "",
+          commissionRate: item.commissionRate || 18,
+          payoutCycle: item.payoutCycle || "weekly",
+
           rooms: item.rooms || item.roomTypes || [],
           hotelImages: item.hotelImages || (item.image ? [item.image] : []),
-          legalDocuments: item.legalDocuments || [],
+          image:
+            item.image ||
+            item.hotelImages?.[0] ||
+            "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600",
+          starRating: item.starRating || 5,
+          type: item.hotelType || item.type || "Khách sạn",
+
+          checkInFrom: item.checkInFrom || "14:00",
+          checkInTo: item.checkInTo || "23:59",
+          checkOutFrom: item.checkOutFrom || "06:00",
+          checkOutTo: item.checkOutTo || "12:00",
+          cancellationPolicy: item.cancellationPolicy || "flexible_24h",
+          hasBreakfast: item.hasBreakfast || "free",
+          allowChildren: item.allowChildren || "yes",
+          allowPets: item.allowPets || "no",
           propertyAmenities: item.propertyAmenities || [
             "wifi",
             "parking",
@@ -118,20 +140,12 @@ export default function HotelApprovalPage() {
           ],
           policies: item.policies || [],
           experiences: item.experiences || [],
-          image:
-            item.image ||
-            item.hotelImages?.[0] ||
-            "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600",
-          starRating: item.starRating || 5,
-          type: item.hotelType || item.type || "Khách sạn",
-          created_at:
-            item.created_at || item.submittedAt || new Date().toISOString(),
         };
       });
 
       setHotels(mappedList);
     } catch (err) {
-      console.error("Lỗi tải danh sách duyệt:", err);
+      console.error(err);
       setHotels([]);
     } finally {
       setLoading(false);
@@ -144,7 +158,6 @@ export default function HotelApprovalPage() {
 
   // 🟢 DUYỆT CƠ SỞ
   const handleApprove = (hotel) => {
-    setActionLoadingId(hotel.id);
     const targetId = String(hotel.id).trim();
     const ownerEmail = String(hotel.emailContact || "")
       .toLowerCase()
@@ -165,24 +178,17 @@ export default function HotelApprovalPage() {
         JSON.stringify(rejectedIds.filter((id) => id !== targetId)),
       );
 
-      if (ownerEmail) {
-        const approvedEmails = JSON.parse(
-          localStorage.getItem("approved_owner_emails") || "[]",
-        );
-        if (!approvedEmails.includes(ownerEmail))
-          approvedEmails.push(ownerEmail);
-        localStorage.setItem(
-          "approved_owner_emails",
-          JSON.stringify(approvedEmails),
-        );
-      }
-
       const localApps = JSON.parse(
         localStorage.getItem("pending_partner_applications") || "[]",
       );
       const updatedApps = localApps.map((a) => {
         if (String(a.id || a.applicationId) === targetId) {
-          return { ...a, status: "approved", is_approved: true };
+          return {
+            ...a,
+            status: "approved",
+            is_approved: true,
+            rejectReason: "",
+          };
         }
         return a;
       });
@@ -191,14 +197,14 @@ export default function HotelApprovalPage() {
         JSON.stringify(updatedApps),
       );
 
-      // Tự động chuyển phòng vào kho buồng phòng PMS
+      // Đưa phòng vào kho buồng phòng master
       if (hotel.rooms && hotel.rooms.length > 0) {
-        const currentMasterRooms = JSON.parse(
+        const masterRooms = JSON.parse(
           localStorage.getItem("pms_hotel_rooms_master") || "[]",
         );
-        const newRoomsToAdd = hotel.rooms.map((r, i) => ({
+        const newRooms = hotel.rooms.map((r, i) => ({
           id: r.id || `R-${targetId}-${i + 1}`,
-          name: r.roomName || r.name || `Phòng Hạng ${i + 1}`,
+          name: r.roomName || r.name || `Phòng ${i + 1}`,
           category: r.category || "Deluxe King",
           room_number: `P.${101 + i}`,
           floor: "Tầng 1",
@@ -209,48 +215,42 @@ export default function HotelApprovalPage() {
           room_status: "available",
           amenities: r.roomAmenities || ["wifi", "air_con", "smart_tv"],
           image: r.image || hotel.image,
+          hotel_id: targetId,
+          hotel_name: hotel.name,
         }));
-
-        const mergedRooms = [
-          ...currentMasterRooms,
-          ...newRoomsToAdd.filter(
-            (nr) => !currentMasterRooms.some((mr) => mr.id === nr.id),
-          ),
+        const merged = [
+          ...masterRooms.filter((mr) => String(mr.hotel_id) !== targetId),
+          ...newRooms,
         ];
-        localStorage.setItem(
-          "pms_hotel_rooms_master",
-          JSON.stringify(mergedRooms),
-        );
+        localStorage.setItem("pms_hotel_rooms_master", JSON.stringify(merged));
       }
 
       setHotels((prev) =>
-        prev.map((h) => (h.id === targetId ? { ...h, status: "approved" } : h)),
+        prev.map((h) =>
+          h.id === targetId
+            ? { ...h, status: "approved", rejectReason: "" }
+            : h,
+        ),
       );
       alert(
-        `✓ Đã PHÊ DUYỆT thành công cơ sở "${hotel.name}"! Khách sạn đã được kích hoạt mở bán.`,
+        `✓ Đã PHÊ DUYỆT thành công cơ sở "${hotel.name}"! Khách sạn đã được mở bán trên toàn sàn.`,
       );
       setSelectedHotel(null);
       setStatusFilter("approved");
     } catch (err) {
-      alert("Lỗi khi phê duyệt hồ sơ!");
-    } finally {
-      setActionLoadingId(null);
+      alert("Lỗi khi phê duyệt!");
     }
   };
 
   // 🔴 TỪ CHỐI CƠ SỞ
   const handleReject = (hotel) => {
     const reason = window.prompt(
-      `Nhập lý do từ chối hồ sơ "${hotel.name}":`,
-      "Giấy phép kinh doanh chưa hợp lệ hoặc thiếu hình ảnh thực tế của buồng phòng.",
+      `Nhập lý do từ chối cơ sở "${hotel.name}":`,
+      "Giấy phép kinh doanh chưa hợp lệ hoặc thiếu hình ảnh thực tế.",
     );
     if (!reason) return;
 
-    setActionLoadingId(hotel.id);
     const targetId = String(hotel.id).trim();
-    const ownerEmail = String(hotel.emailContact || "")
-      .toLowerCase()
-      .trim();
 
     try {
       const rejectedIds = JSON.parse(
@@ -267,26 +267,17 @@ export default function HotelApprovalPage() {
         JSON.stringify(approvedIds.filter((id) => id !== targetId)),
       );
 
-      if (ownerEmail) {
-        const rejectedRecords = JSON.parse(
-          localStorage.getItem("rejected_owner_records") || "{}",
-        );
-        rejectedRecords[ownerEmail] = {
-          reason,
-          date: new Date().toISOString(),
-        };
-        localStorage.setItem(
-          "rejected_owner_records",
-          JSON.stringify(rejectedRecords),
-        );
-      }
-
       const localApps = JSON.parse(
         localStorage.getItem("pending_partner_applications") || "[]",
       );
       const updatedApps = localApps.map((a) => {
         if (String(a.id || a.applicationId) === targetId) {
-          return { ...a, status: "rejected", rejectReason: reason };
+          return {
+            ...a,
+            status: "rejected",
+            is_approved: false,
+            rejectReason: reason,
+          };
         }
         return a;
       });
@@ -302,13 +293,12 @@ export default function HotelApprovalPage() {
             : h,
         ),
       );
-      alert(`Đã từ chối hồ sơ "${hotel.name}".`);
+
+      alert(`Đã TỪ CHỐI cơ sở "${hotel.name}". Lý do đã được ghi nhận.`);
       setSelectedHotel(null);
       setStatusFilter("rejected");
     } catch (err) {
-      alert("Lỗi khi từ chối hồ sơ!");
-    } finally {
-      setActionLoadingId(null);
+      alert("Lỗi khi từ chối!");
     }
   };
 
@@ -319,7 +309,7 @@ export default function HotelApprovalPage() {
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
       {/* ── HEADER ── */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex justify-between items-center">
         <div>
           <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider mb-1">
             <ShieldCheck size={16} /> Ban Quản Trị Hệ Thống (Super Admin)
@@ -328,7 +318,7 @@ export default function HotelApprovalPage() {
             Phê Duyệt Hồ Sơ Chỗ Nghỉ & Đối Tác ({hotels.length} Hồ sơ)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Thẩm định đầy đủ thông tin pháp lý, buồng phòng, tài khoản ngân hàng
+            Thẩm định 100% thông tin pháp lý, buồng phòng, tài khoản ngân hàng
             và chính sách vận hành
           </p>
         </div>
@@ -371,10 +361,7 @@ export default function HotelApprovalPage() {
       {/* ── DANH SÁCH THẺ HỒ SƠ ── */}
       {loading ? (
         <div className="py-24 flex justify-center bg-white rounded-3xl border">
-          <LoadingSpinner
-            size="lg"
-            label="Đang tải danh sách hồ sơ đăng ký..."
-          />
+          <LoadingSpinner size="lg" label="Đang tải danh sách hồ sơ..." />
         </div>
       ) : filteredHotels.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -398,7 +385,7 @@ export default function HotelApprovalPage() {
                     <div className="absolute top-3 right-3">
                       {isApproved && (
                         <span className="bg-emerald-600 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-full shadow-lg">
-                          ✓ Đã Duyệt (Đang Bán)
+                          ✓ Đang Mở Bán
                         </span>
                       )}
                       {isPending && (
@@ -426,6 +413,13 @@ export default function HotelApprovalPage() {
                       {h.address}, {h.city}
                     </p>
 
+                    {isRejected && h.rejectReason && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl">
+                        <p className="font-bold">Lý do từ chối:</p>
+                        <p className="text-[11px] mt-0.5">{h.rejectReason}</p>
+                      </div>
+                    )}
+
                     <div className="bg-slate-50 p-4 rounded-2xl border text-xs space-y-1.5">
                       <p className="flex justify-between">
                         <span className="text-slate-500">Chủ sở hữu:</span>
@@ -434,16 +428,16 @@ export default function HotelApprovalPage() {
                         </strong>
                       </p>
                       <p className="flex justify-between">
-                        <span className="text-slate-500">Email đăng nhập:</span>
+                        <span className="text-slate-500">Email:</span>
                         <strong className="text-blue-900 font-mono">
                           {h.emailContact}
                         </strong>
                       </p>
                       <p className="flex justify-between">
                         <span className="text-slate-500">
-                          Số phòng niêm yết:
+                          Hạng phòng đăng ký:
                         </span>
-                        <strong>{h.rooms?.length || 0} Hạng phòng</strong>
+                        <strong>{h.rooms?.length || 0} phòng</strong>
                       </p>
                     </div>
                   </div>
@@ -457,7 +451,7 @@ export default function HotelApprovalPage() {
                       className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl text-xs shadow-md disabled:opacity-40 cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <CheckCircle2 size={15} />{" "}
-                      {isApproved ? "Đã Phê Duyệt" : "Chấp Thuận & Mở Bán"}
+                      {isApproved ? "Đang Bán" : "Chấp Thuận & Mở Bán"}
                     </button>
                     <button
                       onClick={() => handleReject(h)}
@@ -465,10 +459,11 @@ export default function HotelApprovalPage() {
                       className="py-2.5 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-2xl text-xs font-bold disabled:opacity-40 cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <XCircle size={15} />{" "}
-                      {isRejected ? "Đã Từ Chối" : "Từ Chối Hồ Sơ"}
+                      {isRejected ? "Đã Từ Chối" : "Từ Chối"}
                     </button>
                   </div>
 
+                  {/* NÚT BẬT MODAL THẨM ĐỊNH 7 KHỐI ĐẦY ĐỦ */}
                   <button
                     onClick={() => setSelectedHotel(h)}
                     className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-900 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200"
@@ -485,27 +480,27 @@ export default function HotelApprovalPage() {
         <EmptyState
           icon={Building2}
           title="Không có hồ sơ nào trong mục này"
-          description="Khi có chủ cơ sở mới đăng ký, hồ sơ sẽ hiển thị ở đây để Admin thẩm định."
+          description="Khi có hồ sơ đăng ký mới hoặc nộp lại, danh sách sẽ hiển thị ở đây."
           actionLabel="Xem tất cả hồ sơ"
           onAction={() => setStatusFilter("all")}
         />
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════════
-          🔍 MODAL THẨM ĐỊNH TOÀN DIỆN 100% (7 KHỐI ĐẦY ĐỦ THÔNG TIN)
+          🔍 MODAL THẨM ĐỊNH TOÀN DIỆN 100% (7 KHỐI ĐẦY ĐỦ KHÔNG THIẾU BẤT KỲ MỤC NÀO)
       ═══════════════════════════════════════════════════════════════════════════ */}
       {selectedHotel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl border space-y-6 max-h-[92vh] overflow-y-auto p-6 sm:p-8 text-xs text-slate-700">
             {/* Modal Header */}
             <div className="flex justify-between items-start border-b pb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-black uppercase bg-blue-600 text-white px-2.5 py-0.5 rounded-full">
-                    Hồ Sơ Thẩm Định KYC Đối Tác
+                    Hồ Sơ Thẩm Định KYC Toàn Diện
                   </span>
                   <span className="font-mono text-slate-400 text-xs">
-                    Mã hồ sơ: #{selectedHotel.id}
+                    Mã ID: #{selectedHotel.id}
                   </span>
                 </div>
                 <h2 className="text-2xl font-black text-slate-900">
@@ -524,7 +519,7 @@ export default function HotelApprovalPage() {
               </button>
             </div>
 
-            {/* KHỐI 1: BÀI VIẾT GIỚI THIỆU & MÔ TẢ CHỖ NGHỈ */}
+            {/* 1. MÔ TẢ & BÀI VIẾT GIỚI THIỆU */}
             <div className="p-4 bg-slate-50 rounded-2xl border space-y-2">
               <span className="font-black text-slate-900 text-xs uppercase flex items-center gap-1.5">
                 <FileText size={15} className="text-blue-600" /> 1. Bài Viết Mô
@@ -536,11 +531,11 @@ export default function HotelApprovalPage() {
               </p>
             </div>
 
-            {/* KHỐI 2: HỒ SƠ PHÁP LÝ & GIẤY PHÉP KINH DOANH SCAN */}
+            {/* 2. HỒ SƠ PHÁP LÝ & GIẤY PHÉP SCAN (KYC) */}
             <div className="p-5 bg-blue-50/50 rounded-2xl border border-blue-200 space-y-4">
               <span className="font-black text-blue-950 text-xs uppercase flex items-center gap-1.5">
                 <FileBadge size={16} className="text-blue-700" /> 2. Hồ Sơ Pháp
-                Lý & Người Ký Hợp Đồng
+                Lý & Người Đại Diện Ký Hợp Đồng
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                 <div className="bg-white p-3 rounded-xl border">
@@ -572,7 +567,7 @@ export default function HotelApprovalPage() {
                 </div>
                 <div className="bg-white p-3 rounded-xl border">
                   <span className="text-[10px] text-slate-400 font-bold block">
-                    LOẠI HÌNH DOANH NGHIỆP
+                    LOẠI HÌNH KINH DOANH
                   </span>
                   <strong className="text-slate-900 uppercase">
                     {selectedHotel.businessType === "company"
@@ -582,11 +577,11 @@ export default function HotelApprovalPage() {
                 </div>
               </div>
 
-              {/* Ảnh scan giấy phép */}
+              {/* Danh sách ảnh scan giấy phép */}
               {selectedHotel.legalDocuments?.length > 0 && (
                 <div className="pt-2 border-t border-blue-100">
                   <span className="font-bold text-blue-900 block mb-2 text-xs">
-                    Ảnh Scan Giấy Phép Kinh Doanh & CCCD Đã Tải Lên:
+                    Tài Liệu Scan Đã Tải Lên:
                   </span>
                   <div className="flex flex-wrap gap-2">
                     {selectedHotel.legalDocuments.map((doc, idx) => (
@@ -605,7 +600,7 @@ export default function HotelApprovalPage() {
               )}
             </div>
 
-            {/* KHỐI 3: TÀI KHOẢN NGÂN HÀNG & MỨC HOA HỒNG */}
+            {/* 3. TÀI KHOẢN NGÂN HÀNG & MỨC HOA HỒNG */}
             <div className="p-5 bg-slate-50 rounded-2xl border space-y-3">
               <span className="font-black text-slate-900 text-xs uppercase flex items-center gap-1.5">
                 <CreditCard size={16} className="text-emerald-600" /> 3. Tài
@@ -647,7 +642,7 @@ export default function HotelApprovalPage() {
               </div>
             </div>
 
-            {/* KHỐI 4: DANH MỤC CÁC HẠNG PHÒNG & GIÁ BÁN */}
+            {/* 4. DANH MỤC BUỒNG PHÒNG, GIÁ BÁN & TIỆN NGHI */}
             <div className="space-y-3">
               <span className="font-black text-slate-900 text-xs uppercase flex items-center gap-1.5">
                 <BedDouble size={16} className="text-blue-600" /> 4. Danh Mục{" "}
@@ -693,11 +688,11 @@ export default function HotelApprovalPage() {
               </div>
             </div>
 
-            {/* KHỐI 5: CHÍNH SÁCH VẬN HÀNH & GIỜ GIẤC */}
+            {/* 5. CHÍNH SÁCH VẬN HÀNH & GIỜ GIẤC */}
             <div className="p-5 bg-slate-50 rounded-2xl border space-y-3">
               <span className="font-black text-slate-900 text-xs uppercase flex items-center gap-1.5">
                 <Clock size={16} className="text-amber-600" /> 5. Quy Định Giờ
-                Giấc & Chính Sách Hủy Phòng
+                Giấc & Chính Sách Chỗ Nghỉ
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div className="bg-white p-3 rounded-xl border">
@@ -723,9 +718,32 @@ export default function HotelApprovalPage() {
                   </strong>
                 </div>
               </div>
+
+              {/* Tiện ích chỗ nghỉ */}
+              {selectedHotel.propertyAmenities?.length > 0 && (
+                <div className="pt-2 border-t">
+                  <span className="font-bold text-slate-700 block mb-1.5">
+                    Tiện ích chỗ nghỉ đã chọn (
+                    {selectedHotel.propertyAmenities.length}):
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedHotel.propertyAmenities.map((item, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2.5 py-1 bg-white rounded-lg border text-[10px] font-semibold text-slate-700"
+                      >
+                        ✓{" "}
+                        {typeof item === "string"
+                          ? item
+                          : item.label || item.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* KHỐI 6: BỘ SƯU TẬP HÌNH ẢNH CƠ SỞ */}
+            {/* 6. THƯ VIỆN HÌNH ẢNH CƠ SỞ */}
             <div className="space-y-3">
               <span className="font-black text-slate-900 text-xs uppercase flex items-center gap-1.5">
                 <Sparkles size={16} className="text-amber-500" /> 6. Thư Viện
@@ -749,7 +767,40 @@ export default function HotelApprovalPage() {
               </div>
             </div>
 
-            {/* STICKY FOOTER THAO TÁC PHÊ DUYỆT */}
+            {/* 7. QUY ĐỊNH & TRẢI NGHIỆM TÙY CHỈNH */}
+            {(selectedHotel.policies?.length > 0 ||
+              selectedHotel.experiences?.length > 0) && (
+              <div className="p-4 bg-slate-50 rounded-2xl border space-y-3">
+                <span className="font-black text-slate-900 text-xs uppercase flex items-center gap-1.5">
+                  <Compass size={16} className="text-emerald-600" /> 7. Quy Định
+                  & Trải Nghiệm Xung Quanh
+                </span>
+                <div className="space-y-2">
+                  {selectedHotel.policies?.map((pol, idx) => (
+                    <div key={idx} className="p-2.5 bg-white rounded-xl border">
+                      <strong className="text-blue-900 block">
+                        {pol.title}
+                      </strong>
+                      <p className="text-slate-600 text-[11px] whitespace-pre-line mt-0.5">
+                        {pol.content}
+                      </p>
+                    </div>
+                  ))}
+                  {selectedHotel.experiences?.map((exp, idx) => (
+                    <div key={idx} className="p-2.5 bg-white rounded-xl border">
+                      <strong className="text-emerald-900 block">
+                        {exp.title}
+                      </strong>
+                      <p className="text-slate-600 text-[11px] whitespace-pre-line mt-0.5">
+                        {exp.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* STICKY FOOTER THAO TÁC DUYỆT */}
             <div className="flex justify-between items-center pt-4 border-t sticky bottom-0 bg-white py-2">
               <button
                 onClick={() => handleReject(selectedHotel)}

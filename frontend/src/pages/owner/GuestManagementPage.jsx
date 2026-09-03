@@ -1,4 +1,4 @@
-// src/pages/admin/GuestManagementPage.jsx
+// src/pages/owner/GuestManagementPage.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Users,
@@ -13,8 +13,6 @@ import {
   Eye,
   X,
   Edit,
-  Building2,
-  Sparkles,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import { useAuthStore } from "@/stores/authStore";
@@ -34,18 +32,10 @@ export default function GuestManagementPage() {
   const [search, setSearch] = useState("");
   const [selectedTier, setSelectedTier] = useState("all");
 
-  // Modals
   const [selectedGuestHistory, setSelectedGuestHistory] = useState(null);
   const [editingGuest, setEditingGuest] = useState(null);
   const [editFormData, setEditFormData] = useState({});
 
-  const userRole = String(user?.role || user?.role_name || "").toLowerCase();
-  const isAdmin = userRole.includes("admin") || user?.role_id === 1;
-  const userEmail = String(user?.email || "")
-    .toLowerCase()
-    .trim();
-
-  // 1. Tải danh sách đơn đặt phòng thực tế
   useEffect(() => {
     setLoading(true);
     const realBookings = JSON.parse(
@@ -57,16 +47,10 @@ export default function GuestManagementPage() {
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // ── 👥 2. TỰ ĐỘNG GOM NHÓM HỒ SƠ KHÁCH HÀNG TỪ CÁC ĐƠN THỰC TẾ ──
   const realGuestProfiles = useMemo(() => {
     const guestMap = new Map();
 
     bookings.forEach((b) => {
-      // Nếu là Owner -> Chỉ gom khách đã từng đặt tại khách sạn của Owner
-      if (!isAdmin && userEmail) {
-        // Kiểm tra khách sạn có thuộc owner không
-      }
-
       const phone = String(
         b.customer_phone || b.guest_phone || "0901234567",
       ).trim();
@@ -125,13 +109,11 @@ export default function GuestManagementPage() {
               ? "VIP Silver"
               : "Member",
     }));
-  }, [bookings, isAdmin, userEmail]);
+  }, [bookings]);
 
-  // ✏️ Chỉnh sửa thông tin khách
   const handleSaveEdit = (e) => {
     e.preventDefault();
     if (!editingGuest) return;
-
     alert(`✓ Đã cập nhật thành công hồ sơ khách hàng ${editFormData.name}!`);
     setEditingGuest(null);
   };
@@ -160,26 +142,20 @@ export default function GuestManagementPage() {
 
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* ── HEADER ── */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs uppercase tracking-wider mb-1">
-            <UserCheck size={16} /> Hệ Thống Quản Trị Khách Hàng (Guest CRM)
+            <UserCheck size={16} /> Quản Trị Khách Hàng (Guest CRM)
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             Hồ Sơ Khách Lưu Trú & Lịch Sử Chi Tiêu ({realGuestProfiles.length}{" "}
             Khách)
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Quản lý thông tin định danh, CCCD tạm trú, phân hạng thành viên VIP
-            và lịch sử các chuyến đi
-          </p>
         </div>
       </div>
 
-      {/* ── 3 THẺ KPI TỔNG QUAN ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-1">
+        <div className="bg-white p-5 rounded-3xl border shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-slate-400 uppercase">
             Tổng Khách Lưu Trú
           </span>
@@ -187,19 +163,17 @@ export default function GuestManagementPage() {
             {realGuestProfiles.length} Hồ sơ
           </h3>
         </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-1">
+        <div className="bg-white p-5 rounded-3xl border shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-slate-400 uppercase">
-            Khách Thân Thiết (VIP)
+            Khách VIP
           </span>
           <h3 className="text-2xl font-black text-indigo-600">
             {vipCount} Khách VIP
           </h3>
         </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-1">
+        <div className="bg-white p-5 rounded-3xl border shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-slate-400 uppercase">
-            Tổng Chi Tiêu Toàn Bộ Khách
+            Tổng Chi Tiêu
           </span>
           <h3 className="text-2xl font-black text-emerald-600">
             {formatVND(totalSpentAll)}
@@ -207,8 +181,7 @@ export default function GuestManagementPage() {
         </div>
       </div>
 
-      {/* ── TOOLBAR: TABS TIER & TÌM KIẾM ── */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-2xs space-y-3">
+      <div className="bg-white p-4 rounded-3xl border shadow-2xs space-y-3">
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
           {TIER_FILTERS.map((t) => {
             const count = realGuestProfiles.filter((g) =>
@@ -240,12 +213,11 @@ export default function GuestManagementPage() {
             placeholder="Tìm theo Tên khách hàng, Số điện thoại, Email hoặc Số CCCD/Hộ chiếu..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs outline-none focus:border-blue-600 focus:bg-white"
+            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border rounded-2xl text-xs outline-none focus:border-blue-600"
           />
         </div>
       </div>
 
-      {/* ── DANH SÁCH THẺ HỒ SƠ KHÁCH HÀNG ── */}
       {loading ? (
         <div className="py-24 flex justify-center bg-white rounded-3xl border">
           <LoadingSpinner
@@ -260,7 +232,7 @@ export default function GuestManagementPage() {
             return (
               <div
                 key={g.id}
-                className="bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs hover:shadow-xl transition-all flex flex-col justify-between space-y-4 group"
+                className="bg-white rounded-3xl border p-6 shadow-2xs hover:shadow-xl transition-all flex flex-col justify-between space-y-4"
               >
                 <div>
                   <div className="flex justify-between items-start">
@@ -280,33 +252,20 @@ export default function GuestManagementPage() {
                         Mã hồ sơ: #{g.id}
                       </span>
                     </div>
-
-                    <span
-                      className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border shadow-2xs ${
-                        g.tier === "VIP Diamond"
-                          ? "bg-purple-50 text-purple-700 border-purple-200"
-                          : g.tier === "VIP Gold"
-                            ? "bg-amber-50 text-amber-800 border-amber-300"
-                            : g.tier === "VIP Silver"
-                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-slate-100 text-slate-600 border-slate-200"
-                      }`}
-                    >
+                    <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full border bg-blue-50 text-blue-700">
                       {g.tier}
                     </span>
                   </div>
 
-                  {/* Thống kê chi tiêu tích lũy */}
                   <div className="grid grid-cols-2 gap-2 mt-4 text-xs">
                     <div className="p-3 bg-slate-50 rounded-2xl border">
                       <span className="text-slate-400 block font-bold text-[10px] uppercase">
                         LƯU TRÚ
                       </span>
                       <strong className="text-slate-900 text-sm font-black">
-                        {g.totalBookings} Chuyến đi
+                        {g.totalBookings} Chuyến
                       </strong>
                     </div>
-
                     <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
                       <span className="text-emerald-700 block font-bold text-[10px] uppercase">
                         TỔNG CHI TIÊU
@@ -317,7 +276,6 @@ export default function GuestManagementPage() {
                     </div>
                   </div>
 
-                  {/* Thông tin định danh */}
                   <div className="mt-4 space-y-1.5 text-xs text-slate-600">
                     <p className="flex items-center gap-2">
                       <Phone size={13} className="text-slate-400" />{" "}
@@ -334,16 +292,8 @@ export default function GuestManagementPage() {
                       </span>
                     </p>
                   </div>
-
-                  {/* Ghi chú sở thích */}
-                  {g.notes && (
-                    <div className="mt-3 p-2.5 bg-amber-50/60 rounded-xl border border-amber-200/80 text-[11px] text-amber-900 leading-relaxed italic">
-                      <b>Sở thích:</b> {g.notes}
-                    </div>
-                  )}
                 </div>
 
-                {/* Thao tác xem lịch sử & chỉnh sửa */}
                 <div className="pt-2 border-t border-slate-100 flex gap-2">
                   <button
                     onClick={() => setSelectedGuestHistory(g)}
@@ -358,7 +308,6 @@ export default function GuestManagementPage() {
                       setEditFormData(g);
                     }}
                     className="p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl transition cursor-pointer"
-                    title="Chỉnh sửa thông tin"
                   >
                     <Edit size={15} />
                   </button>
@@ -375,27 +324,22 @@ export default function GuestManagementPage() {
         />
       )}
 
-      {/* ── MODAL LỊCH SỬ CHUYẾN ĐI CỦA KHÁCH ── */}
       {selectedGuestHistory && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl border space-y-4 max-h-[88vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
               <div>
-                <h3 className="font-black text-lg text-slate-900 flex items-center gap-2">
-                  <Receipt size={18} className="text-blue-600" /> Lịch Sử Đặt
-                  Phòng: {selectedGuestHistory.name}
+                <h3 className="font-black text-lg text-slate-900">
+                  Lịch Sử Đặt Phòng: {selectedGuestHistory.name}
                 </h3>
                 <span className="text-xs text-slate-400">
-                  Tổng chi tiêu trọn đời:{" "}
+                  Tổng chi tiêu:{" "}
                   <b className="text-emerald-700">
                     {formatVND(selectedGuestHistory.totalSpent)}
                   </b>
                 </span>
               </div>
-              <button
-                onClick={() => setSelectedGuestHistory(null)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-              >
+              <button onClick={() => setSelectedGuestHistory(null)}>
                 <X size={18} />
               </button>
             </div>
@@ -404,9 +348,9 @@ export default function GuestManagementPage() {
               {selectedGuestHistory.bookings?.map((b, idx) => (
                 <div
                   key={idx}
-                  className="p-4 bg-slate-50 rounded-2xl border flex flex-col sm:flex-row justify-between sm:items-center gap-2 text-xs"
+                  className="p-4 bg-slate-50 rounded-2xl border flex justify-between items-center text-xs"
                 >
-                  <div className="space-y-0.5">
+                  <div>
                     <span className="font-mono font-bold text-blue-900 block">
                       #{b.code}
                     </span>
@@ -417,15 +361,9 @@ export default function GuestManagementPage() {
                       {b.room} • {b.checkIn} &rarr; {b.checkOut}
                     </span>
                   </div>
-
-                  <div className="text-left sm:text-right">
-                    <strong className="text-emerald-700 font-black text-sm block">
-                      {formatVND(b.amount)}
-                    </strong>
-                    <span className="inline-block mt-0.5 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      {b.status}
-                    </span>
-                  </div>
+                  <strong className="text-emerald-700 font-black text-sm">
+                    {formatVND(b.amount)}
+                  </strong>
                 </div>
               ))}
             </div>
@@ -442,7 +380,6 @@ export default function GuestManagementPage() {
         </div>
       )}
 
-      {/* ── MODAL CHỈNH SỬA HỒ SƠ ── */}
       {editingGuest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
@@ -501,20 +438,6 @@ export default function GuestManagementPage() {
                     className="w-full p-2.5 border rounded-xl font-mono"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-bold mb-1">
-                  Ghi chú sở thích / Yêu cầu đặc biệt
-                </label>
-                <textarea
-                  rows={2}
-                  value={editFormData.notes}
-                  onChange={(e) =>
-                    setEditFormData({ ...editFormData, notes: e.target.value })
-                  }
-                  className="w-full p-2.5 border rounded-xl"
-                />
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t">

@@ -1,4 +1,4 @@
-// src/routes/AppRoutes.jsx
+// src/routes/index.jsx
 import React from "react";
 import {
   createBrowserRouter,
@@ -12,7 +12,7 @@ import AdminRoutes from "./AdminRoutes";
 import OwnerRoutes from "./OwnerRoutes";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
-// Guest & Auth Pages
+// Guest Pages
 import HomePage from "@/pages/guest/HomePage";
 import HotelListPage from "@/pages/guest/HotelListPage";
 import HotelDetailPage from "@/pages/guest/HotelDetailPage";
@@ -24,25 +24,29 @@ import PromotionPage from "@/pages/guest/PromotionPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterForm from "@/components/auth/RegisterForm";
 
-// Admin & PMS Pages
+// Admin Pages
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import HotelApprovalPage from "@/pages/admin/HotelApprovalPage";
-import UserManagementPage from "@/pages/admin/UserManagementPage";
-import PaymentVerificationPage from "@/pages/admin/PaymentVerificationPage";
-import HousekeepingManagementPage from "@/pages/admin/HousekeepingManagementPage";
-import GuestManagementPage from "@/pages/admin/GuestManagementPage";
-import ReportsAnalyticsPage from "@/pages/admin/ReportsAnalyticsPage";
-import SystemSettingsPage from "@/pages/admin/SystemSettingsPage";
 import AdminFinancialReportPage from "@/pages/admin/AdminFinancialReportPage";
-// Owner / Frontdesk PMS Pages
+import UserManagementPage from "@/pages/admin/UserManagementPage";
+import SystemSettingsPage from "@/pages/admin/SystemSettingsPage";
+
+// Owner Pages
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
 import BookingListPage from "@/pages/owner/BookingListPage";
+import StaffManagementPage from "@/pages/owner/StaffManagementPage";
+import ReportsAnalyticsPage from "@/pages/admin/ReportsAnalyticsPage";
+
+// Đã cập nhật lại đúng đường dẫn thư mục owner
+import HousekeepingManagementPage from "@/pages/owner/HousekeepingManagementPage";
+import GuestManagementPage from "@/pages/owner/GuestManagementPage";
 
 import { NotFoundPage, ServerErrorPage } from "@/pages/error";
 
 const router = createBrowserRouter([
+  // 1. Phân hệ Khách hàng
   {
     path: "/",
     element: <GuestLayout />,
@@ -61,36 +65,13 @@ const router = createBrowserRouter([
       },
     ],
   },
+
+  // 2. Phân hệ Auth
   { path: "/login", element: <LoginPage /> },
   { path: "/register", element: <RegisterForm /> },
   { path: "/register-owner", element: <RegisterForm /> },
 
-  // Phân hệ Quản trị Admin & Manager (Đầy đủ 8 nghiệp vụ PMS)
-  {
-    path: "/admin",
-    element: <AdminRoutes />,
-    errorElement: <ServerErrorPage />,
-    children: [
-      {
-        element: <AdminLayout />,
-        children: [
-          { index: true, element: <Navigate to="/admin/dashboard" replace /> },
-          { path: "dashboard", element: <AdminDashboardPage /> },
-          { path: "bookings", element: <BookingListPage /> },
-          { path: "rooms", element: <RoomManagementPage /> },
-          { path: "housekeeping", element: <HousekeepingManagementPage /> },
-          { path: "payments", element: <PaymentVerificationPage /> },
-          { path: "guests", element: <GuestManagementPage /> },
-          { path: "hotels", element: <HotelApprovalPage /> },
-          { path: "users", element: <UserManagementPage /> },
-          { path: "settings", element: <SystemSettingsPage /> },
-          { path: "reports", element: <AdminFinancialReportPage /> },
-        ],
-      },
-    ],
-  },
-
-  // Phân hệ Vận hành Khách sạn (Owner / Receptionist)
+  // 3. Phân hệ Owner / PMS
   {
     path: "/owner",
     element: <OwnerRoutes />,
@@ -105,13 +86,34 @@ const router = createBrowserRouter([
           { path: "rooms", element: <RoomManagementPage /> },
           { path: "bookings", element: <BookingListPage /> },
           { path: "housekeeping", element: <HousekeepingManagementPage /> },
-          { path: "payments", element: <PaymentVerificationPage /> },
+          { path: "staff", element: <StaffManagementPage /> },
           { path: "guests", element: <GuestManagementPage /> },
           { path: "reports", element: <ReportsAnalyticsPage /> },
         ],
       },
     ],
   },
+
+  // 4. Phân hệ Super Admin
+  {
+    path: "/admin",
+    element: <AdminRoutes />,
+    errorElement: <ServerErrorPage />,
+    children: [
+      {
+        element: <AdminLayout />,
+        children: [
+          { index: true, element: <Navigate to="/admin/dashboard" replace /> },
+          { path: "dashboard", element: <AdminDashboardPage /> },
+          { path: "hotels", element: <HotelApprovalPage /> },
+          { path: "reports", element: <AdminFinancialReportPage /> },
+          { path: "users", element: <UserManagementPage /> },
+          { path: "settings", element: <SystemSettingsPage /> },
+        ],
+      },
+    ],
+  },
+
   { path: "*", element: <NotFoundPage /> },
 ]);
 

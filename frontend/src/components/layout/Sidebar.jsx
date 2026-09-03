@@ -55,7 +55,7 @@ const Sidebar = ({
           </div>
           {!isCollapsed && (
             <span className="font-black text-slate-900 text-xl tracking-tight">
-              BezTower<span className="text-blue-600">.PMS</span>
+              GoStay
             </span>
           )}
         </Link>

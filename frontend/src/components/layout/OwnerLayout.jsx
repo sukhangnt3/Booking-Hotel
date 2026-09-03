@@ -3,15 +3,14 @@ import React, { useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
+  Building2,
   BedDouble,
   CalendarCheck,
   Menu,
-  Bell,
-  Search,
-  Receipt,
   Sparkles,
   BarChart3,
   UserCheck,
+  Users,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import Sidebar from "./Sidebar";
@@ -25,15 +24,21 @@ const OwnerLayout = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
+  // Kiểm tra vai trò Lễ tân hay Chủ nhà
   const roleStr = String(user?.role || user?.role_name || "").toLowerCase();
   const isReceptionist = roleStr === "staff" || roleStr === "receptionist";
 
-  // ── DANH MỤC 6 QUYỀN HẠN CỐT LÕI DÀNH CHO MANAGER ──
-  const managerNavItems = [
+  // ── 🏨 1. DANH MỤC MENU DÀNH CHO CHỦ KHÁCH SẠN (OWNER / MANAGER) ──
+  const ownerNavItems = [
     {
       path: "/owner/dashboard",
       label: "Tổng Quan & Báo Cáo",
       icon: <LayoutDashboard size={19} />,
+    },
+    {
+      path: "/owner/hotels",
+      label: "Thông Tin Chỗ Nghỉ",
+      icon: <Building2 size={19} />,
     },
     {
       path: "/owner/bookings",
@@ -51,14 +56,14 @@ const OwnerLayout = () => {
       icon: <Sparkles size={19} />,
     },
     {
-      path: "/owner/payments",
-      label: "Xác Thực Thanh Toán",
-      icon: <Receipt size={19} />,
+      path: "/owner/staff",
+      label: "Quản Lý Lễ Tân & Nhân Sự", // 👈 ĐÃ BỔ SUNG MỤC CẤP TÀI KHOẢN LỄ TÂN
+      icon: <UserCheck size={19} />,
     },
     {
       path: "/owner/guests",
       label: "Hồ Sơ Khách Hàng (CRM)",
-      icon: <UserCheck size={19} />,
+      icon: <Users size={19} />,
     },
     {
       path: "/owner/reports",
@@ -67,7 +72,7 @@ const OwnerLayout = () => {
     },
   ];
 
-  // Danh mục dành riêng cho Lễ tân (Receptionist)
+  // ── 🔑 2. DANH MỤC MENU DÀNH RIÊNG CHO LỄ TÂN (FRONT DESK) ──
   const receptionistNavItems = [
     {
       path: "/owner/bookings",
@@ -82,19 +87,26 @@ const OwnerLayout = () => {
     {
       path: "/owner/guests",
       label: "Tra Cứu Khách Hàng",
-      icon: <UserCheck size={19} />,
+      icon: <Users size={19} />,
     },
   ];
 
-  const navItems = isReceptionist ? receptionistNavItems : managerNavItems;
+  const navItems = isReceptionist ? receptionistNavItems : ownerNavItems;
   const currentTab =
     navItems.find((item) => item.path === location.pathname)?.label ||
-    "Quản Lý Khách Sạn";
-  const managerName = user?.full_name || user?.name || "Quản Lý Vận Hành";
+    "Quản Lý Chỗ Nghỉ";
+  const ownerName = user?.full_name || user?.name || "Chủ Chỗ Nghỉ";
+
+  // Bóc tách ảnh đại diện Avatar
+  const avatarUrl =
+    user?.avatar ||
+    user?.picture ||
+    localStorage.getItem(`google_avatar_${user?.email}`) ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=059669&color=fff&bold=true`;
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans">
-      {/* Sidebar */}
+      {/* ── SIDEBAR ── */}
       <div
         className={cn(
           "lg:block shrink-0 h-full",
@@ -120,8 +132,9 @@ const OwnerLayout = () => {
         />
       </div>
 
-      {/* Main Content */}
+      {/* ── MAIN CONTENT ── */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        {/* Topbar Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
             <button
@@ -138,20 +151,28 @@ const OwnerLayout = () => {
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
               <p className="text-xs font-black text-slate-800 leading-none">
-                {managerName}
+                {ownerName}
               </p>
               <p className="text-[10px] text-emerald-600 font-bold mt-1 uppercase">
                 {isReceptionist
                   ? "Lễ Tân Trực Ca"
-                  : "Quản Lý Khách Sạn (Manager)"}
+                  : "Đối Tác Khách Sạn (Owner)"}
               </p>
             </div>
-            <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs shadow-sm">
-              {managerName.charAt(0)}
-            </div>
+
+            <img
+              src={avatarUrl}
+              alt={ownerName}
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=059669&color=fff&bold=true`;
+              }}
+              className="w-9 h-9 rounded-full border-2 border-emerald-500 object-cover shadow-sm shrink-0"
+            />
           </div>
         </header>
 
+        {/* Nội dung trang con */}
         <main className="flex-1 overflow-y-auto p-6 bg-[#f8fafc]">
           <div className="max-w-7xl mx-auto">
             <Outlet />

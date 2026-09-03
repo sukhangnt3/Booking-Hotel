@@ -1,15 +1,22 @@
+// src/pages/owner/DashboardPage.jsx
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Building2,
+  DollarSign,
   BedDouble,
+  Users,
+  TrendingUp,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
   LogIn,
   LogOut,
-  TrendingUp,
-  ArrowUpRight,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  ChevronDown,
+  ShieldCheck,
+  RefreshCw,
+  Sparkles,
+  Brush,
+  Search,
+  Building2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -22,520 +29,557 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-
 import { LoadingSpinner } from "@/components/common";
-import { PaymentStatusBadge } from "@/components/payment";
-import { hotelService, bookingService, roomService } from "@/services";
+import PropertySearchSelector from "@/components/common/PropertySearchSelector";
+import { useAuthStore } from "@/stores/authStore";
 
-const DashboardPage = () => {
-  const [hotels, setHotels] = useState([]);
+export default function OwnerDashboardPage() {
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const [loading, setLoading] = useState(true);
+
+  // 🏢 1. TẢI TOÀN BỘ CƠ SỞ THUỘC SỞ HỮU CỦA OWNER
+  const [myHotels, setMyHotels] = useState([]);
   const [selectedHotelId, setSelectedHotelId] = useState("all");
+
   const [bookings, setBookings] = useState([]);
   const [rooms, setRooms] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [housekeeping, setHousekeeping] = useState([]);
 
-  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
-  const formatShortVND = (num) => (Number(num || 0) / 1000000).toFixed(1) + "M";
+  const userEmail = String(user?.email || "")
+    .toLowerCase()
+    .trim();
 
-  // 1. Tải danh sách khách sạn của Owner
-  useEffect(() => {
-    const loadHotels = async () => {
-      try {
-        const res = await hotelService.getAll({ isOwner: true });
-        const list = Array.isArray(res) ? res : res?.data || res?.hotels || [];
-        setHotels(list);
-      } catch (err) {
-        console.error("Lỗi tải danh sách khách sạn:", err);
-      }
-    };
-    loadHotels();
-  }, []);
-
-  // 2. Tải toàn bộ Đơn đặt phòng & Danh mục phòng thực tế
-  const fetchDashboardData = async () => {
+  const loadOwnerRealData = () => {
     setLoading(true);
-    try {
-      const params =
-        selectedHotelId !== "all" ? { hotel_id: selectedHotelId } : {};
-      const [bookingRes, roomRes] = await Promise.all([
-        bookingService.getAll
-          ? bookingService.getAll(params)
-          : bookingService.getOwnerBookings(selectedHotelId, params),
-        roomService.getAll
-          ? roomService.getAll(params)
-          : roomService.getByHotelId(selectedHotelId),
-      ]);
 
-      const bookingList = Array.isArray(bookingRes)
-        ? bookingRes
-        : bookingRes?.data || bookingRes?.bookings || [];
-      const roomList = Array.isArray(roomRes)
-        ? roomRes
-        : roomRes?.data || roomRes?.rooms || [];
+    // 1. Lấy danh sách cơ sở của Owner
+    const localApps = JSON.parse(
+      localStorage.getItem("pending_partner_applications") || "[]",
+    );
+    const approvedIds = JSON.parse(
+      localStorage.getItem("approved_hotel_ids") || "[]",
+    ).map(String);
+    const rejectedIds = JSON.parse(
+      localStorage.getItem("rejected_hotel_ids") || "[]",
+    ).map(String);
 
-      setBookings(bookingList);
-      setRooms(roomList);
-    } catch (err) {
-      console.error("Lỗi khi tải dữ liệu Dashboard thật:", err);
-    } finally {
-      setLoading(false);
-    }
+    const ownerHotels = localApps
+      .filter((h) => {
+        const hEmail = String(h.emailContact || h.email || h.signerEmail || "")
+          .toLowerCase()
+          .trim();
+        const isMine =
+          !userEmail || hEmail === userEmail || user?.role === "admin";
+        const hId = String(h.id || h.applicationId);
+        // Chỉ lấy cơ sở đã duyệt và không bị từ chối
+        const isApproved =
+          (approvedIds.includes(hId) || h.status === "approved") &&
+          !rejectedIds.includes(hId);
+        return isMine && isApproved;
+      })
+      .map((h, idx) => ({
+        id: String(h.id || h.applicationId || `HT-${idx + 1}`),
+        name: h.name || h.hotelNameVi || "Cơ sở lưu trú",
+        city: h.province || h.city || "Việt Nam",
+        image: h.image,
+      }));
+
+    setMyHotels(ownerHotels);
+
+    // 2. Lấy đơn đặt phòng và buồng phòng
+    const realBookings = JSON.parse(
+      localStorage.getItem("all_bookings") || "[]",
+    );
+    const realRooms = JSON.parse(
+      localStorage.getItem("pms_hotel_rooms_master") || "[]",
+    );
+    const realHousekeeping = JSON.parse(
+      localStorage.getItem("pms_housekeeping_rooms") || "[]",
+    );
+
+    setBookings(realBookings);
+    setRooms(realRooms);
+    setHousekeeping(realHousekeeping);
+    setLoading(false);
   };
 
   useEffect(() => {
-    fetchDashboardData();
-  }, [selectedHotelId]);
+    loadOwnerRealData();
+  }, [user]);
 
-  // 3. Tính toán các chỉ số KPI thật từ dữ liệu
-  const totalRoomsCount = useMemo(() => {
-    return (
-      rooms.reduce(
-        (acc, r) =>
-          acc + Number(r.room_count || r.totalQuantity || r.quantity || 1),
-        0,
-      ) || 1
-    );
-  }, [rooms]);
-
+  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
   const todayStr = new Date().toISOString().split("T")[0];
+  const selectedHotelObj = myHotels.find(
+    (h) => String(h.id) === String(selectedHotelId),
+  );
 
-  // Lọc danh sách check-in hôm nay thật
-  const todayCheckIns = useMemo(() => {
+  // ── 🔍 2. LỌC ĐƠN PHÒNG THEO CƠ SỞ ĐANG CHỌN TRÊN DROPDOWN ──
+  const scopedBookings = useMemo(() => {
     return bookings.filter((b) => {
-      const checkInDate = (b.checkin_date || b.checkIn || "").split("T")[0];
-      return checkInDate === todayStr || b.status === "confirmed";
+      // Nếu Owner chọn 1 cơ sở cụ thể
+      if (selectedHotelId !== "all") {
+        const matchId = String(b.hotel_id) === String(selectedHotelId);
+        const matchName =
+          selectedHotelObj?.name &&
+          b.hotel_name
+            ?.toLowerCase()
+            .includes(selectedHotelObj.name.toLowerCase());
+        if (!matchId && !matchName) return false;
+      } else {
+        // Nếu chọn "Tất cả cơ sở", chỉ lọc các đơn thuộc các cơ sở của Owner này
+        const myHotelIds = myHotels.map((h) => String(h.id));
+        const matchAny =
+          myHotelIds.includes(String(b.hotel_id)) ||
+          myHotels.some((h) =>
+            b.hotel_name?.toLowerCase().includes(h.name.toLowerCase()),
+          );
+        if (myHotels.length > 0 && !matchAny && user?.role !== "admin")
+          return false;
+      }
+      return true;
     });
-  }, [bookings, todayStr]);
+  }, [bookings, selectedHotelId, selectedHotelObj, myHotels, user]);
 
-  const activeStaying = useMemo(() => {
-    return bookings.filter((b) => b.status === "checked_in").length;
-  }, [bookings]);
+  // ── 📊 3. TÍNH TOÁN CÁC CHỈ SỐ KPI THEO CƠ SỞ ĐANG CHỌN ──
+  const totalRevenue = useMemo(() => {
+    return scopedBookings
+      .filter(
+        (b) =>
+          b.payment_status === "paid" ||
+          b.status === "confirmed" ||
+          b.status === "checked_in" ||
+          b.status === "checked_out",
+      )
+      .reduce((sum, b) => sum + Number(b.total_price || 0), 0);
+  }, [scopedBookings]);
 
+  const activeOccupiedRooms = scopedBookings.filter(
+    (b) => b.status === "checked_in",
+  ).length;
+  const totalRoomsCount = rooms.length || 1;
   const occupancyRate =
-    totalRoomsCount > 0
-      ? Math.min(Math.round((activeStaying / totalRoomsCount) * 100), 100)
+    rooms.length > 0
+      ? Math.min(Math.round((activeOccupiedRooms / totalRoomsCount) * 100), 100)
       : 0;
 
-  const totalRevenue = useMemo(() => {
-    return bookings
-      .filter((b) => b.payment_status === "paid" || b.status === "checked_out")
-      .reduce((sum, b) => sum + Number(b.total_price || b.totalPrice || 0), 0);
-  }, [bookings]);
-
-  // 4. Tạo dữ liệu biểu đồ thật 7 ngày gần nhất
-  const chartData = useMemo(() => {
-    const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      return {
-        dateStr: d.toISOString().split("T")[0],
-        dayName: days[d.getDay()],
-        revenue: 0,
-        occupancy: 0,
-      };
+  const todayArrivals = useMemo(() => {
+    return scopedBookings.filter((b) => {
+      const checkInDate = (b.check_in || b.checkin_date || "").split("T")[0];
+      return (
+        checkInDate === todayStr ||
+        (b.status === "confirmed" && !b.checked_in_at)
+      );
     });
+  }, [scopedBookings, todayStr]);
 
-    last7Days.forEach((slot) => {
-      const matchBookings = bookings.filter((b) => {
-        const bDate = (b.created_at || b.checkin_date || b.checkIn || "").split(
-          "T",
-        )[0];
-        return bDate === slot.dateStr;
+  const recentBookings = scopedBookings.slice(0, 5);
+
+  // ── 📈 4. VẼ BIỂU ĐỒ 12 THÁNG TỰ ĐỘNG THEO CƠ SỞ ĐANG CHỌN ──
+  const real12MonthsChartData = useMemo(() => {
+    const months = [];
+    const now = new Date();
+
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = `T${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(-2)}`;
+      const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+      const matchBookings = scopedBookings.filter((b) => {
+        const bDate = b.created_at || b.check_in || "";
+        return bDate.startsWith(yearMonth);
       });
 
-      slot.revenue = matchBookings.reduce(
-        (sum, b) => sum + Number(b.total_price || b.totalPrice || 0),
-        0,
-      );
-      slot.occupancy =
-        totalRoomsCount > 0
+      const monthRevenue = matchBookings
+        .filter(
+          (b) =>
+            b.payment_status === "paid" ||
+            b.status === "confirmed" ||
+            b.status === "checked_in" ||
+            b.status === "checked_out",
+        )
+        .reduce((sum, b) => sum + Number(b.total_price || 0), 0);
+
+      const monthOccupancy =
+        rooms.length > 0
           ? Math.min(
-              Math.round((matchBookings.length / totalRoomsCount) * 100),
+              Math.round((matchBookings.length / (rooms.length * 30)) * 100),
               100,
             )
           : 0;
-    });
 
-    return last7Days;
-  }, [bookings, totalRoomsCount]);
-
-  // 5. Thao tác Check-in trực tiếp qua API
-  const handleCheckIn = async (bookingId) => {
-    setActionLoadingId(bookingId);
-    try {
-      if (bookingService.checkIn) {
-        await bookingService.checkIn(bookingId);
-      } else if (bookingService.updateStatus) {
-        await bookingService.updateStatus(bookingId, "checked_in");
-      }
-      await fetchDashboardData();
-    } catch (err) {
-      alert("Thao tác thất bại: " + (err.message || "Vui lòng thử lại"));
-    } finally {
-      setActionLoadingId(null);
+      months.push({
+        month: monthKey,
+        revenue: monthRevenue,
+        bookings: matchBookings.length,
+        occupancy: monthOccupancy,
+      });
     }
-  };
 
-  if (loading) {
-    return (
-      <div className="py-32 flex justify-center items-center">
-        <LoadingSpinner
-          size="lg"
-          label="Đang đồng bộ dữ liệu vận hành từ hệ thống..."
-        />
-      </div>
-    );
-  }
+    return months;
+  }, [scopedBookings, rooms]);
+
+  const cleanCount = housekeeping.filter((r) => r.status === "clean").length;
+  const dirtyCount = housekeeping.filter((r) => r.status === "dirty").length;
+  const inProgressCount = housekeeping.filter(
+    (r) => r.status === "in_progress",
+  ).length;
+  const maintenanceCount = housekeeping.filter(
+    (r) => r.status === "maintenance",
+  ).length;
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 pb-12">
-      {/* ── TOP BAR ── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
+    <div className="space-y-7 font-sans pb-16 text-slate-800">
+      {/* ── 1. HEADER & BỘ CHỌN CƠ SỞ CHUẨN ── */}
+      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Hệ thống Vận hành
-            </span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-              Live Database
-            </span>
+          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
+            <Building2 size={16} /> Kênh Quản Trị Vận Hành Chủ Cơ Sở (Owner PMS)
           </div>
-          <h1 className="text-xl font-bold text-slate-900 mt-1">
-            Tổng quan Vận hành & Hiệu suất
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            Tổng Quan Vận Hành & Hiệu Suất
           </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Xem báo cáo doanh thu, tỷ lệ lấp đầy phòng và lịch đón khách theo
+            từng cơ sở lưu trú
+          </p>
         </div>
 
-        <div className="relative w-full md:w-72">
-          <select
-            value={selectedHotelId}
-            onChange={(e) => setSelectedHotelId(e.target.value)}
-            className="w-full bg-white border border-slate-300 text-slate-800 text-xs font-medium px-3 py-2.5 rounded-lg outline-none focus:border-slate-900 appearance-none pr-8 cursor-pointer"
+        {/* 🏢 BỘ CHỌN CƠ SỞ ĐẦY ĐỦ CẢ 2 CƠ SỞ */}
+        <div className="flex flex-row items-center gap-3 w-full lg:w-auto">
+          <PropertySearchSelector
+            hotels={myHotels}
+            selectedHotelId={selectedHotelId}
+            onSelectHotel={(id) => setSelectedHotelId(id)}
+            showAllOption={true}
+            placeholder="Chọn cơ sở của bạn..."
+          />
+
+          <button
+            onClick={loadOwnerRealData}
+            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer flex items-center justify-center shrink-0 shadow-2xs"
+            title="Làm mới dữ liệu"
           >
-            <option value="all">Tất cả cơ sở lưu trú ({hotels.length})</option>
-            {hotels.map((h) => (
-              <option key={h.id || h.hotel_id} value={h.id || h.hotel_id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={15}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-24 flex justify-center bg-white rounded-3xl border">
+          <LoadingSpinner
+            size="lg"
+            label="Đang tải dữ liệu vận hành cơ sở..."
           />
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex justify-between items-center text-xs">
+            <span className="text-slate-600 font-bold">
+              Đang phân tích số liệu của:{" "}
+              <strong className="text-blue-900 font-black text-sm">
+                {selectedHotelId === "all"
+                  ? `Tất cả ${myHotels.length} cơ sở của bạn`
+                  : selectedHotelObj?.name}
+              </strong>
+            </span>
+            <span className="text-slate-500 font-semibold">
+              {scopedBookings.length} Đơn đặt phòng
+            </span>
+          </div>
 
-      {/* ── 4 KPI CARDS THẬT ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
-          <div className="flex justify-between items-center text-slate-500">
-            <span className="text-xs font-semibold uppercase">
-              Tỷ lệ lấp đầy
-            </span>
-            <BedDouble size={18} className="text-slate-400" />
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-slate-900">
-              {occupancyRate}%
-            </span>
-            <span className="text-xs text-slate-500 font-medium">
-              {activeStaying} / {totalRoomsCount} phòng
-            </span>
-          </div>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-            <div
-              className="bg-slate-900 h-full rounded-full"
-              style={{ width: `${occupancyRate}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
-          <div className="flex justify-between items-center text-slate-500">
-            <span className="text-xs font-semibold uppercase">
-              Check-in Hôm nay
-            </span>
-            <LogIn size={18} className="text-slate-400" />
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-slate-900">
-              {todayCheckIns.length} Đơn
-            </span>
-            <span className="text-xs text-emerald-600 font-semibold">
-              {todayCheckIns.filter((b) => b.status === "checked_in").length} đã
-              vào phòng
-            </span>
-          </div>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-            <div
-              className="bg-emerald-600 h-full rounded-full"
-              style={{
-                width: `${todayCheckIns.length > 0 ? (todayCheckIns.filter((b) => b.status === "checked_in").length / todayCheckIns.length) * 100 : 0}%`,
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
-          <div className="flex justify-between items-center text-slate-500">
-            <span className="text-xs font-semibold uppercase">
-              Tổng Đơn Đã Nhận
-            </span>
-            <LogOut size={18} className="text-slate-400" />
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-bold text-slate-900">
-              {bookings.length} Đơn
-            </span>
-            <span className="text-xs text-slate-500 font-medium">
-              Toàn hệ thống
-            </span>
-          </div>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-            <div
-              className="bg-amber-500 h-full rounded-full"
-              style={{ width: "100%" }}
-            />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
-          <div className="flex justify-between items-center text-slate-500">
-            <span className="text-xs font-semibold uppercase">
-              Tổng Doanh Thu
-            </span>
-            <TrendingUp size={18} className="text-slate-400" />
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold text-slate-900">
-              {formatVND(totalRevenue)}
-            </span>
-            <span className="text-xs text-emerald-600 font-semibold flex items-center">
-              <ArrowUpRight size={14} /> Thực thu
-            </span>
-          </div>
-          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-            <div
-              className="bg-blue-600 h-full rounded-full"
-              style={{ width: "100%" }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* ── BIỂU ĐỒ RECHARTS THỰC TẾ ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-slate-200 space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="font-bold text-slate-900 text-sm">
-                Biểu đồ Doanh thu Thực tế
+          {/* 4 Thẻ KPI Thực Tế */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex justify-between items-center text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Doanh Thu Cơ Sở
+                </span>
+                <DollarSign size={18} className="text-emerald-600" />
+              </div>
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+                {formatVND(totalRevenue)}
               </h3>
-              <p className="text-xs text-slate-500">
-                Dữ liệu doanh thu thực nhận theo 7 ngày qua
+              <p className="text-[11px] text-emerald-600 font-bold">
+                Từ {scopedBookings.length} đơn đặt phòng
               </p>
             </div>
-            <span className="text-xs font-semibold text-slate-500">
-              Đơn vị: VNĐ
-            </span>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex justify-between items-center text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Tỷ Lệ Lấp Đầy
+                </span>
+                <BedDouble size={18} className="text-blue-600" />
+              </div>
+              <h3 className="text-2xl font-black text-blue-700 tracking-tight">
+                {occupancyRate}%
+              </h3>
+              <p className="text-[11px] text-slate-500 font-medium">
+                {activeOccupiedRooms} / {rooms.length} phòng đang ở
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex justify-between items-center text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Khách Đến Hôm Nay
+                </span>
+                <LogIn size={18} className="text-amber-600" />
+              </div>
+              <h3 className="text-2xl font-black text-amber-700 tracking-tight">
+                {todayArrivals.length} Lượt
+              </h3>
+              <p className="text-[11px] text-amber-800 font-bold">
+                Check-in trong ngày
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex justify-between items-center text-slate-400">
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Phòng Cần Dọn
+                </span>
+                <Brush size={18} className="text-rose-600" />
+              </div>
+              <h3 className="text-2xl font-black text-rose-600 tracking-tight">
+                {dirtyCount} Phòng
+              </h3>
+              <p className="text-[11px] text-rose-700 font-bold">
+                Cần dọn đón khách mới
+              </p>
+            </div>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="areaColor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0f172a" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#0f172a" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                />
-                <XAxis
-                  dataKey="dayName"
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                  tickFormatter={formatShortVND}
-                />
-                <Tooltip
-                  formatter={(val) => [formatVND(val), "Doanh thu"]}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#0f172a"
-                  strokeWidth={2}
-                  fill="url(#areaColor)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+          {/* Biểu đồ 12 Tháng */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-8 bg-white p-6 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex justify-between items-center border-b pb-3">
+                <h3 className="font-black text-base text-slate-900">
+                  Doanh Thu 12 Tháng Thực Tế
+                </h3>
+                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-xl">
+                  Đơn vị: VNĐ
+                </span>
+              </div>
 
-        <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="font-bold text-slate-900 text-sm">
-              Tỷ lệ Lấp đầy Thực tế (%)
-            </h3>
-            <p className="text-xs text-slate-500">
-              Hiệu suất phòng có khách lưu trú
-            </p>
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e2e8f0"
-                />
-                <XAxis
-                  dataKey="dayName"
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={11}
-                  domain={[0, 100]}
-                  unit="%"
-                  tickLine={false}
-                />
-                <Tooltip
-                  formatter={(val) => [`${val}%`, "Lấp đầy"]}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                  }}
-                />
-                <Bar dataKey="occupancy" fill="#2563eb" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* ── BẢNG LỊCH CHECK-IN THẬT ── */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
-          <div>
-            <h3 className="font-bold text-slate-900 text-sm">
-              Danh sách Nhận phòng Hôm nay
-            </h3>
-            <p className="text-xs text-slate-500">
-              Khách hàng có lịch nhận phòng trong ngày
-            </p>
-          </div>
-          <span className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 px-3 py-1 rounded-md">
-            {todayStr}
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">Mã Đơn</th>
-                <th className="py-3 px-4">Khách hàng</th>
-                <th className="py-3 px-4">Hạng phòng</th>
-                <th className="py-3 px-4">Thời gian</th>
-                <th className="py-3 px-4">Thanh toán</th>
-                <th className="py-3 px-4 text-right">Tổng tiền</th>
-                <th className="py-3 px-4 text-center">Xử lý</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
-              {todayCheckIns.length > 0 ? (
-                todayCheckIns.map((b) => {
-                  const id = b.id || b.booking_id;
-                  const isCheckedIn = b.status === "checked_in";
-                  return (
-                    <tr
-                      key={id}
-                      className="hover:bg-slate-50/70 transition-colors"
-                    >
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                        #{b.booking_code || id}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-900">
-                          {b.customer_name || b.guest_name || b.customerName}
-                        </div>
-                        <div className="text-slate-400 text-[11px]">
-                          {b.guest_phone || b.phone}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 font-medium">
-                        {b.room_name || b.roomType || "Phòng tiêu chuẩn"}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 font-medium">
-                        {b.checkin_date || b.checkIn}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <PaymentStatusBadge
-                          status={b.payment_status || b.paymentStatus}
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={real12MonthsChartData}>
+                    <defs>
+                      <linearGradient
+                        id="ownerRevenueGrad"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="#059669"
+                          stopOpacity={0.25}
                         />
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-bold text-slate-900">
-                        {formatVND(b.total_price || b.totalPrice)}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {isCheckedIn ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded text-[11px] border border-emerald-200">
-                            <CheckCircle2 size={13} /> Đã nhận phòng
+                        <stop
+                          offset="95%"
+                          stopColor="#059669"
+                          stopOpacity={0.0}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#e2e8f0"
+                    />
+                    <XAxis dataKey="month" stroke="#64748b" fontSize={11} />
+                    <YAxis
+                      stroke="#64748b"
+                      fontSize={11}
+                      tickFormatter={(v) => `${v / 1000000}M`}
+                    />
+                    <Tooltip formatter={(v) => [formatVND(v), "Doanh thu"]} />
+                    <Area
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#059669"
+                      strokeWidth={3}
+                      fill="url(#ownerRevenueGrad)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="border-b pb-3">
+                <h3 className="font-black text-base text-slate-900">
+                  Lượt Đặt Phòng Hàng Tháng
+                </h3>
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={real12MonthsChartData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="#e2e8f0"
+                    />
+                    <XAxis dataKey="month" stroke="#64748b" fontSize={10} />
+                    <YAxis stroke="#64748b" fontSize={11} />
+                    <Tooltip formatter={(v) => [`${v} đơn`, "Số lượt đặt"]} />
+                    <Bar
+                      dataKey="bookings"
+                      fill="#10b981"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* 3 Khối Vận Hành */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-6 bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs space-y-4">
+              <div className="flex justify-between items-center border-b pb-3">
+                <h3 className="font-black text-base text-slate-900">
+                  Đơn Đặt Phòng Gần Nhất ({recentBookings.length})
+                </h3>
+                <button
+                  onClick={() => navigate("/owner/bookings")}
+                  className="text-xs font-bold text-emerald-600 hover:underline"
+                >
+                  Xem tất cả
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {recentBookings.length > 0 ? (
+                  recentBookings.map((b) => (
+                    <div
+                      key={b.code}
+                      className="p-3 bg-slate-50 rounded-2xl border flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-blue-900">
+                            #{b.code}
                           </span>
-                        ) : (
-                          <button
-                            disabled={actionLoadingId === id}
-                            onClick={() => handleCheckIn(id)}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors disabled:opacity-50"
-                          >
-                            {actionLoadingId === id
-                              ? "Đang xử lý..."
-                              : "Nhận phòng"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="py-8 text-center text-slate-400 font-medium"
-                  >
-                    Không có đơn nhận phòng nào trong hôm nay.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                          <strong className="text-slate-900 font-bold">
+                            {b.customer_name}
+                          </strong>
+                        </div>
+                        <span className="text-slate-500 text-[11px]">
+                          {b.room_name} • <b>{formatVND(b.total_price)}</b>
+                        </span>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                        {b.status}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-slate-400 italic text-center py-6">
+                    Không có đơn đặt phòng nào cho cơ sở này.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-span-3 bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs space-y-4">
+              <div className="border-b pb-3 flex justify-between items-center">
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                  <LogIn size={16} className="text-emerald-600" /> Khách Đến Hôm
+                  Nay
+                </h3>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  {todayArrivals.length}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {todayArrivals.length > 0 ? (
+                  todayArrivals.map((arr) => (
+                    <div
+                      key={arr.code}
+                      className="p-3 bg-slate-50 rounded-2xl border space-y-1 text-xs"
+                    >
+                      <strong className="text-slate-900 font-bold block">
+                        {arr.customer_name}
+                      </strong>
+                      <p className="text-slate-600 text-[11px]">
+                        {arr.room_name} ({arr.assigned_room || "Chưa xếp phòng"}
+                        )
+                      </p>
+                      <span className="text-[10px] font-mono text-blue-900 font-bold block">
+                        #{arr.code}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-slate-400 italic text-center py-6">
+                    Không có khách check-in hôm nay.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-span-3 bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs space-y-4">
+              <div className="border-b pb-3 flex justify-between items-center">
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                  <Sparkles size={16} className="text-emerald-600" /> Trạng Thái
+                  Dọn Phòng
+                </h3>
+                <button
+                  onClick={() => navigate("/owner/housekeeping")}
+                  className="text-xs text-emerald-600 font-bold hover:underline"
+                >
+                  Quản lý
+                </button>
+              </div>
+
+              <div className="space-y-2.5 text-xs">
+                <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 flex justify-between items-center">
+                  <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                    <CheckCircle2 size={13} /> Sạch Sẵn Sàng:
+                  </span>
+                  <strong className="text-emerald-900 font-black">
+                    {cleanCount} phòng
+                  </strong>
+                </div>
+
+                <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-200 flex justify-between items-center">
+                  <span className="font-bold text-rose-900 flex items-center gap-1.5">
+                    <AlertCircle size={13} /> Cần Dọn Buồng:
+                  </span>
+                  <strong className="text-rose-900 font-black">
+                    {dirtyCount} phòng
+                  </strong>
+                </div>
+
+                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex justify-between items-center">
+                  <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <Clock size={13} /> Đang Vệ Sinh:
+                  </span>
+                  <strong className="text-amber-900 font-black">
+                    {inProgressCount} phòng
+                  </strong>
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-xl border flex justify-between items-center">
+                  <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <Brush size={13} /> Đang Bảo Trì:
+                  </span>
+                  <strong className="text-slate-800 font-black">
+                    {maintenanceCount} phòng
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
-};
-
-export default DashboardPage;
+}
