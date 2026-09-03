@@ -1,3 +1,4 @@
+// src/components/layout/Header.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,7 +10,6 @@ import {
   LayoutDashboard,
   Building,
   CalendarCheck,
-  Ticket,
 } from "lucide-react";
 import { Button } from "../ui";
 import { useAuthStore } from "@/stores/authStore";
@@ -78,7 +78,13 @@ const Header = () => {
         ? "059669"
         : "006CE4";
 
+  // ─── 2. LOGIC LẤY AVATAR CHUẨN (ĐỒNG BỘ VỚI OWNERLAYOUT) ───
+  const defaultFallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    displayName,
+  )}&background=${roleBgColor}&color=fff&bold=true`;
+
   const getCleanAvatar = () => {
+    // Ưu tiên 1: Link ảnh từ user object
     const rawAvatar =
       user?.avatar ||
       user?.avatar_url ||
@@ -96,9 +102,14 @@ const Header = () => {
       return rawAvatar;
     }
 
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      displayName,
-    )}&background=${roleBgColor}&color=fff&bold=true`;
+    // Ưu tiên 2: Avatar lưu trong localStorage (Google Login)
+    if (user?.email) {
+      const googleAvatar = localStorage.getItem(`google_avatar_${user.email}`);
+      if (googleAvatar) return googleAvatar;
+    }
+
+    // Ưu tiên 3: Fallback chữ cái
+    return defaultFallbackAvatar;
   };
 
   const avatarUrl = getCleanAvatar();
@@ -113,10 +124,16 @@ const Header = () => {
     navigate("/");
   };
 
+  // ─── 3. KIỂM TRA ĐĂNG NHẬP LINH HOẠT ───
+  // Nếu user tồn tại HOẶC isAuthenticated = true thì đều tính là đã đăng nhập
+  const isUserLoggedIn = Boolean(
+    user && (user.id || user.email || isAuthenticated),
+  );
+
   return (
-      <header className="bg-[#0a2540]/95 text-white sticky top-0 z-[60] shadow-2xl backdrop-blur-xl border-b border-amber-500/20 font-sans select-none transition-all">
+    <header className="bg-[#0a2540]/95 text-white sticky top-0 z-[60] shadow-2xl backdrop-blur-xl border-b border-amber-500/20 font-sans select-none transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-18 sm:h-20 flex justify-between items-center">
-        {/* 1. LOGO RESORT LUXURY */}
+        {/* 1. LOGO */}
         <div
           onClick={() => navigate("/")}
           className="flex items-center gap-3 cursor-pointer group"
@@ -125,19 +142,14 @@ const Header = () => {
             <Building size={22} strokeWidth={2.5} />
           </div>
           <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <span className="text-2xl sm:text-3xl font-serif tracking-wide font-black bg-gradient-to-r from-white via-slate-100 to-amber-200 bg-clip-text text-transparent">
-                GoStay
-              </span>
-             
-            </div>
-            
+            <span className="text-2xl sm:text-3xl font-serif tracking-wide font-black bg-gradient-to-r from-white via-slate-100 to-amber-200 bg-clip-text text-transparent">
+              GoStay
+            </span>
           </div>
         </div>
 
         {/* 2. ACTIONS */}
         <div className="flex items-center gap-2 sm:gap-4">
-          {/* 🛑 1. NÚT DÀNH CHO LỄ TÂN (HIỆN NỔI BẬT NGAY TRÊN HEADER) */}
           {isStaff && (
             <button
               onClick={() => navigate("/owner/bookings")}
@@ -147,7 +159,6 @@ const Header = () => {
             </button>
           )}
 
-          {/* 3. Nút Đăng ký cơ sở (Chỉ hiện cho khách thường) */}
           {!isAdmin && !isApprovedOwner && !isStaff && (
             <Button
               variant="text"
@@ -167,8 +178,8 @@ const Header = () => {
             </button>
           </div>
 
-          {/* 4. AVATAR PROFILE */}
-          {isAuthenticated && user ? (
+          {/* 4. AVATAR PROFILE (Đã sửa điều kiện hiển thị & thêm onError fallback) */}
+          {isUserLoggedIn ? (
             <div className="relative">
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -183,6 +194,10 @@ const Header = () => {
                   key={user?.id || user?.email || avatarUrl}
                   src={avatarUrl}
                   alt={displayName}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = defaultFallbackAvatar;
+                  }}
                   className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-white object-cover shadow-sm shrink-0"
                 />
 
@@ -190,7 +205,6 @@ const Header = () => {
                   <p className="text-xs font-bold leading-tight line-clamp-1 max-w-[120px]">
                     {displayName}
                   </p>
-                  {/* 🛑 HUY HIỆU VAI TRÒ HIỆN ĐÚNG LỄ TÂN */}
                   <p
                     className={`text-[10px] font-black uppercase tracking-wider mt-0.5 ${
                       isStaff
@@ -232,7 +246,6 @@ const Header = () => {
                       </p>
                     </div>
 
-                    {/* LỄ TÂN */}
                     {isStaff && (
                       <button
                         onClick={() => {
@@ -246,7 +259,6 @@ const Header = () => {
                       </button>
                     )}
 
-                    {/* ADMIN */}
                     {isAdmin && (
                       <button
                         onClick={() => {
@@ -259,7 +271,6 @@ const Header = () => {
                       </button>
                     )}
 
-                    {/* CHỦ NHÀ */}
                     {isApprovedOwner && !isStaff && (
                       <button
                         onClick={() => {
