@@ -1,3 +1,4 @@
+// src/pages/UserProfilePage.jsx (hoặc đường dẫn tương ứng của bạn)
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -32,7 +33,6 @@ export default function UserProfilePage() {
   const { user, updateUser } = useAuthStore();
   const fileInputRef = useRef(null);
 
-  // Mở tab "trips" nếu có param ?tab=trips hoặc mặc định mở chuyến đi
   const initialTab = searchParams.get("tab") || "trips";
   const [activeMainTab, setActiveMainTab] = useState(initialTab);
   const [tripSubTab, setTripSubTab] = useState("upcoming");
@@ -59,7 +59,7 @@ export default function UserProfilePage() {
   };
 
   // ════════════════════════════════════════════════════════════════════════════
-  // 🔍 1. FETCH DỮ LIỆU ĐỒNG BỘ CẢ API + LOCAL (HIỆN CẢ ĐƠN CHƯA THANH TOÁN)
+  // 🔍 1. FETCH DỮ LIỆU ĐỒNG BỘ CẢ API + LOCAL (ĐÃ SỬA LẤY ĐỦ CÁC NGUỒN AVATAR)
   // ════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     const fetchRealData = async () => {
@@ -88,16 +88,25 @@ export default function UserProfilePage() {
             safeDob = rawDob.includes("T") ? rawDob.split("T")[0] : rawDob;
           }
 
+          // 👉 BỔ SUNG: Kiểm tra thêm google_avatar_${email} để không bị mất avatar
+          const googleAvatar = currentUser.email
+            ? localStorage.getItem(`google_avatar_${currentUser.email}`)
+            : null;
+
+          const finalAvatar =
+            currentUser.avatar ||
+            currentUser.picture ||
+            currentUser.avatar_url ||
+            currentUser.photoURL ||
+            googleAvatar ||
+            "";
+
           setProfileForm({
             full_name: displayName,
             email: currentUser.email || "",
             phone: currentUser.phone || currentUser.phone_number || "",
             dob: safeDob,
-            avatar:
-              currentUser.avatar ||
-              currentUser.picture ||
-              currentUser.avatar_url ||
-              "",
+            avatar: finalAvatar,
             email_verified: Boolean(currentUser.email_verified),
             created_at: currentUser.created_at || "",
           });
@@ -114,7 +123,7 @@ export default function UserProfilePage() {
           }
         } catch (e) {}
 
-        // 2. Lấy đơn đặt phòng từ LocalStorage (Đơn giữ chỗ văn phòng, đơn chưa thanh toán)
+        // 2. Lấy đơn đặt phòng từ LocalStorage
         const localBookings = JSON.parse(
           localStorage.getItem("all_bookings") || "[]",
         );
@@ -190,7 +199,7 @@ export default function UserProfilePage() {
     fetchRealData();
   }, [user]);
 
-  // 📸 ĐỔI AVATAR
+  // 📸 ĐỔI AVATAR (ĐỒNG BỘ STORE + TẤT CẢ CÁC KHÓA LOCALSTORAGE)
   const handleAvatarFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -212,14 +221,35 @@ export default function UserProfilePage() {
 
         const compressedAvatar = canvas.toDataURL("image/jpeg", 0.85);
 
+        // 1. Cập nhật State nội bộ
         setProfileForm((prev) => ({ ...prev, avatar: compressedAvatar }));
 
+        // 2. Cập nhật AuthStore
         if (updateUser) updateUser({ avatar: compressedAvatar });
+
+        // 3. Cập nhật localStorage "user"
         const savedUser = JSON.parse(localStorage.getItem("user") || "{}");
         localStorage.setItem(
           "user",
           JSON.stringify({ ...savedUser, avatar: compressedAvatar }),
         );
+
+        // 4. Đồng bộ thêm google_avatar để Header luôn đọc trúng ảnh mới nhất
+        if (profileForm.email) {
+          localStorage.setItem(
+            `google_avatar_${profileForm.email}`,
+            compressedAvatar,
+          );
+        }
+
+        // 5. Cập nhật auth-storage (nếu authStore dùng zustand/persist)
+        const authStorage = JSON.parse(
+          localStorage.getItem("auth-storage") || "{}",
+        );
+        if (authStorage?.state?.user) {
+          authStorage.state.user.avatar = compressedAvatar;
+          localStorage.setItem("auth-storage", JSON.stringify(authStorage));
+        }
 
         try {
           if (authService?.updateProfile) {
@@ -258,6 +288,13 @@ export default function UserProfilePage() {
       const updatedUser = { ...currentUserObj, ...updatePayload };
       localStorage.setItem("user", JSON.stringify(updatedUser));
 
+      if (profileForm.email && profileForm.avatar) {
+        localStorage.setItem(
+          `google_avatar_${profileForm.email}`,
+          profileForm.avatar,
+        );
+      }
+
       const authStorage = JSON.parse(
         localStorage.getItem("auth-storage") || "{}",
       );
@@ -288,7 +325,6 @@ export default function UserProfilePage() {
   // 🗑️ HỦY ĐƠN ĐẶT PHÒNG
   const handleCancelBooking = async (e, bookingCode) => {
     e.stopPropagation();
-
     if (!window.confirm(`Xác nhận hủy đơn đặt phòng #${bookingCode}?`)) return;
 
     try {
@@ -298,7 +334,6 @@ export default function UserProfilePage() {
         }
       } catch (apiErr) {}
 
-      // Cập nhật State
       setBookings((prev) =>
         prev.map((b) => {
           if (b.code === bookingCode || b.booking_code === bookingCode) {
@@ -308,7 +343,6 @@ export default function UserProfilePage() {
         }),
       );
 
-      // Cập nhật LocalStorage
       const localBookings = JSON.parse(
         localStorage.getItem("all_bookings") || "[]",
       );
@@ -363,7 +397,6 @@ export default function UserProfilePage() {
     }
   };
 
-  // 🛑 PHÂN LOẠI CHUYẾN ĐI (CHƯA THANH TOÁN VẪN NẰM Ở CHUYẾN ĐI SẮP TỚI ĐỂ THEO DÕI)
   const upcomingBookings = bookings.filter((b) => {
     return b.status !== "cancelled" && b.payment_status !== "cancelled";
   });
@@ -372,9 +405,12 @@ export default function UserProfilePage() {
     return b.status === "cancelled" || b.payment_status === "cancelled";
   });
 
-  const displayAvatar =
-    profileForm.avatar ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(profileForm.full_name || "U")}&background=003580&color=fff`;
+  // 👉 LINK FALLBACK DÀNH CHO AVATAR NẾU LINK ẢNH HỎNG HOẶC CHƯA CÓ
+  const fallbackAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    profileForm.full_name || profileForm.email || "Khách Hàng",
+  )}&background=003580&color=fff&bold=true`;
+
+  const displayAvatar = profileForm.avatar || fallbackAvatarUrl;
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24">
@@ -406,10 +442,15 @@ export default function UserProfilePage() {
               onClick={() => fileInputRef.current?.click()}
               title="Nhấp để đổi ảnh đại diện"
             >
+              {/* 👉 ĐÃ BỔ SUNG onError ĐỂ TỰ ĐỘNG HIỆN AVATAR CHỮ CÁI NẾU LINK LỖI */}
               <img
                 src={displayAvatar}
-                alt=""
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-white object-cover bg-white shadow-md group-hover:opacity-90 transition"
+                alt={profileForm.full_name || "Avatar"}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = fallbackAvatarUrl;
+                }}
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-white object-cover bg-slate-200 shadow-md group-hover:opacity-90 transition shrink-0"
               />
               <button
                 type="button"
@@ -487,7 +528,7 @@ export default function UserProfilePage() {
           </div>
         ) : (
           <>
-            {/* ══════════ TAB 1: CHUYẾN ĐI CỦA TÔI (HIỆN CẢ ĐƠN CHỜ THANH TOÁN VĂN PHÒNG) ══════════ */}
+            {/* ══════════ TAB 1: CHUYẾN ĐI CỦA TÔI ══════════ */}
             {activeMainTab === "trips" && (
               <div className="space-y-6 animate-in fade-in">
                 <div className="flex gap-6 text-sm font-bold text-slate-600">
@@ -537,7 +578,6 @@ export default function UserProfilePage() {
                           key={bookingCode}
                           className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition"
                         >
-                          {/* THANH TRẠNG THÁI ĐƠN HÀNG */}
                           <div className="bg-slate-50 px-5 py-3 flex justify-between items-center text-xs font-semibold border-b border-slate-100 flex-wrap gap-2">
                             <span className="text-slate-600">
                               Mã đơn đặt phòng:{" "}
@@ -573,7 +613,6 @@ export default function UserProfilePage() {
                             )}
                           </div>
 
-                          {/* NỘI DUNG CHI TIẾT ĐƠN HÀNG */}
                           <div className="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-5">
                             <div className="flex-1 space-y-3">
                               <h4 className="font-extrabold text-[#003580] text-base">
@@ -618,7 +657,6 @@ export default function UserProfilePage() {
                               </div>
                             </div>
 
-                            {/* CỘT GIÁ TIỀN & THAO TÁC */}
                             <div className="w-full md:w-auto flex md:flex-col justify-between items-end gap-2.5 border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
                               <span className="text-2xl font-black text-[#ff6a00] tracking-tight">
                                 {formatVND(b.total_price)}

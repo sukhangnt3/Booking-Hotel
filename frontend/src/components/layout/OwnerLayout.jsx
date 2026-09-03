@@ -19,16 +19,19 @@ import { cn } from "@/utils/cn";
 const OwnerLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuthStore();
-
+  const { user: storeUser, logout } = useAuthStore();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  // Kiểm tra vai trò Lễ tân hay Chủ nhà
+  const localUser = JSON.parse(localStorage.getItem("user") || "null");
+  const authStorageUser = JSON.parse(
+    localStorage.getItem("auth-storage") || "{}",
+  )?.state?.user;
+  const user = storeUser || localUser || authStorageUser;
+
   const roleStr = String(user?.role || user?.role_name || "").toLowerCase();
   const isReceptionist = roleStr === "staff" || roleStr === "receptionist";
 
-  // ── 🏨 1. DANH MỤC MENU DÀNH CHO CHỦ KHÁCH SẠN (OWNER / MANAGER) ──
   const ownerNavItems = [
     {
       path: "/owner/dashboard",
@@ -57,7 +60,7 @@ const OwnerLayout = () => {
     },
     {
       path: "/owner/staff",
-      label: "Quản Lý Lễ Tân & Nhân Sự", // 👈 ĐÃ BỔ SUNG MỤC CẤP TÀI KHOẢN LỄ TÂN
+      label: "Quản Lý Lễ Tân & Nhân Sự",
       icon: <UserCheck size={19} />,
     },
     {
@@ -72,7 +75,6 @@ const OwnerLayout = () => {
     },
   ];
 
-  // ── 🔑 2. DANH MỤC MENU DÀNH RIÊNG CHO LỄ TÂN (FRONT DESK) ──
   const receptionistNavItems = [
     {
       path: "/owner/bookings",
@@ -97,16 +99,38 @@ const OwnerLayout = () => {
     "Quản Lý Chỗ Nghỉ";
   const ownerName = user?.full_name || user?.name || "Chủ Chỗ Nghỉ";
 
-  // Bóc tách ảnh đại diện Avatar
-  const avatarUrl =
-    user?.avatar ||
-    user?.picture ||
-    localStorage.getItem(`google_avatar_${user?.email}`) ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=059669&color=fff&bold=true`;
+  const fallbackOwnerAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    ownerName,
+  )}&background=${isReceptionist ? "d97706" : "059669"}&color=fff&bold=true`;
+
+  // 🎯 BÓC TÁCH AVATAR GOOGLE & DATABASE
+  const getOwnerAvatar = () => {
+    const raw =
+      user?.avatar ||
+      user?.picture ||
+      user?.photoURL ||
+      user?.avatar_url ||
+      (user?.email
+        ? localStorage.getItem(`google_avatar_${user.email}`)
+        : null);
+
+    if (
+      raw &&
+      typeof raw === "string" &&
+      raw.trim() !== "" &&
+      raw !== "null" &&
+      raw !== "undefined" &&
+      !raw.includes("placeholder")
+    ) {
+      return raw;
+    }
+    return fallbackOwnerAvatar;
+  };
+
+  const avatarUrl = getOwnerAvatar();
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans">
-      {/* ── SIDEBAR ── */}
       <div
         className={cn(
           "lg:block shrink-0 h-full",
@@ -132,9 +156,7 @@ const OwnerLayout = () => {
         />
       </div>
 
-      {/* ── MAIN CONTENT ── */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* Topbar Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
             <button
@@ -160,19 +182,21 @@ const OwnerLayout = () => {
               </p>
             </div>
 
+            {/* AVATAR CÓ CHỐNG CHẶN GOOGLE */}
             <img
+              key={avatarUrl}
               src={avatarUrl}
               alt={ownerName}
+              referrerPolicy="no-referrer"
               onError={(e) => {
                 e.currentTarget.onerror = null;
-                e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=059669&color=fff&bold=true`;
+                e.currentTarget.src = fallbackOwnerAvatar;
               }}
-              className="w-9 h-9 rounded-full border-2 border-emerald-500 object-cover shadow-sm shrink-0"
+              className="w-9 h-9 rounded-full border-2 border-emerald-500 object-cover shadow-sm shrink-0 bg-white"
             />
           </div>
         </header>
 
-        {/* Nội dung trang con */}
         <main className="flex-1 overflow-y-auto p-6 bg-[#f8fafc]">
           <div className="max-w-7xl mx-auto">
             <Outlet />

@@ -16,34 +16,42 @@ import { cn } from "@/utils/cn";
 const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuthStore();
-
+  const { user: storeUser, logout } = useAuthStore();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-
   const [pendingHotelCount, setPendingHotelCount] = useState(0);
 
-  useEffect(() => {
-    const localApps = JSON.parse(
-      localStorage.getItem("pending_partner_applications") || "[]",
-    );
-    const approvedIds = JSON.parse(
-      localStorage.getItem("approved_hotel_ids") || "[]",
-    ).map(String);
-    const rejectedIds = JSON.parse(
-      localStorage.getItem("rejected_hotel_ids") || "[]",
-    ).map(String);
+  // Đảm bảo dữ liệu user luôn sẵn sàng khi F5
+  const localUser = JSON.parse(localStorage.getItem("user") || "null");
+  const authStorageUser = JSON.parse(
+    localStorage.getItem("auth-storage") || "{}",
+  )?.state?.user;
+  const user = storeUser || localUser || authStorageUser;
 
-    const pending = localApps.filter(
-      (h) =>
-        !approvedIds.includes(String(h.id || h.applicationId)) &&
-        !rejectedIds.includes(String(h.id || h.applicationId)) &&
-        h.status !== "approved",
-    );
-    setPendingHotelCount(pending.length);
+  useEffect(() => {
+    try {
+      const localApps = JSON.parse(
+        localStorage.getItem("pending_partner_applications") || "[]",
+      );
+      const approvedIds = JSON.parse(
+        localStorage.getItem("approved_hotel_ids") || "[]",
+      ).map(String);
+      const rejectedIds = JSON.parse(
+        localStorage.getItem("rejected_hotel_ids") || "[]",
+      ).map(String);
+
+      const pending = localApps.filter(
+        (h) =>
+          !approvedIds.includes(String(h.id || h.applicationId)) &&
+          !rejectedIds.includes(String(h.id || h.applicationId)) &&
+          h.status !== "approved",
+      );
+      setPendingHotelCount(pending.length);
+    } catch (e) {
+      console.error(e);
+    }
   }, [location.pathname]);
 
-  // 👑 5 MỤC QUẢN TRỊ TỐI CAO CỦA SUPER ADMIN (CỰC KỲ GỌN GÀNG)
   const menuItems = [
     {
       path: "/admin/dashboard",
@@ -76,7 +84,41 @@ const AdminLayout = () => {
   ];
 
   const adminName =
-    user?.full_name || user?.name || user?.username || "Super Admin";
+    user?.full_name ||
+    user?.name ||
+    user?.username ||
+    user?.email?.split("@")[0] ||
+    "Super Admin";
+
+  const defaultAdminFallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    adminName,
+  )}&background=003580&color=fff&bold=true`;
+
+  // 🎯 BÓC TÁCH AVATAR GOOGLE & DATABASE
+  const getAdminAvatar = () => {
+    const raw =
+      user?.avatar ||
+      user?.picture ||
+      user?.photoURL ||
+      user?.avatar_url ||
+      (user?.email
+        ? localStorage.getItem(`google_avatar_${user.email}`)
+        : null);
+
+    if (
+      raw &&
+      typeof raw === "string" &&
+      raw.trim() !== "" &&
+      raw !== "null" &&
+      raw !== "undefined" &&
+      !raw.includes("placeholder")
+    ) {
+      return raw;
+    }
+    return defaultAdminFallback;
+  };
+
+  const adminAvatarUrl = getAdminAvatar();
 
   return (
     <div className="flex h-screen w-full bg-[#f8fafc] overflow-hidden font-sans">
@@ -108,6 +150,7 @@ const AdminLayout = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        {/* Topbar Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
             <button
@@ -122,12 +165,27 @@ const AdminLayout = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-slate-600 hidden sm:inline">
-              {adminName}
-            </span>
-            <div className="w-8 h-8 rounded-full bg-[#003580] text-white font-bold flex items-center justify-center text-xs shadow-sm">
-              {adminName.charAt(0)}
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-black text-slate-800 leading-none">
+                {adminName}
+              </p>
+              <p className="text-[10px] text-blue-700 font-bold mt-1 uppercase">
+                Quản Trị Viên (Super Admin)
+              </p>
             </div>
+
+            {/* AVATAR ADMIN CÓ CHỐNG CHẶN GOOGLE */}
+            <img
+              key={adminAvatarUrl}
+              src={adminAvatarUrl}
+              alt={adminName}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = defaultAdminFallback;
+              }}
+              className="w-9 h-9 rounded-full border-2 border-[#003580] object-cover shadow-sm shrink-0 bg-white"
+            />
           </div>
         </header>
 

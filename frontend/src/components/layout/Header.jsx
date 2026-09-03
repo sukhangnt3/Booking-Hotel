@@ -1,5 +1,5 @@
 // src/components/layout/Header.jsx
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   User,
@@ -17,8 +17,27 @@ import { cn } from "@/utils/cn";
 
 const Header = () => {
   const navigate = useNavigate();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user: storeUser, isAuthenticated, logout } = useAuthStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Đảm bảo không mất user khi F5
+  const localUser = JSON.parse(localStorage.getItem("user") || "null");
+  const authStorageUser = JSON.parse(
+    localStorage.getItem("auth-storage") || "{}",
+  )?.state?.user;
+  const user = storeUser || localUser || authStorageUser;
+
+  // Đóng menu khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ─── 1. BÓC TÁCH ROLE ───
   const getRole = () => {
@@ -32,7 +51,6 @@ const Header = () => {
   const role = getRole();
   const isAdmin = role.includes("admin") || user?.role_id === 1;
 
-  // Kiểm tra Lễ tân
   const staffEmails = JSON.parse(
     localStorage.getItem("staff_emails") || "[]",
   ).map((e) => String(e).toLowerCase().trim());
@@ -41,7 +59,6 @@ const Header = () => {
     role === "receptionist" ||
     (user?.email && staffEmails.includes(user.email.toLowerCase().trim()));
 
-  // Kiểm tra Chủ nhà
   const approvedEmails = JSON.parse(
     localStorage.getItem("approved_owner_emails") || "[]",
   );
@@ -61,7 +78,6 @@ const Header = () => {
     user?.email?.split("@")[0] ||
     "Khách hàng";
 
-  // Màu sắc & Nhãn chức danh
   const roleBadgeText = isAdmin
     ? "Admin"
     : isStaff
@@ -78,37 +94,31 @@ const Header = () => {
         ? "059669"
         : "006CE4";
 
-  // ─── 2. LOGIC LẤY AVATAR CHUẨN (ĐỒNG BỘ VỚI OWNERLAYOUT) ───
+  // ─── 2. BÓC TÁCH AVATAR GOOGLE & DATABASE ───
   const defaultFallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
     displayName,
   )}&background=${roleBgColor}&color=fff&bold=true`;
 
   const getCleanAvatar = () => {
-    // Ưu tiên 1: Link ảnh từ user object
     const rawAvatar =
       user?.avatar ||
-      user?.avatar_url ||
       user?.picture ||
       user?.photoURL ||
-      user?.image;
+      user?.avatar_url ||
+      (user?.email
+        ? localStorage.getItem(`google_avatar_${user.email}`)
+        : null);
 
     if (
       rawAvatar &&
       typeof rawAvatar === "string" &&
       rawAvatar.trim() !== "" &&
-      !rawAvatar.includes("placeholder") &&
-      rawAvatar !== "null"
+      rawAvatar !== "null" &&
+      rawAvatar !== "undefined" &&
+      !rawAvatar.includes("placeholder")
     ) {
       return rawAvatar;
     }
-
-    // Ưu tiên 2: Avatar lưu trong localStorage (Google Login)
-    if (user?.email) {
-      const googleAvatar = localStorage.getItem(`google_avatar_${user.email}`);
-      if (googleAvatar) return googleAvatar;
-    }
-
-    // Ưu tiên 3: Fallback chữ cái
     return defaultFallbackAvatar;
   };
 
@@ -124,10 +134,8 @@ const Header = () => {
     navigate("/");
   };
 
-  // ─── 3. KIỂM TRA ĐĂNG NHẬP LINH HOẠT ───
-  // Nếu user tồn tại HOẶC isAuthenticated = true thì đều tính là đã đăng nhập
   const isUserLoggedIn = Boolean(
-    user && (user.id || user.email || isAuthenticated),
+    user && (user.id || user.email || user._id || isAuthenticated),
   );
 
   return (
@@ -155,7 +163,7 @@ const Header = () => {
               onClick={() => navigate("/owner/bookings")}
               className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-4 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition cursor-pointer"
             >
-              <CalendarCheck size={16} /> Kênh Lễ Tân (Xử Lý Đặt Phòng)
+              <CalendarCheck size={16} /> Kênh Lễ Tân
             </button>
           )}
 
@@ -178,9 +186,9 @@ const Header = () => {
             </button>
           </div>
 
-          {/* 4. AVATAR PROFILE (Đã sửa điều kiện hiển thị & thêm onError fallback) */}
+          {/* 3. AVATAR PROFILE (ĐÃ CÓ referrerPolicy="no-referrer") */}
           {isUserLoggedIn ? (
-            <div className="relative">
+            <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className={cn(
@@ -191,14 +199,15 @@ const Header = () => {
                 )}
               >
                 <img
-                  key={user?.id || user?.email || avatarUrl}
+                  key={avatarUrl}
                   src={avatarUrl}
                   alt={displayName}
+                  referrerPolicy="no-referrer"
                   onError={(e) => {
                     e.currentTarget.onerror = null;
                     e.currentTarget.src = defaultFallbackAvatar;
                   }}
-                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-white object-cover shadow-sm shrink-0"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-white object-cover shadow-sm shrink-0 bg-white"
                 />
 
                 <div className="hidden sm:block text-left mr-1">
@@ -231,79 +240,73 @@ const Header = () => {
 
               {/* MENU THẢ XUỐNG */}
               {isMenuOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-[60]"
-                    onClick={() => setIsMenuOpen(false)}
-                  />
-                  <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl z-[70] py-2 border border-gray-100 text-gray-800 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
-                    <div className="px-4 py-3 border-b border-gray-100">
-                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">
-                        Tài khoản ({roleBadgeText})
-                      </p>
-                      <p className="text-sm font-black truncate mt-0.5 text-blue-900">
-                        {user?.email}
-                      </p>
-                    </div>
+                <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl z-[70] py-2 border border-gray-100 text-gray-800 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">
+                      Tài khoản ({roleBadgeText})
+                    </p>
+                    <p className="text-sm font-black truncate mt-0.5 text-blue-900">
+                      {user?.email}
+                    </p>
+                  </div>
 
-                    {isStaff && (
-                      <button
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          navigate("/owner/bookings");
-                        }}
-                        className="w-full text-left px-4 py-3 text-sm bg-amber-50 text-amber-900 font-black hover:bg-amber-100 flex items-center gap-3 transition cursor-pointer"
-                      >
-                        <CalendarCheck size={18} className="text-amber-600" />{" "}
-                        Kênh Lễ Tân (Xử Lý Đặt Phòng)
-                      </button>
-                    )}
-
-                    {isAdmin && (
-                      <button
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          navigate("/admin/dashboard");
-                        }}
-                        className="w-full text-left px-4 py-3 text-sm bg-blue-50 text-[#006ce4] font-bold hover:bg-blue-100 flex items-center gap-3 transition cursor-pointer"
-                      >
-                        <ShieldCheck size={18} /> Quản trị hệ thống
-                      </button>
-                    )}
-
-                    {isApprovedOwner && !isStaff && (
-                      <button
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          navigate("/owner/dashboard");
-                        }}
-                        className="w-full text-left px-4 py-3 text-sm bg-emerald-50 text-emerald-700 font-bold hover:bg-emerald-100 flex items-center gap-3 transition cursor-pointer"
-                      >
-                        <LayoutDashboard size={18} /> Kênh Chủ chỗ nghỉ
-                      </button>
-                    )}
-
+                  {isStaff && (
                     <button
                       onClick={() => {
                         setIsMenuOpen(false);
-                        navigate("/profile");
+                        navigate("/owner/bookings");
                       }}
-                      className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 transition font-semibold cursor-pointer"
+                      className="w-full text-left px-4 py-3 text-sm bg-amber-50 text-amber-900 font-black hover:bg-amber-100 flex items-center gap-3 transition cursor-pointer"
                     >
-                      <User size={18} className="text-gray-400" /> Quản lý tài
-                      khoản
+                      <CalendarCheck size={18} className="text-amber-600" />{" "}
+                      Kênh Lễ Tân
                     </button>
+                  )}
 
-                    <div className="border-t border-gray-100 my-1"></div>
-
+                  {isAdmin && (
                     <button
-                      onClick={handleLogout}
-                      className="w-full text-left px-4 py-3 text-sm text-rose-600 font-bold hover:bg-rose-50 flex items-center gap-3 transition cursor-pointer"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        navigate("/admin/dashboard");
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm bg-blue-50 text-[#006ce4] font-bold hover:bg-blue-100 flex items-center gap-3 transition cursor-pointer"
                     >
-                      <LogOut size={18} /> Đăng xuất
+                      <ShieldCheck size={18} /> Quản trị hệ thống
                     </button>
-                  </div>
-                </>
+                  )}
+
+                  {isApprovedOwner && !isStaff && (
+                    <button
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        navigate("/owner/dashboard");
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm bg-emerald-50 text-emerald-700 font-bold hover:bg-emerald-100 flex items-center gap-3 transition cursor-pointer"
+                    >
+                      <LayoutDashboard size={18} /> Kênh Chủ chỗ nghỉ
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      navigate("/profile");
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 transition font-semibold cursor-pointer"
+                  >
+                    <User size={18} className="text-gray-400" /> Quản lý tài
+                    khoản
+                  </button>
+
+                  <div className="border-t border-gray-100 my-1"></div>
+
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left px-4 py-3 text-sm text-rose-600 font-bold hover:bg-rose-50 flex items-center gap-3 transition cursor-pointer"
+                  >
+                    <LogOut size={18} /> Đăng xuất
+                  </button>
+                </div>
               )}
             </div>
           ) : (
