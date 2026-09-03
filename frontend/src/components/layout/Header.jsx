@@ -114,19 +114,25 @@ const Header = () => {
   };
 
   return (
-    <header className="bg-[#003580] text-white sticky top-0 z-[60] shadow-md select-none border-b border-blue-800 font-sans">
-      <div className="max-w-7xl mx-auto px-4 h-16 sm:h-20 flex justify-between items-center">
-        {/* 1. LOGO */}
+      <header className="bg-[#0a2540]/95 text-white sticky top-0 z-[60] shadow-2xl backdrop-blur-xl border-b border-amber-500/20 font-sans select-none transition-all">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-18 sm:h-20 flex justify-between items-center">
+        {/* 1. LOGO RESORT LUXURY */}
         <div
           onClick={() => navigate("/")}
-          className="flex items-center gap-2 cursor-pointer group"
+          className="flex items-center gap-3 cursor-pointer group"
         >
-          <div className="bg-white text-[#003580] p-1.5 rounded-lg group-hover:scale-110 transition-transform">
-            <Building size={24} strokeWidth={3} />
+          <div className="bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-[#0a2540] p-2 rounded-xl shadow-md group-hover:scale-105 group-hover:shadow-amber-500/30 transition-all duration-300">
+            <Building size={22} strokeWidth={2.5} />
           </div>
-          <span className="text-2xl font-black tracking-tighter italic">
-            GoStay
-          </span>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <span className="text-2xl sm:text-3xl font-serif tracking-wide font-black bg-gradient-to-r from-white via-slate-100 to-amber-200 bg-clip-text text-transparent">
+                GoStay
+              </span>
+             
+            </div>
+            
+          </div>
         </div>
 
         {/* 2. ACTIONS */}
@@ -138,16 +144,6 @@ const Header = () => {
               className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-4 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition cursor-pointer"
             >
               <CalendarCheck size={16} /> Kênh Lễ Tân (Xử Lý Đặt Phòng)
-            </button>
-          )}
-
-          {/* 2. Nút cho Chủ cơ sở */}
-          {isApprovedOwner && !isStaff && (
-            <button
-              onClick={() => navigate("/owner/dashboard")}
-              className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <LayoutDashboard size={16} /> Kênh Quản Trị Chủ Nhà
             </button>
           )}
 

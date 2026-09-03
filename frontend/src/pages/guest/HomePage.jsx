@@ -33,7 +33,7 @@ import { HotelCard } from "@/components/hotel";
 import { hotelService } from "@/services";
 
 const HERO_BG_IMAGE =
-  "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=2000&q=80";
+  "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=2000&q=80";
 
 const BACKEND_BASE_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000"
@@ -376,11 +376,11 @@ const HomePage = () => {
                 "bg-[#ff5b00] text-white rounded-lg z-10 font-black shadow-md";
             } else if (isStart) {
               btnClasses +=
-                "bg-[#ff5b00] text-white rounded-l-lg z-10 font-black shadow-md " +
+                "bg-orange-400 text-white rounded-l-lg z-10 font-black shadow-md " +
                 (checkOutDate ? "rounded-r-none" : "rounded-r-lg");
             } else if (isEnd) {
               btnClasses +=
-                "bg-[#ff5b00] text-white rounded-r-lg rounded-l-none z-10 font-black shadow-md";
+                "bg-orange-400 text-white rounded-r-lg rounded-l-none z-10 font-black shadow-md";
             } else if (isInRange || isHoverRange) {
               btnClasses +=
                 "bg-[#fff1e8] text-gray-900 font-bold hover:bg-[#ffe3d1]";
@@ -516,7 +516,7 @@ const HomePage = () => {
                     <div className="flex items-center gap-2.5">
                       <CalendarIcon size={20} className="text-gray-400" />
                       <div>
-                        <span className="text-[11px] font-black text-rose-500 block leading-tight">
+                        <span className="text-[11px] font-black text-slate-500 block leading-tight">
                           {checkInDate
                             ? format(checkInDate, "EEEE", { locale: vi })
                             : "Thứ ?"}
@@ -610,7 +610,7 @@ const HomePage = () => {
                           <button
                             type="button"
                             onClick={() => setIsCalendarOpen(false)}
-                            className="px-4 py-1.5 bg-[#ff5b00] hover:bg-[#e05000] text-white font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
+                            className="px-4 py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-[#0a2540] font-bold rounded-lg shadow-sm shadow-amber-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
                           >
                             Xong
                           </button>
@@ -697,7 +697,7 @@ const HomePage = () => {
                         <button
                           type="button"
                           onClick={() => setIsGuestOpen(false)}
-                          className="w-full py-1.5 bg-[#ff5b00] text-white text-xs font-bold rounded-lg mt-2 cursor-pointer"
+                          className="w-full py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-[#0a2540] shadow-md shadow-amber-500/20 text-xs font-bold rounded-lg mt-2 cursor-pointer transition-all duration-200 active:scale-[0.98]"
                         >
                           Áp dụng
                         </button>
@@ -708,7 +708,7 @@ const HomePage = () => {
                   <button
                     type="button"
                     onClick={handleSearchSubmit}
-                    className="md:col-span-2 h-full min-h-[48px] bg-[#ff5b00] hover:bg-[#e05000] text-white font-black text-base rounded-xl shadow-lg flex items-center justify-center transition-all active:scale-[0.98] cursor-pointer"
+                    className="md:col-span-2 h-full min-h-[48px] bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-[#0a2540] font-black text-base rounded-xl shadow-lg shadow-amber-500/30 flex items-center justify-center transition-all active:scale-[0.98] cursor-pointer"
                   >
                     Tìm
                   </button>
@@ -717,7 +717,7 @@ const HomePage = () => {
             </div>
 
             {/* COMBO PROMO */}
-            <div className="lg:col-span-4 flex justify-end">
+          <div className="lg:col-span-4 h-full flex items-end">
               <div
                 onClick={() => handleSearchSubmit()}
                 className="w-full max-w-sm bg-white/95 backdrop-blur-md rounded-2xl p-5 shadow-2xl border border-white/50 space-y-2 cursor-pointer hover:bg-white transition-all group"
@@ -725,7 +725,7 @@ const HomePage = () => {
                 <div className="text-xs font-black text-gray-700 uppercase tracking-wide">
                   Hệ thống GoStay
                 </div>
-                <h3 className="text-lg font-black text-[#0f294d] leading-tight group-hover:text-[#ff5b00] transition-colors">
+                <h3 className="text-lg font-black text-[#0a2540] leading-tight group-hover:text-amber-600 transition-colors">
                   ĐẶT PHÒNG TRỰC TUYẾN 24/7
                 </h3>
                 <div className="text-xs text-gray-600 space-y-1">
@@ -735,10 +735,10 @@ const HomePage = () => {
                   <p>• Xác nhận tức thì - Đảm bảo giá tốt nhất</p>
                 </div>
                 <div className="pt-2 flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-700">
+                  <span className="text-xs font-bold text-slate-800">
                     Khám phá ngay &rarr;
                   </span>
-                  <div className="w-8 h-8 rounded-full bg-[#0f294d] group-hover:bg-[#ff5b00] text-white flex items-center justify-center transition-colors">
+                  <div className="w-8 h-8 rounded-full bg-[#0a2540] group-hover:bg-gradient-to-r group-hover:from-amber-400 group-hover:to-amber-600 text-white group-hover:text-[#0a2540] flex items-center justify-center transition-all duration-200">
                     <ChevronRight size={16} />
                   </div>
                 </div>
@@ -789,7 +789,7 @@ const HomePage = () => {
                     </h3>
                     <span className="text-xl">🇻🇳</span>
                     {place.isTop1 && (
-                      <span className="bg-[#ff5b00] text-white text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full shadow">
+                      <span className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-[#0a2540] text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full shadow shadow-amber-500/20">
                         🔥 Top 1 Thịnh Hành
                       </span>
                     )}
