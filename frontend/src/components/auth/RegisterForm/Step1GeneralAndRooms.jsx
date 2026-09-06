@@ -1,3 +1,4 @@
+// src/components/auth/Step1GeneralAndRooms.jsx
 import React, { useState, useRef } from "react";
 import {
   Building2,
@@ -17,6 +18,8 @@ import {
   Upload,
   CheckCircle2,
   FileText,
+  Key,
+  Wand2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -85,7 +88,7 @@ const PROVINCES_DATA = [
   },
 ];
 
-const ROOM_AMENITIES_LIST = [
+export const ROOM_AMENITIES_LIST = [
   { id: "air_conditioner", label: "Điều hòa máy lạnh" },
   { id: "tv_smart", label: "Smart TV màn hình phẳng" },
   { id: "minibar", label: "Tủ lạnh Minibar" },
@@ -120,7 +123,7 @@ export const Step1GeneralAndRooms = ({
       setSelectedProvinceObj(found);
       onChange({
         province: provinceName,
-        city: provinceName, // 👈 ĐỒNG BỘ CẢ 2 TRƯỜNG ĐỂ KHÔNG BỊ DÍNH HCM
+        city: provinceName,
         district: found.districts[0] || "",
         latitude: found.coords.lat,
         longitude: found.coords.lng,
@@ -191,14 +194,22 @@ export const Step1GeneralAndRooms = ({
   };
 
   const handleAddRoom = () => {
+    const nextIdx = rooms.length + 1;
+    const initialCount = 4;
+    const autoNumbers = Array.from(
+      { length: initialCount },
+      (_, i) => `P.${nextIdx}0${i + 1}`,
+    ).join(", ");
+
     const newRoom = {
       id: `room-${Date.now()}`,
-      roomName: `Phòng Hạng ${rooms.length + 1}`,
+      roomName: `Phòng Hạng ${nextIdx}`,
       bedType: "1 Giường đôi lớn (King/Queen Size)",
       roomSize: 28,
       maxAdults: 2,
       maxChildren: 1,
-      totalRooms: 5,
+      totalRooms: initialCount,
+      roomNumbersText: autoNumbers, // Chuỗi danh sách số phòng thực tế
       weekdayPrice: 650000,
       weekendPrice: 800000,
       image: "",
@@ -218,10 +229,30 @@ export const Step1GeneralAndRooms = ({
   };
 
   const handleUpdateRoom = (roomId, updates) => {
-    const updated = rooms.map((r) =>
-      r.id === roomId ? { ...r, ...updates } : r,
-    );
+    const updated = rooms.map((r) => {
+      if (r.id !== roomId) return r;
+      const merged = { ...r, ...updates };
+
+      // Nếu cập nhật roomNumbersText -> tự động tính lại totalRooms
+      if (updates.roomNumbersText !== undefined) {
+        const count = updates.roomNumbersText
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean).length;
+        merged.totalRooms = count > 0 ? count : 1;
+      }
+      return merged;
+    });
     onChange({ rooms: updated });
+  };
+
+  // Tự động sinh lại số phòng theo tầng
+  const handleAutoGenerateRoomNumbers = (roomId, floorNumber, count) => {
+    const generated = Array.from(
+      { length: count },
+      (_, i) => `P.${floorNumber}0${i + 1}`,
+    ).join(", ");
+    handleUpdateRoom(roomId, { roomNumbersText: generated, totalRooms: count });
   };
 
   const handleDeleteRoom = (roomId) => {
@@ -271,8 +302,7 @@ export const Step1GeneralAndRooms = ({
             <strong className="font-mono font-bold text-blue-950">
               {user?.email}
             </strong>{" "}
-            (Chủ cơ sở: {user?.full_name || data?.ownerName}). Bạn không cần tạo
-            mật khẩu mới!
+            (Chủ cơ sở: {user?.full_name || data?.ownerName}).
           </p>
         </div>
       ) : (
@@ -457,19 +487,6 @@ export const Step1GeneralAndRooms = ({
 
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-              Tên tiếng Anh (Tùy chọn)
-            </label>
-            <input
-              type="text"
-              value={data?.hotelNameEn || ""}
-              onChange={(e) => onChange({ hotelNameEn: e.target.value })}
-              placeholder="VD: East Sea Luxury Hotel"
-              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
               Loại hình lưu trú *
             </label>
             <select
@@ -483,40 +500,18 @@ export const Step1GeneralAndRooms = ({
               <option value="villa">Biệt thự nghỉ dưỡng (Villa)</option>
             </select>
           </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-              Xếp hạng sao
-            </label>
-            <select
-              value={data?.starRating ?? 5}
-              onChange={(e) => onChange({ starRating: Number(e.target.value) })}
-              className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 text-slate-900 bg-white focus:border-blue-600 outline-none font-semibold cursor-pointer"
-            >
-              <option value={1}>1 Sao ⭐</option>
-              <option value={2}>2 Sao ⭐⭐</option>
-              <option value={3}>3 Sao ⭐⭐⭐</option>
-              <option value={4}>4 Sao ⭐⭐⭐⭐</option>
-              <option value={5}>5 Sao ⭐⭐⭐⭐⭐ (Sang trọng cao cấp)</option>
-            </select>
-          </div>
         </div>
 
-        {/* 🛑 Ô NHẬP BÀI VIẾT MÔ TẢ / GIỚI THIỆU CHỖ NGHỈ */}
         <div className="pt-2">
           <label className="block text-xs font-bold text-slate-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
             <FileText size={15} className="text-blue-600" /> Giới thiệu / Mô tả
             chi tiết chỗ nghỉ
           </label>
-          <p className="text-[11px] text-slate-400 mb-2">
-            Mô tả không gian, phong cách kiến trúc, vị trí thuận lợi và các tiện
-            ích nổi bật của chỗ nghỉ để thu hút du khách.
-          </p>
           <textarea
             rows={4}
             value={data?.description || ""}
             onChange={(e) => onChange({ description: e.target.value })}
-            placeholder="VD: Tọa lạc trên bãi biển tuyệt đẹp tại Phú Quốc, khách sạn mang phong cách Indochine hiện đại kết hợp tiện nghi cao cấp 5 sao. Cơ sở gồm 7 tầng với hồ bơi vô cực, nhà hàng fine-dining và dịch vụ đón tiễn sân bay chu đáo 24/7..."
+            placeholder="VD: Tọa lạc ngay trung tâm, đầy đủ tiện nghi..."
             className="w-full border border-slate-300 rounded-xl p-3.5 text-xs font-medium focus:border-blue-600 outline-none leading-relaxed"
           />
         </div>
@@ -533,8 +528,8 @@ export const Step1GeneralAndRooms = ({
               3. Vị Trí Địa Lý & Địa Chỉ Chỗ Nghỉ
             </h2>
             <p className="text-xs text-slate-500">
-              Địa chỉ chính xác giúp định vị trên Google Maps và tìm kiếm theo
-              khu vực
+              Địa chỉ chính xác giúp định vị trên bản đồ và tìm kiếm theo khu
+              vực
             </p>
           </div>
         </div>
@@ -577,7 +572,7 @@ export const Step1GeneralAndRooms = ({
 
         <div>
           <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-            Địa chỉ chi tiết (Số nhà, tên đường, phường/xã) *
+            Địa chỉ chi tiết *
           </label>
           <input
             type="text"
@@ -594,7 +589,7 @@ export const Step1GeneralAndRooms = ({
         </div>
       </div>
 
-      {/* ── 4. THIẾT LẬP CÁC LOẠI PHÒNG ── */}
+      {/* ── 4. THIẾT LẬP CÁC LOẠI PHÒNG & DANH SÁCH SỐ PHÒNG THỰC TẾ ── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -603,11 +598,11 @@ export const Step1GeneralAndRooms = ({
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900">
-                4. Danh Mục Loại Phòng & Giá Bán
+                4. Danh Mục Loại Phòng & Số Phòng Bàn Giao
               </h2>
               <p className="text-xs text-slate-500">
-                Thiết lập giá ngày thường, giá cuối tuần và ảnh thực tế cho từng
-                loại phòng
+                Thiết lập giá bán và danh sách số phòng thực tế của khách sạn
+                (VD: 101, 102, 201...)
               </p>
             </div>
           </div>
@@ -620,7 +615,7 @@ export const Step1GeneralAndRooms = ({
           </button>
         </div>
 
-        {/* TABS CHỌN PHÒNG ĐANG SỬA */}
+        {/* TABS CHỌN PHÒNG */}
         <div className="flex flex-wrap gap-2 border-b border-slate-100 pb-3">
           {rooms.map((room, idx) => (
             <div key={room.id} className="flex items-center">
@@ -654,7 +649,7 @@ export const Step1GeneralAndRooms = ({
           ))}
         </div>
 
-        {/* ACTIVE ROOM EDITOR */}
+        {/* CHI TIẾT HẠNG PHÒNG ĐANG CHỌN */}
         {rooms.map((room, idx) => {
           if (room.id !== editingRoomId) return null;
 
@@ -667,8 +662,8 @@ export const Step1GeneralAndRooms = ({
                 <span className="text-xs font-bold uppercase tracking-widest text-blue-600 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100">
                   Cấu hình Hạng phòng #{idx + 1}
                 </span>
-                <span className="text-xs text-slate-500 font-medium">
-                  {room.totalRooms} phòng trong kho
+                <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 font-bold px-3 py-1 rounded-lg">
+                  Tổng {room.totalRooms || 1} phòng thực tế
                 </span>
               </div>
 
@@ -698,9 +693,6 @@ export const Step1GeneralAndRooms = ({
                   />
                   <p className="text-xs font-bold text-slate-900">
                     Ảnh thực tế phòng này
-                  </p>
-                  <p className="text-[11px] text-slate-400">
-                    Chọn ảnh phòng ngủ sắc nét từ máy.
                   </p>
                   <button
                     type="button"
@@ -777,7 +769,8 @@ export const Step1GeneralAndRooms = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+              {/* GIÁ BÁN & SỐ LƯỢNG */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1">
                     <Users className="w-3.5 h-3.5 text-blue-600" /> Người lớn
@@ -814,6 +807,7 @@ export const Step1GeneralAndRooms = ({
                       handleUpdateRoom(room.id, {
                         weekdayPrice: Number(e.target.value),
                         sell_price: Number(e.target.value),
+                        base_price: Number(e.target.value),
                       })
                     }
                     className="w-full h-11 px-4 text-sm font-bold text-emerald-600 rounded-xl border border-slate-200 bg-white focus:border-blue-600 outline-none"
@@ -840,27 +834,63 @@ export const Step1GeneralAndRooms = ({
                     className="w-full h-11 px-4 text-sm font-bold text-amber-600 rounded-xl border border-slate-200 bg-white focus:border-blue-600 outline-none"
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                    Số phòng trong kho *
+              {/* 🔑 KHAI BÁO SỐ PHÒNG THỰC TẾ CHUẨN NGOÀI ĐỜI */}
+              <div className="p-4 bg-white rounded-xl border border-blue-200 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <Key size={15} className="text-blue-600" /> Danh sách số
+                    phòng thực tế của hạng phòng này:
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={room.totalRooms || 5}
-                    onChange={(e) =>
-                      handleUpdateRoom(room.id, {
-                        totalRooms: Number(e.target.value),
-                        room_count: Number(e.target.value),
-                      })
-                    }
-                    className="w-full h-11 px-4 text-sm rounded-xl border border-slate-200 bg-white text-slate-900 focus:border-blue-600 outline-none font-bold"
-                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAutoGenerateRoomNumbers(room.id, idx + 1, 4)
+                      }
+                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold rounded-lg border border-blue-200 cursor-pointer flex items-center gap-1"
+                    >
+                      <Wand2 size={12} /> Tự sinh 4 phòng tầng {idx + 1}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAutoGenerateRoomNumbers(room.id, idx + 1, 6)
+                      }
+                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold rounded-lg border border-blue-200 cursor-pointer flex items-center gap-1"
+                    >
+                      <Wand2 size={12} /> Tự sinh 6 phòng
+                    </button>
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  value={room.roomNumbersText || ""}
+                  onChange={(e) =>
+                    handleUpdateRoom(room.id, {
+                      roomNumbersText: e.target.value,
+                    })
+                  }
+                  placeholder="VD: 101, 102, 103, 104 (Ngăn cách bằng dấu phẩy)"
+                  className="w-full h-11 px-4 text-sm font-bold text-blue-900 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-blue-600 outline-none"
+                />
+
+                <div className="flex justify-between items-center text-[11px] text-slate-500">
+                  <p>
+                    💡 Nhập các số phòng thực tế gắn trên cửa (ngăn cách bằng
+                    dấu phẩy). Lễ tân sẽ dùng các số phòng này để giao chìa khóa
+                    cho khách.
+                  </p>
+                  <span className="font-bold text-blue-700 shrink-0 ml-2">
+                    Tổng: {room.totalRooms || 0} phòng
+                  </span>
                 </div>
               </div>
 
-              <div className="pt-2">
+              {/* LƯỚI TIỆN NGHI PHÒNG */}
+              <div className="pt-1">
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
                   Tiện nghi có sẵn bên trong hạng phòng:
                 </label>
@@ -883,7 +913,7 @@ export const Step1GeneralAndRooms = ({
                           onChange={() =>
                             toggleRoomAmenity(room.id, amenity.id)
                           }
-                          className="w-4 h-4 accent-blue-600 rounded"
+                          className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
                         />
                       </label>
                     );

@@ -1,15 +1,9 @@
 // src/components/layout/AdminLayout.jsx
 import React, { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Building2,
-  Users,
-  Menu,
-  BarChart3,
-  Settings,
-} from "lucide-react";
+import { Activity, Building2, Users, Menu } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import apiClient from "@/services/apiClient"; // 👈 ĐÃ IMPORT ĐẦY ĐỦ Ở ĐÂY
 import Sidebar from "./Sidebar";
 import { cn } from "@/utils/cn";
 
@@ -28,35 +22,26 @@ const AdminLayout = () => {
   )?.state?.user;
   const user = storeUser || localUser || authStorageUser;
 
+  // Đếm số lượng hồ sơ khách sạn chờ duyệt THỰC TẾ từ Database PostgreSQL
   useEffect(() => {
-    try {
-      const localApps = JSON.parse(
-        localStorage.getItem("pending_partner_applications") || "[]",
-      );
-      const approvedIds = JSON.parse(
-        localStorage.getItem("approved_hotel_ids") || "[]",
-      ).map(String);
-      const rejectedIds = JSON.parse(
-        localStorage.getItem("rejected_hotel_ids") || "[]",
-      ).map(String);
-
-      const pending = localApps.filter(
-        (h) =>
-          !approvedIds.includes(String(h.id || h.applicationId)) &&
-          !rejectedIds.includes(String(h.id || h.applicationId)) &&
-          h.status !== "approved",
-      );
-      setPendingHotelCount(pending.length);
-    } catch (e) {
-      console.error(e);
-    }
+    apiClient
+      .get("/admin/stats")
+      .then((res) => {
+        const data = res?.data || res || {};
+        setPendingHotelCount(Number(data.pendingHotels || 0));
+      })
+      .catch((err) => {
+        console.error("Lỗi lấy số lượng pending:", err);
+        setPendingHotelCount(0);
+      });
   }, [location.pathname]);
 
+  // 3 MỤC QUẢN TRỊ CỐT LÕI
   const menuItems = [
     {
       path: "/admin/dashboard",
-      label: "Tổng Quan PMS",
-      icon: <LayoutDashboard size={19} />,
+      label: "Giám Sát Lưu Lượng Hệ Thống",
+      icon: <Activity size={19} />,
     },
     {
       path: "/admin/hotels",
@@ -67,21 +52,15 @@ const AdminLayout = () => {
       icon: <Building2 size={19} />,
     },
     {
-      path: "/admin/reports",
-      label: "Báo Cáo Doanh Thu (CSV)",
-      icon: <BarChart3 size={19} />,
-    },
-    {
       path: "/admin/users",
       label: "Người Dùng & Phân Quyền",
       icon: <Users size={19} />,
     },
-    {
-      path: "/admin/settings",
-      label: "Cài Đặt Hệ Thống",
-      icon: <Settings size={19} />,
-    },
   ];
+
+  const currentTab =
+    menuItems.find((item) => item.path === location.pathname)?.label ||
+    "Quản Trị Hệ Thống";
 
   const adminName =
     user?.full_name ||
@@ -94,7 +73,6 @@ const AdminLayout = () => {
     adminName,
   )}&background=003580&color=fff&bold=true`;
 
-  // 🎯 BÓC TÁCH AVATAR GOOGLE & DATABASE
   const getAdminAvatar = () => {
     const raw =
       user?.avatar ||
@@ -160,7 +138,7 @@ const AdminLayout = () => {
               <Menu size={20} />
             </button>
             <h2 className="text-base font-black text-slate-800 tracking-tight">
-              Hệ Thống BezTower & Residences PMS
+              {currentTab}
             </h2>
           </div>
 
@@ -174,7 +152,6 @@ const AdminLayout = () => {
               </p>
             </div>
 
-            {/* AVATAR ADMIN CÓ CHỐNG CHẶN GOOGLE */}
             <img
               key={adminAvatarUrl}
               src={adminAvatarUrl}

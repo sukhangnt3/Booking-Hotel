@@ -2,10 +2,14 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import Step1GeneralAndRooms from "./Step1GeneralAndRooms";
+import Step1GeneralAndRooms, {
+  ROOM_AMENITIES_LIST,
+} from "./Step1GeneralAndRooms";
 import Step2MediaAndLegal from "./Step2MediaAndLegal";
 import Step3ContractAndPayment from "./Step3ContractAndPayment";
-import Step4PoliciesAndOperations from "./Step4PoliciesAndOperations";
+import Step4PoliciesAndOperations, {
+  DEFAULT_AMENITIES_LIST,
+} from "./Step4PoliciesAndOperations";
 import ReviewModal from "./ReviewModal";
 import SubmittedSuccessView from "./SubmittedSuccessView";
 
@@ -18,6 +22,7 @@ import {
   Eye,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import apiClient from "@/services/apiClient";
 
 const initialFormData = {
   ownerName: "",
@@ -50,7 +55,8 @@ const initialFormData = {
       roomSize: 28,
       maxAdults: 2,
       maxChildren: 1,
-      totalRooms: 5,
+      totalRooms: 4,
+      roomNumbersText: "P.101, P.102, P.103, P.104", // Gợi ý mặc định 4 phòng
       weekdayPrice: 650000,
       weekendPrice: 800000,
       image: "",
@@ -124,30 +130,6 @@ export const RegisterForm = () => {
 
   useEffect(() => {
     try {
-      if (editHotelId) {
-        const localApps = JSON.parse(
-          localStorage.getItem("pending_partner_applications") || "[]",
-        );
-        const existingHotel = localApps.find(
-          (h) => String(h.id || h.applicationId) === String(editHotelId),
-        );
-
-        if (existingHotel) {
-          setFormData((prev) => ({
-            ...prev,
-            ...existingHotel,
-            hotelNameVi: existingHotel.name || existingHotel.hotelNameVi || "",
-            streetAddress:
-              existingHotel.address || existingHotel.streetAddress || "",
-            rooms:
-              existingHotel.rooms && existingHotel.rooms.length > 0
-                ? existingHotel.rooms
-                : prev.rooms,
-          }));
-          return;
-        }
-      }
-
       if (user && user.email) {
         setFormData((prev) => ({
           ...prev,
@@ -214,8 +196,19 @@ export const RegisterForm = () => {
     }
   };
 
+  const sanitizeTimeToPostgres = (timeStr, defaultTime) => {
+    if (!timeStr) return defaultTime;
+    const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+    if (match) {
+      const h = match[1].padStart(2, "0");
+      const m = match[2];
+      return `${h}:${m}:00`;
+    }
+    return defaultTime;
+  };
+
   // ════════════════════════════════════════════════════════════════════════════
-  // 🚀 NỘP LẠI HỒ SƠ & XÓA SẠCH MỌI ÁN PHẠT CŨ
+  // 🚀 NỘP HỒ SƠ LƯU TRỰC TIẾP VÀO POSTGRESQL (TỰ ĐỘNG LƯU ROOM_UNIT)
   // ════════════════════════════════════════════════════════════════════════════
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
@@ -224,90 +217,133 @@ export const RegisterForm = () => {
     }
     setLoading(true);
 
-    const targetHotelId =
-      editHotelId || `HT-${Date.now().toString().slice(-4)}`;
-    const generatedAppId = `GST-${Date.now().toString().slice(-6)}`;
-    const ownerEmailKey = String(formData.emailContact || user?.email || "")
-      .toLowerCase()
-      .trim();
-
     try {
+      // 1. TÁCH SỐ PHÒNG THỰC TẾ (101, 102...) & TIỆN NGHI
+      const processedRooms = (formData.rooms || []).map((r, rIdx) => {
+        // Tách chuỗi số phòng người dùng gõ
+        let numbers = [];
+        if (r.roomNumbersText) {
+          numbers = r.roomNumbersText
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+        }
+
+        // Nếu chưa gõ thì tự động sinh theo số lượng
+        if (numbers.length === 0) {
+          const count = Number(r.totalRooms || 4);
+          for (let i = 1; i <= count; i++) {
+            numbers.push(`P.${rIdx + 1}0${i}`);
+          }
+        }
+
+        const translatedAmenities = (r.roomAmenities || []).map((amenId) => {
+          const found = ROOM_AMENITIES_LIST.find((item) => item.id === amenId);
+          return found ? found.label : amenId;
+        });
+
+        return {
+          roomName: r.roomName || r.name || "Phòng Tiêu Chuẩn",
+          name: r.roomName || r.name || "Phòng Tiêu Chuẩn",
+          maxAdults: Number(r.maxAdults || r.capacity || 2),
+          capacity: Number(r.maxAdults || r.capacity || 2),
+          weekdayPrice: Number(r.weekdayPrice || r.base_price || 650000),
+          base_price: Number(r.weekdayPrice || r.base_price || 650000),
+          sell_price: Number(r.weekdayPrice || r.base_price || 650000),
+          weekendPrice: Number(r.weekendPrice || 0),
+          totalRooms: numbers.length,
+          amount: numbers.length,
+          type: r.type || "Deluxe",
+          bedType:
+            r.bedType || r.bed_type || "1 Giường đôi lớn (King/Queen Size)",
+          bed_type:
+            r.bedType || r.bed_type || "1 Giường đôi lớn (King/Queen Size)",
+          roomSize: Number(r.roomSize || r.room_area || 28),
+          room_area: Number(r.roomSize || r.room_area || 28),
+          image: r.image || "",
+          // 👉 MẢNG CÁC SỐ PHÒNG THỰC TẾ GỬI VÀO BẢNG room_unit
+          room_numbers: numbers,
+          amenities: translatedAmenities,
+        };
+      });
+
+      // 2. CHUYỂN TIỆN ÍCH KHÁCH SẠN
+      const processedHotelAmenities = (formData.propertyAmenities || []).map(
+        (amen) => {
+          const found = DEFAULT_AMENITIES_LIST.find((item) => item.id === amen);
+          return found ? found.label : amen;
+        },
+      );
+
+      // 3. TẠO PAYLOAD CHUẨN
       const payload = {
-        ...formData,
-        id: targetHotelId,
-        applicationId: generatedAppId,
         name:
-          formData.hotelNameVi || formData.hotelName || "Khách sạn nghỉ dưỡng",
+          formData.hotelNameVi ||
+          formData.hotelName ||
+          formData.hotelNameEn ||
+          "Cơ sở lưu trú GoStay",
         address:
           formData.streetAddress || formData.address || "Địa chỉ chỗ nghỉ",
-        emailContact: ownerEmailKey,
-        status: "pending", // 👈 BẮT BUỘC ĐƯA VỀ PENDING ĐỂ ADMIN DUYỆT
-        is_approved: false,
-        rejectReason: "", // 👈 XÓA SẠCH LÝ DO TỪ CHỐI CŨ
-        submittedAt: new Date().toISOString(),
+        city: formData.city || formData.province || "Việt Nam",
+        latitude: Number(formData.latitude || 10.7769),
+        longitude: Number(formData.longitude || 106.7009),
+        phone:
+          formData.phoneContact ||
+          formData.signerPhone ||
+          user?.phone ||
+          "0900000000",
+        email:
+          formData.emailContact ||
+          formData.signerEmail ||
+          user?.email ||
+          "hotel@contact.com",
+        star_rating: Number(formData.starRating || 5),
+        description:
+          formData.description ||
+          "Khách sạn tiêu chuẩn tiện nghi cao cấp, phục vụ chu đáo 24/7.",
+        checkin_time: sanitizeTimeToPostgres(formData.checkInFrom, "14:00:00"),
+        checkout_time: sanitizeTimeToPostgres(formData.checkOutTo, "12:00:00"),
+        bank_name: formData.bankName || "Vietcombank",
+        bank_account: formData.bankAccount || "123456789",
+        bank_account_holder:
+          formData.bankAccountName ||
+          formData.signerName ||
+          user?.full_name ||
+          "CHỦ TÀI KHOẢN",
+        tax_code: formData.taxCode || "",
+        business_license_url:
+          formData.legalDocuments?.[0]?.url || formData.image || "",
+        image: formData.image || formData.hotelMainImage || "",
+        rooms: processedRooms,
+        amenities: processedHotelAmenities,
       };
 
-      // 1. 🛑 XÓA SẠCH EMAIL KHỎI SỔ PHẠT (rejected_owner_records)
-      if (ownerEmailKey) {
-        const rejectedRecords = JSON.parse(
-          localStorage.getItem("rejected_owner_records") || "{}",
-        );
-        delete rejectedRecords[ownerEmailKey];
-        localStorage.setItem(
-          "rejected_owner_records",
-          JSON.stringify(rejectedRecords),
-        );
-      }
+      console.log("👉 [GỬI HỒ SƠ LÊN POSTGRESQL]:", payload);
 
-      // 2. 🛑 XÓA MÃ CƠ SỞ KHỎI DANH SÁCH TỪ CHỐI (rejected_hotel_ids)
-      const rejectedIds = JSON.parse(
-        localStorage.getItem("rejected_hotel_ids") || "[]",
-      ).map(String);
-      const cleanedRejectedIds = rejectedIds.filter(
-        (id) => id !== targetHotelId && id !== editHotelId,
-      );
-      localStorage.setItem(
-        "rejected_hotel_ids",
-        JSON.stringify(cleanedRejectedIds),
-      );
+      const res = await apiClient.post("/hotels/register", payload);
+      const createdHotel = res.hotel || res.data?.hotel || res.data || res;
 
-      // 3. Xóa khỏi danh sách đã duyệt (nếu có) để Admin duyệt lại từ đầu
-      const approvedIds = JSON.parse(
-        localStorage.getItem("approved_hotel_ids") || "[]",
-      ).map(String);
-      localStorage.setItem(
-        "approved_hotel_ids",
-        JSON.stringify(approvedIds.filter((id) => id !== targetHotelId)),
-      );
-
-      // 4. Cập nhật hồ sơ vào pending_partner_applications
-      const localApps = JSON.parse(
-        localStorage.getItem("pending_partner_applications") || "[]",
-      );
-      let updatedApps = [];
-
-      if (editHotelId) {
-        updatedApps = localApps.map((a) =>
-          String(a.id || a.applicationId) === String(editHotelId) ? payload : a,
-        );
-      } else {
-        updatedApps = [payload, ...localApps];
-      }
-      localStorage.setItem(
-        "pending_partner_applications",
-        JSON.stringify(updatedApps),
+      alert(
+        "✓ Nộp hồ sơ thành công! Đã tự động tạo danh sách phòng thực tế và gửi xét duyệt.",
       );
 
       setSubmittedApplication({
-        applicationId: generatedAppId,
-        hotelId: targetHotelId,
+        applicationId:
+          createdHotel.id || `GST-${Date.now().toString().slice(-6)}`,
+        hotelId: createdHotel.id,
         submittedAt: new Date().toISOString(),
-        data: payload,
+        data: createdHotel,
       });
 
       setIsReviewOpen(false);
     } catch (err) {
-      alert("Lỗi khi nộp lại hồ sơ!");
+      console.error("Lỗi nộp hồ sơ khách sạn:", err);
+      alert(
+        "Lỗi nộp hồ sơ: " +
+          (err.response?.data?.message ||
+            err.message ||
+            "Máy chủ từ chối yêu cầu."),
+      );
     } finally {
       setLoading(false);
     }
@@ -330,8 +366,7 @@ export const RegisterForm = () => {
             <Sparkles size={18} className="text-blue-600 shrink-0" />
             <span>
               Đang chỉnh sửa lại hồ sơ cơ sở:{" "}
-              <strong>{formData.hotelNameVi || formData.name}</strong>. Mọi
-              thông tin cũ đã được tự động điền sẵn!
+              <strong>{formData.hotelNameVi || formData.name}</strong>.
             </span>
           </div>
           <span className="bg-blue-600 text-white font-bold px-2.5 py-0.5 rounded-full text-[10px] uppercase">
@@ -349,8 +384,8 @@ export const RegisterForm = () => {
               : "Đăng Ký Cơ Sở Lưu Trú Đối Tác"}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Rà soát lại các thông tin cần chỉnh sửa và gửi lại cho Ban Quản Trị
-            thẩm định
+            Khai báo danh mục hạng phòng và số phòng thực tế của khách sạn để
+            quản lý lễ tân
           </p>
         </div>
 

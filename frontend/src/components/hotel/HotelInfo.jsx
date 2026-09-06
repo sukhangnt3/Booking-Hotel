@@ -1,49 +1,66 @@
+// src/components/hotel/HotelInfo.jsx
 import React, { useState } from "react";
 import {
   Clock,
   MapPin,
   CheckCircle2,
   AlertCircle,
-  PawPrint,
-  XCircle,
+  ShieldCheck,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
 import { Badge, StarRating } from "../ui";
 import { cn } from "@/utils/cn";
 
-const HotelInfo = ({ hotel, policy }) => {
+export default function HotelInfo({ hotel }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Giới hạn độ dài mô tả để hiện nút "Xem thêm"
+  if (!hotel) return null;
+
   const descriptionLimit = 350;
-  const shouldTruncate = hotel.description?.length > descriptionLimit;
+  const descriptionText =
+    hotel.description ||
+    "Tận hưởng kỳ nghỉ dưỡng tuyệt vời với dịch vụ chu đáo và không gian tiện nghi.";
+  const shouldTruncate = descriptionText.length > descriptionLimit;
   const displayedDescription = isExpanded
-    ? hotel.description
-    : hotel.description?.slice(0, descriptionLimit) + "...";
+    ? descriptionText
+    : descriptionText.slice(0, descriptionLimit) +
+      (shouldTruncate ? "..." : "");
+
+  // Đọc trực tiếp từ các cột của bảng hotel trong PostgreSQL
+  const checkInTime = hotel.checkin_time
+    ? String(hotel.checkin_time).slice(0, 5)
+    : "14:00";
+  const checkOutTime = hotel.checkout_time
+    ? String(hotel.checkout_time).slice(0, 5)
+    : "12:00";
+  const cancelHours = Number(hotel.cancellation_deadline_hours || 24);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 font-sans">
       {/* 1. THÔNG TIN TIÊU ĐỀ */}
       <div className="space-y-2">
         <div className="flex items-center gap-3">
           <Badge variant="primary" size="sm">
             Khách sạn
           </Badge>
-          <StarRating rating={hotel.star_rating} size={14} />
+          {hotel.star_rating > 0 && (
+            <StarRating rating={hotel.star_rating} size={14} />
+          )}
         </div>
 
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
           {hotel.name}
         </h1>
 
         <div className="flex items-start gap-1 text-gray-500 hover:text-[#006ce4] transition-colors cursor-pointer group">
           <MapPin
             size={16}
-            className="shrink-0 mt-0.5 group-hover:scale-110 transition-transform"
+            className="shrink-0 mt-0.5 text-[#006ce4] group-hover:scale-110 transition-transform"
           />
-          <p className="text-sm font-medium">
-            {hotel.address}, {hotel.city} —{" "}
+          <p className="text-xs sm:text-sm font-medium">
+            {hotel.address ? `${hotel.address}, ` : ""}
+            {hotel.city || "Việt Nam"} —{" "}
             <span className="text-blue-600 font-bold underline">
               Xem trên bản đồ
             </span>
@@ -53,14 +70,17 @@ const HotelInfo = ({ hotel, policy }) => {
 
       {/* 2. MÔ TẢ KHÁCH SẠN */}
       <div className="space-y-3">
-        <h3 className="text-lg font-bold text-gray-900">Giới thiệu chung</h3>
-        <div className="relative text-gray-600 leading-relaxed text-sm text-justify">
+        <h3 className="text-base sm:text-lg font-bold text-gray-900">
+          Giới thiệu chung
+        </h3>
+        <div className="relative text-gray-600 leading-relaxed text-xs sm:text-sm text-justify whitespace-pre-line">
           {displayedDescription}
 
           {shouldTruncate && (
             <button
+              type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="ml-1 text-blue-600 font-bold hover:underline inline-flex items-center gap-0.5"
+              className="ml-1.5 text-blue-600 font-bold hover:underline inline-flex items-center gap-0.5 cursor-pointer"
             >
               {isExpanded ? (
                 <>
@@ -76,87 +96,70 @@ const HotelInfo = ({ hotel, policy }) => {
         </div>
       </div>
 
-      {/* 3. CHÍNH SÁCH CHỖ NGHỈ */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100">
-          <h3 className="font-bold text-gray-900 flex items-center gap-2">
+      {/* 3. CHÍNH SÁCH CHỖ NGHỈ (BẢNG HOTEL TRONG POSTGRESQL) */}
+      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-gray-50/70 px-6 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-sm sm:text-base text-gray-900 flex items-center gap-2">
             <CheckCircle2 className="text-emerald-500" size={18} />
-            Quy định chung của chỗ nghỉ
+            Quy định nhận & trả phòng
           </h3>
         </div>
 
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Thời gian Nhận/Trả */}
           <div className="space-y-4">
             <div className="flex gap-4">
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg h-fit">
+              <div className="p-2.5 bg-blue-50 text-[#003580] rounded-xl h-fit">
                 <Clock size={20} />
               </div>
               <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  Nhận phòng
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Nhận phòng (Check-in)
                 </p>
-                <p className="text-sm font-bold text-gray-700">
-                  {policy?.start_checkin_time} —{" "}
-                  {policy?.end_checkin_time || "Cả ngày"}
+                <p className="text-sm font-bold text-gray-800 mt-0.5">
+                  Từ {checkInTime} chiều
                 </p>
               </div>
             </div>
 
             <div className="flex gap-4">
-              <div className="p-2 bg-orange-50 text-orange-600 rounded-lg h-fit">
+              <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl h-fit">
                 <Clock size={20} />
               </div>
               <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  Trả phòng
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Trả phòng (Check-out)
                 </p>
-                <p className="text-sm font-bold text-gray-700">
-                  Đến trước {policy?.start_checkout_time}
+                <p className="text-sm font-bold text-gray-800 mt-0.5">
+                  Trước {checkOutTime} trưa
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Các quy định khác */}
+          {/* Chính sách hủy phòng & An toàn */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 rounded-xl border border-dashed border-gray-200">
+            <div className="flex items-center justify-between p-3.5 rounded-2xl border border-dashed border-gray-200 bg-emerald-50/40">
               <div className="flex items-center gap-3">
-                <PawPrint
-                  className={
-                    policy?.animal_allowed
-                      ? "text-emerald-500"
-                      : "text-gray-400"
-                  }
-                  size={20}
-                />
-                <span className="text-sm font-semibold text-gray-600">
-                  Vật nuôi
+                <AlertCircle className="text-emerald-600 shrink-0" size={20} />
+                <span className="text-xs font-semibold text-gray-700">
+                  Hủy phòng linh hoạt
                 </span>
               </div>
-              <Badge variant={policy?.animal_allowed ? "success" : "default"}>
-                {policy?.animal_allowed ? "Cho phép" : "Không cho phép"}
-              </Badge>
+              <span className="text-xs font-bold text-emerald-700">
+                Miễn phí hủy trước {cancelHours} giờ
+              </span>
             </div>
 
-            <div className="flex items-center justify-between p-3 rounded-xl border border-dashed border-gray-200">
+            <div className="flex items-center justify-between p-3.5 rounded-2xl border border-dashed border-gray-200 bg-blue-50/40">
               <div className="flex items-center gap-3">
-                <AlertCircle className="text-blue-500" size={20} />
-                <span className="text-sm font-semibold text-gray-600">
-                  Hủy phòng
+                <ShieldCheck className="text-blue-600 shrink-0" size={20} />
+                <span className="text-xs font-semibold text-gray-700">
+                  Xác nhận đặt phòng
                 </span>
               </div>
-              <span
-                className={cn(
-                  "text-xs font-bold",
-                  policy?.free_cancellation
-                    ? "text-emerald-600"
-                    : "text-orange-600",
-                )}
-              >
-                {policy?.free_cancellation
-                  ? "Miễn phí hủy phòng"
-                  : "Có phí khi hủy"}
+              <span className="text-xs font-bold text-blue-700">
+                Tức thì & Đảm bảo giữ phòng
               </span>
             </div>
           </div>
@@ -164,6 +167,4 @@ const HotelInfo = ({ hotel, policy }) => {
       </div>
     </div>
   );
-};
-
-export default HotelInfo;
+}

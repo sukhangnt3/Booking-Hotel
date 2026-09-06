@@ -24,29 +24,21 @@ import PromotionPage from "@/pages/guest/PromotionPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterForm from "@/components/auth/RegisterForm";
 
-// Admin Pages
+// Admin Pages (Khớp đúng 3 trang theo đề bài)
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import HotelApprovalPage from "@/pages/admin/HotelApprovalPage";
-import AdminFinancialReportPage from "@/pages/admin/AdminFinancialReportPage";
 import UserManagementPage from "@/pages/admin/UserManagementPage";
-import SystemSettingsPage from "@/pages/admin/SystemSettingsPage";
 
-// Owner Pages
+// Owner Pages (Khớp đúng 5 file thực tế)
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
 import BookingListPage from "@/pages/owner/BookingListPage";
-import StaffManagementPage from "@/pages/owner/StaffManagementPage";
-import ReportsAnalyticsPage from "@/pages/admin/ReportsAnalyticsPage";
-
-// Đã cập nhật lại đúng đường dẫn thư mục owner
-import HousekeepingManagementPage from "@/pages/owner/HousekeepingManagementPage";
-import GuestManagementPage from "@/pages/owner/GuestManagementPage";
 
 import { NotFoundPage, ServerErrorPage } from "@/pages/error";
 
 const router = createBrowserRouter([
-  // 1. Phân hệ Khách hàng
+  // ── 1. PHÂN HỆ KHÁCH HÀNG (STOREFRONT) ──
   {
     path: "/",
     element: <GuestLayout />,
@@ -59,6 +51,13 @@ const router = createBrowserRouter([
       { path: "booking", element: <BookingConfirmPage /> },
       { path: "booking-success", element: <BookingSuccessPage /> },
       { path: "checkout", element: <CheckoutPage /> },
+
+      // Điều hướng nhanh khi khách bấm xem chuyến đi từ Header
+      {
+        path: "my-bookings",
+        element: <Navigate to="/profile?tab=trips" replace />,
+      },
+
       {
         element: <ProtectedRoute />,
         children: [{ path: "profile", element: <UserProfilePage /> }],
@@ -66,12 +65,12 @@ const router = createBrowserRouter([
     ],
   },
 
-  // 2. Phân hệ Auth
+  // ── 2. PHÂN HỆ AUTHENTICATION ──
   { path: "/login", element: <LoginPage /> },
   { path: "/register", element: <RegisterForm /> },
   { path: "/register-owner", element: <RegisterForm /> },
 
-  // 3. Phân hệ Owner / PMS
+  // ── 3. PHÂN HỆ CHỦ KHÁCH SẠN & LỄ TÂN (PMS) ──
   {
     path: "/owner",
     element: <OwnerRoutes />,
@@ -85,16 +84,12 @@ const router = createBrowserRouter([
           { path: "hotels", element: <HotelManagementPage /> },
           { path: "rooms", element: <RoomManagementPage /> },
           { path: "bookings", element: <BookingListPage /> },
-          { path: "housekeeping", element: <HousekeepingManagementPage /> },
-          { path: "staff", element: <StaffManagementPage /> },
-          { path: "guests", element: <GuestManagementPage /> },
-          { path: "reports", element: <ReportsAnalyticsPage /> },
         ],
       },
     ],
   },
 
-  // 4. Phân hệ Super Admin
+  // ── 4. PHÂN HỆ SUPER ADMIN (QUẢN TRỊ TRUNG TÂM) ──
   {
     path: "/admin",
     element: <AdminRoutes />,
@@ -106,9 +101,7 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="/admin/dashboard" replace /> },
           { path: "dashboard", element: <AdminDashboardPage /> },
           { path: "hotels", element: <HotelApprovalPage /> },
-          { path: "reports", element: <AdminFinancialReportPage /> },
           { path: "users", element: <UserManagementPage /> },
-          { path: "settings", element: <SystemSettingsPage /> },
         ],
       },
     ],

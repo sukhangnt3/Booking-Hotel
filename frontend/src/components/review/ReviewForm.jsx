@@ -1,20 +1,20 @@
+// src/components/review/ReviewForm.jsx
 import React, { useState } from "react";
-import { MessageSquare, Send, AlertCircle, CheckCircle2 } from "lucide-react";
+import { MessageSquare, AlertCircle, CheckCircle2 } from "lucide-react";
 import { StarRating, Button, Badge } from "../ui";
 import { useAuthStore } from "@/stores/authStore";
+import { reviewService } from "@/services";
 import { cn } from "@/utils/cn";
 
-const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
-  const { user, isAuthenticated } = useAuthStore();
+export default function ReviewForm({ hotelId, hotelName, onSubmitSuccess }) {
+  const { isAuthenticated } = useAuthStore();
 
-  // 1. STATE QUẢN LÝ FORM
-  const [rating, setRating] = useState(0);
+  const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  // Nhãn mô tả cho từng mức điểm
   const ratingLabels = {
     1: "Rất tệ",
     2: "Không hài lòng",
@@ -26,7 +26,6 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validation
     if (!isAuthenticated) {
       setError("Vui lòng đăng nhập để gửi đánh giá.");
       return;
@@ -35,8 +34,8 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
       setError("Vui lòng chọn số sao đánh giá.");
       return;
     }
-    if (comment.trim().length < 10) {
-      setError("Nội dung đánh giá phải có ít nhất 10 ký tự.");
+    if (comment.trim().length < 5) {
+      setError("Nội dung đánh giá phải có ít nhất 5 ký tự.");
       return;
     }
 
@@ -44,19 +43,21 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
     setIsSubmitting(true);
 
     try {
-      // GỌI API THỰC TẾ (Ví dụ)
-      // await reviewService.create({ hotelId, rating, comment });
-
-      // Giả lập delay API
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await reviewService.create({
+        hotelId,
+        point: rating,
+        description: comment.trim(),
+      });
 
       setSuccess(true);
-      setRating(0);
+      setRating(5);
       setComment("");
       if (onSubmitSuccess) onSubmitSuccess();
     } catch (err) {
       setError(
-        err.response?.data?.message || "Không thể gửi đánh giá lúc này.",
+        err?.response?.data?.message ||
+          err.message ||
+          "Không thể gửi đánh giá lúc này.",
       );
     } finally {
       setIsSubmitting(false);
@@ -73,11 +74,11 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
           Cảm ơn bạn đã đánh giá!
         </h3>
         <p className="text-sm text-emerald-700">
-          Nhận xét của bạn giúp cộng đồng GoStay chọn được chỗ nghỉ tốt hơn.
+          Đánh giá của bạn đã được ghi nhận trực tiếp vào hệ thống GoStay.
         </p>
         <Button
           variant="outline"
-          className="border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+          className="border-emerald-200 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
           onClick={() => setSuccess(false)}
         >
           Viết đánh giá khác
@@ -88,7 +89,6 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-      {/* HEADER */}
       <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex items-center gap-3">
         <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
           <MessageSquare size={20} />
@@ -104,7 +104,6 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
       </div>
 
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        {/* PHẦN CHỌN SAO */}
         <div className="space-y-3">
           <label className="text-sm font-bold text-gray-700 block">
             Bạn đánh giá chỗ nghỉ này mấy sao? *
@@ -117,17 +116,11 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
               size={32}
             />
             {rating > 0 && (
-              <Badge
-                variant="primary"
-                className="animate-in fade-in slide-in-from-left-2"
-              >
-                {ratingLabels[rating]}
-              </Badge>
+              <Badge variant="primary">{ratingLabels[rating]}</Badge>
             )}
           </div>
         </div>
 
-        {/* PHẦN NHẬP NỘI DUNG */}
         <div className="space-y-2">
           <label className="text-sm font-bold text-gray-700 block">
             Nhận xét chi tiết *
@@ -135,56 +128,29 @@ const ReviewForm = ({ hotelId, hotelName, onSubmitSuccess }) => {
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="Hãy chia sẻ về phòng ốc, vị trí, nhân viên hoặc đồ ăn..."
-            className={cn(
-              "w-full min-h-[150px] p-4 rounded-xl border border-gray-300 outline-none transition-all text-sm leading-relaxed",
-              "focus:border-blue-600 focus:ring-4 focus:ring-blue-100",
-              "placeholder:text-gray-400 placeholder:italic",
-            )}
+            placeholder="Hãy chia sẻ về phòng ốc, vị trí, nhân viên hoặc trải nghiệm của bạn..."
+            className="w-full min-h-[120px] p-4 rounded-xl border border-gray-300 outline-none text-sm leading-relaxed focus:border-[#003580] transition-all"
           />
-          <div className="flex justify-between items-center px-1">
-            <p className="text-[10px] text-gray-400 font-medium">
-              Tối thiểu 10 ký tự
-            </p>
-            <p
-              className={cn(
-                "text-[10px] font-bold",
-                comment.length >= 10 ? "text-emerald-500" : "text-gray-300",
-              )}
-            >
-              {comment.length} ký tự
-            </p>
-          </div>
         </div>
 
-        {/* THÔNG BÁO LỖI */}
         {error && (
-          <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100 animate-pulse">
+          <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 text-xs font-bold rounded-lg border border-red-100">
             <AlertCircle size={16} />
             {error}
           </div>
         )}
 
-        {/* NÚT GỬI */}
         <div className="pt-2">
           <Button
             type="submit"
-            className="w-full h-12 text-base font-black shadow-lg shadow-blue-100"
+            className="w-full h-12 text-base font-black bg-[#003580] hover:bg-blue-900 text-white cursor-pointer"
             isLoading={isSubmitting}
             disabled={!isAuthenticated}
           >
             {!isAuthenticated ? "Đăng nhập để đánh giá" : "Gửi đánh giá ngay"}
           </Button>
-          {!isAuthenticated && (
-            <p className="text-[10px] text-center text-gray-400 mt-3 italic">
-              * Chỉ những khách hàng đã từng đặt phòng mới có thể để lại đánh
-              giá xác thực.
-            </p>
-          )}
         </div>
       </form>
     </div>
   );
-};
-
-export default ReviewForm;
+}

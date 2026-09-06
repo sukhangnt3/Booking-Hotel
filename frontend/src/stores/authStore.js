@@ -1,44 +1,52 @@
+// src/stores/authStore.js
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
 /**
- * Tự động đồng bộ quyền Admin, Owner, Staff (Lễ tân)
+ * Tự động phân giải vai trò chuẩn xác từ mảng roles của PostgreSQL
+ * (ADMIN, HOTEL_OWNER, CUSTOMER, RECEPTIONIST)
  */
 const resolveEffectiveUser = (user) => {
-  if (!user || !user.email) return user;
+  if (!user) return null;
 
-  const currentRole = String(user.role || user.role_name || "").toLowerCase();
-  if (currentRole === "admin") return user;
+  let rolesList = [];
 
-  const userEmail = String(user.email).toLowerCase().trim();
-
-  try {
-    // 1. Kiểm tra danh sách STAFF (Lễ tân)
-    const staffEmails = JSON.parse(
-      localStorage.getItem("staff_emails") || "[]",
-    ).map((e) => String(e).toLowerCase().trim());
-
-    if (
-      staffEmails.includes(userEmail) ||
-      currentRole === "staff" ||
-      currentRole === "receptionist"
-    ) {
-      return { ...user, role: "staff", role_name: "staff" };
-    }
-
-    // 2. Kiểm tra danh sách OWNER (Chủ nhà)
-    const approvedEmails = JSON.parse(
-      localStorage.getItem("approved_owner_emails") || "[]",
-    ).map((e) => String(e).toLowerCase().trim());
-
-    if (approvedEmails.includes(userEmail) || currentRole === "owner") {
-      return { ...user, role: "owner", role_name: "owner" };
-    }
-  } catch (e) {
-    console.warn("Lỗi đồng bộ role:", e);
+  // 1. Trích xuất danh sách roles từ Backend
+  if (Array.isArray(user.roles)) {
+    rolesList = user.roles.map((r) =>
+      typeof r === "object"
+        ? String(r.name || "").toUpperCase()
+        : String(r).toUpperCase(),
+    );
+  } else if (user.role) {
+    rolesList = [String(user.role).toUpperCase()];
+  } else if (user.role_name) {
+    rolesList = [String(user.role_name).toUpperCase()];
   }
 
-  return user;
+  // 2. Xác định vai trò ưu tiên cao nhất
+  let primaryRole = "customer";
+
+  if (rolesList.some((r) => r.includes("ADMIN")) || user.role_id === 1) {
+    primaryRole = "admin";
+  } else if (
+    rolesList.some((r) => r.includes("OWNER") || r.includes("HOTEL_OWNER")) ||
+    user.role_id === 2 ||
+    user.role_id === 3
+  ) {
+    primaryRole = "owner";
+  } else if (
+    rolesList.some((r) => r.includes("STAFF") || r.includes("RECEPTIONIST"))
+  ) {
+    primaryRole = "staff";
+  }
+
+  return {
+    ...user,
+    role: primaryRole,
+    role_name: primaryRole,
+    roles: rolesList.length > 0 ? rolesList : [primaryRole.toUpperCase()],
+  };
 };
 
 export const useAuthStore = create()(
@@ -50,8 +58,9 @@ export const useAuthStore = create()(
       isAuthenticated: false,
       isRehydrated: false,
 
-      login: (user, token, refreshToken = null) => {
-        const effectiveUser = resolveEffectiveUser(user);
+      // Đăng nhập và tự động chuẩn hóa role
+      login: (userData, token, refreshToken = null) => {
+        const effectiveUser = resolveEffectiveUser(userData);
         set({
           user: effectiveUser,
           token,
@@ -60,6 +69,7 @@ export const useAuthStore = create()(
         });
       },
 
+      // Đăng xuất và xóa trắng trạng thái
       logout: () => {
         set({
           user: null,
@@ -67,8 +77,11 @@ export const useAuthStore = create()(
           refreshToken: null,
           isAuthenticated: false,
         });
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
       },
 
+      // Cập nhật profile đồng bộ
       updateUser: (userData) => {
         const currentUser = get().user;
         const mergedUser = { ...currentUser, ...userData };
@@ -79,13 +92,12 @@ export const useAuthStore = create()(
 
       setToken: (newToken) => set({ token: newToken }),
 
+      // Kiểm tra role nhanh trong components
       checkRole: (roleName) => {
-        const user = resolveEffectiveUser(get().user);
-        if (!user) return false;
-        const currentRole = String(
-          user.role || user.role_name || "",
-        ).toLowerCase();
-        return currentRole === String(roleName).toLowerCase();
+        const currentUser = get().user;
+        if (!currentUser) return false;
+        const target = String(roleName).toLowerCase();
+        return String(currentUser.role).toLowerCase() === target;
       },
 
       syncRole: () => {

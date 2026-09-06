@@ -33,8 +33,14 @@ export const bookingService = {
   getBookingDetail: (id) => apiClient.get(`/bookings/${id}`),
 
   // Hủy đơn hàng
-  cancel: (id, data) => apiClient.post(`/bookings/${id}/cancel`, data),
-  cancelBooking: (id, data) => apiClient.post(`/bookings/${id}/cancel`, data),
+  cancel: (id, data) => {
+    const payload =
+      typeof data === "string"
+        ? { reason: data }
+        : data || { reason: "Khách hàng tự hủy" };
+    return apiClient.post(`/bookings/${id}/cancel`, payload);
+  },
+  cancelBooking: (id, data) => bookingService.cancel(id, data),
 
   // ─── 2. CƠ CHẾ GIỮ PHÒNG TẠM THỜI (TEMP LOCK) ───
   createTempLock: (data) => apiClient.post("/bookings/temp-lock", data),

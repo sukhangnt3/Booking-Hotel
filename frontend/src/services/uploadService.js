@@ -1,32 +1,24 @@
+// src/services/uploadService.js
 import apiClient from "./apiClient";
 
 export const uploadService = {
-  /**
-   * 1. UPLOAD MỘT FILE DUY NHẤT (Ví dụ: Avatar)
-   * @param {File} file - Đối tượng file từ input
-   * @param {String} folder - Thư mục lưu trữ (avatar, hotels, rooms...)
-   */
-  uploadSingle: async (file, folder = "general") => {
+  // 1. Tải 1 ảnh lên máy chủ (Avatar)
+  uploadSingle: async (file, folder = "avatars") => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("folder", folder);
 
+    // Để Axios tự động nhận diện header boundary của FormData
     return apiClient.post("/uploads/single", formData, {
       headers: {
-        "Content-Type": "multipart/form-data",
+        "Content-Type": undefined,
       },
     });
   },
 
-  /**
-   * 2. UPLOAD NHIỀU FILE CÙNG LÚC (Ví dụ: Gallery khách sạn)
-   * @param {FileList|Array} files - Danh sách các file
-   * @param {Function} onProgress - Callback để hiển thị % tiến độ lên UI
-   */
+  // 2. Tải nhiều ảnh cùng lúc (Khách sạn / Phòng)
   uploadMultiple: async (files, folder = "hotels", onProgress) => {
     const formData = new FormData();
-
-    // Append tất cả file vào cùng một key 'files' (Backend sẽ nhận dạng mảng)
     Array.from(files).forEach((file) => {
       formData.append("files", file);
     });
@@ -34,11 +26,10 @@ export const uploadService = {
 
     return apiClient.post("/uploads/multiple", formData, {
       headers: {
-        "Content-Type": "multipart/form-data",
+        "Content-Type": undefined,
       },
-      // Theo dõi tiến độ upload
       onUploadProgress: (progressEvent) => {
-        if (onProgress) {
+        if (onProgress && progressEvent.total) {
           const percentCompleted = Math.round(
             (progressEvent.loaded * 100) / progressEvent.total,
           );
@@ -46,13 +37,6 @@ export const uploadService = {
         }
       },
     });
-  },
-
-  /**
-   * 3. XÓA ẢNH (Dựa trên Public ID hoặc URL)
-   */
-  deleteImage: (publicId) => {
-    return apiClient.delete(`/uploads/${publicId}`);
   },
 };
 

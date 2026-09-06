@@ -1,69 +1,37 @@
+// src/services/roomService.js
 import apiClient from "./apiClient";
 
 export const roomService = {
-  // 1. DÀNH CHO KHÁCH HÀNG: KIỂM TRA PHÒNG TRỐNG
-  // Kết hợp bảng Room và Room_Inventory để trả về giá/số lượng theo ngày
+  // 1. Kiểm tra phòng trống theo khoảng ngày nhận & trả (Realtime Overbooking Check)
   checkAvailability: (params) => {
-    /**
-     * params: { hotelId, checkIn, checkOut, adults, children }
-     */
-    return apiClient.get(`/hotels/${params.hotelId}/rooms/availability`, {
-      params,
+    const hotelId = params.hotelId || params.hotel_id;
+    return apiClient.get(`/hotels/${hotelId}/availability`, {
+      params: {
+        checkIn: params.checkIn || params.checkin_date,
+        checkOut: params.checkOut || params.checkout_date,
+        adults: params.adults,
+      },
     });
   },
 
-  // 2. LẤY DANH SÁCH LOẠI PHÒNG (Cho trang quản lý của Owner hoặc chi tiết KS)
+  // 2. Lấy danh sách loại phòng của khách sạn
   getByHotelId: (hotelId) => apiClient.get(`/hotels/${hotelId}/rooms`),
-
   getById: (roomId) => apiClient.get(`/rooms/${roomId}`),
 
-  // 3. QUẢN LÝ TIỆN ÍCH PHÒNG
+  // 3. Tiện nghi phòng
   getAmenities: (roomId) => apiClient.get(`/rooms/${roomId}/amenities`),
 
-  // 4. DÀNH CHO OWNER: QUẢN LÝ KHO PHÒNG (INVENTORY)
-  // Lấy dữ liệu cho component RoomAvailabilityCalendar
-  getInventory: (hotelId, params) => {
-    /**
-     * params: { month, year }
-     */
-    return apiClient.get(`/hotels/${hotelId}/inventory`, { params });
-  },
+  // 4. Lịch tồn kho theo tháng (Bảng 7: room_inventory)
+  getInventory: (roomId, params) =>
+    apiClient.get(`/rooms/${roomId}/inventory`, { params }),
+  updateInventory: (roomId, data) =>
+    apiClient.patch(`/rooms/${roomId}/inventory`, data),
 
-  // Cập nhật giá hoặc số lượng phòng cho một hoặc nhiều ngày
-  updateInventory: (roomId, data) => {
-    /**
-     * data: { date, sell_price, stock, status }
-     */
-    return apiClient.put(`/rooms/${roomId}/inventory`, data);
-  },
-
-  // 5. QUẢN LÝ SƠ ĐỒ SỐ PHÒNG (ROOM NUMBERS -🔑)
-  // Ví dụ: Loại phòng "Deluxe" có các phòng số 101, 102, 103
-  getRoomNumbers: (roomId) => apiClient.get(`/rooms/${roomId}/numbers`),
-
-  createRoomNumbers: (roomId, numbers) => {
-    /**
-     * numbers: ["101", "102", "103"]
-     */
-    return apiClient.post(`/rooms/${roomId}/numbers`, { numbers });
-  },
-
-  updateRoomNumberStatus: (numberId, status) => {
-    return apiClient.patch(`/room-numbers/${numberId}/status`, { status });
-  },
-
-  // 6. CRUD LOẠI PHÒNG (OWNER)
-  create: (hotelId, data) => apiClient.post(`/hotels/${hotelId}/rooms`, data),
-
+  // 5. Thao tác CRUD phòng của Owner
+  create: (hotelId, data) =>
+    apiClient.post("/rooms", { ...data, hotel_id: hotelId }),
   update: (roomId, data) => apiClient.put(`/rooms/${roomId}`, data),
-
   delete: (roomId) => apiClient.delete(`/rooms/${roomId}`),
-
-  // Upload ảnh riêng cho từng loại phòng
-  uploadImages: (roomId, formData) =>
-    apiClient.post(`/rooms/${roomId}/images`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    }),
 };
 
 export default roomService;

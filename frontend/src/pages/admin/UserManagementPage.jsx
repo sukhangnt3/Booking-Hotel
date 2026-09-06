@@ -3,10 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Users,
   Search,
-  ShieldCheck,
   Plus,
-  Edit,
-  Key,
   Lock,
   Unlock,
   RefreshCw,
@@ -17,16 +14,16 @@ import { LoadingSpinner, EmptyState } from "@/components/common";
 import { useAuthStore } from "@/stores/authStore";
 import apiClient from "@/services/apiClient";
 
+// 3 Roles chuẩn theo bảng roles trong Database PostgreSQL
 const ROLE_TABS = [
   { id: "all", label: "Tất cả tài khoản" },
-  { id: "admin", label: "Quản trị viên (Admin)" },
-  { id: "manager", label: "Quản lý (Manager)" },
-  { id: "receptionist", label: "Lễ tân (Receptionist)" },
-  { id: "customer", label: "Khách hàng (Customer)" },
+  { id: "ADMIN", label: "Quản trị viên (ADMIN)" },
+  { id: "HOTEL_OWNER", label: "Chủ khách sạn (HOTEL_OWNER)" },
+  { id: "CUSTOMER", label: "Khách hàng (CUSTOMER)" },
 ];
 
 export default function UserManagementPage() {
-  const { user: currentAdmin, token: storeToken } = useAuthStore();
+  const { user: currentAdmin } = useAuthStore();
   const currentAdminId = currentAdmin?.id || currentAdmin?._id;
 
   const [users, setUsers] = useState([]);
@@ -35,107 +32,59 @@ export default function UserManagementPage() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [apiError, setApiError] = useState("");
 
-  // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createFormData, setCreateFormData] = useState({
     full_name: "",
     email: "",
     phone: "",
     password: "",
-    role: "receptionist",
+    role: "CUSTOMER",
   });
 
-  const [editingUser, setEditingUser] = useState(null);
-  const [editFormData, setEditFormData] = useState({});
-
-  const [passwordResetUser, setPasswordResetUser] = useState(null);
-  const [newPassword, setNewPassword] = useState("");
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🔌 1. GỌI API BACKEND LẤY DỮ LIỆU THỰC TẾ TỪ DATABASE
-  // ════════════════════════════════════════════════════════════════════════════
-  const fetchUsersFromDatabase = useCallback(async () => {
+  // ── 1. LẤY TÀI KHOẢN TỪ DATABASE ──
+  const fetchUsersFromDB = useCallback(async () => {
     setLoading(true);
     setApiError("");
 
-    // 1. Lấy Token xác thực của Admin
-    const activeToken =
-      storeToken ||
-      localStorage.getItem("token") ||
-      localStorage.getItem("access_token") ||
-      JSON.parse(localStorage.getItem("auth-storage") || "{}")?.state?.token;
-
     try {
-      let responseData = null;
-
-      // 2. Gọi API Backend (thử endpoint /admin/users trước, nếu 404 thử /users)
+      let resData = null;
       try {
         const res = await apiClient.get("/admin/users", {
-          headers: activeToken
-            ? { Authorization: `Bearer ${activeToken}` }
-            : {},
           params: { search: search.trim() || undefined },
         });
-        responseData = res?.data || res;
-      } catch (err1) {
-        // Thử đường dẫn dự phòng nếu backend dùng /users
-        try {
-          const resFallback = await apiClient.get("/users", {
-            headers: activeToken
-              ? { Authorization: `Bearer ${activeToken}` }
-              : {},
-            params: { search: search.trim() || undefined },
-          });
-          responseData = resFallback?.data || resFallback;
-        } catch (err2) {
-          throw err1; // Ném lỗi chính
-        }
+        resData = res?.data || res;
+      } catch {
+        const resFallback = await apiClient.get("/users", {
+          params: { search: search.trim() || undefined },
+        });
+        resData = resFallback?.data || resFallback;
       }
 
-      // 3. 🛑 BÓC TÁCH MỌI CẤU TRÚC TRẢ VỀ CỦA BACKEND (BẢO ĐẢM RA MẢNG)
-      let rawList = responseData;
+      let rawList = resData;
       if (rawList && !Array.isArray(rawList)) {
-        rawList =
-          rawList.users ||
-          rawList.data ||
-          rawList.items ||
-          rawList.results ||
-          (rawList.data && rawList.data.users) ||
-          [];
+        rawList = rawList.users || rawList.data || rawList.items || [];
       }
 
       const dbUserArray = Array.isArray(rawList) ? rawList : [];
-
-      console.log("👉 [DỮ LIỆU TÀI KHOẢN TỪ DATABASE BACKEND]:", dbUserArray);
-
-      // 4. Chuẩn hóa các trường dữ liệu theo chuẩn hệ thống
-      const roleOverrides = JSON.parse(
-        localStorage.getItem("user_role_overrides") || "{}",
-      );
 
       const normalizedList = dbUserArray.map((u, idx) => {
         const email = String(u.email || "")
           .toLowerCase()
           .trim();
-        const rawRole = String(
-          u.role ||
-            u.role_name ||
-            (Array.isArray(u.roles) ? u.roles[0] : "") ||
-            "",
-        ).toLowerCase();
 
-        // Gán Role chuẩn
-        let assignedRole = roleOverrides[email] || "customer";
-        if (
-          rawRole.includes("admin") ||
-          u.role_id === 1 ||
-          email.includes("admin")
-        )
-          assignedRole = "admin";
-        else if (rawRole.includes("manager")) assignedRole = "manager";
-        else if (rawRole.includes("staff") || rawRole.includes("reception"))
-          assignedRole = "receptionist";
-        else if (roleOverrides[email]) assignedRole = roleOverrides[email];
+        // 👉 ĐÃ SỬA TẠI ĐÂY: Đọc mảng u.roles từ câu SQL array_agg(r.name) của Backend
+        let rawRole = "";
+        if (Array.isArray(u.roles) && u.roles.length > 0) {
+          rawRole = u.roles[0]; // Lấy role trong mảng roles: ['ADMIN']
+        } else {
+          rawRole = u.role || u.role_name || "";
+        }
+
+        let role = String(rawRole).toUpperCase();
+        if (role.includes("ADMIN")) role = "ADMIN";
+        else if (role.includes("OWNER") || role.includes("HOTEL"))
+          role = "HOTEL_OWNER";
+        else role = "CUSTOMER";
 
         return {
           id: u.id || u._id || u.user_id || `DB-U-${idx + 1}`,
@@ -146,115 +95,62 @@ export default function UserManagementPage() {
             email.split("@")[0] ||
             "Người dùng",
           email: email,
-          phone: u.phone || u.phone_number || u.phoneNumber || "---",
-          role: assignedRole,
-          active:
-            u.activate !== undefined
-              ? Boolean(u.activate)
-              : u.active !== undefined
-                ? Boolean(u.active)
-                : true,
-          created_at: u.created_at || u.createdAt || "2026-01-01",
+          phone: u.phone || u.phone_number || "---",
+          role: role,
+          activate: u.activate !== undefined ? Boolean(u.activate) : true,
+          created_at: (u.created_at || u.createdAt || "2026-01-01").split(
+            "T",
+          )[0],
           last_login: u.last_login || u.lastLogin || "Gần đây",
         };
       });
 
-      // Nếu Database có dữ liệu -> Sử dụng ngay
-      if (normalizedList.length > 0) {
-        setUsers(normalizedList);
-        localStorage.setItem(
-          "pms_users_master",
-          JSON.stringify(normalizedList),
-        );
-      } else {
-        // Nếu Database đang trống rỗng -> Nạp tài khoản admin hiện tại
-        if (currentAdmin?.email) {
-          const defaultAdminOnly = [
-            {
-              id: currentAdmin.id || "U-ADMIN",
-              full_name:
-                currentAdmin.full_name || currentAdmin.name || "Super Admin",
-              email: currentAdmin.email,
-              phone: currentAdmin.phone || "0901112233",
-              role: "admin",
-              active: true,
-              created_at: "2026-01-01",
-              last_login: "Đang online",
-            },
-          ];
-          setUsers(defaultAdminOnly);
-        } else {
-          setUsers([]);
-        }
-      }
+      setUsers(normalizedList);
     } catch (error) {
-      console.error("⚠️ Lỗi kết nối API Database Users:", error);
+      console.error("Lỗi kết nối API Database Users:", error);
       setApiError(
         error?.response?.data?.message ||
-          "Không thể kết nối máy chủ Database hoặc hết hạn phiên đăng nhập.",
+          "Không thể kết nối máy chủ Database người dùng.",
       );
-
-      // Fallback đọc cache
-      const cached = JSON.parse(
-        localStorage.getItem("pms_users_master") || "[]",
-      );
-      setUsers(cached);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
-  }, [search, storeToken, currentAdmin]);
+  }, [search]);
 
   useEffect(() => {
-    fetchUsersFromDatabase();
-  }, [fetchUsersFromDatabase]);
+    fetchUsersFromDB();
+  }, [fetchUsersFromDB]);
 
-  const saveUsers = (updatedList) => {
-    setUsers(updatedList);
-    localStorage.setItem("pms_users_master", JSON.stringify(updatedList));
-  };
-
-  // 🔐 2. ĐỔI VAI TRÒ GỬI THẲNG LÊN DATABASE API
+  // ── 2. ĐỔI VAI TRÒ (ROLE) GỬI LÊN DATABASE ──
   const handleRoleChange = async (userId, newRole, userEmail) => {
-    if (userId === currentAdminId && newRole !== "admin") {
+    if (userId === currentAdminId && newRole !== "ADMIN") {
       alert("⚠️ Bạn không thể tự hạ quyền ADMIN của chính mình!");
       return;
     }
 
-    const cleanRole = newRole.toLowerCase();
-    const cleanEmail = String(userEmail || "")
-      .toLowerCase()
-      .trim();
-
-    // Lưu bộ nhớ
-    const roleOverrides = JSON.parse(
-      localStorage.getItem("user_role_overrides") || "{}",
-    );
-    if (cleanEmail) roleOverrides[cleanEmail] = cleanRole;
-    localStorage.setItem("user_role_overrides", JSON.stringify(roleOverrides));
-
-    // Gọi API Backend cập nhật role vào Database
     try {
-      await apiClient.patch(`/admin/users/${userId}/role`, { role: cleanRole });
-    } catch (e) {
-      console.warn("API patch role fallback:", e);
+      await apiClient.patch(`/admin/users/${userId}/role`, { role: newRole });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
+      );
+      alert(
+        `✓ Đã cập nhật quyền của [${userEmail}] thành [${newRole}] trên Database!`,
+      );
+    } catch (err) {
+      alert(
+        `Lỗi cập nhật Role: ${err?.response?.data?.message || "Không thể cập nhật quyền trên Database!"}`,
+      );
     }
-
-    const updated = users.map((u) =>
-      u.id === userId ? { ...u, role: cleanRole } : u,
-    );
-    saveUsers(updated);
-    alert(
-      `✓ Đã cập nhật vai trò của [${userEmail}] thành [${cleanRole.toUpperCase()}] thành công!`,
-    );
   };
 
-  // 👤 3. TẠO USER MỚI GỬI LÊN DATABASE
+  // ── 3. TẠO TÀI KHOẢN MỚI LƯU VÀO DATABASE ──
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      const res = await apiClient.post("/admin/users", createFormData);
+      await apiClient.post("/admin/users", createFormData);
       alert(
-        `✓ Đã tạo thành công tài khoản trên Database cho ${createFormData.full_name}!`,
+        `✓ Đã tạo thành công tài khoản [${createFormData.full_name}] vào Database!`,
       );
       setIsCreateModalOpen(false);
       setCreateFormData({
@@ -262,78 +158,39 @@ export default function UserManagementPage() {
         email: "",
         phone: "",
         password: "",
-        role: "receptionist",
+        role: "CUSTOMER",
       });
-      fetchUsersFromDatabase();
+      fetchUsersFromDB();
     } catch (apiErr) {
-      // Lưu offline nếu backend chưa có route
-      const newUser = {
-        id: `U-DB-${Date.now().toString().slice(-4)}`,
-        full_name: createFormData.full_name,
-        email: createFormData.email.toLowerCase().trim(),
-        phone: createFormData.phone,
-        role: createFormData.role,
-        active: true,
-        created_at: new Date().toISOString().split("T")[0],
-        last_login: "Chưa đăng nhập",
-      };
-      saveUsers([newUser, ...users]);
-      alert(`✓ Đã lưu tài khoản ${newUser.full_name}!`);
-      setIsCreateModalOpen(false);
+      alert(
+        `Lỗi tạo tài khoản: ${apiErr?.response?.data?.message || "Máy chủ từ chối tạo tài khoản!"}`,
+      );
     }
   };
 
-  // ✏️ 4. CẬP NHẬT HỒ SƠ
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    if (!editingUser) return;
-
-    try {
-      await apiClient.put(`/admin/users/${editingUser.id}`, editFormData);
-    } catch (e) {}
-
-    const updated = users.map((u) =>
-      u.id === editingUser.id ? { ...u, ...editFormData } : u,
-    );
-    saveUsers(updated);
-    alert("✓ Đã cập nhật hồ sơ người dùng thành công!");
-    setEditingUser(null);
-  };
-
-  // 🔒 5. KHÓA / MỞ KHÓA TÀI KHOẢN VÀO DATABASE
-  const handleToggleActive = async (user) => {
-    if (user.id === currentAdminId) {
-      alert("⚠️ Bạn không thể tự khóa tài khoản Admin đang sử dụng!");
+  // ── 4. KHÓA / MỞ KHÓA TÀI KHOẢN ──
+  const handleToggleActive = async (targetUser) => {
+    if (targetUser.id === currentAdminId) {
+      alert("⚠️ Bạn không thể tự khóa tài khoản Admin của mình!");
       return;
     }
 
     try {
-      await apiClient.patch(`/admin/users/${user.id}/status`);
-    } catch (e) {}
+      await apiClient.patch(`/admin/users/${targetUser.id}/status`, {
+        activate: !targetUser.activate,
+      });
 
-    const updated = users.map((u) =>
-      u.id === user.id ? { ...u, active: !u.active } : u,
-    );
-    saveUsers(updated);
-  };
-
-  const roleBadgeConfig = {
-    admin: {
-      label: "Admin",
-      color: "bg-purple-50 text-purple-700 border-purple-200",
-    },
-    manager: {
-      label: "Manager",
-      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    },
-    receptionist: {
-      label: "Receptionist",
-      color: "bg-amber-50 text-amber-800 border-amber-300",
-    },
-    customer: {
-      label: "Customer",
-      color: "bg-blue-50 text-blue-700 border-blue-200",
-    },
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === targetUser.id ? { ...u, activate: !u.activate } : u,
+        ),
+      );
+      alert(
+        `✓ Đã ${targetUser.activate ? "KHÓA" : "MỞ KHÓA"} tài khoản [${targetUser.email}] trên Database!`,
+      );
+    } catch (err) {
+      alert("Không thể cập nhật trạng thái khóa/mở trên Database!");
+    }
   };
 
   const filteredUsers = useMemo(() => {
@@ -342,13 +199,9 @@ export default function UserManagementPage() {
       if (search.trim()) {
         const q = search.toLowerCase().trim();
         return (
-          String(u.full_name || "")
-            .toLowerCase()
-            .includes(q) ||
-          String(u.email || "")
-            .toLowerCase()
-            .includes(q) ||
-          String(u.phone || "").includes(q)
+          u.full_name.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q) ||
+          u.phone.includes(q)
         );
       }
       return true;
@@ -357,18 +210,17 @@ export default function UserManagementPage() {
 
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* ── HEADER ── */}
+      {/* HEADER */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
-            <Database size={16} /> Kết Nối Cơ Sở Dữ Liệu Thực Tế (Live Database)
+            <Database size={16} /> Kết Nối Cơ Sở Dữ Liệu Thực Tế (PostgreSQL)
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             Quản Lý Người Dùng & Phân Quyền ({users.length} Tài khoản)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Dữ liệu tài khoản được đồng bộ và phản hồi trực tiếp từ Database hệ
-            thống
+            Dữ liệu người dùng được truy vấn từ bảng users & user_roles
           </p>
         </div>
 
@@ -380,27 +232,25 @@ export default function UserManagementPage() {
             <Plus size={16} /> + Thêm Tài Khoản Mới
           </button>
           <button
-            onClick={fetchUsersFromDatabase}
+            onClick={fetchUsersFromDB}
             className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer"
-            title="Đồng bộ lại Database"
+            title="Tải lại Database"
           >
             <RefreshCw size={16} />
           </button>
         </div>
       </div>
 
-      {/* Cảnh báo nếu API lỗi */}
       {apiError && (
         <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-2xl flex items-center gap-2">
           <AlertCircle size={16} className="text-amber-600 shrink-0" />
           <span>
-            <b>Thông báo API:</b> {apiError} (Đang hiển thị từ kho lưu trữ cache
-            an toàn)
+            <b>Lỗi kết nối:</b> {apiError}
           </span>
         </div>
       )}
 
-      {/* ── TOOLBAR: TABS ROLE & TÌM KIẾM ── */}
+      {/* TOOLBAR */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
           {ROLE_TABS.map((tab) => {
@@ -419,7 +269,11 @@ export default function UserManagementPage() {
               >
                 <span>{tab.label}</span>
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${roleFilter === tab.id ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"}`}
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                    roleFilter === tab.id
+                      ? "bg-white/20 text-white"
+                      : "bg-slate-200 text-slate-700"
+                  }`}
                 >
                   {count}
                 </span>
@@ -435,21 +289,18 @@ export default function UserManagementPage() {
           />
           <input
             type="text"
-            placeholder="Tìm kiếm tài khoản trong Database theo Tên, Email hoặc Số điện thoại..."
+            placeholder="Tìm kiếm theo Tên, Email hoặc Số điện thoại..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs outline-none focus:border-blue-600 focus:bg-white"
+            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs outline-none focus:border-blue-600"
           />
         </div>
       </div>
 
-      {/* ── BẢNG DANH SÁCH NGƯỜI DÙNG DATABASE ── */}
+      {/* BẢNG TÀI KHOẢN */}
       {loading ? (
         <div className="py-24 flex justify-center bg-white rounded-3xl border">
-          <LoadingSpinner
-            size="lg"
-            label="Đang truy vấn Database người dùng..."
-          />
+          <LoadingSpinner size="lg" label="Đang tải dữ liệu từ Database..." />
         </div>
       ) : filteredUsers.length > 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-2xs">
@@ -459,7 +310,7 @@ export default function UserManagementPage() {
                 <th className="py-4 px-5">Tài Khoản Database</th>
                 <th className="py-4 px-4">Số Điện Thoại</th>
                 <th className="py-4 px-4">Phân Quyền (Role)</th>
-                <th className="py-4 px-4">Đăng Nhập Cuối</th>
+                <th className="py-4 px-4">Ngày Tạo</th>
                 <th className="py-4 px-4 text-center">Trạng Thái</th>
                 <th className="py-4 px-5 text-right">Thao Tác</th>
               </tr>
@@ -468,41 +319,17 @@ export default function UserManagementPage() {
               {filteredUsers.map((u) => {
                 const isSelf =
                   u.id === currentAdminId || u.email === currentAdmin?.email;
-                const roleBadge =
-                  roleBadgeConfig[u.role] || roleBadgeConfig.customer;
-
                 return (
-                  <tr
-                    key={u.id}
-                    className={`hover:bg-slate-50/80 transition-colors ${isSelf ? "bg-blue-50/20" : ""}`}
-                  >
+                  <tr key={u.id} className="hover:bg-slate-50/80">
                     <td className="py-4 px-5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-800 font-black flex items-center justify-center text-xs shrink-0">
-                          {(u.full_name || "U").charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <strong className="text-slate-900 font-extrabold text-sm">
-                              {u.full_name}
-                            </strong>
-                            {isSelf && (
-                              <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-bold">
-                                Bạn
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-slate-400 font-mono text-[11px]">
-                            {u.email}
-                          </span>
-                        </div>
-                      </div>
+                      <strong className="text-slate-900 font-bold text-sm block">
+                        {u.full_name}
+                      </strong>
+                      <span className="text-slate-400 font-mono text-[11px]">
+                        {u.email}
+                      </span>
                     </td>
-
-                    <td className="py-4 px-4 font-mono font-semibold text-slate-700">
-                      {u.phone || "---"}
-                    </td>
-
+                    <td className="py-4 px-4 font-mono">{u.phone}</td>
                     <td className="py-4 px-4">
                       <select
                         value={u.role}
@@ -510,58 +337,48 @@ export default function UserManagementPage() {
                         onChange={(e) =>
                           handleRoleChange(u.id, e.target.value, u.email)
                         }
-                        className={`px-3 py-1.5 border rounded-xl text-xs font-black uppercase cursor-pointer outline-none transition shadow-2xs ${
-                          u.role === "admin"
+                        className={`px-3 py-1.5 border rounded-xl text-xs font-black uppercase cursor-pointer outline-none ${
+                          u.role === "ADMIN"
                             ? "bg-purple-50 text-purple-700 border-purple-200"
-                            : u.role === "manager"
-                              ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                              : u.role === "receptionist"
-                                ? "bg-amber-50 text-amber-800 border-amber-300"
-                                : "bg-blue-50 text-blue-700 border-blue-200"
-                        } ${isSelf ? "opacity-50 cursor-not-allowed" : ""}`}
+                            : u.role === "HOTEL_OWNER"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
+                        }`}
                       >
-                        <option value="customer">CUSTOMER (Khách hàng)</option>
-                        <option value="receptionist">
-                          RECEPTIONIST (Lễ tân)
+                        <option value="CUSTOMER">CUSTOMER (Khách)</option>
+                        <option value="HOTEL_OWNER">
+                          HOTEL_OWNER (Chủ KS)
                         </option>
-                        <option value="manager">MANAGER (Quản lý)</option>
-                        <option value="admin">ADMIN (Quản trị viên)</option>
+                        <option value="ADMIN">ADMIN (Quản trị)</option>
                       </select>
                     </td>
-
-                    <td className="py-4 px-4 text-slate-500">
-                      {u.last_login || "Gần đây"}
-                    </td>
-
+                    <td className="py-4 px-4 text-slate-500">{u.created_at}</td>
                     <td className="py-4 px-4 text-center">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${u.active ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"}`}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                          u.activate
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-rose-50 text-rose-700"
+                        }`}
                       >
-                        {u.active ? "Hoạt động" : "Đã khóa"}
+                        {u.activate ? "Hoạt động" : "Đã khóa"}
                       </span>
                     </td>
-
                     <td className="py-4 px-5 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <button
-                          onClick={() => {
-                            setEditingUser(u);
-                            setEditFormData(u);
-                          }}
-                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition"
-                          title="Sửa hồ sơ"
-                        >
-                          <Edit size={14} />
-                        </button>
-                        <button
-                          disabled={isSelf}
-                          onClick={() => handleToggleActive(u)}
-                          className={`p-1.5 rounded-lg transition ${isSelf ? "opacity-30 cursor-not-allowed" : u.active ? "bg-rose-50 hover:bg-rose-100 text-rose-600" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600"}`}
-                          title={u.active ? "Khóa tài khoản" : "Mở khóa"}
-                        >
-                          {u.active ? <Lock size={14} /> : <Unlock size={14} />}
-                        </button>
-                      </div>
+                      <button
+                        disabled={isSelf}
+                        onClick={() => handleToggleActive(u)}
+                        className={`p-2 rounded-xl border transition ${
+                          isSelf
+                            ? "opacity-30 cursor-not-allowed"
+                            : u.activate
+                              ? "hover:bg-rose-50 text-rose-600"
+                              : "hover:bg-emerald-50 text-emerald-600"
+                        }`}
+                        title={u.activate ? "Khóa tài khoản" : "Mở khóa"}
+                      >
+                        {u.activate ? <Lock size={14} /> : <Unlock size={14} />}
+                      </button>
                     </td>
                   </tr>
                 );
@@ -573,24 +390,23 @@ export default function UserManagementPage() {
         <EmptyState
           icon={Users}
           title="Không tìm thấy tài khoản nào trong Database"
-          description="Bấm nút '+ Thêm Tài Khoản Mới' hoặc làm mới kết nối máy chủ."
+          description="Bấm '+ Thêm Tài Khoản Mới' để tạo người dùng đầu tiên vào hệ thống."
         />
       )}
 
-      {/* MODAL TẠO USER */}
+      {/* MODAL TẠO TÀI KHOẢN MỚI */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-3.5 text-xs">
-            <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
-              <Plus size={18} className="text-blue-600" /> Thêm Tài Khoản Nhân
-              Sự Mới Vào Database
+            <h3 className="font-black text-base text-slate-900">
+              Thêm Tài Khoản Mới Vào Database
             </h3>
             <form onSubmit={handleCreateUser} className="space-y-3">
               <div>
                 <label className="block font-bold mb-1">Họ và tên *</label>
                 <input
                   required
-                  placeholder="VD: Lê Văn An"
+                  placeholder="VD: Nguyễn Văn A"
                   value={createFormData.full_name}
                   onChange={(e) =>
                     setCreateFormData({
@@ -608,7 +424,7 @@ export default function UserManagementPage() {
                 <input
                   required
                   type="email"
-                  placeholder="staff@beztower.com"
+                  placeholder="user@example.com"
                   value={createFormData.email}
                   onChange={(e) =>
                     setCreateFormData({
@@ -616,7 +432,7 @@ export default function UserManagementPage() {
                       email: e.target.value,
                     })
                   }
-                  className="w-full p-2.5 border rounded-xl"
+                  className="w-full p-2.5 border rounded-xl font-mono"
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -626,7 +442,7 @@ export default function UserManagementPage() {
                   </label>
                   <input
                     required
-                    placeholder="0901234567"
+                    placeholder="0912345678"
                     value={createFormData.phone}
                     onChange={(e) =>
                       setCreateFormData({
@@ -651,10 +467,11 @@ export default function UserManagementPage() {
                     }
                     className="w-full p-2.5 border rounded-xl font-bold"
                   >
-                    <option value="receptionist">RECEPTIONIST (Lễ tân)</option>
-                    <option value="manager">MANAGER (Quản lý)</option>
-                    <option value="admin">ADMIN (Quản trị viên)</option>
-                    <option value="customer">CUSTOMER (Khách hàng)</option>
+                    <option value="CUSTOMER">CUSTOMER (Khách hàng)</option>
+                    <option value="HOTEL_OWNER">
+                      HOTEL_OWNER (Chủ khách sạn)
+                    </option>
+                    <option value="ADMIN">ADMIN (Quản trị viên)</option>
                   </select>
                 </div>
               </div>
@@ -673,7 +490,7 @@ export default function UserManagementPage() {
                       password: e.target.value,
                     })
                   }
-                  className="w-full p-2.5 border rounded-xl"
+                  className="w-full p-2.5 border rounded-xl font-mono"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t">
@@ -686,69 +503,9 @@ export default function UserManagementPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl shadow-md"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl"
                 >
                   Lưu Vào Database
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL SỬA USER */}
-      {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-3.5 text-xs">
-            <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
-              <Edit size={16} className="text-blue-600" /> Sửa Hồ Sơ Database:{" "}
-              {editingUser.full_name}
-            </h3>
-            <form onSubmit={handleSaveProfile} className="space-y-3">
-              <input
-                required
-                value={editFormData.full_name}
-                onChange={(e) =>
-                  setEditFormData({
-                    ...editFormData,
-                    full_name: e.target.value,
-                  })
-                }
-                className="w-full p-2.5 border rounded-xl font-bold"
-              />
-              <input
-                required
-                value={editFormData.phone}
-                onChange={(e) =>
-                  setEditFormData({ ...editFormData, phone: e.target.value })
-                }
-                className="w-full p-2.5 border rounded-xl font-mono"
-              />
-              <select
-                value={editFormData.role}
-                onChange={(e) =>
-                  setEditFormData({ ...editFormData, role: e.target.value })
-                }
-                className="w-full p-2.5 border rounded-xl font-bold"
-              >
-                <option value="customer">CUSTOMER (Khách hàng)</option>
-                <option value="receptionist">RECEPTIONIST (Lễ tân)</option>
-                <option value="manager">MANAGER (Quản lý)</option>
-                <option value="admin">ADMIN (Quản trị viên)</option>
-              </select>
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="px-4 py-2 border rounded-xl font-bold"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl"
-                >
-                  Cập Nhật Database
                 </button>
               </div>
             </form>

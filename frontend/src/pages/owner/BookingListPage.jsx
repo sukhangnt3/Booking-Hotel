@@ -1,666 +1,536 @@
 // src/pages/owner/BookingListPage.jsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  CalendarCheck,
-  Building2,
   Search,
-  Plus,
-  Download,
-  Calendar,
-  Eye,
-  Key,
-  LogOut as LogOutIcon,
-  Printer,
-  X,
-  Ticket,
-  ShieldCheck,
+  CheckCircle2,
   AlertCircle,
-  Sparkles,
-  BedDouble,
+  RefreshCw,
+  Clock,
+  Key,
+  LogOut,
+  X,
+  Coffee,
   Receipt,
+  UserPlus,
+  DollarSign,
+  CalendarDays,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
-import { useAuthStore } from "@/stores/authStore";
-import PropertySearchSelector from "@/components/common/PropertySearchSelector";
+import apiClient from "@/services/apiClient";
 
 const STATUS_TABS = [
   { id: "all", label: "Tất cả đơn" },
-  { id: "confirmed", label: "Chờ Check-in" },
-  { id: "checked_in", label: "Đang lưu trú (In-House)" },
-  { id: "checked_out", label: "Đã Check-out" },
-  { id: "pending", label: "Chờ duyệt" },
+  { id: "pending", label: "Chờ xác nhận" },
+  { id: "confirmed", label: "Đã xác nhận" },
+  { id: "checked_in", label: "Đang lưu trú" },
+  { id: "checked_out", label: "Đã trả phòng" },
   { id: "cancelled", label: "Đã hủy" },
 ];
 
 export default function BookingListPage() {
-  const { user } = useAuthStore();
   const [bookings, setBookings] = useState([]);
+  const [hotels, setHotels] = useState([]);
+  const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const userRole = String(user?.role || user?.role_name || "").toLowerCase();
-  const isAdmin = userRole.includes("admin") || user?.role_id === 1;
-  const isReceptionist = userRole === "receptionist" || userRole === "staff";
-  const userEmail = String(user?.email || "")
-    .toLowerCase()
-    .trim();
-
-  const [myHotels, setMyHotels] = useState([]);
-  const [selectedHotelId, setSelectedHotelId] = useState("");
-
-  const [statusTab, setStatusTab] = useState(
-    isReceptionist ? "confirmed" : "all",
-  );
+  const [statusTab, setStatusTab] = useState("all");
   const [search, setSearch] = useState("");
-  const [startDateFilter, setStartDateFilter] = useState("");
-  const [endDateFilter, setEndDateFilter] = useState("");
+  const [apiError, setApiError] = useState("");
 
-  // Modals
-  const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
-  const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
-  const [checkInModalBooking, setCheckInModalBooking] = useState(null);
-  const [checkOutModalBooking, setCheckOutModalBooking] = useState(null);
-  const [assignRoomModalBooking, setAssignRoomModalBooking] = useState(null);
-  const [dossierBooking, setDossierBooking] = useState(null);
+  // Modal Check-in (Có thu tiền tại chỗ và nhập số phòng)
+  const [checkInModal, setCheckInModal] = useState(null);
+  const [assignedRoom, setAssignedRoom] = useState("");
+  const [earlyOption, setEarlyOption] = useState("none");
+  const [payMethodAtCheckIn, setPayMethodAtCheckIn] = useState("cash");
 
-  // Form State Modals
-  const [assignedRoomInput, setAssignedRoomInput] = useState("P.101");
-  const [depositAmountInput, setDepositAmountInput] = useState(500000);
-  const [extraServiceFee, setExtraServiceFee] = useState(0); // Phí Minibar / Giặt ủi khi checkout
-  const [checkoutNotes, setCheckoutNotes] = useState("");
+  // Modal Check-out
+  const [checkOutModal, setCheckOutModal] = useState(null);
+  const [lateOption, setLateOption] = useState("none");
+  const [minibarFee, setMinibarFee] = useState(0);
+  const [otherFee, setOtherFee] = useState(0);
 
+  // Modal Walk-in (Đặt tại quầy)
+  const [isWalkInOpen, setIsWalkInOpen] = useState(false);
   const [walkInForm, setWalkInForm] = useState({
-    guestName: "",
-    guestPhone: "",
-    guestEmail: "",
-    roomName: "Deluxe King Hướng Biển",
-    assignedRoom: "P.101",
-    checkIn: new Date().toISOString().split("T")[0],
-    checkOut: new Date(Date.now() + 86400000).toISOString().split("T")[0],
-    totalPrice: 850000,
-    depositAmount: 500000,
-    paymentMethod: "Tiền mặt tại quầy (Cash)",
-    autoCheckIn: true,
+    hotel_id: "",
+    room_id: "",
+    customer_name: "",
+    guest_phone: "",
+    total_price: 650000,
+    checkin_date: new Date().toISOString().split("T")[0],
+    checkout_date: new Date(Date.now() + 86400000).toISOString().split("T")[0],
+    payment_method: "cash",
+    is_check_in_now: true,
   });
+
+  // ─────────────────────────────────────────────
+  // 🕒 HÀM ĐỊNH DẠNG MÚI GIỜ VIỆT NAM (ASIA/HO_CHI_MINH)
+  // ─────────────────────────────────────────────
+  const formatStayDateTime = (dateStr, defaultHour = "14:00") => {
+    if (!dateStr) return "N/A";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+
+      const formatter = new Intl.DateTimeFormat("vi-VN", {
+        timeZone: "Asia/Ho_Chi_Minh",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+
+      return `${defaultHour} • ${formatter.format(d)}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatBookingTime = (dateStr) => {
+    if (!dateStr) return "";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+
+      return new Intl.DateTimeFormat("vi-VN", {
+        timeZone: "Asia/Ho_Chi_Minh",
+        hour: "2-digit",
+        minute: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour12: false,
+      }).format(d);
+    } catch {
+      return dateStr;
+    }
+  };
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // 1. TẢI CƠ SỞ THEO PHÂN QUYỀN
-  const loadScopedHotels = () => {
-    const localApps = JSON.parse(
-      localStorage.getItem("pending_partner_applications") || "[]",
-    );
-    const approvedIds = JSON.parse(
-      localStorage.getItem("approved_hotel_ids") || "[]",
-    ).map(String);
-    const rejectedIds = JSON.parse(
-      localStorage.getItem("rejected_hotel_ids") || "[]",
-    ).map(String);
-
-    let scopedList = [];
-
-    if (isAdmin) {
-      scopedList = localApps
-        .filter((h) => !rejectedIds.includes(String(h.id || h.applicationId)))
-        .map((h) => ({
-          id: String(h.id || h.applicationId),
-          name: h.name || h.hotelNameVi || h.hotel_name || "Cơ sở lưu trú",
-          city: h.province || h.city || "Việt Nam",
-        }));
-    } else if (isReceptionist && user?.hotel_id) {
-      // Lễ tân được gắn cứng với cơ sở được giao trực ca
-      const targetHotel = localApps.find(
-        (h) => String(h.id || h.applicationId) === String(user.hotel_id),
-      );
-      scopedList = [
-        {
-          id: String(user.hotel_id),
-          name: user.hotel_name || targetHotel?.name || "Cơ sở trực ca",
-          city: targetHotel?.province || "Việt Nam",
-        },
-      ];
-    } else {
-      scopedList = localApps
-        .filter((h) => {
-          const hId = String(h.id || h.applicationId);
-          const hEmail = String(h.emailContact || h.email || "")
-            .toLowerCase()
-            .trim();
-          return (
-            hEmail === userEmail &&
-            approvedIds.includes(hId) &&
-            !rejectedIds.includes(hId)
-          );
-        })
-        .map((h) => ({
-          id: String(h.id || h.applicationId),
-          name: h.name || h.hotelNameVi || "Cơ sở của tôi",
-          city: h.province || "Việt Nam",
-        }));
-    }
-
-    setMyHotels(scopedList);
-
-    if (scopedList.length > 0) {
-      setSelectedHotelId((prev) =>
-        prev
-          ? prev
-          : isReceptionist
-            ? String(scopedList[0].id)
-            : isAdmin
-              ? "all"
-              : String(scopedList[0].id),
-      );
-    } else {
-      setSelectedHotelId("");
-    }
-    return scopedList;
-  };
-
-  // 2. TẢI ĐƠN PHÒNG VÀ ĐỒNG BỘ
-  const loadBookings = () => {
+  const fetchOwnerBookings = useCallback(async () => {
     setLoading(true);
-    const hotelsList = loadScopedHotels();
-    const rawBookings = JSON.parse(
-      localStorage.getItem("all_bookings") || "[]",
-    );
+    setApiError("");
+    try {
+      const res = await apiClient.get("/owner/bookings");
+      const list = res?.data || res?.bookings || res || [];
+      setBookings(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setApiError(err.message || "Không thể kết nối đến dữ liệu đơn đặt.");
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    const normalized = rawBookings.map((b) => {
-      const hId = String(
-        b.hotel_id || b.hotelId || b.hotel?.id || b.hotel?._id || "",
-      ).trim();
-
-      const matchedHotel = hotelsList.find((h) => String(h.id) === hId);
-      const realHotelName =
-        matchedHotel?.name || b.hotel_name || b.hotelName || "Cơ sở lưu trú";
-
-      return {
-        ...b,
-        code: String(b.code || b.booking_code || b.id || ""),
-        hotel_id: hId || (matchedHotel ? String(matchedHotel.id) : ""),
-        hotel_name: realHotelName,
-        customer_name:
-          b.customer_name || b.customerName || b.guestName || "Khách vãng lai",
-        customer_phone: b.customer_phone || b.customerPhone || b.phone || "N/A",
-        customer_email: b.customer_email || b.customerEmail || b.email || "",
-        room_name:
-          b.room_name || b.roomName || b.roomType || "Phòng Tiêu Chuẩn",
-        assigned_room: b.assigned_room || b.assignedRoom || "",
-        check_in: b.check_in || b.checkIn || b.checkin_date || "",
-        check_out: b.check_out || b.checkOut || b.checkout_date || "",
-        total_price: Number(b.total_price || b.totalPrice || b.amount || 0),
-        deposit_amount: Number(b.deposit_amount || 0),
-        extra_fee: Number(b.extra_fee || 0),
-        status: b.status || "pending",
-        payment_method: b.payment_method || b.paymentMethod || "VietQR 24/7",
-      };
-    });
-
-    setBookings(normalized);
-    setLoading(false);
-  };
+  const fetchMyHotels = useCallback(async () => {
+    try {
+      const res = await apiClient.get("/hotels/my-hotels?active_only=true");
+      const list = res?.data || res?.hotels || res || [];
+      const hotelArr = Array.isArray(list) ? list : [];
+      setHotels(hotelArr);
+      if (hotelArr.length > 0 && !walkInForm.hotel_id) {
+        setWalkInForm((prev) => ({ ...prev, hotel_id: hotelArr[0].id }));
+      }
+    } catch (err) {
+      console.error("Lỗi lấy khách sạn:", err);
+    }
+  }, [walkInForm.hotel_id]);
 
   useEffect(() => {
-    loadBookings();
-  }, [user]);
+    if (!walkInForm.hotel_id) return;
+    apiClient
+      .get(`/rooms?hotel_id=${walkInForm.hotel_id}`)
+      .then((res) => {
+        const rList = res?.data || res?.rooms || res || [];
+        const arr = Array.isArray(rList) ? rList : [];
+        setRooms(arr);
+        if (arr.length > 0) {
+          setWalkInForm((prev) => ({
+            ...prev,
+            room_id: arr[0].id,
+            total_price: Number(arr[0].base_price || 650000),
+          }));
+        }
+      })
+      .catch(() => setRooms([]));
+  }, [walkInForm.hotel_id]);
 
-  const saveAndSync = (updatedList) => {
-    setBookings(updatedList);
-    localStorage.setItem("all_bookings", JSON.stringify(updatedList));
+  useEffect(() => {
+    fetchOwnerBookings();
+    fetchMyHotels();
+  }, [fetchOwnerBookings, fetchMyHotels]);
+
+  // Xác nhận đơn đặt online
+  const handleConfirmOrder = async (bookingId) => {
+    try {
+      await apiClient.patch(`/owner/bookings/${bookingId}/status`, {
+        status: "confirmed",
+      });
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === bookingId ? { ...b, status: "confirmed" } : b,
+        ),
+      );
+      alert("✓ Đã xác nhận tiếp nhận đơn đặt phòng!");
+    } catch (err) {
+      alert(`Lỗi: ${err.message}`);
+    }
   };
 
-  const selectedHotelObj = myHotels.find(
-    (h) => String(h.id) === String(selectedHotelId),
-  );
-
-  // 🛎️ 1. THAO TÁC XẾP PHÒNG
-  const handleConfirmAssignRoom = () => {
-    if (!assignRoomModalBooking) return;
-    const updated = bookings.map((b) =>
-      b.code === assignRoomModalBooking.code
-        ? { ...b, assigned_room: assignedRoomInput }
-        : b,
-    );
-    saveAndSync(updated);
-    alert(
-      `✓ Đã xếp phòng ${assignedRoomInput} cho khách [${assignRoomModalBooking.customer_name}]!`,
-    );
-    setAssignRoomModalBooking(null);
+  // Nút thu tiền nhanh tại quầy
+  const handleQuickPay = async (bookingId) => {
+    if (!window.confirm("Xác nhận khách đã thanh toán đủ tiền phòng?")) return;
+    try {
+      await apiClient.patch(`/owner/bookings/${bookingId}/status`, {
+        payment_status: "paid",
+      });
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === bookingId ? { ...b, payment_status: "paid" } : b,
+        ),
+      );
+      alert("✓ Đã cập nhật: Đơn phòng ĐÃ THANH TOÁN! Tiền đã vào doanh thu.");
+    } catch (err) {
+      alert(`Lỗi: ${err.message}`);
+    }
   };
 
-  // 🛎️ 2. THAO TÁC CHECK-IN (NHẬN PHÒNG & THU CỌC)
-  const handleConfirmCheckIn = () => {
-    if (!checkInModalBooking) return;
-    const updated = bookings.map((b) =>
-      b.code === checkInModalBooking.code
-        ? {
-            ...b,
-            status: "checked_in",
-            assigned_room: assignedRoomInput || b.assigned_room || "P.101",
-            deposit_amount: Number(depositAmountInput),
-            checkin_time: new Date().toLocaleTimeString("vi-VN"),
-          }
-        : b,
-    );
-    saveAndSync(updated);
-    alert(
-      `✓ ĐÃ CHECK-IN THÀNH CÔNG!\nKhách: ${checkInModalBooking.customer_name}\nPhòng: ${assignedRoomInput}\nTiền cọc: ${formatVND(depositAmountInput)}`,
-    );
-    setCheckInModalBooking(null);
+  // ─────────────────────────────────────────────
+  // 🔑 THỰC HIỆN CHECK-IN (LƯU SỐ PHÒNG BÀN GIAO)
+  // ─────────────────────────────────────────────
+  const handlePerformCheckIn = async (e) => {
+    e.preventDefault();
+    if (!checkInModal) return;
+
+    const basePrice = Number(checkInModal.total_price);
+    let earlyFee = 0;
+    if (earlyOption === "30") earlyFee = Math.round(basePrice * 0.3);
+    if (earlyOption === "50") earlyFee = Math.round(basePrice * 0.5);
+
+    try {
+      // 👉 GỬI CẢ ROOM_NUMBER VỀ BACKEND
+      await apiClient.post(`/owner/bookings/${checkInModal.id}/checkin`, {
+        early_fee: earlyFee,
+        room_number: assignedRoom,
+      });
+
+      // Cập nhật State ngay lập tức
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === checkInModal.id
+            ? {
+                ...b,
+                status: "checked_in",
+                payment_status: "paid",
+                room_number: assignedRoom,
+                total_price: basePrice + earlyFee,
+              }
+            : b,
+        ),
+      );
+
+      alert(
+        `✓ Check-in thành công! Đã bàn giao phòng ${assignedRoom} cho khách.`,
+      );
+      setCheckInModal(null);
+    } catch (err) {
+      alert(`Lỗi check-in: ${err.message}`);
+    }
   };
 
-  // 🛎️ 3. THAO TÁC CHECK-OUT (TÍNH PHỤ PHÍ & GỬI YÊU CẦU DỌN PHÒNG)
-  const handleConfirmCheckOut = () => {
-    if (!checkOutModalBooking) return;
-    const finalTotal =
-      Number(checkOutModalBooking.total_price) + Number(extraServiceFee);
+  // THỰC HIỆN CHECK-OUT
+  const handlePerformCheckOut = async (e) => {
+    e.preventDefault();
+    if (!checkOutModal) return;
 
-    // Cập nhật đơn đặt phòng thành đã trả phòng
-    const updatedBookings = bookings.map((b) =>
-      b.code === checkOutModalBooking.code
-        ? {
-            ...b,
-            status: "checked_out",
-            extra_fee: Number(extraServiceFee),
-            total_price: finalTotal,
-            checkout_time: new Date().toLocaleTimeString("vi-VN"),
-          }
-        : b,
-    );
-    saveAndSync(updatedBookings);
+    const basePrice = Number(checkOutModal.total_price);
+    let lateFee = 0;
+    if (lateOption === "30") lateFee = Math.round(basePrice * 0.3);
+    if (lateOption === "50") lateFee = Math.round(basePrice * 0.5);
+    if (lateOption === "100") lateFee = basePrice;
 
-    // TỰ ĐỘNG ĐẨY PHÒNG SANG DANH SÁCH CẦN DỌN DẸP (BUỒNG PHÒNG)
-    const currentTasks = JSON.parse(
-      localStorage.getItem("housekeeping_tasks") || "[]",
-    );
-    const newTask = {
-      id: `HK-${Date.now().toString().slice(-4)}`,
-      hotel_id: checkOutModalBooking.hotel_id,
-      hotel_name: checkOutModalBooking.hotel_name,
-      room_number: checkOutModalBooking.assigned_room || "P.101",
-      room_type: checkOutModalBooking.room_name,
-      status: "dirty", // Phòng bẩn cần dọn
-      priority: "urgent", // Ưu tiên dọn đón khách tiếp theo
-      created_at:
-        new Date().toLocaleTimeString("vi-VN") +
-        " " +
-        new Date().toLocaleDateString("vi-VN"),
-      notes:
-        checkoutNotes || "Khách vừa check-out, cần thay ga gối và khử khuẩn",
-    };
-    localStorage.setItem(
-      "housekeeping_tasks",
-      JSON.stringify([
-        newTask,
-        ...currentTasks.filter((t) => t.room_number !== newTask.room_number),
-      ]),
-    );
+    try {
+      await apiClient.post(`/owner/bookings/${checkOutModal.id}/checkout`, {
+        late_fee: lateFee,
+        minibar_fee: Number(minibarFee),
+        other_fee: Number(otherFee),
+      });
 
-    alert(
-      `✓ CHECK-OUT THÀNH CÔNG!\n` +
-        `Đã quyết toán đơn #${checkOutModalBooking.code}.\n` +
-        `Đã tự động gửi yêu cầu dọn phòng [${newTask.room_number}] sang bộ phận Buồng Phòng!`,
-    );
-
-    // Mở hóa đơn Folio để in nếu cần
-    setDossierBooking({
-      ...checkOutModalBooking,
-      extra_fee: Number(extraServiceFee),
-      total_price: finalTotal,
-    });
-    setCheckOutModalBooking(null);
+      const finalTotal =
+        basePrice + lateFee + Number(minibarFee) + Number(otherFee);
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === checkOutModal.id
+            ? {
+                ...b,
+                status: "checked_out",
+                payment_status: "paid",
+                total_price: finalTotal,
+              }
+            : b,
+        ),
+      );
+      alert("✓ Check-out thành công! Đã hoàn tất quyết toán hóa đơn.");
+      setCheckOutModal(null);
+    } catch (err) {
+      alert(`Lỗi check-out: ${err.message}`);
+    }
   };
 
-  // 🛎️ 4. BẤM NÚT GỬI YÊU CẦU BUỒNG PHÒNG THỦ CÔNG
-  const handleQuickHousekeepingRequest = (roomNumber, hotelId, hotelName) => {
-    const currentTasks = JSON.parse(
-      localStorage.getItem("housekeeping_tasks") || "[]",
-    );
-    const newTask = {
-      id: `HK-${Date.now().toString().slice(-4)}`,
-      hotel_id: hotelId,
-      hotel_name: hotelName,
-      room_number: roomNumber,
-      room_type: "Phòng đang lưu trú",
-      status: "dirty",
-      priority: "normal",
-      created_at: new Date().toLocaleTimeString("vi-VN"),
-      notes: "Lễ tân yêu cầu: Khách gọi dọn phòng / bổ sung khăn nước",
-    };
-    localStorage.setItem(
-      "housekeeping_tasks",
-      JSON.stringify([newTask, ...currentTasks]),
-    );
-    alert(`✓ Đã gửi yêu cầu buồng phòng cho ${roomNumber}!`);
+  // TẠO ĐƠN WALK-IN TẠI QUẦY
+  const handleCreateWalkIn = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await apiClient.post("/owner/bookings/walk-in", walkInForm);
+      alert(res?.message || "✓ Đã tạo đơn tại quầy thành công!");
+      setIsWalkInOpen(false);
+      fetchOwnerBookings();
+    } catch (err) {
+      alert(`Lỗi tạo đơn: ${err.response?.data?.message || err.message}`);
+    }
   };
 
-  // 3. LỌC ĐƠN PHÒNG
-  const filteredBookings = useMemo(() => {
-    return bookings.filter((b) => {
-      if (selectedHotelId && selectedHotelId !== "all") {
-        const matchId = String(b.hotel_id) === String(selectedHotelId);
-        const matchName =
-          selectedHotelObj?.name &&
-          String(b.hotel_name).toLowerCase().trim() ===
-            String(selectedHotelObj.name).toLowerCase().trim();
-        if (!matchId && !matchName) return false;
-      }
-
-      if (statusTab !== "all" && b.status !== statusTab) return false;
-      if (startDateFilter && b.check_in < startDateFilter) return false;
-      if (endDateFilter && b.check_out > endDateFilter) return false;
-
-      if (search.trim()) {
-        const q = search.toLowerCase().trim();
-        return (
-          String(b.customer_name || "")
-            .toLowerCase()
-            .includes(q) ||
-          String(b.customer_phone || "").includes(q) ||
-          String(b.code || "")
-            .toLowerCase()
-            .includes(q) ||
-          String(b.assigned_room || "")
-            .toLowerCase()
-            .includes(q)
-        );
-      }
-      return true;
-    });
-  }, [
-    bookings,
-    selectedHotelId,
-    selectedHotelObj,
-    statusTab,
-    startDateFilter,
-    endDateFilter,
-    search,
-  ]);
-
-  const statusBadge = {
-    pending: {
-      label: "Chờ duyệt",
-      color: "bg-amber-50 text-amber-800 border-amber-300",
-    },
-    confirmed: {
-      label: "Chờ nhận phòng",
-      color: "bg-blue-50 text-blue-700 border-blue-200",
-    },
-    checked_in: {
-      label: "Đang lưu trú (In-House)",
-      color: "bg-emerald-50 text-emerald-700 border-emerald-300",
-    },
-    checked_out: {
-      label: "Đã Check-out",
-      color: "bg-slate-100 text-slate-700 border-slate-300",
-    },
-    cancelled: {
-      label: "Đã hủy",
-      color: "bg-rose-50 text-rose-700 border-rose-200",
-    },
-  };
+  const filteredBookings = bookings.filter((b) => {
+    if (statusTab !== "all" && b.status !== statusTab) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        b.booking_code?.toLowerCase().includes(q) ||
+        b.customer_name?.toLowerCase().includes(q) ||
+        b.guest_phone?.includes(q)
+      );
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* ── TOPBAR GIAO DIỆN CA TRỰC ── */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
+      {/* HEADER & NÚT WALK-IN */}
+      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2 text-amber-600 font-bold text-xs uppercase tracking-wider mb-1">
-            <CalendarCheck size={16} />{" "}
-            {isReceptionist
-              ? "Bàn Làm Việc Lễ Tân (Front Desk Operations)"
-              : "Kênh Quản Trị Đặt Phòng (Owner PMS)"}
+          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
+            <CheckCircle2 size={16} /> Quy Trình Tiếp Tân & Quản Trị Lưu Trú
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            Xử Lý Check-in / Check-out & Xếp Phòng
+            Quản Lý Đơn Đặt ({bookings.length} Đơn)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Cơ sở:{" "}
-            <strong className="text-blue-900 font-bold">
-              {selectedHotelObj?.name || "Chọn cơ sở..."}
-            </strong>
+            Quy chuẩn Thu tiền, Check-in (14h) & Check-out (12h) theo tiêu chuẩn
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-          {!isReceptionist && myHotels.length > 0 && (
-            <PropertySearchSelector
-              hotels={myHotels}
-              selectedHotelId={selectedHotelId}
-              onSelectHotel={(id) => setSelectedHotelId(id)}
-              showAllOption={isAdmin}
-            />
-          )}
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <button
+            onClick={() => setIsWalkInOpen(true)}
+            className="px-4 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-2xl shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
+          >
+            <UserPlus size={16} /> + Đặt Phòng Tại Quầy (Walk-in)
+          </button>
 
           <button
-            onClick={() => setIsWalkInModalOpen(true)}
-            className="px-4 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+            onClick={fetchOwnerBookings}
+            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer"
+            title="Làm mới danh sách"
           >
-            <Plus size={15} /> + Khách Đặt Tại Quầy
+            <RefreshCw size={16} />
           </button>
         </div>
       </div>
 
-      {/* ── BỘ LỌC TRẠNG THÁI CA TRỰC ── */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-          {STATUS_TABS.map((tab) => {
-            const count = bookings.filter((b) => {
-              if (selectedHotelId && selectedHotelId !== "all") {
-                if (String(b.hotel_id) !== String(selectedHotelId))
-                  return false;
-              }
-              return tab.id === "all" ? true : b.status === tab.id;
-            }).length;
+      {apiError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2 font-bold">
+          <AlertCircle size={16} /> <span>{apiError}</span>
+        </div>
+      )}
 
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setStatusTab(tab.id)}
-                className={`px-4 py-2 rounded-2xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-                  statusTab === tab.id
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
-                    statusTab === tab.id
-                      ? "bg-white/20 text-white"
-                      : "bg-slate-200 text-slate-700"
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+      {/* TÌM KIẾM & BỘ LỌC TABS */}
+      <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div className="relative w-full md:w-80">
+          <Search
+            size={16}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <input
+            type="text"
+            placeholder="Tìm theo mã đơn, tên khách, SĐT..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white border rounded-2xl text-xs font-medium focus:outline-blue-600 shadow-xs"
+          />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-          <div className="md:col-span-6 relative">
-            <Search
-              size={16}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              type="text"
-              placeholder="Tìm theo tên khách, SĐT, số phòng hoặc mã đơn..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-600 focus:bg-white"
-            />
-          </div>
-
-          <div className="md:col-span-6 flex items-center gap-2 text-xs font-medium">
-            <Calendar size={15} className="text-slate-400 shrink-0" />
-            <span className="text-slate-500 font-bold shrink-0">Lọc ngày:</span>
-            <input
-              type="date"
-              value={startDateFilter}
-              onChange={(e) => setStartDateFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border rounded-xl outline-none text-xs flex-1"
-            />
-            <span className="text-slate-400">&rarr;</span>
-            <input
-              type="date"
-              value={endDateFilter}
-              onChange={(e) => setEndDateFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border rounded-xl outline-none text-xs flex-1"
-            />
-          </div>
+        <div className="bg-white p-1.5 rounded-2xl border shadow-xs flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setStatusTab(tab.id)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                statusTab === tab.id
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ── BẢNG ĐIỀU HÀNH TÁC NGHIỆP ── */}
+      {/* BẢNG ĐƠN ĐẶT PHÒNG */}
       {loading ? (
         <div className="py-24 flex justify-center bg-white rounded-3xl border">
           <LoadingSpinner
             size="lg"
-            label="Đang tải danh sách đặt phòng ca trực..."
+            label="Đang tải danh sách đơn từ PostgreSQL..."
           />
         </div>
       ) : filteredBookings.length > 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-2xs">
+        <div className="bg-white rounded-3xl border overflow-hidden shadow-xs">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b">
+            <thead className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b">
               <tr>
-                <th className="py-4 px-5">Mã & Khách Hàng</th>
-                <th className="py-4 px-4">Cơ Sở</th>
-                <th className="py-4 px-4">Phòng & Xếp Chỗ</th>
-                <th className="py-4 px-4">Lưu Trú</th>
-                <th className="py-4 px-4 text-right">Thanh Toán</th>
-                <th className="py-4 px-4 text-center">Trạng Thái</th>
-                <th className="py-4 px-5 text-center">Tác Nghiệp Lễ Tân</th>
+                <th className="py-4 px-5">Mã Đơn & Khách Hàng</th>
+                <th className="py-4 px-4">Hạng Phòng & Cơ Sở</th>
+                <th className="py-4 px-4">Ngày Nhận / Trả (Giờ VN)</th>
+                <th className="py-4 px-4">Tổng Hóa Đơn</th>
+                <th className="py-4 px-4 text-center">Thanh Toán</th>
+                <th className="py-4 px-5 text-right">Nghiệp Vụ Lễ Tân</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredBookings.map((b) => {
-                const st = statusBadge[b.status] || statusBadge.pending;
+                const isPaid = b.payment_status === "paid";
+
                 return (
-                  <tr
-                    key={b.code}
-                    className="hover:bg-blue-50/30 transition-colors"
-                  >
+                  <tr key={b.id} className="hover:bg-slate-50/80">
                     <td className="py-4 px-5">
-                      <span className="font-mono font-black text-blue-900 text-xs bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 inline-block mb-1">
-                        #{b.code}
+                      <span className="font-mono font-bold text-blue-900 flex items-center gap-1">
+                        #{b.booking_code}
+                        {b.booking_code?.startsWith("WI") && (
+                          <span className="px-1.5 py-0.2 bg-purple-100 text-purple-700 text-[9px] font-bold rounded">
+                            Walk-in
+                          </span>
+                        )}
                       </span>
-                      <strong className="text-slate-900 block text-sm font-extrabold">
-                        {b.customer_name}
+                      <strong className="block text-slate-900 mt-0.5">
+                        {b.customer_name || b.guest_name || "Khách tại quầy"}
                       </strong>
-                      <span className="text-slate-400 font-mono text-[11px]">
-                        {b.customer_phone}
+                      <span className="text-slate-400 block">
+                        {b.guest_phone || b.contact_phone || "---"}
                       </span>
-                    </td>
-
-                    <td className="py-4 px-4">
-                      <span className="font-bold text-blue-900 text-xs bg-slate-50 px-2 py-1 rounded-lg border">
-                        🏨 {b.hotel_name}
-                      </span>
-                    </td>
-
-                    <td className="py-4 px-4">
-                      <strong className="text-slate-800 block">
-                        {b.room_name}
-                      </strong>
-                      {b.assigned_room ? (
-                        <span className="inline-flex items-center gap-1 font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 mt-1">
-                          <BedDouble size={12} /> {b.assigned_room}
+                      {b.created_at && (
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          Đặt lúc: {formatBookingTime(b.created_at)}
                         </span>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setAssignRoomModalBooking(b);
-                            setAssignedRoomInput("P.101");
-                          }}
-                          className="text-[11px] font-bold text-amber-600 hover:text-amber-700 underline mt-1 cursor-pointer block"
-                        >
-                          + Xếp phòng ngay
-                        </button>
                       )}
                     </td>
 
-                    <td className="py-4 px-4 text-slate-600">
-                      <p className="text-slate-900 font-bold">{b.check_in}</p>
+                    {/* CỘT HẠNG PHÒNG & HIỂN THỊ SỐ PHÒNG BÀN GIAO */}
+                    <td className="py-4 px-4">
+                      <p className="font-bold text-slate-800">
+                        {b.room_name || "Phòng tiêu chuẩn"}
+                      </p>
                       <p className="text-[11px] text-slate-400">
-                        đến {b.check_out}
+                        {b.hotel_name}
+                      </p>
+
+                      {/* 👉 HIỂN THỊ SỐ PHÒNG (P.201) NẾU ĐÃ CHECK-IN */}
+                      {b.room_number ? (
+                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 font-bold text-[11px] rounded-md border border-blue-200">
+                          🔑 Phòng: {b.room_number}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic block mt-0.5">
+                          (Chưa giao phòng)
+                        </span>
+                      )}
+                    </td>
+
+                    {/* CỘT NGÀY NHẬN / TRẢ ĐÃ FIX MÚI GIỜ VIỆT NAM */}
+                    <td className="py-4 px-4">
+                      <p className="font-bold text-emerald-800">
+                        Nhận: {formatStayDateTime(b.checkin_date, "14:00")}
+                      </p>
+                      <p className="text-slate-500 mt-0.5">
+                        Trả: {formatStayDateTime(b.checkout_date, "12:00")}
                       </p>
                     </td>
 
-                    <td className="py-4 px-4 text-right">
-                      <strong className="text-sm font-black text-[#ff6a00] block">
+                    <td className="py-4 px-4">
+                      <span className="font-black text-[#ff6a00] block text-sm">
                         {formatVND(b.total_price)}
-                      </strong>
-                      {b.deposit_amount > 0 && (
-                        <span className="text-[10px] text-emerald-600 font-bold block">
-                          Đã cọc: {formatVND(b.deposit_amount)}
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="py-4 px-4 text-center">
-                      <span
-                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${st.color}`}
-                      >
-                        {st.label}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">
+                        Trạng thái:{" "}
+                        {b.status === "checked_in"
+                          ? "Đang ở"
+                          : b.status === "confirmed"
+                            ? "Đã duyệt"
+                            : b.status}
                       </span>
                     </td>
 
-                    <td className="py-4 px-5 text-center">
-                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                        {/* Nút Check-in */}
+                    {/* CỘT THANH TOÁN */}
+                    <td className="py-4 px-4 text-center">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-full font-bold text-[10px] ${
+                          isPaid
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {isPaid ? "✓ Đã thanh toán" : "⚠️ Chưa thanh toán"}
+                      </span>
+                    </td>
+
+                    {/* CỘT THAO TÁC NGHIỆP VỤ */}
+                    <td className="py-4 px-5 text-right">
+                      <div className="flex justify-end gap-1.5">
+                        {!isPaid && (
+                          <button
+                            onClick={() => handleQuickPay(b.id)}
+                            className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-[11px] flex items-center gap-1 cursor-pointer"
+                            title="Xác nhận khách đã nộp tiền"
+                          >
+                            <DollarSign size={13} /> Thu tiền
+                          </button>
+                        )}
+
+                        {b.status === "pending" && (
+                          <button
+                            onClick={() => handleConfirmOrder(b.id)}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl cursor-pointer"
+                          >
+                            Xác nhận
+                          </button>
+                        )}
+
                         {b.status === "confirmed" && (
                           <button
                             onClick={() => {
-                              setCheckInModalBooking(b);
-                              setAssignedRoomInput(b.assigned_room || "P.101");
-                              setDepositAmountInput(500000);
+                              setCheckInModal(b);
+                              setAssignedRoom(b.room_number || "P.201");
+                              setEarlyOption("none");
+                              setPayMethodAtCheckIn("cash");
                             }}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-1 cursor-pointer"
                           >
                             <Key size={13} /> Check-in
                           </button>
                         )}
 
-                        {/* Nút Check-out */}
                         {b.status === "checked_in" && (
                           <button
                             onClick={() => {
-                              setCheckOutModalBooking(b);
-                              setExtraServiceFee(0);
-                              setCheckoutNotes("");
+                              setCheckOutModal(b);
+                              setLateOption("none");
+                              setMinibarFee(0);
+                              setOtherFee(0);
                             }}
-                            className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1"
+                            className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white font-bold rounded-xl flex items-center gap-1 cursor-pointer"
                           >
-                            <LogOutIcon size={13} /> Check-out
+                            <LogOut size={13} /> Check-out
                           </button>
                         )}
-
-                        {/* Nút Gửi Buồng Phòng dọn dẹp */}
-                        {b.status === "checked_in" && b.assigned_room && (
-                          <button
-                            onClick={() =>
-                              handleQuickHousekeepingRequest(
-                                b.assigned_room,
-                                b.hotel_id,
-                                b.hotel_name,
-                              )
-                            }
-                            className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl transition cursor-pointer"
-                            title="Yêu cầu Buồng phòng dọn dẹp"
-                          >
-                            <Sparkles size={14} />
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => setSelectedBookingDetails(b)}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition cursor-pointer"
-                          title="Chi tiết đơn"
-                        >
-                          <Eye size={14} />
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -671,373 +541,416 @@ export default function BookingListPage() {
         </div>
       ) : (
         <EmptyState
-          icon={Ticket}
-          title="Không có đơn phòng nào ở mục này"
-          description="Các đơn đặt phòng của khách hoặc đơn tại quầy sẽ hiển thị ở đây."
-          actionLabel="+ Khách đặt tại quầy"
-          onAction={() => setIsWalkInModalOpen(true)}
+          icon={CheckCircle2}
+          title="Không tìm thấy đơn đặt phòng nào"
+          description="Thử thay đổi bộ lọc trạng thái hoặc từ khóa tìm kiếm."
         />
       )}
 
-      {/* ── MODAL 1: CHECK-IN GIAO PHÒNG & THU TIỀN CỌC ── */}
-      {checkInModalBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL CHECK-IN: NHẬP VÀ GIAO SỐ PHÒNG THẬT
+         ───────────────────────────────────────────────────────────── */}
+      {checkInModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
-            <h3 className="font-black text-base text-emerald-700 flex items-center gap-2">
-              <Key size={18} /> Thủ Tục Check-in Nhận Phòng
-            </h3>
-            <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-1">
-              <p>
-                Khách hàng: <b>{checkInModalBooking.customer_name}</b> (
-                {checkInModalBooking.customer_phone})
-              </p>
-              <p>
-                Hạng phòng đặt: <b>{checkInModalBooking.room_name}</b>
-              </p>
-              <p>
-                Tổng tiền phòng:{" "}
-                <b>{formatVND(checkInModalBooking.total_price)}</b>
-              </p>
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Xác nhận số phòng bàn giao (Room Key) *
-              </label>
-              <input
-                required
-                placeholder="VD: P.101, P.202"
-                value={assignedRoomInput}
-                onChange={(e) => setAssignedRoomInput(e.target.value)}
-                className="w-full p-2.5 border rounded-xl font-bold text-blue-900 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Tiền cọc giữ chìa khóa / minibar (VND)
-              </label>
-              <input
-                type="number"
-                value={depositAmountInput}
-                onChange={(e) => setDepositAmountInput(e.target.value)}
-                className="w-full p-2.5 border rounded-xl font-mono font-bold text-emerald-700"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                onClick={() => setCheckInModalBooking(null)}
-                className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleConfirmCheckIn}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md cursor-pointer"
-              >
-                Hoàn tất Check-in
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 2: CHECK-OUT QUYẾT TOÁN & ĐẨY BUỒNG PHÒNG ── */}
-      {checkOutModalBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
-            <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
-              <LogOutIcon size={18} /> Thủ Tục Check-out & Quyết Toán
-            </h3>
-            <div className="p-3 bg-slate-50 rounded-2xl border space-y-1">
-              <p>
-                Khách hàng: <b>{checkOutModalBooking.customer_name}</b>
-              </p>
-              <p>
-                Phòng trả:{" "}
-                <b className="text-blue-900">
-                  {checkOutModalBooking.assigned_room}
-                </b>
-              </p>
-              <p>
-                Tiền phòng: <b>{formatVND(checkOutModalBooking.total_price)}</b>
-              </p>
-              <p>
-                Tiền cọc đã giữ:{" "}
-                <b className="text-emerald-700">
-                  {formatVND(checkOutModalBooking.deposit_amount)}
-                </b>
-              </p>
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Phụ phí phát sinh (Minibar, hư hao, đồ uống) VND
-              </label>
-              <input
-                type="number"
-                placeholder="0"
-                value={extraServiceFee}
-                onChange={(e) => setExtraServiceFee(e.target.value)}
-                className="w-full p-2.5 border rounded-xl font-mono font-bold text-rose-600"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Ghi chú cho bộ phận Buồng phòng dọn dẹp
-              </label>
-              <textarea
-                rows={2}
-                placeholder="VD: Thay toàn bộ ga giường, khách để quên cục sạc..."
-                value={checkoutNotes}
-                onChange={(e) => setCheckoutNotes(e.target.value)}
-                className="w-full p-2.5 border rounded-xl font-medium"
-              />
-            </div>
-
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-950 font-medium">
-              ✨ Bấm <b>"Xác nhận Check-out"</b> sẽ tự động phát tín hiệu sang
-              màn hình <b>"Giám Sát Buồng Phòng"</b> để nhân viên đến dọn dẹp
-              ngay!
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                onClick={() => setCheckOutModalBooking(null)}
-                className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleConfirmCheckOut}
-                className="px-5 py-2 bg-slate-900 hover:bg-black text-white font-bold rounded-xl shadow-md cursor-pointer"
-              >
-                Xác nhận Check-out
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 3: XẾP PHÒNG THỦ CÔNG ── */}
-      {assignRoomModalBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border space-y-4 text-xs">
-            <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
-              <BedDouble size={18} className="text-blue-600" /> Xếp Phòng Cho
-              Đơn #{assignRoomModalBooking.code}
-            </h3>
-            <p>
-              Khách: <b>{assignRoomModalBooking.customer_name}</b>
-            </p>
-            <p>
-              Hạng phòng: <b>{assignRoomModalBooking.room_name}</b>
-            </p>
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Nhập số phòng phân công *
-              </label>
-              <input
-                required
-                placeholder="VD: P.201, P.305"
-                value={assignedRoomInput}
-                onChange={(e) => setAssignedRoomInput(e.target.value)}
-                className="w-full p-2.5 border rounded-xl font-bold text-blue-900"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                onClick={() => setAssignRoomModalBooking(null)}
-                className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={handleConfirmAssignRoom}
-                className="px-5 py-2 bg-blue-600 text-white font-bold rounded-xl cursor-pointer"
-              >
-                Lưu xếp phòng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 4: HÓA ĐƠN QUYẾT TOÁN FOLIO ── */}
-      {dossierBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border space-y-4 text-xs">
-            <div className="text-center border-b pb-3">
-              <h2 className="font-black text-lg text-blue-950 uppercase">
-                {dossierBooking.hotel_name}
-              </h2>
-              <p className="text-slate-400 font-bold">
-                PHIẾU QUYẾT TOÁN THANH TOÁN (FOLIO)
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <p>
-                Mã hóa đơn: <b>#{dossierBooking.code}</b>
-              </p>
-              <p>
-                Khách hàng: <b>{dossierBooking.customer_name}</b> (
-                {dossierBooking.customer_phone})
-              </p>
-              <p>
-                Phòng: <b>{dossierBooking.assigned_room}</b> -{" "}
-                {dossierBooking.room_name}
-              </p>
-              <p>
-                Thời gian lưu trú: {dossierBooking.check_in} &rarr;{" "}
-                {dossierBooking.check_out}
-              </p>
-              <p>
-                Tiền phòng:{" "}
-                {formatVND(
-                  dossierBooking.total_price - (dossierBooking.extra_fee || 0),
-                )}
-              </p>
-              <p>
-                Phụ phí Minibar/Dịch vụ:{" "}
-                {formatVND(dossierBooking.extra_fee || 0)}
-              </p>
-              <div className="border-t pt-2 mt-2 flex justify-between items-center text-sm font-black text-emerald-700">
-                <span>TỔNG THANH TOÁN:</span>
-                <span>{formatVND(dossierBooking.total_price)}</span>
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                  <Key size={18} className="text-emerald-600" /> Thủ Tục
+                  Check-in & Bàn Giao Phòng
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Giờ chuẩn nhận phòng từ 14:00 chiều
+                </p>
               </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-3 border-t">
-              <button
-                onClick={() => setDossierBooking(null)}
-                className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
-              >
-                Đóng
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="px-5 py-2 bg-blue-900 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer size={15} /> In Hóa Đơn
+              <button onClick={() => setCheckInModal(null)}>
+                <X size={18} />
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* ── MODAL 5: KHÁCH ĐẶT TẠI QUẦY (WALK-IN) ── */}
-      {isWalkInModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
-            <h3 className="font-black text-base text-slate-900">
-              Tạo Đơn Khách Đặt Tại Quầy
-            </h3>
-            <p className="text-slate-500">
-              Cơ sở: <b>{selectedHotelObj?.name}</b>
-            </p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const newBooking = {
-                  code: `GST-${Date.now().toString().slice(-6)}`,
-                  hotel_id: String(selectedHotelId),
-                  hotel_name: selectedHotelObj?.name || "Cơ sở lưu trú",
-                  customer_name: walkInForm.guestName,
-                  customer_phone: walkInForm.guestPhone,
-                  customer_email: walkInForm.guestEmail || "walkin@guest.com",
-                  room_name: walkInForm.roomName,
-                  assigned_room: walkInForm.assignedRoom,
-                  total_price: Number(walkInForm.totalPrice),
-                  deposit_amount: Number(walkInForm.depositAmount),
-                  payment_method: walkInForm.paymentMethod,
-                  status: walkInForm.autoCheckIn ? "checked_in" : "confirmed",
-                  check_in: walkInForm.checkIn,
-                  check_out: walkInForm.checkOut,
-                };
-                saveAndSync([newBooking, ...bookings]);
-                alert(`✓ Đã tạo thành công đơn #${newBooking.code}!`);
-                setIsWalkInModalOpen(false);
-              }}
-              className="space-y-3"
-            >
-              <input
-                required
-                placeholder="Tên khách hàng *"
-                value={walkInForm.guestName}
-                onChange={(e) =>
-                  setWalkInForm({ ...walkInForm, guestName: e.target.value })
-                }
-                className="w-full p-2.5 border rounded-xl font-bold"
-              />
-              <input
-                required
-                placeholder="Số điện thoại *"
-                value={walkInForm.guestPhone}
-                onChange={(e) =>
-                  setWalkInForm({ ...walkInForm, guestPhone: e.target.value })
-                }
-                className="w-full p-2.5 border rounded-xl font-mono"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  required
-                  placeholder="Số phòng (VD: P.101)"
-                  value={walkInForm.assignedRoom}
-                  onChange={(e) =>
-                    setWalkInForm({
-                      ...walkInForm,
-                      assignedRoom: e.target.value,
-                    })
-                  }
-                  className="w-full p-2.5 border rounded-xl font-bold"
-                />
-                <input
-                  required
-                  type="number"
-                  placeholder="Tiền phòng"
-                  value={walkInForm.totalPrice}
-                  onChange={(e) =>
-                    setWalkInForm({
-                      ...walkInForm,
-                      totalPrice: Number(e.target.value),
-                    })
-                  }
-                  className="w-full p-2.5 border rounded-xl font-bold text-emerald-700"
-                />
+            <form onSubmit={handlePerformCheckIn} className="space-y-3">
+              <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                <p className="text-slate-600">
+                  Khách hàng: <b>{checkInModal.customer_name}</b>
+                </p>
+                <p className="text-slate-600">
+                  Hạng phòng: <b>{checkInModal.room_name}</b>
+                </p>
+                <p className="text-slate-600">
+                  Thời gian nhận:{" "}
+                  <b className="text-emerald-800">
+                    {formatStayDateTime(checkInModal.checkin_date, "14:00")}
+                  </b>
+                </p>
+                <p className="text-slate-600">
+                  Tiền phòng cơ bản:{" "}
+                  <b>{formatVND(checkInModal.total_price)}</b>
+                </p>
               </div>
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="autocheckin"
-                  checked={walkInForm.autoCheckIn}
-                  onChange={(e) =>
-                    setWalkInForm({
-                      ...walkInForm,
-                      autoCheckIn: e.target.checked,
-                    })
-                  }
-                />
-                <label
-                  htmlFor="autocheckin"
-                  className="font-bold text-slate-700"
-                >
-                  Check-in nhận phòng ngay lập tức
+
+              {checkInModal.payment_status !== "paid" ? (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
+                  <p className="font-bold text-amber-900 flex items-center gap-1">
+                    <AlertCircle size={15} /> Khách CHƯA thanh toán tiền phòng!
+                  </p>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Xác nhận hình thức thu tiền tại quầy:
+                    </label>
+                    <select
+                      value={payMethodAtCheckIn}
+                      onChange={(e) => setPayMethodAtCheckIn(e.target.value)}
+                      className="w-full p-2 border rounded-xl font-bold bg-white"
+                    >
+                      <option value="cash">
+                        💵 Đã thu tiền mặt đủ tại quầy
+                      </option>
+                      <option value="transfer">
+                        📱 Khách đã quét mã QR chuyển khoản
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 font-bold flex items-center gap-1.5">
+                  <CheckCircle2 size={16} /> Đơn phòng này đã thanh toán trước
+                  (paid)
+                </div>
+              )}
+
+              {/* Ô NHẬP SỐ PHÒNG BÀN GIAO */}
+              <div>
+                <label className="block font-bold mb-1">
+                  Số phòng bàn giao (Giao chìa khóa) *
                 </label>
+                <input
+                  required
+                  value={assignedRoom}
+                  onChange={(e) => setAssignedRoom(e.target.value)}
+                  placeholder="VD: P.201, Phòng 305..."
+                  className="w-full p-2.5 border rounded-xl font-bold text-slate-900 bg-slate-50"
+                />
               </div>
-              <div className="flex justify-end gap-2 pt-2 border-t">
+
+              <div>
+                <label className="block font-bold mb-1">
+                  Quy định nhận phòng sớm (Early Check-in)
+                </label>
+                <select
+                  value={earlyOption}
+                  onChange={(e) => setEarlyOption(e.target.value)}
+                  className="w-full p-2.5 border rounded-xl font-medium bg-white"
+                >
+                  <option value="none">
+                    Đúng giờ chuẩn (Sau 14:00) - Miễn phụ thu
+                  </option>
+                  <option value="30">
+                    Check-in từ 09:00 - 14:00 (+30% giá phòng)
+                  </option>
+                  <option value="50">
+                    Check-in sớm từ 05:00 - 09:00 (+50% giá phòng)
+                  </option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
                 <button
                   type="button"
-                  onClick={() => setIsWalkInModalOpen(false)}
+                  onClick={() => setCheckInModal(null)}
                   className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl cursor-pointer"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer"
                 >
-                  Tạo Đơn
+                  {checkInModal.payment_status !== "paid"
+                    ? "✓ Xác nhận đã thu tiền & Giao chìa khóa"
+                    : "✓ Bàn giao chìa khóa (Check-in)"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CHECK-OUT */}
+      {checkOutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                  <Receipt size={18} className="text-blue-600" /> Quyết Toán &
+                  Trả Phòng (Check-out)
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Giờ chuẩn trả phòng trước 12:00 trưa
+                </p>
+              </div>
+              <button onClick={() => setCheckOutModal(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handlePerformCheckOut} className="space-y-3">
+              <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                <p className="text-slate-600">
+                  Khách hàng: <b>{checkOutModal.customer_name}</b>
+                </p>
+                {checkOutModal.room_number && (
+                  <p className="text-slate-600">
+                    Phòng đang ở:{" "}
+                    <b className="text-blue-700 font-bold">
+                      {checkOutModal.room_number}
+                    </b>
+                  </p>
+                )}
+                <p className="text-slate-600">
+                  Thời gian trả:{" "}
+                  <b className="text-slate-900">
+                    {formatStayDateTime(checkOutModal.checkout_date, "12:00")}
+                  </b>
+                </p>
+                <p className="text-slate-600">
+                  Tiền phòng cơ bản:{" "}
+                  <b>{formatVND(checkOutModal.total_price)}</b>
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1">
+                  Quy định trả phòng trễ (Late Check-out)
+                </label>
+                <select
+                  value={lateOption}
+                  onChange={(e) => setLateOption(e.target.value)}
+                  className="w-full p-2.5 border rounded-xl font-medium bg-white"
+                >
+                  <option value="none">
+                    Đúng giờ (Trước 12:00) - Không phụ thu
+                  </option>
+                  <option value="30">
+                    Trả phòng từ sau 12:00 - 15:00 (+30% tiền phòng)
+                  </option>
+                  <option value="50">
+                    Trả phòng từ sau 15:00 - 18:00 (+50% tiền phòng)
+                  </option>
+                  <option value="100">
+                    Trả phòng sau 18:00 (+100% tính nguyên 1 ngày)
+                  </option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold mb-1 flex items-center gap-1">
+                    <Coffee size={13} className="text-amber-600" /> Tiền Minibar
+                    / Nước uống
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={minibarFee}
+                    onChange={(e) => setMinibarFee(e.target.value)}
+                    className="w-full p-2 border rounded-xl font-bold"
+                    placeholder="0 đ"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold mb-1">
+                    Dịch vụ khác / Đền bù
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={otherFee}
+                    onChange={(e) => setOtherFee(e.target.value)}
+                    className="w-full p-2 border rounded-xl font-bold"
+                    placeholder="0 đ"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setCheckOutModal(null)}
+                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-slate-900 hover:bg-black text-white font-bold rounded-xl cursor-pointer"
+                >
+                  Hoàn tất quyết toán & Thu hồi phòng
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL WALK-IN */}
+      {isWalkInOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border space-y-4 text-xs">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                  <UserPlus size={18} className="text-blue-600" /> Tạo Đơn Đặt
+                  Phòng Tại Quầy (Walk-in)
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Dành cho khách đến trực tiếp lễ tân không qua website
+                </p>
+              </div>
+              <button onClick={() => setIsWalkInOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateWalkIn} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold mb-1">
+                    Cơ sở khách sạn *
+                  </label>
+                  <select
+                    required
+                    value={walkInForm.hotel_id}
+                    onChange={(e) =>
+                      setWalkInForm({ ...walkInForm, hotel_id: e.target.value })
+                    }
+                    className="w-full p-2.5 border rounded-xl font-bold bg-slate-50"
+                  >
+                    {hotels.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        🏨 {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold mb-1">Hạng phòng *</label>
+                  <select
+                    required
+                    value={walkInForm.room_id}
+                    onChange={(e) => {
+                      const rId = e.target.value;
+                      const selectedR = rooms.find(
+                        (r) => String(r.id) === String(rId),
+                      );
+                      setWalkInForm({
+                        ...walkInForm,
+                        room_id: rId,
+                        total_price: selectedR
+                          ? Number(selectedR.base_price || 650000)
+                          : walkInForm.total_price,
+                      });
+                    }}
+                    className="w-full p-2.5 border rounded-xl font-bold bg-slate-50"
+                  >
+                    {rooms.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        🛏️ {r.name} ({formatVND(r.base_price)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold mb-1">
+                    Họ và tên khách *
+                  </label>
+                  <input
+                    required
+                    value={walkInForm.customer_name}
+                    onChange={(e) =>
+                      setWalkInForm({
+                        ...walkInForm,
+                        customer_name: e.target.value,
+                      })
+                    }
+                    placeholder="VD: Anh Tuấn, Chị Hoa..."
+                    className="w-full p-2.5 border rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold mb-1">
+                    Số điện thoại liên hệ
+                  </label>
+                  <input
+                    value={walkInForm.guest_phone}
+                    onChange={(e) =>
+                      setWalkInForm({
+                        ...walkInForm,
+                        guest_phone: e.target.value,
+                      })
+                    }
+                    placeholder="0912 345 678"
+                    className="w-full p-2.5 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold mb-1">
+                    Giá thanh toán thực tế (VNĐ)
+                  </label>
+                  <input
+                    type="number"
+                    step="10000"
+                    value={walkInForm.total_price}
+                    onChange={(e) =>
+                      setWalkInForm({
+                        ...walkInForm,
+                        total_price: e.target.value,
+                      })
+                    }
+                    className="w-full p-2.5 border rounded-xl font-black text-[#ff6a00]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold mb-1">
+                    Hình thức thu tiền
+                  </label>
+                  <select
+                    value={walkInForm.payment_method}
+                    onChange={(e) =>
+                      setWalkInForm({
+                        ...walkInForm,
+                        payment_method: e.target.value,
+                      })
+                    }
+                    className="w-full p-2.5 border rounded-xl font-bold bg-white"
+                  >
+                    <option value="cash">💵 Đã thu tiền mặt tại quầy</option>
+                    <option value="transfer">📱 Đã chuyển khoản qua QR</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsWalkInOpen(false)}
+                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer"
+                >
+                  Lưu & Thu tiền hoàn tất
                 </button>
               </div>
             </form>

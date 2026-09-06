@@ -1,3 +1,4 @@
+// src/components/auth/Step4PoliciesAndOperations.jsx
 import React, { useState } from "react";
 import {
   Clock,
@@ -15,8 +16,8 @@ import {
   Tag,
 } from "lucide-react";
 
-// DANH MỤC 24+ TIỆN ÍCH ĐẦY ĐỦ CHUẨN RESORT & KHÁCH SẠN
-const DEFAULT_AMENITIES_LIST = [
+// 👉 ĐÃ EXPORT DANH MỤC 24+ TIỆN ÍCH CHUẨN ĐỂ ĐỒNG BỘ VÀO BẢNG hotel_amenity
+export const DEFAULT_AMENITIES_LIST = [
   { id: "wifi", label: "Wi-Fi miễn phí tốc độ cao" },
   { id: "parking", label: "Bãi đỗ xe ô tô tại khách sạn" },
   { id: "24h_front_desk", label: "Lễ tân phục vụ 24/7" },
@@ -51,7 +52,6 @@ export const Step4PoliciesAndOperations = ({
   const propertyAmenities = data?.propertyAmenities || [];
   const [customAmenityInput, setCustomAmenityInput] = useState("");
 
-  // 1. Quản lý Tiện ích tùy chỉnh thêm mới
   const toggleAmenity = (idOrLabel) => {
     const exists = propertyAmenities.includes(idOrLabel);
     const updated = exists
@@ -70,7 +70,6 @@ export const Step4PoliciesAndOperations = ({
     setCustomAmenityInput("");
   };
 
-  // 2. Danh sách quy định động
   const policies =
     data?.policies && data?.policies.length > 0
       ? data.policies
@@ -89,7 +88,6 @@ export const Step4PoliciesAndOperations = ({
           },
         ];
 
-  // 3. Danh sách trải nghiệm xung quanh động
   const experiences =
     data?.experiences && data?.experiences.length > 0
       ? data.experiences
@@ -102,7 +100,6 @@ export const Step4PoliciesAndOperations = ({
           },
         ];
 
-  // Xử lý Thêm / Sửa / Xóa Quy định
   const handleAddPolicy = () => {
     const newPolicy = {
       id: `pol-${Date.now()}`,
@@ -124,7 +121,6 @@ export const Step4PoliciesAndOperations = ({
     onChange({ policies: updated });
   };
 
-  // Xử lý Thêm / Sửa / Xóa Trải nghiệm
   const handleAddExperience = () => {
     const newExp = {
       id: `exp-${Date.now()}`,
@@ -187,7 +183,7 @@ export const Step4PoliciesAndOperations = ({
               type="text"
               value={data?.checkInTo || "23:59"}
               onChange={(e) => onChange({ checkInTo: e.target.value })}
-              placeholder="VD: 23:59 (hoặc 24/24)"
+              placeholder="VD: 23:59"
               className="w-full h-11 px-3.5 rounded-xl border border-slate-300 bg-white font-bold outline-none focus:border-blue-600"
             />
           </div>
@@ -219,7 +215,7 @@ export const Step4PoliciesAndOperations = ({
           </div>
         </div>
 
-        {/* CHỌN NHANH HOẶC TỰ SOẠN CHÍNH SÁCH HỦY */}
+        {/* CHỌN NHANH CHÍNH SÁCH HỦY */}
         <div className="space-y-3 pt-2">
           <label className="block text-xs font-bold text-slate-700">
             Chính sách hủy phòng áp dụng cho khách:
@@ -266,7 +262,7 @@ export const Step4PoliciesAndOperations = ({
         </div>
       </div>
 
-      {/* ── SECTION 2: BỮA SÁNG, TRẺ EM & THÚ CƯNG (CÓ GHI CHÚ CHI TIẾT) ── */}
+      {/* ── SECTION 2: BỮA SÁNG, TRẺ EM & THÚ CƯNG ── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
           <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
@@ -283,7 +279,6 @@ export const Step4PoliciesAndOperations = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
-          {/* Bữa sáng */}
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
             <label className="block font-bold text-slate-800 flex items-center gap-1.5">
               <Coffee className="w-4 h-4 text-amber-600" /> Bữa sáng (Breakfast)
@@ -301,12 +296,11 @@ export const Step4PoliciesAndOperations = ({
               type="text"
               value={data?.breakfastNote || ""}
               onChange={(e) => onChange({ breakfastNote: e.target.value })}
-              placeholder="VD: Buffet quốc tế 150k/suất, floating breakfast..."
+              placeholder="VD: Buffet quốc tế 150k/suất..."
               className="w-full h-9 px-3 rounded-lg border border-slate-300 bg-white text-[11px] font-medium outline-none"
             />
           </div>
 
-          {/* Trẻ em */}
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
             <label className="block font-bold text-slate-800 flex items-center gap-1.5">
               <Baby className="w-4 h-4 text-blue-600" /> Trẻ em & Giường phụ
@@ -326,12 +320,11 @@ export const Step4PoliciesAndOperations = ({
               type="text"
               value={data?.childrenNote || ""}
               onChange={(e) => onChange({ childrenNote: e.target.value })}
-              placeholder="VD: Dưới 6 tuổi miễn phí, kê thêm giường 300k..."
+              placeholder="VD: Dưới 6 tuổi miễn phí..."
               className="w-full h-9 px-3 rounded-lg border border-slate-300 bg-white text-[11px] font-medium outline-none"
             />
           </div>
 
-          {/* Thú cưng */}
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
             <label className="block font-bold text-slate-800 flex items-center gap-1.5">
               <Dog className="w-4 h-4 text-orange-600" /> Thú cưng (Pet
@@ -352,14 +345,14 @@ export const Step4PoliciesAndOperations = ({
               type="text"
               value={data?.petsNote || ""}
               onChange={(e) => onChange({ petsNote: e.target.value })}
-              placeholder="VD: Chỉ nhận chó mèo dưới 5kg, phụ thu 100k..."
+              placeholder="VD: Nhận chó mèo dưới 5kg..."
               className="w-full h-9 px-3 rounded-lg border border-slate-300 bg-white text-[11px] font-medium outline-none"
             />
           </div>
         </div>
       </div>
 
-      {/* ── SECTION 3: TIỆN ÍCH CHỖ NGHỈ (24+ MỤC + TỰ THÊM TIỆN ÍCH TÙY CHỌN) ── */}
+      {/* ── SECTION 3: TIỆN ÍCH CHỖ NGHỈ (24+ MỤC + TỰ THÊM TIỆN ÍCH) ── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -407,7 +400,6 @@ export const Step4PoliciesAndOperations = ({
             );
           })}
 
-          {/* HIỂN THỊ CÁC TIỆN ÍCH DO OWNER TỰ GÕ THÊM */}
           {propertyAmenities
             .filter(
               (item) =>
@@ -424,7 +416,7 @@ export const Step4PoliciesAndOperations = ({
                 <button
                   type="button"
                   onClick={() => toggleAmenity(customItem)}
-                  className="text-rose-500 hover:text-rose-700 ml-2"
+                  className="text-rose-500 hover:text-rose-700 ml-2 cursor-pointer"
                   title="Xóa tiện ích này"
                 >
                   <Trash2 size={14} />
@@ -433,7 +425,7 @@ export const Step4PoliciesAndOperations = ({
             ))}
         </div>
 
-        {/* Ô TỰ GÕ THÊM TIỆN ÍCH ĐỘC ĐÁO */}
+        {/* Ô TỰ GÕ THÊM TIỆN ÍCH */}
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center gap-3">
           <div className="flex-1 w-full relative">
             <Tag
@@ -459,7 +451,7 @@ export const Step4PoliciesAndOperations = ({
         </div>
       </div>
 
-      {/* ── SECTION 4: QUY ĐỊNH CỦA CHỖ NGHỈ (TỰ ĐẶT TIÊU ĐỀ & NỘI DUNG TÙY Ý) ── */}
+      {/* ── SECTION 4: QUY ĐỊNH CỦA CHỖ NGHỈ ── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -471,8 +463,8 @@ export const Step4PoliciesAndOperations = ({
                 4. Quy Định Chỗ Nghỉ (Tự do đặt Tiêu đề & Nội dung)
               </h2>
               <p className="text-xs text-slate-500">
-                Tự tạo các mục quy định như: *Di chuyển, Lịch Shuttle Bus, Hướng
-                dẫn nhận phòng, Đặc quyền VIP...*
+                Tự tạo các mục quy định như: *Di chuyển, Hướng dẫn nhận
+                phòng...*
               </p>
             </div>
           </div>
@@ -499,7 +491,7 @@ export const Step4PoliciesAndOperations = ({
                   onChange={(e) =>
                     handleUpdatePolicy(idx, "title", e.target.value)
                   }
-                  placeholder={`Tiêu đề mục ${idx + 1} (VD: Di chuyển, Lịch xe đưa đón, Đặc quyền The Level...)`}
+                  placeholder={`Tiêu đề mục ${idx + 1}`}
                   className="flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:border-blue-600 outline-none"
                 />
 
@@ -519,7 +511,7 @@ export const Step4PoliciesAndOperations = ({
                 onChange={(e) =>
                   handleUpdatePolicy(idx, "content", e.target.value)
                 }
-                placeholder="Nhập nội dung chi tiết cho mục này (Có thể gõ gạch đầu dòng - hoặc •)..."
+                placeholder="Nhập nội dung chi tiết cho mục này..."
                 className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs font-medium text-slate-700 focus:border-blue-600 outline-none leading-relaxed"
               />
             </div>
@@ -527,7 +519,7 @@ export const Step4PoliciesAndOperations = ({
         </div>
       </div>
 
-      {/* ── SECTION 5: TRẢI NGHIỆM PHẢI THỬ (CHỦ NHÀ TỰ TẠO KHU VUI CHƠI XUNG QUANH) ── */}
+      {/* ── SECTION 5: TRẢI NGHIỆM PHẢI THỬ ── */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
@@ -540,7 +532,6 @@ export const Step4PoliciesAndOperations = ({
               </h2>
               <p className="text-xs text-slate-500">
                 Giới thiệu các điểm du lịch, ẩm thực, giải trí gần khách sạn
-                (VD: *Grand World, Safari, Chợ đêm, Cáp treo...*)
               </p>
             </div>
           </div>
@@ -567,7 +558,7 @@ export const Step4PoliciesAndOperations = ({
                   onChange={(e) =>
                     handleUpdateExperience(idx, "title", e.target.value)
                   }
-                  placeholder={`Tên địa điểm / Khu vui chơi (VD: Tổ hợp Grand World, Vườn thú Safari, Bãi Sao...)`}
+                  placeholder={`Tên địa điểm / Khu vui chơi`}
                   className="flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-900 focus:border-blue-600 outline-none"
                 />
 
@@ -587,7 +578,7 @@ export const Step4PoliciesAndOperations = ({
                 onChange={(e) =>
                   handleUpdateExperience(idx, "content", e.target.value)
                 }
-                placeholder="Mô tả các hoạt động thú vị, khoảng cách từ khách sạn hoặc cách di chuyển đến đây..."
+                placeholder="Mô tả các hoạt động thú vị, khoảng cách từ khách sạn..."
                 className="w-full bg-white border border-slate-300 rounded-xl p-3 text-xs font-medium text-slate-700 focus:border-blue-600 outline-none leading-relaxed"
               />
             </div>

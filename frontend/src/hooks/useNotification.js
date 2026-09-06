@@ -1,78 +1,72 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
-import notificationService from "@/services/notificationService"; // Giả sử bạn có service này
+// src/hooks/useNotification.js
+import { useState, useCallback, useEffect } from "react";
+import notificationService from "@/services/notificationService";
 import { useAuthStore } from "@/stores/authStore";
 
 export const useNotification = () => {
   const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const { isAuthenticated } = useAuthStore();
 
-  // --- 1. LẤY DANH SÁCH THÔNG BÁO ---
   const fetchNotifications = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
 
     setLoading(true);
     try {
-      const response = await notificationService.getAll();
-      // Giả sử API trả về mảng các thông báo: [{id, title, message, is_read, createdAt}, ...]
-      setNotifications(response.data || []);
+      const res = await notificationService.getAll();
+      const list = Array.isArray(res)
+        ? res
+        : res?.notifications || res?.data || [];
+      setNotifications(list);
+      setUnreadCount(
+        Number(
+          res?.unreadCount ||
+            list.filter((n) => !n.readAt && !n.read_at).length,
+        ),
+      );
     } catch (err) {
+      console.warn("Lỗi tải thông báo:", err);
       setError("Không thể tải thông báo");
     } finally {
       setLoading(false);
     }
   }, [isAuthenticated]);
 
-  // Tự động tải thông báo khi mount (chỉ khi đã đăng nhập)
   useEffect(() => {
     fetchNotifications();
-
-    // Tùy chọn: Bạn có thể set interval để tự động kiểm tra thông báo mới sau mỗi 2 phút
-    const interval = setInterval(fetchNotifications, 120000);
-    return () => clearInterval(interval);
   }, [fetchNotifications]);
 
-  // --- 2. TÍNH TOÁN SỐ LƯỢNG CHƯA ĐỌC (DERIVED STATE) ---
-  const unreadCount = useMemo(() => {
-    return notifications.filter((n) => !n.is_read).length;
-  }, [notifications]);
-
-  // --- 3. ĐÁNH DẤU MỘT THÔNG BÁO LÀ ĐÃ ĐỌC ---
   const markAsRead = async (id) => {
-    // Optimistic UI: Cập nhật giao diện trước
     setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
+      prev.map((n) =>
+        String(n.id) === String(id) ? { ...n, read_at: new Date() } : n,
+      ),
     );
+    setUnreadCount((prev) => Math.max(0, prev - 1));
 
     try {
       await notificationService.markAsRead(id);
     } catch (err) {
-      // Nếu API lỗi, bạn có thể fetch lại để đồng bộ hoặc giữ nguyên (silent fail)
-      console.error("Lỗi đánh dấu đã đọc:", err);
+      console.warn("Lỗi đánh dấu đã đọc:", err);
     }
   };
 
-  // --- 4. ĐÁNH DẤU TẤT CẢ LÀ ĐÃ ĐỌC ---
   const markAllAsRead = async () => {
-    const previousNotifications = [...notifications];
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setNotifications((prev) =>
+      prev.map((n) => ({ ...n, read_at: new Date() })),
+    );
+    setUnreadCount(0);
 
     try {
       await notificationService.markAllAsRead();
     } catch (err) {
-      setNotifications(previousNotifications); // Hoàn tác nếu lỗi
-      alert("Không thể cập nhật trạng thái thông báo");
-    }
-  };
-
-  // --- 5. XÓA THÔNG BÁO ---
-  const deleteNotification = async (id) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-    try {
-      await notificationService.delete(id);
-    } catch (err) {
-      fetchNotifications(); // Đồng bộ lại nếu lỗi
+      fetchNotifications();
     }
   };
 
@@ -83,7 +77,6 @@ export const useNotification = () => {
     error,
     markAsRead,
     markAllAsRead,
-    deleteNotification,
     refresh: fetchNotifications,
   };
 };

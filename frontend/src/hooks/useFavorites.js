@@ -1,3 +1,4 @@
+// src/hooks/useFavorites.js
 import { useState, useCallback, useEffect } from "react";
 import hotelService from "@/services/hotelService";
 import { useAuthStore } from "@/stores/authStore";
@@ -8,44 +9,48 @@ export const useFavorites = () => {
   const [error, setError] = useState(null);
   const { isAuthenticated } = useAuthStore();
 
-  // --- 1. LẤY DANH SÁCH YÊU THÍCH ---
   const fetchFavorites = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      setFavorites([]);
+      return;
+    }
 
     setLoading(true);
+    setError(null);
     try {
       const response = await hotelService.getFavorites();
-      // Giả sử trả về mảng các khách sạn
-      setFavorites(response.data || []);
+      const list = Array.isArray(response)
+        ? response
+        : response?.favorites || response?.data || [];
+      setFavorites(list);
     } catch (err) {
+      console.warn("Lỗi tải danh sách yêu thích:", err);
       setError("Không thể tải danh sách yêu thích");
+      setFavorites([]);
     } finally {
       setLoading(false);
     }
   }, [isAuthenticated]);
 
-  // Tự động tải khi mount (nếu đã login)
   useEffect(() => {
     fetchFavorites();
   }, [fetchFavorites]);
 
-  // --- 2. THÊM / XÓA YÊU THÍCH (TOGGLE) ---
   const toggleFavorite = async (hotel) => {
     if (!isAuthenticated) {
-      alert("Vui lòng đăng nhập để lưu yêu thích!");
+      alert("Vui lòng đăng nhập để lưu khách sạn yêu thích!");
       return;
     }
 
-    const hotelId = hotel.id || hotel.hotel_id;
+    const hotelId = String(hotel.id || hotel.hotel_id);
     const isCurrentlyFavorite = favorites.some(
-      (fav) => (fav.id || fav.hotel_id) === hotelId,
+      (fav) => String(fav.id || fav.hotel_id) === hotelId,
     );
 
-    // OPTIMISTIC UI: Cập nhật state cục bộ ngay lập tức
     const previousFavorites = [...favorites];
     if (isCurrentlyFavorite) {
       setFavorites(
-        favorites.filter((fav) => (fav.id || fav.hotel_id) !== hotelId),
+        favorites.filter((fav) => String(fav.id || fav.hotel_id) !== hotelId),
       );
     } else {
       setFavorites([...favorites, hotel]);
@@ -58,16 +63,16 @@ export const useFavorites = () => {
         await hotelService.addFavorite(hotelId);
       }
     } catch (err) {
-      // HOÀN TÁC (ROLLBACK) nếu API lỗi
       setFavorites(previousFavorites);
       alert("Có lỗi xảy ra khi cập nhật yêu thích");
     }
   };
 
-  // --- 3. KIỂM TRA TRẠNG THÁI (HELPER) ---
   const isFavorite = useCallback(
     (hotelId) => {
-      return favorites.some((fav) => (fav.id || fav.hotel_id) === hotelId);
+      return favorites.some(
+        (fav) => String(fav.id || fav.hotel_id) === String(hotelId),
+      );
     },
     [favorites],
   );

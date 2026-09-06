@@ -1,3 +1,4 @@
+// src/pages/guest/HomePage.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,7 +10,6 @@ import {
   Calendar as CalendarIcon,
   Moon,
   Users,
-  MapPin,
 } from "lucide-react";
 import {
   format,
@@ -41,34 +41,32 @@ const BACKEND_BASE_URL = (
 
 const CITY_LANDMARK_IMAGES = {
   "Hồ Chí Minh":
-    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800",
   "TP. Hồ Chí Minh":
-    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800",
   "Hà Nội":
-    "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800&auto=format&fit=crop&q=80",
-  "Đà Nẵng":
-    "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
+  "Đà Nẵng": "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800",
   "Nha Trang":
-    "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800",
   "Phú Quốc":
-    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
   "Đà Lạt":
-    "https://images.unsplash.com/photo-1517824806704-9040b037703b?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1517824806704-9040b037703b?w=800",
   "Vũng Tàu":
-    "https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?w=800&auto=format&fit=crop&q=80",
+    "https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?w=800",
 };
 
 const DEFAULT_LANDMARK =
-  "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800&auto=format&fit=crop&q=80";
+  "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800";
 
 const parseImageUrl = (img) => {
   if (!img)
-    return "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80";
-  let raw =
-    typeof img === "string" ? img : img.url || img.path || img.preview || "";
+    return "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
+  let raw = typeof img === "string" ? img : img.url || img.path || "";
   raw = String(raw).trim();
   if (!raw || raw.startsWith("blob:"))
-    return "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=600&q=80";
+    return "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
   if (
     raw.startsWith("http://") ||
     raw.startsWith("https://") ||
@@ -79,7 +77,7 @@ const parseImageUrl = (img) => {
   return `${BACKEND_BASE_URL}${cleanPath}`;
 };
 
-const HomePage = () => {
+export default function HomePage() {
   const navigate = useNavigate();
 
   const [trendingDestinations, setTrendingDestinations] = useState([]);
@@ -106,9 +104,6 @@ const HomePage = () => {
   const calendarRef = useRef(null);
   const guestRef = useRef(null);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🔍 FETCH DATA: CHẶN TUYỆT ĐỐI CƠ SỞ BỊ TỪ CHỐI (REJECTED) & CHƯA DUYỆT (PENDING)
-  // ════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     let isMounted = true;
 
@@ -118,114 +113,42 @@ const HomePage = () => {
         let apiHotels = [];
         try {
           const res = await hotelService.getAll();
-          apiHotels = Array.isArray(res) ? res : res?.data || res?.hotels || [];
-        } catch (e) {}
+          apiHotels = Array.isArray(res) ? res : res?.data || [];
+        } catch (e) {
+          console.error("Lỗi lấy danh sách khách sạn:", e);
+        }
 
-        const localApps = JSON.parse(
-          localStorage.getItem("pending_partner_applications") || "[]",
-        );
-        const approvedHotelIds = JSON.parse(
-          localStorage.getItem("approved_hotel_ids") || "[]",
-        ).map(String);
-        const rejectedHotelIds = JSON.parse(
-          localStorage.getItem("rejected_hotel_ids") || "[]",
-        ).map(String);
-        const deletedHotelIds = JSON.parse(
-          localStorage.getItem("deleted_hotel_ids") || "[]",
-        ).map(String);
+        const formattedHotels = apiHotels.map((h) => {
+          const hotelId = String(h.id);
+          const rawImg = h.image || h.thumbnail || "";
+          const price = Number(h.min_price || h.base_price || 500000);
 
-        // Gộp cả 2 nguồn
-        const combined = [...localApps, ...apiHotels];
-        const uniqueHotelsMap = new Map();
-
-        combined.forEach((h) => {
-          const hotelId = String(
-            h.id || h.hotel_id || h._id || h.applicationId || "",
-          ).trim();
-          const hotelAppId = String(h.applicationId || "").trim();
-          const hotelName = String(h.hotelNameVi || h.name || "").trim();
-
-          // 🛑 1. BỎ QUA NẾU ĐÃ BỊ XÓA
-          if (
-            !hotelId ||
-            deletedHotelIds.includes(hotelId) ||
-            deletedHotelIds.includes(hotelName) ||
-            Boolean(h.is_deleted || h.isDeleted || h.deletedAt) ||
-            h.status === "deleted"
-          ) {
-            return;
-          }
-
-          // 🛑 2. BỎ QUA NẾU BỊ ADMIN TỪ CHỐI (KIỂM TRA CHẶT CHẼ THEO ID & TRẠNG THÁI)
-          const isRejected =
-            rejectedHotelIds.includes(hotelId) ||
-            (hotelAppId && rejectedHotelIds.includes(hotelAppId)) ||
-            h.status === "rejected" ||
-            h.approval_status === "rejected";
-
-          if (isRejected) {
-            return; // 👈 CHẶN 100% CƠ SỞ BỊ TỪ CHỐI, KHÔNG CHO LÊN HOMEPAGE
-          }
-
-          // 🛑 3. CHỈ CHO PHÉP HIỂN THỊ NẾU ĐÃ ĐƯỢC ADMIN BẤM PHÊ DUYỆT
-          const isApproved =
-            approvedHotelIds.includes(hotelId) ||
-            (hotelAppId && approvedHotelIds.includes(hotelAppId)) ||
-            (h.status === "approved" && h.is_approved === true) ||
-            h.approval_status === "approved";
-
-          if (!isApproved) {
-            return; // 👈 CHƯA DUYỆT (PENDING) CŨNG BỊ CHẶN
-          }
-
-          const dedupeKey = hotelName.toLowerCase() || hotelId;
-
-          if (!uniqueHotelsMap.has(dedupeKey)) {
-            const rawImg =
-              h.image ||
-              h.hotelImages?.[0]?.url ||
-              h.hotelImages?.[0]?.preview ||
-              h.hotelImages?.[0] ||
-              "";
-            const price =
-              h.rooms?.[0]?.weekdayPrice ||
-              h.rooms?.[0]?.sell_price ||
-              h.min_price ||
-              h.base_price ||
-              h.price ||
-              h.salePrice ||
-              650000;
-
-            uniqueHotelsMap.set(dedupeKey, {
-              ...h,
-              id: hotelId,
-              title: hotelName || "Khách sạn nghỉ dưỡng",
-              name: hotelName || "Khách sạn nghỉ dưỡng",
-              city: h.province || h.city || "Hồ Chí Minh",
-              location: h.streetAddress
-                ? `${h.streetAddress}, ${h.province || h.city}`
-                : h.address || h.city || "Việt Nam",
-              image: parseImageUrl(rawImg),
-              salePrice: Number(price),
-              min_price: Number(price),
-              star_rating: Number(h.starRating || h.star_rating || 5),
-              type: h.hotelType || h.type || "Khách sạn",
-              rating: h.rating || 9.4,
-              review_count: h.review_count || 0,
-            });
-          }
+          return {
+            ...h,
+            id: hotelId,
+            title: h.name || "Khách sạn nghỉ dưỡng",
+            name: h.name || "Khách sạn nghỉ dưỡng",
+            city: h.city || "Việt Nam",
+            location: h.address
+              ? `${h.address}, ${h.city}`
+              : h.city || "Việt Nam",
+            image: parseImageUrl(rawImg),
+            salePrice: price,
+            min_price: price,
+            star_rating: Number(h.star_rating || 3),
+            stars: Number(h.star_rating || 3),
+            rating: Number(h.average_rating || 9.0),
+            review_count: Number(h.review_count || 0),
+          };
         });
 
-        const realHotelsList = Array.from(uniqueHotelsMap.values());
-
-        // Tạo điểm đến thịnh hành chỉ từ các khách sạn ĐÃ DUYỆT & KHÔNG BỊ TỪ CHỐI
+        // Điểm đến thịnh hành tính toán từ CSDL
         const cityStatsMap = new Map();
-        realHotelsList.forEach((h) => {
+        formattedHotels.forEach((h) => {
           const cityName = h.city || "Hồ Chí Minh";
           if (!cityStatsMap.has(cityName)) {
             cityStatsMap.set(cityName, {
               name: cityName,
-              title: cityName,
               hotelCount: 0,
               image: CITY_LANDMARK_IMAGES[cityName] || DEFAULT_LANDMARK,
             });
@@ -256,18 +179,17 @@ const HomePage = () => {
 
         if (!isMounted) return;
 
-        setUniqueStays(realHotelsList);
+        setUniqueStays(formattedHotels);
         setTrendingDestinations(validTrendingCities);
         setFavoriteHotelIds(favIdsSet);
       } catch (error) {
-        console.error("Lỗi tải dữ liệu Trang chủ:", error);
+        console.error("Lỗi tải trang chủ:", error);
       } finally {
         if (isMounted) setLoading(false);
       }
     };
 
     fetchRealData();
-
     return () => {
       isMounted = false;
     };
@@ -373,17 +295,17 @@ const HomePage = () => {
               btnClasses += "text-gray-300 font-normal cursor-not-allowed";
             } else if (isStart && isEnd) {
               btnClasses +=
-                "bg-[#ff5b00] text-white rounded-lg z-10 font-black shadow-md";
+                "bg-[#006ce4] text-white rounded-lg z-10 font-black shadow-md";
             } else if (isStart) {
               btnClasses +=
-                "bg-orange-400 text-white rounded-l-lg z-10 font-black shadow-md " +
+                "bg-[#006ce4] text-white rounded-l-lg z-10 font-black shadow-md " +
                 (checkOutDate ? "rounded-r-none" : "rounded-r-lg");
             } else if (isEnd) {
               btnClasses +=
-                "bg-orange-400 text-white rounded-r-lg rounded-l-none z-10 font-black shadow-md";
+                "bg-[#006ce4] text-white rounded-r-lg rounded-l-none z-10 font-black shadow-md";
             } else if (isInRange || isHoverRange) {
               btnClasses +=
-                "bg-[#fff1e8] text-gray-900 font-bold hover:bg-[#ffe3d1]";
+                "bg-blue-50 text-blue-900 font-bold hover:bg-blue-100";
             } else {
               btnClasses += isWeekend
                 ? "text-[#006ce4] font-bold hover:bg-gray-100 rounded-lg cursor-pointer"
@@ -437,7 +359,7 @@ const HomePage = () => {
           backgroundRepeat: "no-repeat",
         }}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-black/10 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10 pointer-events-none" />
 
         <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -456,7 +378,7 @@ const HomePage = () => {
                 <div ref={destRef} className="relative">
                   <div
                     onClick={() => setIsDestDropdownOpen(true)}
-                    className="flex items-center bg-white rounded-xl shadow-lg px-4 h-13 border border-gray-200 cursor-pointer focus-within:border-orange-500 transition-colors"
+                    className="flex items-center bg-white rounded-xl shadow-lg px-4 h-13 border border-gray-200 cursor-pointer focus-within:border-blue-600 transition-colors"
                   >
                     <Search size={20} className="text-gray-400 shrink-0 mr-3" />
                     <input
@@ -476,7 +398,7 @@ const HomePage = () => {
                     <div className="absolute left-0 top-full mt-2 w-full sm:w-[620px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-5 z-50 animate-in fade-in zoom-in-95">
                       <h4 className="font-extrabold text-sm text-gray-900 mb-3.5 flex items-center gap-1.5">
                         <Flame size={16} className="text-orange-500" />
-                        Thành phố có chỗ nghỉ đang mở bán
+                        Điểm đến có chỗ nghỉ đang mở bán
                       </h4>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -484,7 +406,7 @@ const HomePage = () => {
                           <div
                             key={item.name}
                             onClick={() => handleSelectDestination(item.name)}
-                            className="flex items-center gap-3 p-2 rounded-xl hover:bg-orange-50/60 cursor-pointer transition-colors group"
+                            className="flex items-center gap-3 p-2 rounded-xl hover:bg-blue-50/60 cursor-pointer transition-colors group"
                           >
                             <img
                               src={item.image}
@@ -492,7 +414,7 @@ const HomePage = () => {
                               className="w-11 h-11 rounded-xl object-cover shrink-0 shadow-sm group-hover:scale-105 transition-transform"
                             />
                             <div className="overflow-hidden">
-                              <span className="font-bold text-sm text-gray-900 block group-hover:text-[#ff5b00] transition-colors truncate">
+                              <span className="font-bold text-sm text-gray-900 block group-hover:text-[#006ce4] transition-colors truncate">
                                 {item.name}
                               </span>
                               <span className="text-[11px] text-gray-500 font-medium block truncate">
@@ -510,7 +432,7 @@ const HomePage = () => {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
                   <div
                     ref={calendarRef}
-                    className="relative md:col-span-7 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center justify-between hover:border-orange-500 transition-all select-none"
+                    className="relative md:col-span-7 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center justify-between hover:border-blue-600 transition-all select-none"
                     onClick={() => setIsCalendarOpen(!isCalendarOpen)}
                   >
                     <div className="flex items-center gap-2.5">
@@ -531,10 +453,7 @@ const HomePage = () => {
 
                     <div className="flex items-center gap-1 text-[11px] font-black text-gray-600 bg-gray-100 px-2 py-1 rounded-full">
                       <span>{totalNights}</span>
-                      <Moon
-                        size={12}
-                        className="text-amber-500 fill-amber-500"
-                      />
+                      <Moon size={12} className="text-blue-600" />
                     </div>
 
                     <div className="flex items-center gap-2.5">
@@ -556,7 +475,7 @@ const HomePage = () => {
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute left-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-6 w-[320px] sm:w-[580px] md:w-[620px] animate-in fade-in zoom-in-95 cursor-default"
+                        className="absolute left-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-6 w-[320px] sm:w-[580px] md:w-[620px] animate-in fade-in cursor-default"
                       >
                         <div className="flex justify-between items-center mb-3 px-1">
                           <button
@@ -570,15 +489,15 @@ const HomePage = () => {
                               startOfMonth(currentCalendarMonth),
                               startOfMonth(today),
                             )}
-                            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 disabled:opacity-20 transition-colors"
+                            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 disabled:opacity-20 transition-colors cursor-pointer"
                           >
                             <ChevronLeft size={20} />
                           </button>
 
                           <span className="text-xs font-bold text-gray-500">
                             {!checkOutDate
-                              ? "👉 Nhấp chọn ngày trả phòng"
-                              : "✓ Đã chọn ngày"}
+                              ? "👉 Chọn ngày trả phòng"
+                              : "✓ Đã chọn xong ngày"}
                           </span>
 
                           <button
@@ -588,7 +507,7 @@ const HomePage = () => {
                                 addMonths(prev, 1),
                               )
                             }
-                            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 transition-colors"
+                            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 transition-colors cursor-pointer"
                           >
                             <ChevronRight size={20} />
                           </button>
@@ -603,14 +522,11 @@ const HomePage = () => {
                           </div>
                         </div>
 
-                        <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-                          <span className="text-gray-500 font-medium">
-                            * Chọn ngày nhận rồi chọn ngày trả
-                          </span>
+                        <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-end text-xs">
                           <button
                             type="button"
                             onClick={() => setIsCalendarOpen(false)}
-                            className="px-4 py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-[#0a2540] font-bold rounded-lg shadow-sm shadow-amber-500/20 transition-all duration-200 active:scale-[0.98] cursor-pointer"
+                            className="px-5 py-2 bg-[#003580] text-white font-bold rounded-xl shadow cursor-pointer"
                           >
                             Xong
                           </button>
@@ -619,10 +535,9 @@ const HomePage = () => {
                     )}
                   </div>
 
-                  {/* KHÁCH */}
                   <div
                     ref={guestRef}
-                    className="relative md:col-span-3 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center gap-2.5 hover:border-orange-500 transition-all select-none"
+                    className="relative md:col-span-3 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center gap-2.5 hover:border-blue-600 transition-all select-none"
                     onClick={() => setIsGuestOpen(!isGuestOpen)}
                   >
                     <Users size={20} className="text-gray-400 shrink-0" />
@@ -650,7 +565,7 @@ const HomePage = () => {
                               onClick={() =>
                                 setRooms((r) => Math.max(1, r - 1))
                               }
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100"
+                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
                             >
                               -
                             </button>
@@ -660,7 +575,7 @@ const HomePage = () => {
                             <button
                               type="button"
                               onClick={() => setRooms((r) => r + 1)}
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100"
+                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
                             >
                               +
                             </button>
@@ -677,7 +592,7 @@ const HomePage = () => {
                               onClick={() =>
                                 setAdults((a) => Math.max(1, a - 1))
                               }
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100"
+                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
                             >
                               -
                             </button>
@@ -687,7 +602,7 @@ const HomePage = () => {
                             <button
                               type="button"
                               onClick={() => setAdults((a) => a + 1)}
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100"
+                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
                             >
                               +
                             </button>
@@ -697,7 +612,7 @@ const HomePage = () => {
                         <button
                           type="button"
                           onClick={() => setIsGuestOpen(false)}
-                          className="w-full py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-[#0a2540] shadow-md shadow-amber-500/20 text-xs font-bold rounded-lg mt-2 cursor-pointer transition-all duration-200 active:scale-[0.98]"
+                          className="w-full py-2 bg-[#003580] text-white text-xs font-bold rounded-lg mt-2 cursor-pointer"
                         >
                           Áp dụng
                         </button>
@@ -708,9 +623,9 @@ const HomePage = () => {
                   <button
                     type="button"
                     onClick={handleSearchSubmit}
-                    className="md:col-span-2 h-full min-h-[48px] bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-stone-700 font-black text-base rounded-xl shadow-lg shadow-amber-500/30 flex items-center justify-center transition-all active:scale-[0.98] cursor-pointer"
+                    className="md:col-span-2 h-full min-h-[48px] bg-[#003580] hover:bg-blue-900 text-white font-black text-base rounded-xl shadow-lg flex items-center justify-center transition-all active:scale-[0.98] cursor-pointer"
                   >
-                    Tìm
+                    Tìm kiếm
                   </button>
                 </div>
               </div>
@@ -722,10 +637,10 @@ const HomePage = () => {
                 onClick={() => handleSearchSubmit()}
                 className="w-full max-w-sm bg-white/95 backdrop-blur-md rounded-2xl p-5 shadow-2xl border border-white/50 space-y-2 cursor-pointer hover:bg-white transition-all group"
               >
-                <div className="text-xs font-black text-gray-700 uppercase tracking-wide">
+                <div className="text-xs font-black text-blue-700 uppercase tracking-wide">
                   Hệ thống GoStay
                 </div>
-                <h3 className="text-lg font-black text-[#0a2540] leading-tight group-hover:text-amber-600 transition-colors">
+                <h3 className="text-lg font-black text-[#0a2540] leading-tight group-hover:text-blue-600 transition-colors">
                   ĐẶT PHÒNG TRỰC TUYẾN 24/7
                 </h3>
                 <div className="text-xs text-gray-600 space-y-1">
@@ -738,7 +653,7 @@ const HomePage = () => {
                   <span className="text-xs font-bold text-slate-800">
                     Khám phá ngay &rarr;
                   </span>
-                  <div className="w-8 h-8 rounded-full bg-[#0a2540] group-hover:bg-gradient-to-r group-hover:from-amber-400 group-hover:to-amber-600 text-white group-hover:text-[#0a2540] flex items-center justify-center transition-all duration-200">
+                  <div className="w-8 h-8 rounded-full bg-[#0a2540] group-hover:bg-blue-600 text-white flex items-center justify-center transition-all">
                     <ChevronRight size={16} />
                   </div>
                 </div>
@@ -787,9 +702,8 @@ const HomePage = () => {
                     <h3 className="text-2xl font-black tracking-tight">
                       {place.name}
                     </h3>
-                    <span className="text-xl">🇻🇳</span>
                     {place.isTop1 && (
-                      <span className="bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-stone-700 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full shadow shadow-amber-500/20">
+                      <span className="bg-amber-400 text-slate-900 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
                         🔥 Top 1 Thịnh Hành
                       </span>
                     )}
@@ -832,7 +746,7 @@ const HomePage = () => {
         ) : uniqueStays.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {uniqueStays.map((stay) => {
-              const stayId = String(stay.id || stay.hotel_id || stay._id);
+              const stayId = String(stay.id);
               const isSavedInDb = favoriteHotelIds.has(stayId);
 
               return (
@@ -844,11 +758,11 @@ const HomePage = () => {
                   type={stay.type || "Khách sạn"}
                   title={stay.title || stay.name}
                   location={stay.location || stay.address}
-                  rating={stay.rating || 9.4}
+                  rating={stay.rating || 9.0}
                   reviewsCount={stay.review_count || 0}
                   salePrice={stay.salePrice || stay.min_price || 650000}
-                  stars={stay.star_rating || stay.stars || 5}
-                  isFavoriteInitial={isSavedInDb || stay.is_favorite}
+                  stars={stay.star_rating || 3}
+                  isFavoriteInitial={isSavedInDb}
                   onClick={() => navigate(`/hotel/${stayId}`)}
                 />
               );
@@ -862,6 +776,4 @@ const HomePage = () => {
       </section>
     </div>
   );
-};
-
-export default HomePage;
+}
