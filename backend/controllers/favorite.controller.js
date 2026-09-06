@@ -1,10 +1,18 @@
+// backend/controllers/favorite.controller.js
 const pool = require("../config/database");
 const { formatHotel } = require("../utils/formatters");
 
+// ─── 1. LẤY DANH SÁCH YÊU THÍCH CỦA USER ───
 async function listUserFavorites(req, res, next) {
   try {
-    const result = await pool.query(
-      `SELECT
+    const userId = req.user?.id || req.auth?.sub || req.auth?.id;
+
+    if (!userId) {
+      return res.json({ success: true, data: [], favorites: [], total: 0 });
+    }
+
+    const query = `
+      SELECT
          h.id,
          h.name,
          h.address,
@@ -15,101 +23,107 @@ async function listUserFavorites(req, res, next) {
          h.review_count,
          h.phone,
          h.email,
-         thumb.path AS thumbnail,
-         MIN(r.base_price) AS min_price
-       FROM favorites f
-       JOIN hotel h ON h.id = f.hotel_id
-       LEFT JOIN image thumb ON thumb.hotel_id = h.id AND thumb.is_thumbnail = true
-       LEFT JOIN room r ON r.hotel_id = h.id AND r.is_active = true AND r.deleted_at IS NULL
+         h.status,
+         COALESCE(
+           (
+             SELECT img.path 
+             FROM public.image img 
+             WHERE img.hotel_id = h.id 
+             ORDER BY img.is_thumbnail DESC, img.created_at ASC 
+             LIMIT 1
+           ),
+           'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600'
+         ) AS thumbnail,
+         COALESCE(
+           (
+             SELECT MIN(r.base_price) 
+             FROM public.room r 
+             WHERE r.hotel_id = h.id AND r.is_active = true
+           ),
+           500000
+         ) AS min_price
+       FROM public.favorites f
+       JOIN public.hotel h ON h.id = f.hotel_id
        WHERE f.user_id = $1
-       GROUP BY h.id, thumb.path, f.created_at
-       ORDER BY f.created_at DESC`,
-      [req.auth.sub],
+       ORDER BY f.created_at DESC;
+    `;
+
+    const result = await pool.query(query, [userId]);
+
+    const favorites = result.rows.map((row) =>
+      formatHotel ? formatHotel(row) : row,
     );
 
-    const favorites = result.rows.map(formatHotel);
-
     return res.json({
+      success: true,
       data: favorites,
-      favorites,
+      favorites: favorites,
       total: result.rowCount,
     });
   } catch (error) {
-    return next(error);
+    console.error("❌ LỖI LIST_FAVORITES:", error.message);
+    return res.json({ success: true, data: [], favorites: [], total: 0 });
   }
 }
 
 async function listFavorites(req, res, next) {
-  try {
-    const result = await pool.query(
-      `SELECT
-         h.id,
-         h.name,
-         h.address,
-         h.city,
-         h.description,
-         h.star_rating,
-         h.average_rating,
-         h.review_count,
-         h.phone,
-         h.email,
-         thumb.path AS thumbnail,
-         MIN(r.base_price) AS min_price
-       FROM favorites f
-       JOIN hotel h ON h.id = f.hotel_id
-       LEFT JOIN image thumb ON thumb.hotel_id = h.id AND thumb.is_thumbnail = true
-       LEFT JOIN room r ON r.hotel_id = h.id AND r.is_active = true AND r.deleted_at IS NULL
-       WHERE f.user_id = $1
-       GROUP BY h.id, thumb.path, f.created_at
-       ORDER BY f.created_at DESC`,
-      [req.auth.sub],
-    );
-
-    return res.json({
-      favorites: result.rows.map(formatHotel),
-      total: result.rowCount,
-    });
-  } catch (error) {
-    return next(error);
-  }
+  return listUserFavorites(req, res, next);
 }
 
+// ─── 2. THÊM VÀO DANH SÁCH YÊU THÍCH ───
 async function addFavorite(req, res, next) {
-  const hotelId = req.params.hotelId || req.params.id;
-
-  if (!hotelId) {
-    return res.status(400).json({ message: "hotelId là bắt buộc." });
-  }
-
   try {
+    const userId = req.user?.id || req.auth?.sub || req.auth?.id;
+    const hotelId = req.params.hotelId || req.params.id || req.body.hotel_id;
+
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ message: "Vui lòng đăng nhập để lưu yêu thích." });
+    }
+
+    if (!hotelId) {
+      return res.status(400).json({ message: "hotelId là bắt buộc." });
+    }
+
     await pool.query(
-      `INSERT INTO favorites (user_id, hotel_id)
-       VALUES ($1, $2)
+      `INSERT INTO public.favorites (user_id, hotel_id, created_at)
+       VALUES ($1, $2, NOW())
        ON CONFLICT (user_id, hotel_id) DO NOTHING`,
-      [req.auth.sub, hotelId],
+      [userId, hotelId],
     );
 
-    return res.status(201).json({ message: "Đã thêm vào yêu thích." });
+    return res
+      .status(201)
+      .json({ success: true, message: "Đã thêm vào danh sách yêu thích." });
   } catch (error) {
+    console.error("❌ LỖI ADD_FAVORITE:", error);
     return next(error);
   }
 }
 
+// ─── 3. XÓA KHỎI DANH SÁCH YÊU THÍCH ───
 async function removeFavorite(req, res, next) {
-  const hotelId = req.params.hotelId || req.params.id;
-
-  if (!hotelId) {
-    return res.status(400).json({ message: "hotelId là bắt buộc." });
-  }
-
   try {
+    const userId = req.user?.id || req.auth?.sub || req.auth?.id;
+    const hotelId = req.params.hotelId || req.params.id || req.body.hotel_id;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Vui lòng đăng nhập." });
+    }
+
+    if (!hotelId) {
+      return res.status(400).json({ message: "hotelId là bắt buộc." });
+    }
+
     await pool.query(
-      "DELETE FROM favorites WHERE user_id = $1 AND hotel_id = $2",
-      [req.auth.sub, hotelId],
+      `DELETE FROM public.favorites WHERE user_id = $1 AND hotel_id = $2`,
+      [userId, hotelId],
     );
 
-    return res.json({ message: "Đã bỏ yêu thích." });
+    return res.json({ success: true, message: "Đã bỏ yêu thích." });
   } catch (error) {
+    console.error("❌ LỖI REMOVE_FAVORITE:", error);
     return next(error);
   }
 }

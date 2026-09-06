@@ -1,44 +1,46 @@
-const swaggerJsdoc = require("swagger-jsdoc");
+// backend/swagger.js
+const swaggerJSDoc = require("swagger-jsdoc");
 
-const options = {
-  definition: {
-    openapi: "3.0.0",
-    info: {
-      title: "GoStay - Booking Hotel API",
-      version: "1.0.0",
-      description:
-        "API quản lý đặt phòng khách sạn GoStay. Hỗ trợ đặt phòng, thanh toán, yêu thích, đánh giá, quản trị admin.",
+const swaggerDefinition = {
+  openapi: "3.0.0",
+  info: {
+    title: "GoStay Booking API Documentation",
+    version: "1.0.0",
+    description:
+      "Hệ thống API RESTful hoàn chỉnh cho nền tảng Đặt phòng Khách sạn & Quản lý Lưu trú GoStay (PostgreSQL).",
+    contact: {
+      name: "GoStay Support Team",
+      email: "support@gostay.vn",
     },
-    servers: [
-      { url: "http://localhost:5000/api", description: "Local server" },
-    ],
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "JWT",
-        },
+  },
+  servers: [
+    {
+      url: "http://localhost:5000/api",
+      description: "Development Server",
+    },
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+        description: "Nhập token xác thực theo định dạng: Bearer <token>",
       },
     },
-    security: [{ bearerAuth: [] }],
-    tags: [
-      { name: "Auth", description: "Xác thực người dùng" },
-      { name: "Hotels", description: "Quản lý khách sạn" },
-      { name: "Bookings", description: "Quản lý đặt phòng" },
-      { name: "Favorites", description: "Yêu thích khách sạn" },
-      { name: "Payments", description: "Thanh toán" },
-      { name: "Promotions", description: "Khuyến mãi" },
-      { name: "Reviews", description: "Đánh giá" },
-      { name: "Rooms", description: "Quản lý phòng" },
-      { name: "Admin", description: "Quản trị viên" },
-      { name: "Notifications", description: "Thông báo" },
-      { name: "Health", description: "Kiểm tra kết nối" },
-    ],
   },
-  apis: ["./routes/*.js", "./admin/*.js"],
+  security: [
+    {
+      bearerAuth: [],
+    },
+  ],
 };
 
-const swaggerSpec = swaggerJsdoc(options);
+const options = {
+  swaggerDefinition,
+  apis: ["./routes/*.js", "./admin/*.js", "./controllers/*.js"],
+};
+
+const swaggerSpec = swaggerJSDoc(options);
 
 module.exports = swaggerSpec;

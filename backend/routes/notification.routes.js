@@ -1,6 +1,8 @@
+// backend/routes/notification.routes.js
 const express = require("express");
 const {
   listNotifications,
+  getUnreadCount,
   markAllNotificationsAsRead,
   markNotificationAsRead,
 } = require("../controllers/notification.controller");
@@ -10,48 +12,16 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-/**
- * @swagger
- * /notifications:
- *   get:
- *     summary: Lấy danh sách thông báo của user
- *     tags: [Notifications]
- *     security: [{ bearerAuth: [] }]
- *     responses:
- *       200:
- *         description: Danh sách thông báo
- */
+// 1. Lấy danh sách thông báo: GET /api/notifications
 router.get("/", listNotifications);
 
-/**
- * @swagger
- * /notifications/read-all:
- *   patch:
- *     summary: Đánh dấu tất cả thông báo đã đọc
- *     tags: [Notifications]
- *     security: [{ bearerAuth: [] }]
- *     responses:
- *       200:
- *         description: Đã đánh dấu
- */
+// 2. Lấy số lượng thông báo chưa đọc cho chuông Header: GET /api/notifications/unread-count
+router.get("/unread-count", getUnreadCount);
+
+// 3. Đánh dấu tất cả đã đọc: PATCH /api/notifications/read-all
 router.patch("/read-all", markAllNotificationsAsRead);
 
-/**
- * @swagger
- * /notifications/{id}/read:
- *   patch:
- *     summary: Đánh dấu một thông báo đã đọc
- *     tags: [Notifications]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200:
- *         description: Đã đánh dấu
- */
+// 4. Đánh dấu 1 thông báo cụ thể: PATCH /api/notifications/:id/read
 router.patch("/:id/read", markNotificationAsRead);
 
 module.exports = router;

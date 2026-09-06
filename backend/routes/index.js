@@ -1,3 +1,4 @@
+// backend/routes/index.js
 const express = require("express");
 const authRoutes = require("./auth.routes");
 const bookingRoutes = require("./booking.routes");
@@ -11,7 +12,9 @@ const reviewRoutes = require("./review.routes");
 const roomRoutes = require("./room.routes");
 const usersRoutes = require("./users.routes");
 const adminRoutes = require("../admin/admin.routes");
-const partnerRoutes = require("./partner.routes");
+const ownerRoutes = require("./owner.routes");
+const chatbotRoutes = require("./chatbot.routes");
+const uploadRoutes = require("./upload.routes"); // 👈 BỔ SUNG ROUTE UPLOAD
 
 const router = express.Router();
 
@@ -26,10 +29,9 @@ router.use("/promotions", promotionRoutes);
 router.use("/reviews", reviewRoutes);
 router.use("/rooms", roomRoutes);
 router.use("/users", usersRoutes);
-// ─── ADMIN - Yêu cầu role 'admin' (bảo vệ trong admin.routes.js) ───
 router.use("/admin", adminRoutes);
-
-// ─── PARTNER - Đăng ký đối tác (Public) ───
-router.use("/partner", partnerRoutes);
+router.use("/owner", ownerRoutes);
+router.use("/chatbot", chatbotRoutes);
+router.use("/uploads", uploadRoutes); // 👈 GẮN VÀO /api/uploads
 
 module.exports = router;

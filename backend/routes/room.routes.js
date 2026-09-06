@@ -1,90 +1,37 @@
+// backend/routes/room.routes.js
 const express = require("express");
 const {
-	getRoomById,
-	listRoomAmenities,
-	updateRoomInventory,
+  listRooms,
+  getRoomById,
+  createRoom,
+  updateRoom,
+  deleteRoom,
+  listRoomAmenities,
+  listMasterAmenities,
+  getRoomInventory,
+  updateRoomInventory,
 } = require("../controllers/room.controller");
+const { requireAuth } = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
-/**
- * @swagger
- * /rooms/{id}:
- *   get:
- *     summary: Lấy chi tiết phòng
- *     tags: [Rooms]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *         description: ID phòng
- *     responses:
- *       200:
- *         description: Chi tiết phòng
- *       404:
- *         description: Không tìm thấy
- */
-router.get("/:id", getRoomById);
+// 1. Lấy danh sách phòng theo query: GET /api/rooms?hotel_id=...
+router.get("/", listRooms);
 
-/**
- * @swagger
- * /rooms/{id}/amenities:
- *   get:
- *     summary: Lấy danh sách tiện nghi phòng
- *     tags: [Rooms]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200:
- *         description: Danh sách tiện nghi
- */
+// 2. Lấy danh mục tiện nghi tổng
+router.get("/amenities/master", listMasterAmenities);
+
+// 3. Thao tác CRUD phòng của Owner
+router.post("/", requireAuth, createRoom);
+router.put("/:id", requireAuth, updateRoom);
+router.delete("/:id", requireAuth, deleteRoom);
+
+// 4. Chi tiết phòng & Tiện nghi riêng
+router.get("/:id", getRoomById);
 router.get("/:id/amenities", listRoomAmenities);
 
-/**
- * @swagger
- * /rooms/{id}/inventory:
- *   put:
- *     summary: Cập nhật tồn kho phòng
- *     tags: [Rooms]
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               inventoryDate:
- *                 type: string
- *                 description: Ngày cập nhật (YYYY-MM-DD)
- *               startDate:
- *                 type: string
- *                 description: Ngày bắt đầu (YYYY-MM-DD, nếu cập nhật khoảng)
- *               endDate:
- *                 type: string
- *                 description: Ngày kết thúc (YYYY-MM-DD)
- *               availableCount:
- *                 type: number
- *                 description: Số lượng phòng có sẵn
- *               soldCount:
- *                 type: number
- *                 description: Số lượng đã bán
- *               lockedCount:
- *                 type: number
- *                 description: Số lượng tạm khóa
- *     responses:
- *       200:
- *         description: Cập nhật thành công
- */
-router.put("/:id/inventory", updateRoomInventory);
+// 5. Quản lý Tồn kho & Giá theo ngày (Bảng 7: room_inventory)
+router.get("/:id/inventory", getRoomInventory);
+router.patch("/:id/inventory", requireAuth, updateRoomInventory);
 
 module.exports = router;

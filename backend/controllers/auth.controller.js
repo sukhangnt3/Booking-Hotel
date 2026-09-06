@@ -1,10 +1,11 @@
+// backend/controllers/auth.controller.js
 const crypto = require("crypto");
-const bcrypt = require("bcryptjs"); // Chạy: npm install bcryptjs
+const bcrypt = require("bcryptjs");
 const pool = require("../config/database");
 const { createToken } = require("../utils/token");
 const { formatUser } = require("../utils/formatters");
 
-// ─── 1. LOAD USER & ROLE ───
+// ─── 1. LOAD USER & ROLE TỪ DATABASE ───
 async function loadUserWithRoles(userId) {
   const result = await pool.query(
     `SELECT
@@ -12,9 +13,14 @@ async function loadUserWithRoles(userId) {
        u.full_name,
        u.email,
        u.phone,
+       u.dob,
        u.avatar,
        u.activate,
+       u.email_verified,
+       u.phone_verified,
+       u.last_login,
        u.created_at,
+       u.updated_at,
        COALESCE(array_agg(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
      FROM users u
      LEFT JOIN user_roles ur ON ur.user_id = u.id
@@ -28,12 +34,13 @@ async function loadUserWithRoles(userId) {
 }
 
 async function ensureRole(client, roleName = "customer") {
+  const normalizedRole = String(roleName).toUpperCase();
   const result = await client.query(
-    `INSERT INTO roles (name)
-     VALUES ($1)
+    `INSERT INTO roles (id, name)
+     VALUES (gen_random_uuid(), $1)
      ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
      RETURNING id`,
-    [roleName],
+    [normalizedRole],
   );
 
   return result.rows[0].id;
@@ -49,7 +56,7 @@ function buildAuthResponse(user) {
   };
 }
 
-// ─── 2. GOOGLE LOGIN CHO KHÁCH HÀNG BÌNH THƯỜNG (VẪN GIỮ NGUYÊN) ───
+// ─── 2. GOOGLE LOGIN ───
 async function getGoogleProfile(accessToken) {
   const response = await fetch(
     "https://openidconnect.googleapis.com/v1/userinfo",
@@ -70,17 +77,18 @@ async function getGoogleProfile(accessToken) {
 
 async function googleLogin(req, res, next) {
   const { token } = req.body;
-  if (!token?.trim())
+  if (!token?.trim()) {
     return res.status(400).json({ message: "Token là bắt buộc." });
+  }
 
   const client = await pool.connect();
   try {
-    const profile = await getGoogleProfile(token.trim());
+    const profileData = await getGoogleProfile(token.trim());
     await client.query("BEGIN");
 
     let existing = await client.query(
       `SELECT id FROM users WHERE email = LOWER($1) LIMIT 1`,
-      [profile.email],
+      [profileData.email],
     );
 
     let user = existing.rows[0];
@@ -90,25 +98,38 @@ async function googleLogin(req, res, next) {
         crypto.randomBytes(16).toString("hex"),
         10,
       );
+
+      // Cắt ngắn link ảnh Google nếu dài quá 500 ký tự để không lỗi VARCHAR(500)
+      let safeAvatar = profileData.picture || null;
+      if (safeAvatar && safeAvatar.length > 500) {
+        safeAvatar = safeAvatar.split("?")[0];
+        if (safeAvatar.length > 500) safeAvatar = null;
+      }
+
       const createRes = await client.query(
-        `INSERT INTO users (full_name, email, password, avatar)
-         VALUES ($1, LOWER($2), $3, $4)
+        `INSERT INTO users (id, full_name, email, password, avatar, activate, email_verified, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, LOWER($2), $3, $4, true, true, NOW(), NOW())
          RETURNING id`,
-        [profile.fullName, profile.email, dummyPass, profile.picture],
+        [profileData.fullName, profileData.email, dummyPass, safeAvatar],
       );
       user = createRes.rows[0];
-      const roleId = await ensureRole(client, "customer");
+
+      const roleId = await ensureRole(client, "CUSTOMER");
       await client.query(
-        `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`,
+        `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [user.id, roleId],
       );
+    } else {
+      await client.query(`UPDATE users SET last_login = NOW() WHERE id = $1`, [
+        user.id,
+      ]);
     }
 
     await client.query("COMMIT");
 
     const freshUser = await loadUserWithRoles(user.id);
     const payload = buildAuthResponse(freshUser);
-    return res.json({ data: payload, ...payload });
+    return res.json({ success: true, data: payload, ...payload });
   } catch (error) {
     await client.query("ROLLBACK");
     return res
@@ -119,12 +140,12 @@ async function googleLogin(req, res, next) {
   }
 }
 
-// ─── 3. ĐĂNG KÝ RIÊNG CHO ĐỐI TÁC CHỦ CHỖ NGHỈ (DÙNG EMAIL/MẬT KHẨU) ───
+// ─── 3. REGISTER ───
 async function register(req, res, next) {
   const { full_name, fullName, email, password, phone, role } = req.body || {};
   const name = (fullName || full_name || "").trim();
   const targetEmail = (email || "").trim().toLowerCase();
-  const targetRole = role || "owner"; // Tự động gán role owner cho chủ nhà
+  const targetRole = (role || "HOTEL_OWNER").toUpperCase();
 
   if (!name || !targetEmail || !password) {
     return res
@@ -152,18 +173,17 @@ async function register(req, res, next) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const createRes = await client.query(
-      `INSERT INTO users (full_name, email, password, phone)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (id, full_name, email, password, phone, activate, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, true, NOW(), NOW())
        RETURNING id, full_name, email, phone, avatar, activate, created_at`,
       [name, targetEmail, hashedPassword, phone ? phone.trim() : null],
     );
 
     const newUser = createRes.rows[0];
 
-    // Gán quyền owner
     const roleId = await ensureRole(client, targetRole);
     await client.query(
-      `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`,
+      `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [newUser.id, roleId],
     );
 
@@ -173,7 +193,8 @@ async function register(req, res, next) {
     const payload = buildAuthResponse(fullUser);
 
     return res.status(201).json({
-      message: "Đăng ký đối tác thành công!",
+      success: true,
+      message: "Đăng ký thành công!",
       data: payload,
       ...payload,
     });
@@ -185,13 +206,19 @@ async function register(req, res, next) {
   }
 }
 
-// ─── 4. ĐĂNG NHẬP THƯỜNG / PROFILE ───
+// ─── 4. LOGIN ───
 async function login(req, res, next) {
   const { email, password } = req.body || {};
+  if (!email || !password) {
+    return res
+      .status(400)
+      .json({ message: "Vui lòng nhập email và mật khẩu." });
+  }
+
   try {
     const result = await pool.query(
       `SELECT id, password, activate FROM users WHERE email = LOWER($1) LIMIT 1`,
-      [(email || "").trim()],
+      [String(email).trim()],
     );
     const user = result.rows[0];
     if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -199,30 +226,158 @@ async function login(req, res, next) {
         .status(401)
         .json({ message: "Email hoặc mật khẩu không chính xác." });
     }
+
+    if (user.activate === false) {
+      return res
+        .status(403)
+        .json({ message: "Tài khoản của bạn đang bị khóa." });
+    }
+
+    await pool.query(`UPDATE users SET last_login = NOW() WHERE id = $1`, [
+      user.id,
+    ]);
+
     const fullUser = await loadUserWithRoles(user.id);
     const payload = buildAuthResponse(fullUser);
-    return res.json({ data: payload, ...payload });
+    return res.json({ success: true, data: payload, ...payload });
   } catch (error) {
     return next(error);
   }
 }
 
+// ─── 5. GET PROFILE ───
 async function profile(req, res, next) {
   try {
-    const user = await loadUserWithRoles(req.auth.sub);
+    const userId = req.auth?.sub || req.auth?.id || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Vui lòng đăng nhập." });
+    }
+
+    const user = await loadUserWithRoles(userId);
+    if (!user) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng." });
+    }
+
     const formatted = formatUser ? formatUser(user) : user;
-    return res.json({ data: { user: formatted }, user: formatted });
+    return res.json({
+      success: true,
+      data: { user: formatted },
+      user: formatted,
+    });
   } catch (error) {
     return next(error);
   }
 }
 
+// ─── 6. UPDATE PROFILE (LƯU THẬT VÀO POSTGRESQL) ───
 async function updateProfile(req, res, next) {
-  // code cập nhật profile giữ nguyên
+  try {
+    const userId = req.auth?.sub || req.auth?.id || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Chưa xác thực danh tính." });
+    }
+
+    const { full_name, phone, dob, avatar } = req.body || {};
+
+    let safeDob = null;
+    if (dob && typeof dob === "string" && dob.trim() !== "") {
+      const parsedDate = new Date(dob);
+      if (!isNaN(parsedDate.getTime())) {
+        safeDob = parsedDate.toISOString().split("T")[0];
+      }
+    }
+
+    let safeAvatar = avatar;
+    if (safeAvatar && typeof safeAvatar === "string") {
+      safeAvatar = safeAvatar.trim();
+      // Nếu chuỗi vượt quá 500 ký tự của VARCHAR(500) (ví dụ data:image Base64), bỏ qua để không sập query
+      if (safeAvatar.length > 500) {
+        safeAvatar = null;
+      }
+    }
+
+    const updateQuery = `
+      UPDATE public.users
+      SET full_name = COALESCE($1, full_name),
+          phone = COALESCE($2, phone),
+          dob = CASE WHEN $3::text IS NOT NULL THEN $3::date ELSE dob END,
+          avatar = COALESCE($4, avatar),
+          updated_at = NOW()
+      WHERE id = $5
+      RETURNING id, full_name, email, phone, dob, avatar, activate, created_at, updated_at;
+    `;
+
+    const result = await pool.query(updateQuery, [
+      full_name && full_name.trim() !== "" ? full_name.trim() : null,
+      phone && phone.trim() !== "" ? phone.trim() : null,
+      safeDob,
+      safeAvatar,
+      userId,
+    ]);
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy người dùng để cập nhật." });
+    }
+
+    const freshUser = await loadUserWithRoles(userId);
+    const formatted = formatUser ? formatUser(freshUser) : freshUser;
+
+    return res.json({
+      success: true,
+      message: "Cập nhật hồ sơ cá nhân thành công!",
+      user: formatted,
+      data: { user: formatted },
+    });
+  } catch (error) {
+    console.error("❌ LỖI UPDATE_PROFILE:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Lỗi cơ sở dữ liệu: " + error.message });
+  }
 }
 
+// ─── 7. CHANGE PASSWORD ───
 async function changePassword(req, res, next) {
-  // code đổi mật khẩu giữ nguyên
+  try {
+    const userId = req.auth?.sub || req.auth?.id || req.user?.id;
+    const { oldPassword, newPassword } = req.body || {};
+
+    if (!oldPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: "Vui lòng nhập mật khẩu cũ và mới." });
+    }
+
+    if (newPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ message: "Mật khẩu mới tối thiểu 6 ký tự." });
+    }
+
+    const userRes = await pool.query(
+      `SELECT password FROM public.users WHERE id = $1`,
+      [userId],
+    );
+    const user = userRes.rows[0];
+
+    if (!user || !(await bcrypt.compare(oldPassword, user.password))) {
+      return res.status(400).json({ message: "Mật khẩu hiện tại không đúng." });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await pool.query(
+      `UPDATE public.users SET password = $1, updated_at = NOW() WHERE id = $2`,
+      [hashedPassword, userId],
+    );
+
+    return res.json({ success: true, message: "Đổi mật khẩu thành công!" });
+  } catch (error) {
+    return next(error);
+  }
 }
 
 module.exports = {

@@ -1,60 +1,21 @@
+// backend/routes/review.routes.js
 const express = require("express");
 const {
   createReview,
   listHotelReviews,
+  replyReview,
 } = require("../controllers/review.controller");
 const { requireAuth } = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
-/**
- * @swagger
- * /reviews/hotel/{hotelId}:
- *   get:
- *     summary: Lấy danh sách đánh giá theo khách sạn
- *     tags: [Reviews]
- *     parameters:
- *       - in: path
- *         name: hotelId
- *         required: true
- *         schema: { type: string }
- *         description: ID khách sạn
- *     responses:
- *       200:
- *         description: Danh sách đánh giá
- */
+// 1. Xem danh sách đánh giá theo khách sạn
 router.get("/hotel/:hotelId", listHotelReviews);
 
-/**
- * @swagger
- * /reviews:
- *   post:
- *     summary: Tạo đánh giá mới
- *     tags: [Reviews]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               hotelId:
- *                 type: string
- *                 description: ID khách sạn
- *               point:
- *                 type: number
- *                 description: Số sao (1-5)
- *               bookingId:
- *                 type: string
- *                 description: ID đơn đặt (không bắt buộc)
- *               description:
- *                 type: string
- *                 description: Nội dung đánh giá
- *     responses:
- *       201:
- *         description: Đánh giá thành công
- */
+// 2. Khách hàng gửi đánh giá mới
 router.post("/", requireAuth, createReview);
+
+// 3. Chủ khách sạn phản hồi đánh giá của khách (Cột reply trong bảng review)
+router.patch("/:id/reply", requireAuth, replyReview);
 
 module.exports = router;

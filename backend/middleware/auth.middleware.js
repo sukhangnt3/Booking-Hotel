@@ -1,82 +1,129 @@
+// backend/middleware/auth.middleware.js
+const pool = require("../config/database");
 const { verifyToken } = require("../utils/token");
 
 function getBearerToken(req) {
-  const authorization = req.headers.authorization || "";
+  const authorization =
+    req.headers.authorization || req.headers.Authorization || "";
   const [scheme, token] = authorization.split(" ");
 
-  if (scheme?.toLowerCase() !== "bearer") {
+  if (scheme?.toLowerCase() !== "bearer" || !token) {
     return null;
   }
 
-  return token;
+  return token.trim();
 }
 
+// ─── 1. BẮT BUỘC ĐĂNG NHẬP (REQUIRE AUTH) ───
 function requireAuth(req, res, next) {
   const token = getBearerToken(req);
   const payload = verifyToken(token);
 
   if (!payload) {
     return res.status(401).json({
+      success: false,
       message: "Phiên đăng nhập không hợp lệ hoặc đã hết hạn.",
     });
   }
 
+  // Đồng bộ sang cả req.auth, req.user và req.userId để tương thích 100% mọi controller
   req.auth = payload;
+  req.user = {
+    id: payload.sub || payload.id,
+    userId: payload.sub || payload.id,
+    email: payload.email,
+    roles: payload.roles || [],
+    ...payload,
+  };
+  req.userId = payload.sub || payload.id;
+
   return next();
 }
 
-// Middleware tùy chọn: nếu có token hợp lệ → set req.auth, nếu không → req.auth = null
-// Dùng cho các endpoint công khai nhưng có thể trả thông tin cá nhân hóa (vd: is_favorite)
+// ─── 2. ĐĂNG NHẬP TÙY CHỌN (OPTIONAL AUTH) ───
 function optionalAuth(req, res, next) {
   const token = getBearerToken(req);
   const payload = verifyToken(token);
 
-  req.auth = payload || null;
+  if (payload) {
+    req.auth = payload;
+    req.user = {
+      id: payload.sub || payload.id,
+      userId: payload.sub || payload.id,
+      email: payload.email,
+      roles: payload.roles || [],
+      ...payload,
+    };
+    req.userId = payload.sub || payload.id;
+  } else {
+    req.auth = null;
+    req.user = null;
+    req.userId = null;
+  }
+
   return next();
 }
 
-const pool = require("../config/database");
-
-// ─── PHÂN QUYỀN: requireRole('admin') hoặc requireRole('admin', 'owner') ───
-// Kiểm tra user có ít nhất 1 trong các role được phép.
-// Phải gọi SAU requireAuth (vì cần req.auth).
-// QUAN TRỌNG 1: Nếu không có quyền → trả 404 (giấu endpoint, như thể không tồn tại)
-// thay vì 403 (lộ thông tin endpoint admin tồn tại).
-// QUAN TRỌNG 2: LUÔN query database để lấy role thật (không phụ thuộc token cũ)
-// → token cũ không chứa roles vẫn hoạt động đúng.
-// LƯU Ý: KHÔNG được khai báo `async` ở hàm ngoài - vì nó phải TRẢ VỀ middleware function,
-// nếu khai báo async thì nó trả về Promise → Express lỗi "argument handler is required".
+// ─── 3. PHÂN QUYỀN TRUY VẤN THEO BẢNG ROLES CỦA POSTGRESQL ───
 function requireRole(...allowedRoles) {
   return async (req, res, next) => {
-    // 1. Query role THẬT từ DB theo user_id trong token
+    const userId = req.user?.id || req.auth?.sub;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Vui lòng đăng nhập." });
+    }
+
     let dbRoles = [];
     try {
       const roleResult = await pool.query(
         `SELECT r.name
-         FROM user_roles ur
-         JOIN roles r ON r.id = ur.role_id
+         FROM public.user_roles ur
+         JOIN public.roles r ON r.id = ur.role_id
          WHERE ur.user_id = $1`,
-        [req.auth.sub],
+        [userId],
       );
-      dbRoles = roleResult.rows.map((row) => row.name);
+      dbRoles = roleResult.rows.map((row) =>
+        String(row.name).trim().toUpperCase(),
+      );
     } catch (dbError) {
       console.error("❌ Lỗi query roles trong requireRole:", dbError.message);
-      return res.status(500).json({ message: "Lỗi hệ thống." });
+      return res.status(500).json({ message: "Lỗi hệ thống phân quyền." });
     }
 
-    // Ghi đè roles từ DB vào req.auth để các middleware/controller sau dùng đúng
-    req.auth.roles = dbRoles;
+    // Cập nhật lại roles mới nhất từ CSDL vào req
+    if (req.auth) req.auth.roles = dbRoles;
+    if (req.user) req.user.roles = dbRoles;
 
-    // 2. So sánh role từ DB với role được phép
-    const normalizedAllowed = allowedRoles.map((r) => String(r).toLowerCase());
-    const hasRole = dbRoles.some((roleName) =>
-      normalizedAllowed.includes(String(roleName).toLowerCase()),
+    // Chuẩn hóa danh sách quyền được phép
+    const normalizedAllowed = allowedRoles.map((r) =>
+      String(r).trim().toUpperCase(),
     );
 
+    // Kiểm tra tương thích linh hoạt:
+    // Ví dụ: route yêu cầu 'OWNER', trong CSDL là 'HOTEL_OWNER' vẫn chấp nhận hợp lệ
+    const hasRole = dbRoles.some((roleName) => {
+      if (normalizedAllowed.includes(roleName)) return true;
+      if (
+        normalizedAllowed.includes("OWNER") &&
+        (roleName === "HOTEL_OWNER" || roleName === "OWNER")
+      )
+        return true;
+      if (
+        normalizedAllowed.includes("HOTEL_OWNER") &&
+        (roleName === "HOTEL_OWNER" || roleName === "OWNER")
+      )
+        return true;
+      if (normalizedAllowed.includes("ADMIN") && roleName === "ADMIN")
+        return true;
+      if (normalizedAllowed.includes("CUSTOMER") && roleName === "CUSTOMER")
+        return true;
+      return false;
+    });
+
     if (!hasRole) {
-      // Trả 404 giống như endpoint không tồn tại → ẩn hoàn toàn khỏi non-admin
-      return res.status(404).json({
-        message: "Không tìm thấy tài nguyên.",
+      return res.status(403).json({
+        success: false,
+        message: "Bạn không có quyền truy cập chức năng quản trị này.",
       });
     }
 
