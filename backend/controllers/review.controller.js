@@ -2,7 +2,7 @@
 const pool = require("../config/database");
 const { formatReview } = require("../utils/formatters");
 
-// ─── 1. LẤY DANH SÁCH ĐÁNH GIÁ (CHUẨN FORM DỮ LIỆU ĐỂ RENDER NHƯ ẢNH) ───
+// ─── 1. LẤY DANH SÁCH ĐÁNH GIÁ ───
 async function listHotelReviews(req, res, next) {
   try {
     const hotelId = req.params.hotelId || req.params.id;
@@ -44,7 +44,7 @@ async function listHotelReviews(req, res, next) {
   }
 }
 
-// ─── 2. KIỂM TRA XEM KHÁCH CÓ ĐƠN ĐÃ ĐẶT TẠI KHÁCH SẠN NÀY CHƯA ───
+// ─── 2. KIỂM TRA XEM KHÁCH CÓ THỂ ĐÁNH GIÁ KHÔNG ───
 async function checkCanReview(req, res, next) {
   try {
     const hotelId = req.params.hotelId || req.params.id;
@@ -54,14 +54,17 @@ async function checkCanReview(req, res, next) {
       return res.json({ canReview: false, reason: "not_logged_in" });
     }
 
-    // Kiểm tra đơn hàng có status là 'confirmed' hoặc 'checked_out' hoặc 'checked_in'
     const query = `
       SELECT b.id, b.booking_code, b.checkout_date
       FROM public.booking b
       WHERE b.user_id = $1 
         AND b.hotel_id::text = $2
         AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-        AND b.id NOT IN (SELECT COALESCE(booking_id, '00000000-0000-0000-0000-000000000000'::uuid) FROM public.review WHERE user_id = $1 AND hotel_id::text = $2)
+        AND b.id NOT IN (
+          SELECT COALESCE(booking_id, '00000000-0000-0000-0000-000000000000'::uuid) 
+          FROM public.review 
+          WHERE user_id = $1 AND hotel_id::text = $2
+        )
       ORDER BY b.created_at DESC
       LIMIT 1;
     `;
@@ -75,7 +78,6 @@ async function checkCanReview(req, res, next) {
       });
     }
 
-    // Nếu không có đơn nào chưa đánh giá
     return res.json({
       canReview: false,
       reason: "no_booking",
@@ -88,7 +90,7 @@ async function checkCanReview(req, res, next) {
   }
 }
 
-// ─── 3. TẠO ĐÁNH GIÁ (CHẶN NẾU CHƯA TỪNG ĐẶT PHÒNG) ───
+// ─── 3. TẠO ĐÁNH GIÁ (ĐÃ SỬA LỖI TRÀN SỐ NUMERIC KHI CHẤM 10 ĐIỂM) ───
 async function createReview(req, res, next) {
   const client = await pool.connect();
   try {
@@ -125,6 +127,7 @@ async function createReview(req, res, next) {
 
     await client.query("BEGIN");
 
+    // 1. Thêm đánh giá mới
     const insertRes = await client.query(
       `INSERT INTO public.review (id, user_id, hotel_id, booking_id, description, point, created_at)
        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW())
@@ -134,23 +137,27 @@ async function createReview(req, res, next) {
 
     const newReview = insertRes.rows[0];
 
-    // Cập nhật lại điểm trung bình cho khách sạn
+    // 2. Tính lại điểm trung bình cho khách sạn
     const statRes = await client.query(
       `SELECT COUNT(*)::int AS total, ROUND(AVG(point)::numeric, 1) AS avg_score
        FROM public.review WHERE hotel_id::text = $1`,
       [hotelId],
     );
     const totalReviews = statRes.rows[0]?.total || 1;
-    const avgRating = statRes.rows[0]?.avg_score || finalRating;
+    let avgRating = Number(statRes.rows[0]?.avg_score || finalRating);
+    if (avgRating > 10) avgRating = 10;
 
+    // 3. Cập nhật vào bảng hotel
     await client.query(
-      `UPDATE public.hotel SET average_rating = $1, review_count = $2, updated_at = NOW() WHERE id::text = $3`,
+      `UPDATE public.hotel 
+       SET average_rating = $1::numeric(4, 2), review_count = $2, updated_at = NOW() 
+       WHERE id::text = $3`,
       [avgRating, totalReviews, hotelId],
     );
 
     await client.query("COMMIT");
 
-    // Lấy thông tin user
+    // 4. Lấy thông tin user hiển thị
     const userRes = await pool.query(
       `SELECT full_name, avatar FROM public.users WHERE id = $1`,
       [userId],

@@ -1,4 +1,3 @@
-// backend/admin/admin.controller.js (hoặc controllers/admin.controller.js)
 const pool = require("../config/database");
 const bcrypt = require("bcryptjs");
 
@@ -13,6 +12,67 @@ async function getStats(req, res, next) {
     const hours = Math.floor(uptimeSeconds / 3600);
     const minutes = Math.floor((uptimeSeconds % 3600) / 60);
     const uptimeFormatted = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+    const range = (req.query.range || "today").toLowerCase(); // 'today' | '7days' | '30days'
+
+    let trafficQuery = "";
+    if (range === "7days" || range === "30days") {
+      const days = range === "7days" ? 7 : 30;
+      // 🟢 CHUẨN THỰC TẾ: Trả về cả `time` (ngắn gọn cho trục X) và `full_date` (chi tiết cho Tooltip)
+      trafficQuery = `
+        WITH latest_date AS (
+          SELECT COALESCE(DATE_TRUNC('day', MAX(created_at)), DATE_TRUNC('day', NOW())) AS end_day
+          FROM public.request_logs
+        ),
+        day_slots AS (
+          SELECT generate_series(
+            (SELECT end_day FROM latest_date) - INTERVAL '${days - 1} days',
+            (SELECT end_day FROM latest_date),
+            INTERVAL '1 day'
+          ) AS slot
+        )
+        SELECT 
+          TO_CHAR(ds.slot, 'DD/MM') AS time,
+          TO_CHAR(ds.slot, 'DD/MM/YYYY') AS full_date,
+          COUNT(rl.id)::int AS requests
+        FROM day_slots ds
+        LEFT JOIN public.request_logs rl 
+          ON DATE_TRUNC('day', rl.created_at) = ds.slot
+         AND rl.endpoint NOT LIKE '/api/admin%'
+         AND rl.endpoint NOT LIKE '/admin%'
+         AND rl.method != 'OPTIONS'
+        GROUP BY ds.slot
+        ORDER BY ds.slot ASC;
+      `;
+    } else {
+      // 🟢 'today' - Gom theo khung giờ 3 tiếng
+      trafficQuery = `
+        WITH latest_date AS (
+          SELECT COALESCE(DATE_TRUNC('day', MAX(created_at)), DATE_TRUNC('day', NOW())) AS day_anchor
+          FROM public.request_logs
+        ),
+        time_slots AS (
+          SELECT generate_series(
+            (SELECT day_anchor FROM latest_date),
+            (SELECT day_anchor FROM latest_date) + INTERVAL '21 hours',
+            INTERVAL '3 hours'
+          ) AS slot
+        )
+        SELECT 
+          TO_CHAR(ts.slot, 'HH24:00') AS time,
+          CONCAT(TO_CHAR(ts.slot, 'HH24:00'), ' - ', TO_CHAR(ts.slot + INTERVAL '3 hours', 'HH24:00')) AS full_date,
+          COUNT(rl.id)::int AS requests
+        FROM time_slots ts
+        LEFT JOIN public.request_logs rl 
+          ON rl.created_at >= ts.slot 
+         AND rl.created_at < ts.slot + INTERVAL '3 hours'
+         AND rl.endpoint NOT LIKE '/api/admin%'
+         AND rl.endpoint NOT LIKE '/admin%'
+         AND rl.method != 'OPTIONS'
+        GROUP BY ts.slot
+        ORDER BY ts.slot ASC;
+      `;
+    }
 
     const [
       userCount,
@@ -41,24 +101,7 @@ async function getStats(req, res, next) {
       pool.query(
         `SELECT COUNT(*)::int AS count FROM public.hotel WHERE status = 'pending'`,
       ),
-      pool.query(`
-        WITH time_slots AS (
-          SELECT generate_series(
-            DATE_TRUNC('day', NOW()),
-            DATE_TRUNC('day', NOW()) + INTERVAL '21 hours',
-            INTERVAL '3 hours'
-          ) AS slot
-        )
-        SELECT 
-          TO_CHAR(ts.slot, 'HH24:00') AS time,
-          COUNT(rl.id)::int AS requests
-        FROM time_slots ts
-        LEFT JOIN public.request_logs rl 
-          ON rl.created_at >= ts.slot 
-         AND rl.created_at < ts.slot + INTERVAL '3 hours'
-        GROUP BY ts.slot
-        ORDER BY ts.slot ASC
-      `),
+      pool.query(trafficQuery),
     ]);
 
     const statsData = {

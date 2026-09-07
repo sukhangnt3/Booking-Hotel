@@ -24,12 +24,10 @@ async function createBooking(req, res, next) {
     } = req.body;
 
     if (!hotel_id || !checkin_date || !checkout_date) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Thiếu thông tin khách sạn hoặc ngày lưu trú.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Thiếu thông tin khách sạn hoặc ngày lưu trú.",
+      });
     }
 
     // Kiểm tra phòng trống
@@ -219,7 +217,7 @@ async function getBookingByCode(req, res, next) {
   }
 }
 
-// ─── 4. LỊCH SỬ ĐẶT PHÒNG CỦA TÔI (CHO USER PROFILE) ───
+// ─── 4. LỊCH SỬ ĐẶT PHÒNG CỦA TÔI (ĐÃ BỔ SUNG KIỂM TRA ĐÁNH GIÁ) ───
 async function getMyBookings(req, res, next) {
   try {
     const userId =
@@ -230,11 +228,24 @@ async function getMyBookings(req, res, next) {
       return res.status(401).json({ message: "Vui lòng đăng nhập." });
     }
 
+    // 🟢 ĐÃ THÊM: LEFT JOIN sang bảng review để lấy is_reviewed và point
     const result = await pool.query(
-      `SELECT b.*, h.name AS hotel_name, h.address AS hotel_address, h.city AS hotel_city,
-         COALESCE((SELECT br.room_name FROM public.booking_room br WHERE br.booking_id = b.id LIMIT 1), 'Phòng tiêu chuẩn') AS room_name
+      `SELECT 
+         b.*, 
+         h.name AS hotel_name, 
+         h.address AS hotel_address, 
+         h.city AS hotel_city,
+         COALESCE(
+           (SELECT br.room_name FROM public.booking_room br WHERE br.booking_id = b.id LIMIT 1), 
+           'Phòng tiêu chuẩn'
+         ) AS room_name,
+         -- 🟢 Kiểm tra xem đơn này đã có trong bảng review chưa:
+         CASE WHEN rv.id IS NOT NULL THEN true ELSE false END AS is_reviewed,
+         rv.id AS review_id,
+         rv.point AS reviewed_point
        FROM public.booking b
        JOIN public.hotel h ON h.id = b.hotel_id
+       LEFT JOIN public.review rv ON rv.booking_id = b.id
        WHERE b.user_id = $1 OR (b.guest_email = $2 AND $2 IS NOT NULL)
        ORDER BY b.created_at DESC`,
       [userId || null, userEmail || null],
@@ -246,6 +257,7 @@ async function getMyBookings(req, res, next) {
       bookings: result.rows,
     });
   } catch (error) {
+    console.error("❌ Lỗi getMyBookings:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 }

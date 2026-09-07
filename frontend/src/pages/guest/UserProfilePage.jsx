@@ -58,7 +58,7 @@ export default function UserProfilePage() {
   const [toast, setToast] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  // 🌟 STATE CHO MODAL ĐÁNH GIÁ (CÁCH 2)
+  // 🌟 STATE CHO MODAL ĐÁNH GIÁ (KHI ĐÃ CHECK-OUT)
   const [reviewingBooking, setReviewingBooking] = useState(null);
   const [reviewPoint, setReviewPoint] = useState(10);
   const [reviewComment, setReviewComment] = useState("");
@@ -355,7 +355,7 @@ export default function UserProfilePage() {
   };
 
   // ==================================================
-  // HỦY BOOKING
+  // HỦY BOOKING (CHỈ HỦY ĐƯỢC KHI CHƯA NHẬN PHÒNG)
   // ==================================================
   const handleCancelBooking = async (event, bookingCode) => {
     event.stopPropagation();
@@ -396,7 +396,7 @@ export default function UserProfilePage() {
   };
 
   // ==================================================
-  // 🌟 GỬI ĐÁNH GIÁ TRỰC TIẾP TỪ ĐƠN ĐÃ ĐẶT (CÁCH 2)
+  // 🌟 GỬI ĐÁNH GIÁ TRỰC TIẾP TỪ ĐƠN ĐÃ CHECK-OUT
   // ==================================================
   const handleOpenReviewModal = (booking) => {
     setReviewingBooking(booking);
@@ -442,9 +442,24 @@ export default function UserProfilePage() {
     }
   };
 
+  // 🟢 HÀM KIỂM TRA CHECKOUT KHÔNG PHÂN BIỆT HOA THƯỜNG
+  const isBookingCheckedOut = (status) => {
+    const s = String(status || "")
+      .toLowerCase()
+      .trim();
+    return ["checked_out", "checkout", "completed", "done"].includes(s);
+  };
+
+  // 🟢 BỘ LỌC ĐƠN ĐẶT PHÒNG THÔNG MINH
   const filteredBookings = bookings.filter((b) => {
-    if (tripFilter === "upcoming") return b.status !== "cancelled";
-    if (tripFilter === "cancelled") return b.status === "cancelled";
+    const s = String(b.status || "")
+      .toLowerCase()
+      .trim();
+    const isOut = isBookingCheckedOut(b.status);
+
+    if (tripFilter === "upcoming") return s !== "cancelled" && !isOut;
+    if (tripFilter === "completed") return isOut;
+    if (tripFilter === "cancelled") return s === "cancelled";
     return true;
   });
 
@@ -546,19 +561,43 @@ export default function UserProfilePage() {
           </div>
         ) : (
           <>
-            {/* TAB 1: CHUYẾN ĐI CỦA TÔI (CÓ NÚT VIẾT ĐÁNH GIÁ CHUẨN AGODA) */}
+            {/* TAB 1: CHUYẾN ĐI CỦA TÔI */}
             {activeTab === "trips" && (
               <div className="space-y-5">
+                {/* 🟢 4 NÚT LỌC CHUẨN (CÓ TAB ĐÃ HOÀN THÀNH) */}
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "all", label: `Tất cả (${bookings.length})` },
                     {
                       id: "upcoming",
-                      label: `Sắp tới (${bookings.filter((b) => b.status !== "cancelled").length})`,
+                      label: `Sắp tới (${
+                        bookings.filter((b) => {
+                          const s = String(b.status || "")
+                            .toLowerCase()
+                            .trim();
+                          return (
+                            s !== "cancelled" && !isBookingCheckedOut(b.status)
+                          );
+                        }).length
+                      })`,
+                    },
+                    {
+                      id: "completed",
+                      label: `Đã hoàn thành (${
+                        bookings.filter((b) => isBookingCheckedOut(b.status))
+                          .length
+                      })`,
                     },
                     {
                       id: "cancelled",
-                      label: `Đã hủy (${bookings.filter((b) => b.status === "cancelled").length})`,
+                      label: `Đã hủy (${
+                        bookings.filter(
+                          (b) =>
+                            String(b.status || "")
+                              .toLowerCase()
+                              .trim() === "cancelled",
+                        ).length
+                      })`,
                     },
                   ].map((f) => (
                     <button
@@ -580,9 +619,17 @@ export default function UserProfilePage() {
                   {filteredBookings.length > 0 ? (
                     filteredBookings.map((b) => {
                       const bookingCode = b.booking_code || b.id;
+                      const rawStatus = String(b.status || "")
+                        .toLowerCase()
+                        .trim();
+
+                      const isCancelled = rawStatus === "cancelled";
+                      const isCheckedIn =
+                        rawStatus === "checked_in" || rawStatus === "checkin";
+                      const isCheckedOut = isBookingCheckedOut(b.status);
                       const isPaid =
-                        b.payment_status === "paid" || b.status === "confirmed";
-                      const isCancelled = b.status === "cancelled";
+                        b.payment_status === "paid" ||
+                        rawStatus === "confirmed";
                       const isReviewed = b.is_reviewed || Boolean(b.review_id);
 
                       return (
@@ -602,9 +649,19 @@ export default function UserProfilePage() {
                                 (Đặt: {formatBookingCreatedTime(b.created_at)})
                               </span>
                             </div>
+
+                            {/* 🟢 HUY HIỆU TRẠNG THÁI CHUẨN XÁC */}
                             {isCancelled ? (
                               <span className="px-2.5 py-1 bg-rose-50 text-rose-700 font-semibold rounded-md border border-rose-200 flex items-center gap-1">
                                 <XCircle size={13} /> Đã hủy
+                              </span>
+                            ) : isCheckedOut ? (
+                              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 font-bold rounded-md border border-emerald-200 flex items-center gap-1">
+                                <CheckCircle2 size={13} /> Đã trả phòng
+                              </span>
+                            ) : isCheckedIn ? (
+                              <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-semibold rounded-md border border-blue-200 flex items-center gap-1">
+                                🏨 Đang lưu trú
                               </span>
                             ) : isPaid ? (
                               <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-semibold rounded-md border border-emerald-200 flex items-center gap-1">
@@ -691,19 +748,22 @@ export default function UserProfilePage() {
                                 </strong>
                               </div>
 
-                              {/* 🌟 KHU VỰC CÁC NÚT THAO TÁC CÓ NÚT VIẾT ĐÁNH GIÁ */}
+                              {/* 🌟 CÁC NÚT THAO TÁC */}
                               <div className="flex flex-wrap items-center gap-2">
-                                {!isCancelled && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) =>
-                                      handleCancelBooking(e, bookingCode)
-                                    }
-                                    className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                  >
-                                    Hủy phòng
-                                  </button>
-                                )}
+                                {/* Chỉ cho hủy khi chưa nhận phòng và chưa hủy */}
+                                {!isCancelled &&
+                                  !isCheckedIn &&
+                                  !isCheckedOut && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) =>
+                                        handleCancelBooking(e, bookingCode)
+                                      }
+                                      className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                    >
+                                      Hủy phòng
+                                    </button>
+                                  )}
 
                                 <button
                                   type="button"
@@ -713,9 +773,9 @@ export default function UserProfilePage() {
                                   Phiếu đặt phòng
                                 </button>
 
-                                {/* NÚT ĐÁNH GIÁ CHUẨN AGODA */}
-                                {!isCancelled &&
-                                  (isReviewed ? (
+                                {/* 🟢 NÚT ĐÁNH GIÁ: CHỈ HIỂN THỊ KHI ĐÃ TRẢ PHÒNG (CHECK-OUT) */}
+                                {isCheckedOut ? (
+                                  isReviewed ? (
                                     <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs rounded-lg flex items-center gap-1">
                                       <CheckCircle2 size={13} /> Đã đánh giá
                                     </span>
@@ -724,11 +784,17 @@ export default function UserProfilePage() {
                                       type="button"
                                       onClick={() => handleOpenReviewModal(b)}
                                       className="px-4 py-1.5 bg-[#2e7d32] hover:bg-emerald-800 text-white font-bold text-xs rounded-lg shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                                      title="Kỳ nghỉ đã hoàn tất! Hãy chia sẻ trải nghiệm của bạn"
                                     >
                                       <Star size={13} fill="currentColor" />
                                       Viết đánh giá
                                     </button>
-                                  ))}
+                                  )
+                                ) : isCheckedIn ? (
+                                  <span className="px-2.5 py-1 text-[11px] text-slate-500 font-medium italic">
+                                    Đang lưu trú (Đánh giá sau khi trả phòng)
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
                           </div>
@@ -1016,14 +1082,14 @@ export default function UserProfilePage() {
         )}
       </main>
 
-      {/* 🌟 MODAL ĐÁNH GIÁ THANG ĐIỂM 10 (CÁCH 2: VIẾT ĐÁNH GIÁ TỪ ĐƠN ĐÃ ĐẶT) */}
+      {/* 🌟 MODAL ĐÁNH GIÁ THANG ĐIỂM 10 */}
       {reviewingBooking && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
             <div className="bg-[#2e7d32] text-white p-5 flex justify-between items-center">
               <div>
                 <span className="text-[10px] uppercase font-black text-emerald-100 tracking-wider block">
-                  Đánh Giá Kỳ Nghỉ Đã Đặt
+                  Đánh Giá Kỳ Nghỉ Đã Hoàn Tất
                 </span>
                 <h3 className="font-bold text-base mt-0.5">
                   {reviewingBooking.hotel_name || "Chỗ nghỉ"}

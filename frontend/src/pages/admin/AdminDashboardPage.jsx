@@ -1,5 +1,4 @@
-// src/pages/admin/AdminDashboardPage.jsx
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShieldCheck,
@@ -13,6 +12,8 @@ import {
   CheckCircle2,
   Clock,
   ArrowRight,
+  TrendingUp,
+  BarChart2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -31,6 +32,9 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
 
+  // 🟢 Bộ lọc thời gian chuẩn: 'today' | '7days' | '30days'
+  const [timeRange, setTimeRange] = useState("today");
+
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalHotels: 0,
@@ -44,13 +48,14 @@ export default function AdminDashboardPage() {
   const [pendingList, setPendingList] = useState([]);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
+  const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
 
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     setApiError("");
     try {
       const [statsRes, hotelsRes] = await Promise.all([
-        apiClient.get("/admin/stats"),
+        apiClient.get(`/admin/stats?range=${timeRange}`),
         apiClient.get("/admin/hotels?status=pending"),
       ]);
 
@@ -63,8 +68,8 @@ export default function AdminDashboardPage() {
         totalUsers: Number(data.totalUsers || 0),
         totalHotels: Number(data.totalHotels || 0),
         totalBookings: Number(data.totalBookings || 0),
-        totalRevenue: Number(data.totalRevenue || 0), // Hoa hồng sàn thu về
-        totalGMV: Number(data.totalGMV || 0), // Tổng giá trị giao dịch toàn sàn
+        totalRevenue: Number(data.totalRevenue || 0),
+        totalGMV: Number(data.totalGMV || 0),
         pendingHotels: Number(data.pendingHotels || hotelsData.length || 0),
       });
 
@@ -74,14 +79,14 @@ export default function AdminDashboardPage() {
         setTrafficData(data.hourlyTraffic);
       } else {
         setTrafficData([
-          { time: "00:00", requests: 0 },
-          { time: "03:00", requests: 0 },
-          { time: "06:00", requests: 0 },
-          { time: "09:00", requests: 0 },
-          { time: "12:00", requests: 0 },
-          { time: "15:00", requests: 0 },
-          { time: "18:00", requests: 0 },
-          { time: "21:00", requests: 0 },
+          { time: "00:00", full_date: "00:00 - 03:00", requests: 0 },
+          { time: "03:00", full_date: "03:00 - 06:00", requests: 0 },
+          { time: "06:00", full_date: "06:00 - 09:00", requests: 0 },
+          { time: "09:00", full_date: "09:00 - 12:00", requests: 0 },
+          { time: "12:00", full_date: "12:00 - 15:00", requests: 0 },
+          { time: "15:00", full_date: "15:00 - 18:00", requests: 0 },
+          { time: "18:00", full_date: "18:00 - 21:00", requests: 0 },
+          { time: "21:00", full_date: "21:00 - 24:00", requests: 0 },
         ]);
       }
     } catch (err) {
@@ -92,13 +97,12 @@ export default function AdminDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [timeRange]);
 
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // Phê duyệt nhanh cơ sở đối tác ngay tại Dashboard
   const handleQuickApprove = async (hotelId) => {
     try {
       await apiClient.patch(`/admin/hotels/${hotelId}/status`, {
@@ -111,10 +115,27 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const totalTodayRequests = trafficData.reduce(
-    (sum, item) => sum + Number(item.requests || 0),
-    0,
-  );
+  // 🟢 TÍNH TOÁN CÁC CHỈ SỐ PHÂN TÍCH NHANH (GIỐNG STRIPE & GOOGLE ANALYTICS)
+  const analyticsSummary = useMemo(() => {
+    const total = trafficData.reduce(
+      (sum, item) => sum + Number(item.requests || 0),
+      0,
+    );
+    const count = trafficData.length || 1;
+    const avg = Math.round(total / count);
+
+    let peak = { time: "--", requests: 0 };
+    trafficData.forEach((item) => {
+      if (Number(item.requests) > peak.requests) {
+        peak = {
+          time: item.full_date || item.time,
+          requests: Number(item.requests),
+        };
+      }
+    });
+
+    return { total, avg, peak };
+  }, [trafficData]);
 
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
@@ -231,24 +252,85 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* 📊 PHẦN 1: GIÁM SÁT LƯU LƯỢNG MÁY CHỦ TOÀN MÀN HÌNH */}
-          <div className="bg-white p-6 rounded-3xl border shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          {/* 📊 PHẦN 1: GIÁM SÁT LƯU LƯỢNG CHUẨN THỰC TẾ (CÓ FILTER + 3 CHỈ SỐ NHANH) */}
+          <div className="bg-white p-6 rounded-3xl border shadow-xs space-y-5">
+            {/* Header của biểu đồ */}
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b pb-4 border-slate-100">
               <div>
                 <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
                   <Activity size={18} className="text-blue-600" /> Giám Sát Lưu
-                  Lượng Yêu Cầu (HTTP Requests Realtime)
+                  Lượng Khách Hàng & Đối Tác
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Tần suất tương tác gọi API của người dùng và đối tác theo chu
-                  kỳ 24 giờ
+                  Lưu lượng tương tác thực tế từ người dùng (loại trừ thao tác
+                  nội bộ của Admin)
                 </p>
               </div>
-              <span className="px-3.5 py-1.5 bg-blue-50 text-blue-700 rounded-full font-black text-xs border border-blue-100">
-                Hôm nay: {totalTodayRequests} lượt requests
-              </span>
+
+              {/* Bộ lọc thời gian */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                {[
+                  { id: "today", label: "Hôm nay" },
+                  { id: "7days", label: "7 ngày qua" },
+                  { id: "30days", label: "30 ngày qua" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setTimeRange(tab.id)}
+                    className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer ${
+                      timeRange === tab.id
+                        ? "bg-white text-blue-700 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
+            {/* 🟢 3 THẺ CHỈ SỐ NHANH PHÂN TÍCH (CHUẨN STRIPE / GOOGLE ANALYTICS) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Tổng Lượt Tương Tác
+                </span>
+                <p className="text-lg font-black text-slate-800 mt-0.5">
+                  {formatNumber(analyticsSummary.total)}{" "}
+                  <span className="text-xs font-medium text-slate-500">
+                    lượt
+                  </span>
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block flex items-center gap-1">
+                  <BarChart2 size={12} className="text-blue-600" /> Trung Bình /{" "}
+                  {timeRange === "today" ? "Khung giờ" : "Ngày"}
+                </span>
+                <p className="text-lg font-black text-blue-700 mt-0.5">
+                  {formatNumber(analyticsSummary.avg)}{" "}
+                  <span className="text-xs font-medium text-slate-500">
+                    lượt
+                  </span>
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block flex items-center gap-1">
+                  <TrendingUp size={12} className="text-emerald-600" /> Đỉnh
+                  Điểm (Peak)
+                </span>
+                <p className="text-lg font-black text-emerald-700 mt-0.5">
+                  {formatNumber(analyticsSummary.peak.requests)}{" "}
+                  <span className="text-xs font-medium text-slate-500">
+                    lượt ({analyticsSummary.peak.time})
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* Biểu đồ Recharts */}
             <div className="h-64 w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trafficData}>
@@ -277,11 +359,28 @@ export default function AdminDashboardPage() {
                     vertical={false}
                     stroke="#f1f5f9"
                   />
-                  <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} />
+                  {/* 🟢 TỰ ĐỘNG GIÃN CÁCH TRỤC HOÀNH (KHÔNG BAO GIỜ BỊ ĐÈ CHỮ) */}
+                  <XAxis
+                    dataKey="time"
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickLine={false}
+                    interval={timeRange === "30days" ? 4 : 0}
+                  />
                   <YAxis stroke="#94a3b8" fontSize={11} allowDecimals={false} />
+                  {/* 🟢 TOOLTIP HIỂN THỊ ĐẦY ĐỦ THỜI GIAN VÀ ĐỊNH DẠNG SỐ CÓ DẤU CHẤM */}
                   <Tooltip
-                    formatter={(v) => [`${v} lượt yêu cầu`, "Lưu lượng"]}
-                    labelFormatter={(l) => `Khung giờ: ${l}`}
+                    formatter={(v) => [
+                      `${formatNumber(v)} lượt tương tác`,
+                      "Lưu lượng",
+                    ]}
+                    labelFormatter={(_, payload) => {
+                      const item = payload?.[0]?.payload;
+                      if (!item) return "";
+                      return timeRange === "today"
+                        ? `Khung giờ: ${item.full_date || item.time}`
+                        : `Ngày: ${item.full_date || item.time}`;
+                    }}
                   />
                   <Area
                     type="monotone"
@@ -289,14 +388,15 @@ export default function AdminDashboardPage() {
                     stroke="#003580"
                     strokeWidth={3}
                     fill="url(#trafficGrad)"
-                    dot={{ r: 4, fill: "#003580" }}
+                    dot={{ r: 3, fill: "#003580" }}
+                    activeDot={{ r: 6, fill: "#003580" }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* 🛎️ PHẦN 2: HÀNG CHỜ PHÊ DUYỆT ĐỐI TÁC MỚI (CỰC KỲ HỮU ÍCH) */}
+          {/* 🛎️ PHẦN 2: HÀNG CHỜ PHÊ DUYỆT ĐỐI TÁC MỚI */}
           <div className="bg-white p-6 rounded-3xl border shadow-xs space-y-4">
             <div className="flex justify-between items-center">
               <div>
