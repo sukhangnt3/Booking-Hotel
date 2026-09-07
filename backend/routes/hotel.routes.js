@@ -43,9 +43,9 @@ router.post("/:id/favorite", requireAuth, addFavorite);
 router.delete("/:id/favorite", requireAuth, removeFavorite);
 router.get("/:id/reviews", listHotelReviews);
 
-// ─── 4. CHI TIẾT & PHÒNG KHÁCH SẠN ───
-router.get("/:id", optionalAuth, getHotelById);
+// ─── 4. CHI TIẾT & KIỂM TRA PHÒNG TRỐNG THEO NGÀY ───
+router.get("/:id/availability", listHotelRoomAvailability); // 👉 Gọi query tính tồn kho theo ngày
 router.get("/:id/rooms", listHotelRooms);
-router.get("/:id/availability", listHotelRoomAvailability);
+router.get("/:id", optionalAuth, getHotelById);
 
 module.exports = router;

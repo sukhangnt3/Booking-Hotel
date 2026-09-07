@@ -1,3 +1,4 @@
+// src/components/auth/ReviewModal.jsx
 import React from "react";
 import {
   Building2,
@@ -10,8 +11,7 @@ import {
   X,
   Send,
   Sparkles,
-  ClipboardList,
-  Compass,
+  Camera,
 } from "lucide-react";
 
 export const ReviewModal = ({
@@ -25,9 +25,7 @@ export const ReviewModal = ({
 
   const rooms = data?.rooms || [];
   const hotelImages = data?.hotelImages || [];
-  const legalDocuments = data?.legalDocuments || [];
-  const policies = data?.policies || [];
-  const experiences = data?.experiences || [];
+  const propertyAmenities = data?.propertyAmenities || [];
 
   const formatVND = (amount) => {
     return new Intl.NumberFormat("vi-VN").format(amount || 0) + " ₫";
@@ -35,20 +33,19 @@ export const ReviewModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn font-sans text-slate-800">
-      <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
-        {/* MODAL HEADER */}
+      <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+        {/* HEADER */}
         <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center font-bold shadow-md">
               <FileCheck className="w-5 h-5 text-white" />
             </div>
             <div>
               <h2 className="text-lg font-bold">
-                Xem Lại Toàn Bộ Hồ Sơ Đăng Ký Đối Tác
+                Rà Soát Toàn Bộ Hồ Sơ Trước Khi Gửi Duyệt
               </h2>
               <p className="text-xs text-slate-300">
-                Vui lòng rà soát lại thông tin trước khi chuyển sang hội đồng
-                thẩm định
+                Dữ liệu sẽ được thẩm định và lưu trữ trực tiếp vào hệ thống
               </p>
             </div>
           </div>
@@ -61,39 +58,75 @@ export const ReviewModal = ({
           </button>
         </div>
 
-        {/* MODAL BODY */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm text-slate-800">
+        {/* BODY */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5 text-sm text-slate-800">
           {/* 1. TỔNG QUAN CHỖ NGHỈ */}
-          <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 space-y-3">
+          <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/60 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-blue-600" />{" "}
-                {data?.hotelNameVi || data?.hotelName || "Chưa đặt tên"}
-                {data?.starRating > 0 && (
-                  <span className="text-amber-500 text-xs font-semibold">
-                    {"★".repeat(data.starRating)} ({data.starRating} sao)
-                  </span>
-                )}
+                <Building2 className="w-4 h-4 text-blue-600" />
+                {data?.hotelName || "Chưa đặt tên"}
+                <span className="text-amber-500 text-xs font-semibold">
+                  {"⭐".repeat(data?.starRating || 3)} ({data?.starRating || 3}{" "}
+                  sao)
+                </span>
               </h3>
-              <span className="text-xs font-bold uppercase bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded">
-                {data?.hotelType?.toUpperCase() || "KHÁCH SẠN"}
+              <span className="text-xs font-bold uppercase bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full">
+                Hoa hồng sàn: {data?.commissionRate || 18}%
               </span>
             </div>
 
             <p className="text-xs text-slate-600 flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              {data?.streetAddress || data?.address || "Chưa nhập địa chỉ"}
-              {data?.province && `, ${data.province}`}
+              {data?.address || "Chưa nhập địa chỉ"}, {data?.city}
             </p>
 
             {data?.description && (
-              <p className="text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200 leading-relaxed whitespace-pre-line">
+              <p className="text-xs text-slate-700 bg-white p-3 rounded-xl border border-slate-200 leading-relaxed">
                 <b>Mô tả:</b> {data.description}
               </p>
             )}
+
+            <div className="flex flex-wrap gap-4 text-xs text-slate-600 pt-1">
+              <span className="flex items-center gap-1">
+                <Clock size={14} className="text-blue-600" /> Nhận phòng:{" "}
+                <b>{data?.checkInFrom || "14:00"}</b>
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock size={14} className="text-blue-600" /> Trả phòng:{" "}
+                <b>{data?.checkOutTo || "12:00"}</b>
+              </span>
+              <span className="flex items-center gap-1">
+                <ShieldCheck size={14} className="text-emerald-600" /> Hủy phòng
+                miễn phí trước:{" "}
+                <b>
+                  {data?.cancellation_deadline_hours
+                    ? `${data.cancellation_deadline_hours} giờ`
+                    : "Không hỗ trợ hủy"}
+                </b>
+              </span>
+            </div>
+
+            {propertyAmenities.length > 0 && (
+              <div className="pt-2 border-t border-slate-200/60">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  Tiện ích khách sạn ({propertyAmenities.length}):
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {propertyAmenities.map((amen, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 font-medium"
+                    >
+                      ✓ {amen}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* 2. DANH MỤC PHÒNG */}
+          {/* 2. HẠNG PHÒNG & GIÁ */}
           <div className="border border-slate-200 rounded-2xl p-5 space-y-3">
             <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-2">
               <Bed className="w-4 h-4 text-blue-600" /> Danh mục {rooms.length}{" "}
@@ -103,122 +136,116 @@ export const ReviewModal = ({
               {rooms.map((r, i) => (
                 <div
                   key={r?.id || i}
-                  className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1"
+                  className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5"
                 >
                   <div className="flex justify-between items-center font-bold text-slate-900">
                     <span>
-                      #{i + 1}. {r?.roomName || r?.name || "Phòng nghỉ"}
+                      #{i + 1}. {r?.name || "Phòng nghỉ"}
                     </span>
                     <span className="text-emerald-600 font-bold">
-                      {formatVND(r?.weekdayPrice || r?.sell_price)} / đêm
+                      {formatVND(r?.base_price)} / đêm
                     </span>
                   </div>
                   <p className="text-slate-500">
-                    {r?.bedType || r?.bed_type || "1 Giường đôi"} •{" "}
-                    {r?.roomSize || r?.room_area || 28}m² • Tối đa{" "}
-                    {r?.maxAdults || r?.capacity || 2} khách • Kho:{" "}
-                    {r?.totalRooms || r?.room_count || 5} phòng
+                    {r?.bed_type} • {r?.room_area || 28}m² • Tối đa{" "}
+                    {r?.capacity || 2} khách
                   </p>
+                  <div className="p-2 bg-white rounded-lg border border-slate-200 text-[11px] text-blue-900">
+                    <b>Số phòng thực tế:</b>{" "}
+                    {r?.roomNumbersText || `Tổng ${r?.amount || 1} phòng`}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* 3. PHÁP LÝ & TÀI KHOẢN NGÂN HÀNG */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="border border-slate-200 rounded-2xl p-4 space-y-2">
-              <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" /> Người đại
-                diện ký hợp đồng
+          {/* 3. THƯ VIỆN HÌNH ẢNH */}
+          <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-blue-600" /> Thư viện hình ảnh (
+                {hotelImages.length} ảnh)
               </h4>
-              <p className="text-xs">
-                <b>Họ tên:</b> {data?.signerName || data?.ownerName || "N/A"} (
-                {data?.signerPosition || "Chủ sở hữu"})
+              {data?.hotelMainImage && (
+                <span className="text-[11px] text-amber-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                  ★ Đã có ảnh bìa chính
+                </span>
+              )}
+            </div>
+
+            {hotelImages.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto py-1">
+                {hotelImages.slice(0, 6).map((img, idx) => (
+                  <img
+                    key={idx}
+                    src={img.url}
+                    alt=""
+                    className="w-16 h-12 object-cover rounded-lg border border-slate-200 shrink-0"
+                  />
+                ))}
+                {hotelImages.length > 6 && (
+                  <div className="w-16 h-12 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-xs shrink-0">
+                    +{hotelImages.length - 6}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 4. PHÁP LÝ & TÀI KHOẢN NGÂN HÀNG */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="border border-slate-200 rounded-2xl p-4 space-y-1.5 text-xs">
+              <h4 className="font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" /> Pháp lý chỗ
+                nghỉ
+              </h4>
+              <p>
+                <b>Người liên hệ:</b>{" "}
+                {data?.ownerName || data?.signerName || "Chủ cơ sở"}
               </p>
-              <p className="text-xs">
-                <b>SĐT:</b> {data?.signerPhone || data?.phoneContact || "N/A"}
+              <p>
+                <b>Hotline:</b> {data?.phoneContact || "N/A"}
               </p>
-              <p className="text-xs">
-                <b>Email:</b> {data?.signerEmail || data?.emailContact || "N/A"}
+              <p>
+                <b>Email:</b> {data?.emailContact || "N/A"}
               </p>
-              <p className="text-xs">
-                <b>Mã số thuế:</b> {data?.taxCode || "Chưa có"}
+              <p>
+                <b>Mã số thuế:</b> {data?.taxCode || "Chưa cập nhật"}
+              </p>
+              <p>
+                <b>Giấy phép ĐKKD:</b>{" "}
+                {data?.businessLicenseUrl ? (
+                  <span className="text-emerald-600 font-bold">
+                    ✓ Đã đính kèm tài liệu
+                  </span>
+                ) : (
+                  <span className="text-slate-400">Chưa tải lên</span>
+                )}
               </p>
             </div>
 
-            <div className="border border-slate-200 rounded-2xl p-4 space-y-2">
-              <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <CreditCard className="w-4 h-4 text-blue-600" /> Tài khoản nhận
-                thanh toán
+            <div className="border border-slate-200 rounded-2xl p-4 space-y-1.5 text-xs">
+              <h4 className="font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <CreditCard className="w-4 h-4 text-blue-600" /> Tài khoản thụ
+                hưởng quyết toán
               </h4>
-              <p className="text-xs">
+              <p>
                 <b>Ngân hàng:</b> {data?.bankName || "Vietcombank"}
               </p>
-              <p className="text-xs font-mono">
-                <b>Số TK:</b> {data?.bankAccount || "N/A"}
+              <p className="font-mono">
+                <b>Số TK:</b> {data?.bankAccount || "Chưa nhập"}
               </p>
-              <p className="text-xs font-bold text-slate-900">
-                <b>Chủ TK:</b> {data?.bankAccountName || "N/A"}
+              <p className="font-bold uppercase">
+                <b>Chủ TK:</b> {data?.bankAccountHolder || "Chưa nhập"}
               </p>
-              <p className="text-xs">
-                <b>Hoa hồng:</b>{" "}
-                <span className="text-blue-600 font-bold">
-                  {data?.commissionRate || 18}%
-                </span>
+              <p>
+                <b>Kỳ quyết toán:</b> Hàng tuần qua cổng thanh toán tự động
               </p>
             </div>
           </div>
-
-          {/* 4. QUY ĐỊNH CHỖ NGHỈ */}
-          {policies.length > 0 && (
-            <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2 text-xs">
-              <h4 className="font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                <ClipboardList className="w-4 h-4 text-blue-600" /> Quy định chỗ
-                nghỉ tùy chỉnh ({policies.length} mục)
-              </h4>
-              <div className="space-y-1.5">
-                {policies.map((p, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-white p-2.5 rounded-lg border border-slate-200"
-                  >
-                    <strong className="text-blue-900 block">{p.title}</strong>
-                    <p className="text-slate-600 whitespace-pre-line">
-                      {p.content}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 5. TRẢI NGHIỆM XUNG QUANH */}
-          {experiences.length > 0 && (
-            <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-2 text-xs">
-              <h4 className="font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                <Compass className="w-4 h-4 text-emerald-600" /> Điểm vui chơi
-                gần chỗ nghỉ ({experiences.length} điểm)
-              </h4>
-              <div className="space-y-1.5">
-                {experiences.map((exp, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-white p-2.5 rounded-lg border border-slate-200"
-                  >
-                    <strong className="text-emerald-900 block">
-                      {exp.title}
-                    </strong>
-                    <p className="text-slate-600 whitespace-pre-line">
-                      {exp.content}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* MODAL FOOTER */}
+        {/* FOOTER */}
         <div className="p-5 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
           <button
             type="button"
@@ -235,10 +262,10 @@ export const ReviewModal = ({
             className="px-7 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg transition disabled:opacity-50 flex items-center gap-2 cursor-pointer"
           >
             {loading ? (
-              "Đang khởi tạo hợp đồng..."
+              "Đang lưu trữ dữ liệu..."
             ) : (
               <>
-                <Send className="w-4 h-4" /> Xác nhận & Nộp hồ sơ đối tác
+                <Send className="w-4 h-4" /> Xác nhận & Nộp hồ sơ
               </>
             )}
           </button>

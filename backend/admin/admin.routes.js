@@ -1,55 +1,80 @@
+// backend/routes/admin.routes.js
 const express = require("express");
-const {
-  getStats,
-  listUsers,
-  createUser,
-  updateUserRole,
-  toggleUserStatus,
-  listAdminHotels,
-  updateHotelStatus,
-  listAllBookings,
-  updateBookingStatusAdmin,
-  listPromotions,
-  listReviews,
-  deleteReview,
-} = require("./admin.controller");
-
-// Sử dụng chính xác middleware chuẩn trong auth.middleware.js
-const { requireAuth, requireRole } = require("../middleware/auth.middleware");
-
 const router = express.Router();
 
-// 1. Kiểm tra đăng nhập (tạo req.auth từ token)
-router.use(requireAuth);
+// Tự động tìm nạp controller dù bạn để ở controllers/ hay admin/
+let adminController;
+try {
+  adminController = require("../controllers/admin.controller");
+} catch (e) {
+  try {
+    adminController = require("../admin/admin.controller");
+  } catch (err) {
+    console.error("❌ Không tìm thấy admin.controller.js:", err.message);
+  }
+}
 
-// 2. Tương thích: sao chép req.auth sang req.user và req.userId cho các controller
+const { requireAuth, requireRole } = require("../middleware/auth.middleware");
+
+// 1. Kiểm tra đăng nhập
+if (typeof requireAuth === "function") {
+  router.use(requireAuth);
+}
+
+// 2. Chuẩn hóa ID và đồng bộ req.user
 router.use((req, res, next) => {
-  if (req.auth) {
-    req.user = {
-      id: req.auth.sub || req.auth.id,
-      email: req.auth.email,
-      ...req.auth,
-    };
-    req.userId = req.auth.sub || req.auth.id;
+  const resolvedId =
+    req.user?.id ||
+    req.user?.userId ||
+    req.auth?.sub ||
+    req.auth?.id ||
+    req.auth?.userId;
+
+  if (!req.user) req.user = {};
+  if (resolvedId) {
+    req.user.id = resolvedId;
+    req.user.userId = resolvedId;
   }
   next();
 });
 
-// 3. Kiểm tra quyền Admin (truy vấn DB thật theo req.auth.sub của middleware)
-router.use(requireRole("admin"));
+// 3. Kiểm tra quyền Admin (Không phân biệt hoa thường 'admin' hay 'ADMIN')
+if (typeof requireRole === "function") {
+  router.use((req, res, next) => {
+    // Nếu middleware requireRole nhận mảng hoặc chuỗi
+    requireRole("admin")(req, res, (err) => {
+      if (!err) return next();
+      // Thử lại với chữ in hoa 'ADMIN'
+      requireRole("ADMIN")(req, res, next);
+    });
+  });
+}
 
-// ─── CÁC ROUTE ADMIN ───
-router.get("/stats", getStats);
-router.get("/users", listUsers);
-router.post("/users", createUser);
-router.patch("/users/:id/role", updateUserRole);
-router.patch("/users/:id/status", toggleUserStatus);
-router.get("/hotels", listAdminHotels);
-router.patch("/hotels/:id/status", updateHotelStatus);
-router.get("/bookings", listAllBookings);
-router.patch("/bookings/:id/status", updateBookingStatusAdmin);
-router.get("/promotions", listPromotions);
-router.get("/reviews", listReviews);
-router.delete("/reviews/:id", deleteReview);
+// ─── ĐĂNG KÝ CÁC ROUTE ADMIN ───
+if (adminController) {
+  router.get("/stats", adminController.getStats);
+
+  // Quản lý Users
+  router.get("/users", adminController.listUsers);
+  router.post("/users", adminController.createUser);
+  router.patch("/users/:id/role", adminController.updateUserRole);
+  router.patch("/users/:id/status", adminController.toggleUserStatus);
+
+  // Quản lý & Phê duyệt Khách sạn
+  router.get("/hotels", adminController.listAdminHotels);
+  router.patch("/hotels/:id/status", adminController.updateHotelStatus);
+
+  // Quản lý Đơn đặt phòng
+  router.get("/bookings", adminController.listAllBookings);
+  router.patch(
+    "/bookings/:id/status",
+    adminController.updateBookingStatusAdmin,
+  );
+
+  // Khuyến mãi & Đánh giá
+  router.get("/promotions", adminController.listPromotions);
+  router.get("/reviews", adminController.listReviews);
+  router.delete("/reviews/:id", adminController.deleteReview);
+}
 
 module.exports = router;

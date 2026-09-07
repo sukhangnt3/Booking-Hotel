@@ -24,12 +24,12 @@ import PromotionPage from "@/pages/guest/PromotionPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterForm from "@/components/auth/RegisterForm";
 
-// Admin Pages (Khớp đúng 3 trang theo đề bài)
+// Admin Pages
 import AdminDashboardPage from "@/pages/admin/AdminDashboardPage";
 import HotelApprovalPage from "@/pages/admin/HotelApprovalPage";
 import UserManagementPage from "@/pages/admin/UserManagementPage";
 
-// Owner Pages (Khớp đúng 5 file thực tế)
+// Owner Pages
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
@@ -82,6 +82,10 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="/owner/dashboard" replace /> },
           { path: "dashboard", element: <OwnerDashboardPage /> },
           { path: "hotels", element: <HotelManagementPage /> },
+
+          // 👉 THÊM DÒNG NÀY ĐỂ HẾT BỊ LỖI 404 KHI BẤM NÚT ĐĂNG KÝ CƠ SỞ MỚI:
+          { path: "hotels/register", element: <RegisterForm /> },
+
           { path: "rooms", element: <RoomManagementPage /> },
           { path: "bookings", element: <BookingListPage /> },
         ],

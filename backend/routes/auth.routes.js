@@ -1,13 +1,18 @@
 const express = require("express");
+
 const {
-	profile,
-	googleLogin,
-	login,
-	register,
-	updateProfile,
-	changePassword,
+  profile,
+  googleLogin,
+  login,
+  register,
+  updateProfile,
+  uploadAvatar,
+  changePassword,
 } = require("../controllers/auth.controller");
+
 const { requireAuth } = require("../middleware/auth.middleware");
+
+const uploadAvatarMiddleware = require("../middleware/uploadAvatar");
 
 const router = express.Router();
 
@@ -24,7 +29,8 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             properties:
- *               token: { type: string }
+ *               token:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Đăng nhập thành công
@@ -44,8 +50,10 @@ router.post("/google-login", googleLogin);
  *           schema:
  *             type: object
  *             properties:
- *               email: { type: string }
- *               password: { type: string }
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Đăng nhập thành công
@@ -65,9 +73,12 @@ router.post("/login", login);
  *           schema:
  *             type: object
  *             properties:
- *               email: { type: string }
- *               password: { type: string }
- *               full_name: { type: string }
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               full_name:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Đăng ký thành công
@@ -80,36 +91,17 @@ router.post("/register", register);
  *   get:
  *     summary: Lấy thông tin user hiện tại
  *     tags: [Auth]
- *     security: [{ bearerAuth: [] }]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Thông tin user
+ *
  *   put:
  *     summary: Cập nhật thông tin user
  *     tags: [Auth]
- *     security: [{ bearerAuth: [] }]
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               full_name: { type: string }
- *               phone: { type: string }
- *     responses:
- *       200:
- *         description: Cập nhật thành công
- */
-router.get("/profile", requireAuth, profile);
-router.put("/profile", requireAuth, updateProfile);
-
-/**
- * @swagger
- * /auth/change-password:
- *   post:
- *     summary: Đổi mật khẩu
- *     tags: [Auth]
- *     security: [{ bearerAuth: [] }]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -117,8 +109,72 @@ router.put("/profile", requireAuth, updateProfile);
  *           schema:
  *             type: object
  *             properties:
- *               oldPassword: { type: string }
- *               newPassword: { type: string }
+ *               full_name:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               dob:
+ *                 type: string
+ *               avatar:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Cập nhật thành công
+ */
+router.get("/profile", requireAuth, profile);
+
+router.put("/profile", requireAuth, updateProfile);
+
+/**
+ * @swagger
+ * /auth/profile/avatar:
+ *   post:
+ *     summary: Upload ảnh đại diện
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - avatar
+ *             properties:
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Upload avatar thành công
+ */
+router.post(
+  "/profile/avatar",
+  requireAuth,
+  uploadAvatarMiddleware.single("avatar"),
+  uploadAvatar,
+);
+
+/**
+ * @swagger
+ * /auth/change-password:
+ *   post:
+ *     summary: Đổi mật khẩu
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               oldPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Đổi mật khẩu thành công

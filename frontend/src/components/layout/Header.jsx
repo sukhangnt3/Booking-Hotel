@@ -1,20 +1,18 @@
-// src/components/layout/Header.jsx
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+
 import {
-  User,
   ShieldCheck,
   LogOut,
   ChevronDown,
-  Globe,
   LayoutDashboard,
   Building,
   CalendarCheck,
   Bell,
   Check,
-  Clock,
   Ticket,
 } from "lucide-react";
+
 import { Button } from "../ui";
 import { useAuthStore } from "@/stores/authStore";
 import { useNotification } from "@/hooks/useNotification";
@@ -24,7 +22,9 @@ import { cn } from "@/utils/cn";
 
 export default function Header() {
   const navigate = useNavigate();
+
   const { user: storeUser, isAuthenticated, logout } = useAuthStore();
+
   const { notifications, unreadCount, markAsRead, markAllAsRead } =
     useNotification();
 
@@ -34,26 +34,35 @@ export default function Header() {
   const menuRef = useRef(null);
   const notifRef = useRef(null);
 
-  const localUser = JSON.parse(localStorage.getItem("user") || "null");
-  const user = storeUser || localUser;
+  const user = storeUser || null;
 
-  // Đóng menu khi nhấp chuột ra ngoài
+  // =====================================================
+  // ĐÓNG MENU KHI CLICK RA NGOÀI
+  // =====================================================
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         setIsMenuOpen(false);
       }
+
       if (notifRef.current && !notifRef.current.contains(e.target)) {
         setIsNotifOpen(false);
       }
     };
+
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
-  // TỰ ĐỘNG LẤY PROFILE MỚI NHẤT TỪ DATABASE KHI MỞ TRANG ĐỂ ĐỒNG BỘ ẢNH
+  // =====================================================
+  // LẤY PROFILE MỚI NHẤT TỪ DATABASE
+  // =====================================================
   useEffect(() => {
     const token = localStorage.getItem("token");
+
     if (token && (user?.id || user?.email || isAuthenticated)) {
       authService
         .getProfile()
@@ -70,6 +79,7 @@ export default function Header() {
           if (u) {
             const dbAvatar =
               u.avatar || u.avatar_url || u.picture || u.image || "";
+
             const mergedUser = {
               ...user,
               ...u,
@@ -78,25 +88,47 @@ export default function Header() {
               picture: dbAvatar,
             };
 
-            useAuthStore.setState({ user: mergedUser });
+            // Cập nhật Zustand
+            useAuthStore.setState({
+              user: mergedUser,
+            });
+
+            // Cập nhật localStorage
             try {
               const cur = JSON.parse(localStorage.getItem("user") || "{}");
+
               localStorage.setItem(
                 "user",
-                JSON.stringify({ ...cur, ...mergedUser }),
+                JSON.stringify({
+                  ...cur,
+                  ...mergedUser,
+                }),
               );
-            } catch (e) {}
+            } catch (e) {
+              console.error("Không thể cập nhật localStorage:", e);
+            }
           }
         })
-        .catch(() => {});
+        .catch((err) => {
+          console.error("Không thể lấy profile:", err);
+        });
     }
   }, []);
 
+  // =====================================================
+  // ROLE
+  // =====================================================
   const role = String(user?.role || user?.role_name || "").toLowerCase();
+
   const isAdmin = role.includes("admin") || user?.role_id === 1;
+
   const isOwner = role.includes("owner") || role.includes("hotel_owner");
+
   const isStaff = role.includes("staff") || role.includes("receptionist");
 
+  // =====================================================
+  // TÊN HIỂN THỊ
+  // =====================================================
   const displayName =
     user?.full_name ||
     user?.name ||
@@ -104,6 +136,9 @@ export default function Header() {
     user?.email?.split("@")[0] ||
     "Khách hàng";
 
+  // =====================================================
+  // ROLE BADGE
+  // =====================================================
   const roleBadgeText = isAdmin
     ? "Admin"
     : isStaff
@@ -112,14 +147,20 @@ export default function Header() {
         ? "Chủ nhà"
         : "Khách hàng";
 
-  // Ảnh dự phòng chữ cái (KS)
+  // =====================================================
+  // ẢNH DỰ PHÒNG
+  // =====================================================
   const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
     displayName,
   )}&background=003580&color=fff&bold=true`;
 
-  // Xử lý link ảnh từ Database (chống lỗi 404 nếu là link máy chủ nội bộ /uploads/...)
+  // =====================================================
+  // XỬ LÝ LINK ẢNH
+  // =====================================================
   const resolveAvatarUrl = (url) => {
     if (!url) return "";
+
+    // Link đầy đủ
     if (
       url.startsWith("http://") ||
       url.startsWith("https://") ||
@@ -128,7 +169,11 @@ export default function Header() {
     ) {
       return url;
     }
+
+    // Chuẩn hóa đường dẫn
     const cleanPath = url.replace(/\\/g, "/").replace(/^\/+/, "");
+
+    // Lấy URL backend
     const backendBase =
       apiClient.defaults?.baseURL?.replace(/\/api\/?$/, "") ||
       import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") ||
@@ -137,48 +182,31 @@ export default function Header() {
     return `${backendBase}/${cleanPath}`;
   };
 
-  // QUY TẮC: Lần đầu lấy Google, đã đổi ảnh thì vĩnh viễn lấy ảnh đã đổi
-  const getAvatarSource = () => {
-    const email = user?.email || "";
-    const customAvatar = email
-      ? localStorage.getItem(`has_custom_avatar_${email.toLowerCase().trim()}`)
-      : null;
+  // =====================================================
+  // LẤY AVATAR TỪ DATABASE
+  // =====================================================
+  const rawAvatar =
+    user?.avatar || user?.avatar_url || user?.picture || user?.image || "";
 
-    // 1. Đã từng đổi ảnh -> Lấy ảnh đã đổi
-    if (customAvatar) return customAvatar;
-
-    // 2. Nếu Database có ảnh tự upload (khác link Google) -> Lấy ảnh tự upload
-    if (
-      user?.avatar &&
-      !user.avatar.includes("googleusercontent.com") &&
-      !user.avatar.includes("placeholder")
-    ) {
-      return user.avatar;
-    }
-    if (
-      user?.avatar_url &&
-      !user.avatar_url.includes("googleusercontent.com")
-    ) {
-      return user.avatar_url;
-    }
-
-    // 3. Lần đầu đăng nhập: Lấy ảnh mặc định từ Google
-    return (
-      user?.avatar || user?.avatar_url || user?.picture || user?.image || ""
-    );
-  };
-
-  const rawAvatar = getAvatarSource();
   const avatarUrl = rawAvatar ? resolveAvatarUrl(rawAvatar) : fallbackAvatar;
 
+  // =====================================================
+  // LOGOUT
+  // =====================================================
   const handleLogout = () => {
     if (logout) logout();
+
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+
     setIsMenuOpen(false);
+
     navigate("/");
   };
 
+  // =====================================================
+  // KIỂM TRA ĐĂNG NHẬP
+  // =====================================================
   const isUserLoggedIn = Boolean(
     user && (user.id || user.email || isAuthenticated),
   );
@@ -186,7 +214,9 @@ export default function Header() {
   return (
     <header className="bg-[#0a2540] text-white sticky top-0 z-[60] shadow-2xl backdrop-blur-xl border-b border-amber-500/20 font-sans select-none transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-18 sm:h-20 flex justify-between items-center">
-        {/* 1. LOGO */}
+        {/* =====================================================
+            1. LOGO
+        ===================================================== */}
         <div
           onClick={() => navigate("/")}
           className="flex items-center gap-3 cursor-pointer group"
@@ -194,22 +224,28 @@ export default function Header() {
           <div className="bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-[#0a2540] p-2 rounded-xl shadow-md group-hover:scale-105 transition-all duration-300">
             <Building size={22} strokeWidth={2.5} />
           </div>
+
           <span className="text-2xl sm:text-3xl font-serif tracking-wide font-black bg-gradient-to-r from-white via-slate-100 to-amber-200 bg-clip-text text-transparent">
             GoStay
           </span>
         </div>
 
-        {/* 2. ACTIONS & THÔNG BÁO */}
+        {/* =====================================================
+            2. ACTIONS & THÔNG BÁO
+        ===================================================== */}
         <div className="flex items-center gap-2 sm:gap-4">
+          {/* KÊNH LỄ TÂN */}
           {isStaff && (
             <button
               onClick={() => navigate("/owner/bookings")}
               className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-3.5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition cursor-pointer"
             >
-              <CalendarCheck size={16} /> Kênh Lễ Tân
+              <CalendarCheck size={16} />
+              Kênh Lễ Tân
             </button>
           )}
 
+          {/* ĐĂNG CHỖ NGHỈ */}
           {!isAdmin && !isOwner && !isStaff && (
             <Button
               variant="text"
@@ -220,7 +256,9 @@ export default function Header() {
             </Button>
           )}
 
-          {/* CHUÔNG THÔNG BÁO */}
+          {/* =====================================================
+              CHUÔNG THÔNG BÁO
+          ===================================================== */}
           {isUserLoggedIn && (
             <div className="relative" ref={notifRef}>
               <button
@@ -229,6 +267,7 @@ export default function Header() {
                 title="Thông báo"
               >
                 <Bell size={20} />
+
                 {unreadCount > 0 && (
                   <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] bg-rose-500 text-white rounded-full text-[10px] font-black flex items-center justify-center px-1 border-2 border-[#0a2540] animate-pulse">
                     {unreadCount > 9 ? "9+" : unreadCount}
@@ -236,22 +275,25 @@ export default function Header() {
                 )}
               </button>
 
-              {/* Hộp thả xuống danh sách thông báo */}
+              {/* HỘP THÔNG BÁO */}
               {isNotifOpen && (
                 <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl z-[70] border border-gray-100 text-gray-800 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
                   <div className="p-4 bg-[#003580] text-white flex justify-between items-center">
                     <div>
                       <h4 className="font-bold text-sm">Thông báo</h4>
+
                       <p className="text-[10px] text-blue-200">
                         {unreadCount} thông báo mới
                       </p>
                     </div>
+
                     {unreadCount > 0 && (
                       <button
                         onClick={markAllAsRead}
                         className="text-[11px] text-blue-200 hover:text-white font-semibold flex items-center gap-1 cursor-pointer"
                       >
-                        <Check size={13} /> Đã đọc tất cả
+                        <Check size={13} />
+                        Đã đọc tất cả
                       </button>
                     )}
                   </div>
@@ -263,7 +305,10 @@ export default function Header() {
                           key={n.id}
                           onClick={() => {
                             markAsRead(n.id);
-                            if (n.link) navigate(n.link);
+
+                            if (n.link) {
+                              navigate(n.link);
+                            }
                           }}
                           className={`p-3.5 hover:bg-slate-50 transition cursor-pointer space-y-1 ${
                             !n.read_at && !n.readAt ? "bg-blue-50/50" : ""
@@ -273,10 +318,12 @@ export default function Header() {
                             <strong className="font-bold text-slate-900 block line-clamp-1">
                               {n.title}
                             </strong>
+
                             {!n.read_at && !n.readAt && (
                               <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0 mt-1" />
                             )}
                           </div>
+
                           <p className="text-slate-600 line-clamp-2 leading-relaxed font-normal">
                             {n.content}
                           </p>
@@ -288,6 +335,7 @@ export default function Header() {
                           size={28}
                           className="mx-auto text-slate-300 mb-1"
                         />
+
                         <p className="font-medium text-xs">
                           Không có thông báo nào
                         </p>
@@ -299,7 +347,9 @@ export default function Header() {
             </div>
           )}
 
-          {/* AVATAR PROFILE - HIỂN THỊ ĐỒNG BỘ 100% VỚI DATABASE */}
+          {/* =====================================================
+              AVATAR PROFILE
+          ===================================================== */}
           {isUserLoggedIn ? (
             <div className="relative" ref={menuRef}>
               <button
@@ -311,6 +361,7 @@ export default function Header() {
                     : "hover:bg-white/10",
                 )}
               >
+                {/* AVATAR */}
                 <img
                   key={avatarUrl}
                   src={avatarUrl}
@@ -323,10 +374,12 @@ export default function Header() {
                   className="w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-white object-cover shadow-sm bg-white shrink-0"
                 />
 
+                {/* TÊN + ROLE */}
                 <div className="hidden sm:block text-left mr-1">
                   <p className="text-xs font-bold leading-tight line-clamp-1 max-w-[120px]">
                     {displayName}
                   </p>
+
                   <p
                     className={`text-[10px] font-black uppercase tracking-wider mt-0.5 ${
                       isStaff
@@ -351,18 +404,22 @@ export default function Header() {
                 />
               </button>
 
-              {/* MENU DROPDOWN */}
+              {/* =====================================================
+                  MENU DROPDOWN
+              ===================================================== */}
               {isMenuOpen && (
                 <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl z-[70] py-2 border border-gray-100 text-gray-800 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
                   <div className="px-4 py-3 border-b border-gray-100">
                     <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">
                       Tài khoản ({roleBadgeText})
                     </p>
+
                     <p className="text-sm font-black truncate mt-0.5 text-blue-900">
                       {user?.email}
                     </p>
                   </div>
 
+                  {/* KÊNH LỄ TÂN */}
                   {isStaff && (
                     <button
                       onClick={() => {
@@ -371,11 +428,12 @@ export default function Header() {
                       }}
                       className="w-full text-left px-4 py-3 text-sm bg-amber-50 text-amber-900 font-black hover:bg-amber-100 flex items-center gap-3 transition cursor-pointer"
                     >
-                      <CalendarCheck size={18} className="text-amber-600" />{" "}
+                      <CalendarCheck size={18} className="text-amber-600" />
                       Kênh Lễ Tân
                     </button>
                   )}
 
+                  {/* ADMIN */}
                   {isAdmin && (
                     <button
                       onClick={() => {
@@ -384,10 +442,12 @@ export default function Header() {
                       }}
                       className="w-full text-left px-4 py-3 text-sm bg-blue-50 text-[#006ce4] font-bold hover:bg-blue-100 flex items-center gap-3 transition cursor-pointer"
                     >
-                      <ShieldCheck size={18} /> Quản trị hệ thống
+                      <ShieldCheck size={18} />
+                      Quản trị hệ thống
                     </button>
                   )}
 
+                  {/* OWNER */}
                   {isOwner && !isStaff && (
                     <button
                       onClick={() => {
@@ -396,10 +456,12 @@ export default function Header() {
                       }}
                       className="w-full text-left px-4 py-3 text-sm bg-emerald-50 text-emerald-700 font-bold hover:bg-emerald-100 flex items-center gap-3 transition cursor-pointer"
                     >
-                      <LayoutDashboard size={18} /> Kênh Chủ chỗ nghỉ
+                      <LayoutDashboard size={18} />
+                      Kênh Chủ chỗ nghỉ
                     </button>
                   )}
 
+                  {/* CHUYẾN ĐI */}
                   <button
                     onClick={() => {
                       setIsMenuOpen(false);
@@ -407,33 +469,27 @@ export default function Header() {
                     }}
                     className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 transition font-semibold cursor-pointer"
                   >
-                    <Ticket size={18} className="text-gray-400" /> Chuyến đi của
-                    tôi
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      navigate("/profile");
-                    }}
-                    className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 transition font-semibold cursor-pointer"
-                  >
-                    <User size={18} className="text-gray-400" /> Quản lý tài
-                    khoản
+                    <Ticket size={18} className="text-gray-400" />
+                    Chuyến đi của tôi
                   </button>
 
                   <div className="border-t border-gray-100 my-1" />
 
+                  {/* ĐĂNG XUẤT */}
                   <button
                     onClick={handleLogout}
                     className="w-full text-left px-4 py-3 text-sm text-rose-600 font-bold hover:bg-rose-50 flex items-center gap-3 transition cursor-pointer"
                   >
-                    <LogOut size={18} /> Đăng xuất
+                    <LogOut size={18} />
+                    Đăng xuất
                   </button>
                 </div>
               )}
             </div>
           ) : (
+            /* =====================================================
+               CHƯA ĐĂNG NHẬP
+            ===================================================== */
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"

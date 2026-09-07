@@ -1,7 +1,7 @@
 // backend/server.js
 const express = require("express");
 const cors = require("cors");
-const path = require("path"); // 👈 THÊM PATH
+const path = require("path");
 const swaggerUi = require("swagger-ui-express");
 require("dotenv").config();
 
@@ -9,6 +9,8 @@ const pool = require("./config/database");
 const apiRoutes = require("./routes");
 const swaggerSpec = require("./swagger");
 const bookingController = require("./controllers/booking.controller");
+const reviewController = require("./controllers/review.controller");
+const { requireAuth } = require("./middleware/auth.middleware");
 const {
   errorHandler,
   notFoundHandler,
@@ -44,6 +46,9 @@ app.use(express.urlencoded({ extended: true, limit: "50MB" }));
 
 // 🖼️ PHỤC VỤ THƯ MỤC ẢNH TĨNH CHO FRONTEND TRUY CẬP
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+app.use("/uploads", express.static(path.resolve("uploads")));
+app.use("/uploads", express.static(path.resolve("backend/uploads")));
 
 // Đo lưu lượng HTTP Requests tự động (bảng 22: request_logs)
 app.use((req, res, next) => {
@@ -69,16 +74,50 @@ app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // Gắn trực tiếp route thanh toán
 app.post("/api/bookings/confirm-payment", bookingController.confirmPayment);
 
-// Các routes hệ thống
+// ════════════════════════════════════════════════════════════════════════════
+// 🌟 GẮN TRỰC TIẾP ROUTE REVIEW (CHỐNG LỖI 404 & HỖ TRỢ THANG ĐIỂM 1 - 10)
+// ════════════════════════════════════════════════════════════════════════════
+app.get("/api/hotels/:id/reviews", reviewController.listHotelReviews);
+app.get("/api/hotels/:hotelId/reviews", reviewController.listHotelReviews);
+app.get("/api/reviews/hotel/:hotelId", reviewController.listHotelReviews);
+app.get("/api/reviews/:hotelId", reviewController.listHotelReviews);
+
+app.post("/api/hotels/:id/reviews", requireAuth, reviewController.createReview);
+app.post(
+  "/api/hotels/:hotelId/reviews",
+  requireAuth,
+  reviewController.createReview,
+);
+app.post("/api/reviews", requireAuth, reviewController.createReview);
+
+app.patch("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
+app.post("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
+
+// Các routes hệ thống khác
 app.use("/api", apiRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Khởi tạo bảng tự động (Self-healing)
+// Khởi tạo và tự động vá bảng database (Self-healing)
 async function initDatabaseTables() {
   try {
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`)
+      .catch(() => {});
+
+    // 1. Tự động thêm cột property_type nếu chưa có
+    await pool
+      .query(
+        `ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS property_type VARCHAR(50) DEFAULT 'hotel';`,
+      )
+      .catch(() => {});
+
+    // 2. 👉 SỬA LỖI CONSTRAINT: XÓA CHẶN 5 ĐIỂM CŨ VÀ TẠO CHẶN MỚI TỪ 1 ĐẾN 10 ĐIỂM
+    await pool
+      .query(
+        `ALTER TABLE public.review DROP CONSTRAINT IF EXISTS chk_review_point;
+         ALTER TABLE public.review ADD CONSTRAINT chk_review_point CHECK (point >= 1 AND point <= 10);`,
+      )
       .catch(() => {});
 
     await pool
@@ -129,7 +168,9 @@ async function initDatabaseTables() {
       )
       .catch(() => {});
 
-    console.log("✓ Đồng bộ và bảo vệ cấu trúc Database hoàn tất.");
+    console.log(
+      "✓ Đồng bộ và bảo vệ cấu trúc Database hoàn tất (Đã mở khóa thang điểm 10).",
+    );
   } catch (err) {
     console.warn("Khởi tạo bảng phụ trợ:", err.message);
   }

@@ -402,54 +402,158 @@ async function updateOwnerBookingStatus(req, res, next) {
   }
 }
 
-// ─── 7. CẬP NHẬT THÔNG TIN CƠ SỞ ───
+// ─── 7. CẬP NHẬT THÔNG TIN CƠ SỞ (ĐÃ BỔ SUNG ĐẦY ĐỦ 100% CÁC TRƯỜNG & TRANSACTION) ───
 async function updateHotelInfo(req, res, next) {
+  const client = await pool.connect();
   try {
     const ownerId =
       req.user?.id || req.user?.userId || req.auth?.sub || req.auth?.id;
     const { id } = req.params;
-    const { name, address, city, description, phone, bank_account, bank_name } =
-      req.body;
 
-    if (!ownerId) return res.status(401).json({ message: "Chưa xác thực." });
+    if (!ownerId) {
+      return res.status(401).json({ message: "Chưa xác thực danh tính." });
+    }
 
-    const result = await pool.query(
-      `UPDATE public.hotel
-       SET name = COALESCE($1, name),
-           address = COALESCE($2, address),
-           city = COALESCE($3, city),
-           description = COALESCE($4, description),
-           phone = COALESCE($5, phone),
-           bank_account = COALESCE($6, bank_account),
-           bank_name = COALESCE($7, bank_name),
-           updated_at = NOW()
-       WHERE id = $8 AND owner_id = $9
-       RETURNING *`,
-      [
-        name,
-        address,
-        city,
-        description,
-        phone,
-        bank_account,
-        bank_name,
-        id,
-        ownerId,
-      ],
-    );
+    const {
+      name,
+      address,
+      city,
+      description,
+      phone,
+      email,
+      star_rating,
+      starRating,
+      property_type,
+      propertyType,
+      checkin_time,
+      checkout_time,
+      cancellation_deadline_hours,
+      bank_name,
+      bank_account,
+      bank_account_holder,
+      tax_code,
+      image,
+      image_url,
+    } = req.body;
+
+    // Chuẩn hóa định dạng thời gian sang HH:mm:ss chuẩn PostgreSQL
+    let formattedCheckin = null;
+    if (checkin_time) {
+      formattedCheckin =
+        String(checkin_time).trim().length === 5
+          ? `${checkin_time}:00`
+          : String(checkin_time).trim();
+    }
+
+    let formattedCheckout = null;
+    if (checkout_time) {
+      formattedCheckout =
+        String(checkout_time).trim().length === 5
+          ? `${checkout_time}:00`
+          : String(checkout_time).trim();
+    }
+
+    const finalStar =
+      star_rating !== undefined
+        ? Number(star_rating)
+        : starRating !== undefined
+          ? Number(starRating)
+          : null;
+
+    const finalType = property_type || propertyType || null;
+    const finalImage = image || image_url || null;
+
+    await client.query("BEGIN");
+
+    // 1. Cập nhật bảng hotel
+    const updateHotelSql = `
+      UPDATE public.hotel
+      SET 
+        name = COALESCE($1, name),
+        address = COALESCE($2, address),
+        city = COALESCE($3, city),
+        description = COALESCE($4, description),
+        phone = COALESCE($5, phone),
+        email = COALESCE($6, email),
+        star_rating = COALESCE($7, star_rating),
+        property_type = COALESCE($8, property_type),
+        checkin_time = COALESCE($9::time, checkin_time),
+        checkout_time = COALESCE($10::time, checkout_time),
+        cancellation_deadline_hours = COALESCE($11, cancellation_deadline_hours),
+        bank_name = COALESCE($12, bank_name),
+        bank_account = COALESCE($13, bank_account),
+        bank_account_holder = COALESCE($14, bank_account_holder),
+        tax_code = COALESCE($15, tax_code),
+        updated_at = NOW()
+      WHERE id = $16 AND owner_id = $17
+      RETURNING *;
+    `;
+
+    const result = await client.query(updateHotelSql, [
+      name || null,
+      address || null,
+      city || null,
+      description || null,
+      phone || null,
+      email || null,
+      finalStar,
+      finalType,
+      formattedCheckin,
+      formattedCheckout,
+      cancellation_deadline_hours !== undefined
+        ? Number(cancellation_deadline_hours)
+        : null,
+      bank_name || null,
+      bank_account || null,
+      bank_account_holder || null,
+      tax_code || null,
+      id,
+      ownerId,
+    ]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Không tìm thấy khách sạn." });
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        message:
+          "Không tìm thấy khách sạn hoặc bạn không có quyền sở hữu cơ sở này.",
+      });
     }
+
+    const updatedHotel = result.rows[0];
+
+    // 2. Cập nhật bảng ảnh nếu có gửi ảnh mới
+    if (finalImage) {
+      // Đặt is_thumbnail cũ thành false
+      await client.query(
+        `UPDATE public.image SET is_thumbnail = false WHERE hotel_id = $1`,
+        [id],
+      );
+
+      // Thêm ảnh mới làm thumbnail đại diện
+      await client.query(
+        `INSERT INTO public.image (id, hotel_id, path, is_thumbnail, display_order, created_at)
+         VALUES (gen_random_uuid(), $1, $2, true, 0, NOW())`,
+        [id, finalImage],
+      );
+
+      updatedHotel.image = finalImage;
+      updatedHotel.image_url = finalImage;
+    }
+
+    await client.query("COMMIT");
 
     return res.json({
       success: true,
-      message: "Cập nhật hồ sơ khách sạn thành công!",
-      hotel: result.rows[0],
+      message: "✓ Cập nhật hồ sơ khách sạn thành công!",
+      hotel: updatedHotel,
+      data: updatedHotel,
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("❌ LỖI UPDATE_HOTEL_INFO:", error);
     return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
   }
 }
 

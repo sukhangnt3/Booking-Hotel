@@ -52,19 +52,16 @@ const resolveEffectiveUser = (user) => {
 export const useAuthStore = create()(
   persist(
     (set, get) => ({
-      user: null,
+      user: null, // Sẽ tự động reset thành null khi F5, buộc GuestLayout gọi lại API
       token: null,
-      refreshToken: null,
       isAuthenticated: false,
       isRehydrated: false,
 
-      // Đăng nhập và tự động chuẩn hóa role
-      login: (userData, token, refreshToken = null) => {
-        const effectiveUser = resolveEffectiveUser(userData);
+      // Đăng nhập
+      login: (userData, token) => {
         set({
-          user: effectiveUser,
+          user: resolveEffectiveUser(userData),
           token,
-          refreshToken,
           isAuthenticated: true,
         });
       },
@@ -74,11 +71,9 @@ export const useAuthStore = create()(
         set({
           user: null,
           token: null,
-          refreshToken: null,
           isAuthenticated: false,
         });
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
+        localStorage.removeItem("auth-storage");
       },
 
       // Cập nhật profile đồng bộ
@@ -99,24 +94,18 @@ export const useAuthStore = create()(
         const target = String(roleName).toLowerCase();
         return String(currentUser.role).toLowerCase() === target;
       },
-
-      syncRole: () => {
-        const currentUser = get().user;
-        if (!currentUser) return;
-        set({
-          user: resolveEffectiveUser(currentUser),
-        });
-      },
     }),
     {
       name: "auth-storage",
       storage: createJSONStorage(() => localStorage),
+      // 🚀 BÍ QUYẾT: CHỈ LƯU TOKEN XUỐNG MÁY, TUYỆT ĐỐI KHÔNG LƯU USER
+      partialize: (state) => ({
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.isRehydrated = true;
-          if (state.user) {
-            state.user = resolveEffectiveUser(state.user);
-          }
         }
       },
     },

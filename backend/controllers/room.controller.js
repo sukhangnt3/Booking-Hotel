@@ -473,7 +473,126 @@ async function updateRoomInventory(req, res, next) {
     client.release();
   }
 }
+// ─── 10. TẠO KHÓA GIỮ PHÒNG TẠM THỜI 15 PHÚT (BẢNG 14: TEMPORARY_LOCKS) ───
+async function createTemporaryLock(req, res, next) {
+  const { roomId, checkIn, checkOut, quantity = 1 } = req.body;
+  const userId = req.user?.id || null;
+  const sessionId = req.headers["x-session-id"] || crypto.randomUUID();
 
+  if (!roomId || !checkIn || !checkOut) {
+    return res.status(400).json({
+      message: "Thiếu thông tin giữ phòng (roomId, checkIn, checkOut).",
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Kiểm tra xem phòng còn đủ số lượng trong các đêm này không
+    const checkQuery = `
+      WITH StayNights AS (
+        SELECT generate_series($2::date, ($3::date - INTERVAL '1 day')::date, INTERVAL '1 day')::date AS night_date
+      )
+      SELECT 
+        sn.night_date,
+        GREATEST(
+          0,
+          COALESCE(ri.available_count, r.amount)
+          - COALESCE((
+              SELECT SUM(br.quantity)::int 
+              FROM public.booking_room br
+              JOIN public.booking b ON b.id = br.booking_id
+              WHERE br.room_id = r.id AND br.book_date = sn.night_date 
+                AND b.status IN ('confirmed', 'checked_in', 'pending')
+            ), 0)
+          - COALESCE((
+              SELECT SUM(tl.quantity)::int 
+              FROM public.temporary_locks tl
+              WHERE tl.room_id = r.id AND tl.lock_date = sn.night_date 
+                AND tl.expires_at > NOW()
+            ), 0)
+        ) AS current_available
+      FROM public.room r
+      CROSS JOIN StayNights sn
+      LEFT JOIN public.room_inventory ri ON ri.room_id = r.id AND ri.inventory_date = sn.night_date
+      WHERE r.id::text = $1;
+    `;
+
+    const checkRes = await client.query(checkQuery, [
+      roomId,
+      checkIn,
+      checkOut,
+    ]);
+
+    const isAvailable = checkRes.rows.every(
+      (row) => Number(row.current_available) >= Number(quantity),
+    );
+
+    if (!isAvailable) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        success: false,
+        message:
+          "Rất tiếc! Phòng vừa có khách hàng khác giữ chỗ trước ít giây.",
+      });
+    }
+
+    // 2. Tạo bản ghi khóa giữ chỗ trong 15 phút
+    const lockSessionId = crypto.randomUUID();
+    const insertLockQuery = `
+      INSERT INTO public.temporary_locks (
+        id, room_id, user_id, session_id, lock_date, quantity, lock_expires_at, expires_at, created_at
+      )
+      SELECT 
+        gen_random_uuid(), $1, $2, $3, sn.night_date, $4, 
+        NOW() + INTERVAL '15 minutes', NOW() + INTERVAL '15 minutes', NOW()
+      FROM (
+        SELECT generate_series($5::date, ($6::date - INTERVAL '1 day')::date, INTERVAL '1 day')::date AS night_date
+      ) sn;
+    `;
+
+    await client.query(insertLockQuery, [
+      roomId,
+      userId,
+      lockSessionId,
+      quantity,
+      checkIn,
+      checkOut,
+    ]);
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      success: true,
+      message: "Đã giữ phòng tạm thời thành công trong 15 phút.",
+      lockId: lockSessionId,
+      expiresInMinutes: 15,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ LỖI TẠO LOCK:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
+  }
+}
+
+// ─── 11. GIẢI PHÓNG KHÓA GIỮ PHÒNG (KHI HỦY HOẶC THOÁT TRANG) ───
+async function releaseTemporaryLock(req, res, next) {
+  const lockId = req.params.lockId || req.body.lockId;
+  if (!lockId) return res.json({ success: true });
+
+  try {
+    await pool.query(
+      `DELETE FROM public.temporary_locks WHERE session_id = $1 OR id::text = $1`,
+      [lockId],
+    );
+    return res.json({ success: true, message: "Đã giải phóng phòng giữ chỗ." });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
 module.exports = {
   listRooms,
   getRoomById,
@@ -484,4 +603,6 @@ module.exports = {
   listMasterAmenities,
   getRoomInventory,
   updateRoomInventory,
+  createTemporaryLock,
+  releaseTemporaryLock,
 };

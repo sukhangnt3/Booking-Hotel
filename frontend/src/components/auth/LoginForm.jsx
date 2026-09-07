@@ -1,4 +1,4 @@
-// src/components/auth/LoginForm.jsx (hoặc LoginForm.jsx của bạn)
+// src/components/auth/LoginForm.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useGoogleLogin } from "@react-oauth/google";
@@ -17,7 +17,7 @@ const LoginForm = () => {
   const navigate = useNavigate();
   const loginStore = useAuthStore((state) => state.login);
 
-  // --- 🎯 ĐIỀU HƯỚNG CHÍNH XÁC THEO ROLE (ĐÃ BỔ SUNG LỄ TÂN) ---
+  // --- 🎯 ĐIỀU HƯỚNG CHÍNH XÁC THEO ROLE ---
   const redirectByUserRole = (user) => {
     const rawRole =
       user?.role ||
@@ -70,6 +70,7 @@ const LoginForm = () => {
         );
         const googleUserInfo = await googleUserRes.json();
 
+        // Lấy thông tin user từ Backend
         const response = await authService.googleLogin(
           tokenResponse.access_token,
         );
@@ -79,20 +80,15 @@ const LoginForm = () => {
 
         if (!user) throw new Error("Không thể xác thực tài khoản");
 
+        // 🚀 BÍ QUYẾT: Dù Backend trả thiếu ảnh, Frontend vẫn tự ép link ảnh từ Google vào!
         const finalUser = {
           ...user,
           full_name: user.full_name || googleUserInfo.name,
-          avatar: user.avatar || googleUserInfo.picture,
-          picture: googleUserInfo.picture,
+          avatar: user.avatar || googleUserInfo.picture, // Ép cứng ảnh Google vào đây
         };
 
+        // Lưu vào Zustand Store
         if (loginStore) loginStore(finalUser, systemToken);
-
-        if (googleUserInfo.picture && authService.updateProfile) {
-          authService
-            .updateProfile({ avatar: googleUserInfo.picture })
-            .catch(() => {});
-        }
 
         redirectByUserRole(finalUser);
       } catch (err) {
@@ -142,19 +138,16 @@ const LoginForm = () => {
         staffEmails.includes(cleanEmail);
 
       if (matchedStaff && isStaffAccount) {
-        // Kiểm tra xem có bị tạm khóa ca trực không
         if (matchedStaff.active === false) {
           throw new Error(
             "Tài khoản lễ tân đã bị Chủ khách sạn tạm khóa quyền truy cập!",
           );
         }
 
-        // Kiểm tra mật khẩu do Chủ nhà tạo
         if (matchedStaff.password && matchedStaff.password !== password) {
           throw new Error("Mật khẩu tài khoản lễ tân không chính xác!");
         }
 
-        // Tạo object đăng nhập hoàn chỉnh cho Lễ tân
         const nowTime =
           new Date().toLocaleTimeString("vi-VN") +
           " " +
@@ -169,12 +162,10 @@ const LoginForm = () => {
 
         const staffToken = "receptionist-session-token-" + Date.now();
 
-        // Lưu thông tin đăng nhập vào Store & LocalStorage
         if (loginStore) loginStore(staffUserObj, staffToken);
         localStorage.setItem("user", JSON.stringify(staffUserObj));
         localStorage.setItem("token", staffToken);
 
-        // Cập nhật lại thời gian vào ca trong danh sách nhân sự
         const updatedPms = pmsUsers.map((u) =>
           u.email?.toLowerCase().trim() === cleanEmail
             ? { ...u, last_login: nowTime }
@@ -182,12 +173,11 @@ const LoginForm = () => {
         );
         localStorage.setItem("pms_users_master", JSON.stringify(updatedPms));
 
-        // Điều hướng thẳng vào Kênh lễ tân
         redirectByUserRole(staffUserObj);
         return;
       }
 
-      // ─── 2. ĐĂNG NHẬP API BACKEND (DÀNH CHO KHÁCH & CHỦ NHÀ / ADMIN) ───
+      // ─── 2. ĐĂNG NHẬP API BACKEND ───
       let user = null;
       let systemToken = null;
 
@@ -197,7 +187,6 @@ const LoginForm = () => {
         systemToken =
           response?.systemToken || response?.token || response?.data?.token;
       } catch (apiErr) {
-        // Fallback: nếu Backend chưa chạy hoặc tài khoản mock local
         const localMatched = allUsers.find(
           (u) => u.email?.toLowerCase().trim() === cleanEmail,
         );
@@ -230,7 +219,6 @@ const LoginForm = () => {
 
   return (
     <div className="w-full max-w-sm mx-auto py-12 px-4 font-sans">
-      {/* Nút quay lại khi ở bước nhập mật khẩu */}
       {step === "PASSWORD" && (
         <button
           onClick={() => setStep("EMAIL")}
@@ -247,7 +235,6 @@ const LoginForm = () => {
         Sử dụng tài khoản GoStay của bạn để trải nghiệm các dịch vụ tốt nhất.
       </p>
 
-      {/* Hiển thị lỗi nếu có */}
       {error && (
         <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl font-bold animate-in fade-in slide-in-from-top-1">
           ⚠️ {error}
@@ -303,7 +290,6 @@ const LoginForm = () => {
         </form>
       )}
 
-      {/* Đường phân cách */}
       <div className="relative my-10 text-center">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-200"></div>
@@ -313,7 +299,6 @@ const LoginForm = () => {
         </span>
       </div>
 
-      {/* Nút Google */}
       <button
         type="button"
         onClick={() => handleGoogleLogin()}

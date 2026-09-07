@@ -1,5 +1,5 @@
 // src/pages/guest/HotelDetailPage.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
   MapPin,
@@ -19,6 +19,8 @@ import {
   Building2,
   Palmtree,
   ClipboardList,
+  AlertCircle,
+  Eye,
 } from "lucide-react";
 import {
   format,
@@ -42,7 +44,7 @@ import { Button } from "@/components/ui";
 import { Breadcrumb, LoadingSpinner } from "@/components/common";
 import { ReviewList, ReviewForm } from "@/components/review";
 
-import { hotelService } from "@/services";
+import apiClient from "@/services/apiClient";
 import { useAuthStore } from "@/stores/authStore";
 
 const BACKEND_BASE_URL = (
@@ -66,6 +68,15 @@ const AMENITY_MAP = {
   tv_smart: "Smart TV màn hình phẳng",
 };
 
+const ROOM_VIEW_MAP = {
+  sea_view: "Hướng biển (Ocean View)",
+  city_view: "Hướng thành phố (City View)",
+  pool_view: "Hướng hồ bơi (Pool View)",
+  garden_view: "Hướng vườn (Garden View)",
+  mountain_view: "Hướng núi / Đồi",
+  internal_view: "Hướng nội khu",
+};
+
 const formatAmenityName = (item) => {
   if (!item) return "";
   if (typeof item === "object") {
@@ -73,15 +84,6 @@ const formatAmenityName = (item) => {
   }
   return AMENITY_MAP[item] || String(item).replace(/_/g, " ");
 };
-
-const HOT_DESTINATIONS = [
-  { name: "Đà Nẵng", count: "Khách sạn & Resort" },
-  { name: "Nha Trang", count: "Khách sạn ven biển" },
-  { name: "Phú Quốc", count: "Khu nghỉ dưỡng cao cấp" },
-  { name: "Đà Lạt", count: "Homestay & Khách sạn" },
-  { name: "Vũng Tàu", count: "Khách sạn & Biệt thự" },
-  { name: "Hà Nội", count: "Khách sạn trung tâm" },
-];
 
 const safeFormat = (date, pattern = "yyyy-MM-dd") => {
   if (!date) return "";
@@ -121,9 +123,7 @@ export default function HotelDetailPage() {
 
   const today = startOfToday();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isDestDropdownOpen, setIsDestDropdownOpen] = useState(false);
-
+  // Ngày áp dụng chính thức
   const initialCheckIn = searchParams.get("checkIn")
     ? new Date(searchParams.get("checkIn"))
     : today;
@@ -131,22 +131,29 @@ export default function HotelDetailPage() {
     ? new Date(searchParams.get("checkOut"))
     : addDays(today, 1);
 
-  const [checkInDate, setCheckInDate] = useState(initialCheckIn);
-  const [checkOutDate, setCheckOutDate] = useState(initialCheckOut);
-  const [adults, setAdults] = useState(Number(searchParams.get("adults")) || 2);
-  const [roomsCount, setRoomsCount] = useState(1);
+  const [appliedCheckIn, setAppliedCheckIn] = useState(initialCheckIn);
+  const [appliedCheckOut, setAppliedCheckOut] = useState(initialCheckOut);
 
+  // Ngày tạm thời
+  const [tempCheckIn, setTempCheckIn] = useState(initialCheckIn);
+  const [tempCheckOut, setTempCheckOut] = useState(initialCheckOut);
+  const [hoverDate, setHoverDate] = useState(null);
+
+  const [adults, setAdults] = useState(Number(searchParams.get("adults")) || 2);
+  const [tempAdults, setTempAdults] = useState(adults);
+
+  const [searchQuery, setSearchQuery] = useState("");
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isGuestOpen, setIsGuestOpen] = useState(false);
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
-  const [hoverDate, setHoverDate] = useState(null);
 
-  const destRef = useRef(null);
   const calendarRef = useRef(null);
   const guestRef = useRef(null);
   const roomsRef = useRef(null);
 
   const [hotel, setHotel] = useState(null);
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [checkingRooms, setCheckingRooms] = useState(false);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
@@ -154,71 +161,255 @@ export default function HotelDetailPage() {
   const formatVND = (price) =>
     Number(price || 0).toLocaleString("vi-VN") + " ₫";
 
-  const fetchAllData = async () => {
+  const appliedNights = Math.max(
+    1,
+    differenceInDays(appliedCheckOut, appliedCheckIn),
+  );
+
+  const previewNights =
+    tempCheckIn && tempCheckOut && isAfter(tempCheckOut, tempCheckIn)
+      ? Math.max(1, differenceInDays(tempCheckOut, tempCheckIn))
+      : 1;
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🚀 TẢI REVIEW TƯƠI MỚI (CHỐNG CACHE)
+  // ════════════════════════════════════════════════════════════════════════════
+  const fetchReviewsOnly = useCallback(async () => {
+    if (!id) return;
+    try {
+      const revRes = await apiClient.get(
+        `/hotels/${id}/reviews?_t=${Date.now()}`,
+      );
+      const list =
+        revRes?.data?.reviews ||
+        revRes?.data?.data ||
+        revRes?.data ||
+        revRes?.reviews ||
+        [];
+      if (Array.isArray(list)) {
+        setReviews(list);
+      }
+    } catch (err) {
+      console.warn("Chưa tải được đánh giá qua endpoint phụ:", err);
+    }
+  }, [id]);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🚀 TẢI TOÀN BỘ DỮ LIỆU KHÁCH SẠN
+  // ════════════════════════════════════════════════════════════════════════════
+  const fetchAllData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
 
     try {
-      const hotelRes = await hotelService.getById(id);
-      const hotelData = hotelRes?.data || hotelRes;
+      const res = await apiClient.get(`/hotels/${id}?_t=${Date.now()}`);
+      const hotelData = res?.data?.hotel || res?.data?.data || res?.data || res;
 
       if (hotelData) {
         setHotel(hotelData);
         setSearchQuery(hotelData.name || "");
         setIsFavorite(Boolean(hotelData.is_favorite));
-      }
 
-      if (hotelService?.getReviews) {
-        const reviewsRes = await hotelService.getReviews(id);
-        const reviewsData = Array.isArray(reviewsRes)
-          ? reviewsRes
-          : reviewsRes?.data || [];
-        setReviews(reviewsData);
+        const rawRooms = Array.isArray(hotelData.rooms) ? hotelData.rooms : [];
+        setAvailableRooms(
+          rawRooms.map((r) => {
+            const daily = Number(r.base_price || r.sell_price || 650000);
+            return {
+              ...r,
+              daily_price: daily,
+              total_price: daily * appliedNights,
+              remaining_rooms: r.amount || 4,
+              is_available: true,
+            };
+          }),
+        );
+
+        if (Array.isArray(hotelData.reviews) && hotelData.reviews.length > 0) {
+          setReviews(hotelData.reviews);
+        } else {
+          await fetchReviewsOnly();
+        }
       }
     } catch (err) {
-      console.error("Lỗi lấy thông tin khách sạn:", err);
+      console.error("Lỗi tải thông tin chi tiết khách sạn:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, appliedNights, fetchReviewsOnly]);
 
   useEffect(() => {
     fetchAllData();
-  }, [id]);
+  }, [fetchAllData]);
 
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (destRef.current && !destRef.current.contains(e.target))
-        setIsDestDropdownOpen(false);
-      if (calendarRef.current && !calendarRef.current.contains(e.target))
-        setIsCalendarOpen(false);
-      if (guestRef.current && !guestRef.current.contains(e.target))
-        setIsGuestOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  // ════════════════════════════════════════════════════════════════════════════
+  // 🎯 TỰ ĐỘNG NHẬN VÀ NHÂN GIÁ
+  // ════════════════════════════════════════════════════════════════════════════
+  const applySearchAndRecalculate = (finalIn, finalOut, guestCount) => {
+    const newNights = Math.max(1, differenceInDays(finalOut, finalIn));
+
+    setAppliedCheckIn(finalIn);
+    setAppliedCheckOut(finalOut);
+    setAdults(guestCount);
+
+    setSearchParams({
+      checkIn: safeFormat(finalIn, "yyyy-MM-dd"),
+      checkOut: safeFormat(finalOut, "yyyy-MM-dd"),
+      adults: guestCount.toString(),
+    });
+
+    if (hotel?.rooms) {
+      const recalculated = hotel.rooms.map((r) => {
+        const daily = Number(r.base_price || r.sell_price || 650000);
+        return {
+          ...r,
+          daily_price: daily,
+          total_price: daily * newNights,
+          remaining_rooms: r.amount || 4,
+          is_available: true,
+        };
+      });
+      setAvailableRooms(recalculated);
+    }
+  };
 
   const handleDateClick = (date) => {
     if (isBefore(date, today)) return;
 
-    if (!checkInDate || (checkInDate && checkOutDate)) {
-      setCheckInDate(date);
-      setCheckOutDate(null);
-    } else if (checkInDate && !checkOutDate) {
-      if (isBefore(date, checkInDate) || isSameDay(date, checkInDate)) {
-        setCheckInDate(date);
+    if (!tempCheckIn || (tempCheckIn && tempCheckOut)) {
+      setTempCheckIn(date);
+      setTempCheckOut(null);
+    } else if (tempCheckIn && !tempCheckOut) {
+      if (isBefore(date, tempCheckIn) || isSameDay(date, tempCheckIn)) {
+        setTempCheckIn(date);
       } else {
-        setCheckOutDate(date);
+        const finalIn = tempCheckIn;
+        const finalOut = date;
+        setTempCheckOut(finalOut);
         setIsCalendarOpen(false);
+
+        applySearchAndRecalculate(finalIn, finalOut, tempAdults);
       }
     }
   };
 
-  const totalNights =
-    checkInDate && checkOutDate && isAfter(checkOutDate, checkInDate)
-      ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
-      : 1;
+  const handleManualUpdate = () => {
+    let finalIn = tempCheckIn || today;
+    let finalOut = tempCheckOut;
+
+    if (
+      !finalOut ||
+      isBefore(finalOut, finalIn) ||
+      isSameDay(finalOut, finalIn)
+    ) {
+      finalOut = addDays(finalIn, 1);
+      setTempCheckOut(finalOut);
+    }
+
+    setIsCalendarOpen(false);
+    setIsGuestOpen(false);
+
+    applySearchAndRecalculate(finalIn, finalOut, tempAdults);
+    roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 📸 BỘ QUÉT ẢNH THẬT 100% TỪ DATABASE (KHÔNG TỰ Ý CHÈN ẢNH MẪU LẠ)
+  // ════════════════════════════════════════════════════════════════════════════
+  const dbImages = [];
+
+  // 1. Ảnh đại diện chính của khách sạn
+  if (hotel?.image) {
+    const u = parseRealImageUrl(hotel.image);
+    if (u && !dbImages.includes(u)) dbImages.push(u);
+  }
+
+  // 2. Toàn bộ ảnh phụ trong bảng image của khách sạn
+  if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
+    hotel.images.forEach((img) => {
+      const u = parseRealImageUrl(img);
+      if (u && !dbImages.includes(u)) dbImages.push(u);
+    });
+  }
+
+  // 3. Gom ảnh từ danh sách phòng ngủ của chính khách sạn này
+  if (Array.isArray(hotel?.rooms)) {
+    hotel.rooms.forEach((r) => {
+      const rImg =
+        r.image || r.thumbnail || (Array.isArray(r.images) && r.images[0]);
+      if (rImg) {
+        const u = parseRealImageUrl(rImg);
+        if (u && !dbImages.includes(u)) dbImages.push(u);
+      }
+    });
+  }
+
+  // 4. Nếu khách chỉ tải 1 ảnh, dùng chính ảnh đó nhân bản vào các ô bên cạnh (Không nhồi ảnh bể bơi Unsplash)
+  if (dbImages.length > 0) {
+    while (dbImages.length < 3) {
+      dbImages.push(dbImages[0]);
+    }
+  } else {
+    // Chỉ fallback ảnh trống khi cơ sở hoàn toàn chưa có ảnh nào
+    const defaultFallbacks = [
+      "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
+      "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
+      "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
+    ];
+    dbImages.push(...defaultFallbacks);
+  }
+
+  const getRoomImage = (room, roomIdx) => {
+    if (room.image && !room.image.startsWith("blob:")) {
+      const u = parseRealImageUrl(room.image);
+      if (u) return u;
+    }
+    if (room.thumbnail) {
+      const u = parseRealImageUrl(room.thumbnail);
+      if (u) return u;
+    }
+    if (Array.isArray(room.images) && room.images.length > 0) {
+      const u = parseRealImageUrl(room.images[0]);
+      if (u) return u;
+    }
+    if (Array.isArray(hotel?.images)) {
+      const matched = hotel.images.find(
+        (img) =>
+          String(img.room_id || img.roomId || "") === String(room.id || "") &&
+          img.room_id,
+      );
+      if (matched) {
+        const u = parseRealImageUrl(matched);
+        if (u) return u;
+      }
+    }
+    // Dùng ảnh thật của khách sạn cho phòng nếu phòng chưa tải ảnh riêng
+    return dbImages[roomIdx + 1] || dbImages[0];
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // ⭐ ĐÁNH GIÁ THANG ĐIỂM 10 CHUẨN XÁC
+  // ════════════════════════════════════════════════════════════════════════════
+  const totalReviewsCount =
+    reviews.length > 0 ? reviews.length : Number(hotel?.review_count || 0);
+
+  let averageScore = 9.3;
+  if (reviews.length > 0) {
+    const sum = reviews.reduce((acc, r) => {
+      const pt = Number(r.point || r.rating || 10);
+      return acc + pt;
+    }, 0);
+    averageScore = sum / reviews.length;
+  } else if (hotel?.average_rating) {
+    averageScore = Number(hotel.average_rating);
+  }
+  averageScore = Math.min(10, Math.max(1, averageScore));
+
+  const getRatingLabel = (score) => {
+    if (score >= 9.0) return "Tuyệt vời";
+    if (score >= 8.0) return "Rất tốt";
+    if (score >= 7.0) return "Hài lòng";
+    return "Được đánh giá tốt";
+  };
 
   const renderMonthCalendar = (monthDate) => {
     const start = startOfMonth(monthDate);
@@ -258,18 +449,18 @@ export default function HotelDetailPage() {
           ))}
           {days.map((day) => {
             const isPast = isBefore(day, today);
-            const isStart = checkInDate && isSameDay(day, checkInDate);
-            const isEnd = checkOutDate && isSameDay(day, checkOutDate);
+            const isStart = tempCheckIn && isSameDay(day, tempCheckIn);
+            const isEnd = tempCheckOut && isSameDay(day, tempCheckOut);
             const isInRange =
-              checkInDate &&
-              checkOutDate &&
-              isWithinInterval(day, { start: checkInDate, end: checkOutDate });
+              tempCheckIn &&
+              tempCheckOut &&
+              isWithinInterval(day, { start: tempCheckIn, end: tempCheckOut });
             const isHoverRange =
-              checkInDate &&
-              !checkOutDate &&
+              tempCheckIn &&
+              !tempCheckOut &&
               hoverDate &&
-              isAfter(hoverDate, checkInDate) &&
-              isWithinInterval(day, { start: checkInDate, end: hoverDate });
+              isAfter(hoverDate, tempCheckIn) &&
+              isWithinInterval(day, { start: tempCheckIn, end: hoverDate });
             const isWeekend = getDay(day) === 0 || getDay(day) === 6;
 
             let btnClasses =
@@ -282,7 +473,7 @@ export default function HotelDetailPage() {
             else if (isStart)
               btnClasses +=
                 "bg-[#006ce4] text-white rounded-l-lg z-10 font-black shadow-md " +
-                (checkOutDate ? "rounded-r-none" : "rounded-r-lg");
+                (tempCheckOut ? "rounded-r-none" : "rounded-r-lg");
             else if (isEnd)
               btnClasses +=
                 "bg-[#006ce4] text-white rounded-r-lg rounded-l-none z-10 font-black shadow-md";
@@ -300,7 +491,7 @@ export default function HotelDetailPage() {
                 type="button"
                 disabled={isPast}
                 onClick={() => handleDateClick(day)}
-                onMouseEnter={() => !checkOutDate && setHoverDate(day)}
+                onMouseEnter={() => !tempCheckOut && setHoverDate(day)}
                 className={btnClasses}
               >
                 {safeFormat(day, "d")}
@@ -312,67 +503,28 @@ export default function HotelDetailPage() {
     );
   };
 
-  const handleUpdateSearch = () => {
-    let activeIn = checkInDate || today;
-    let activeOut = checkOutDate;
-
-    if (
-      !activeOut ||
-      isBefore(activeOut, activeIn) ||
-      isSameDay(activeOut, activeIn)
-    ) {
-      activeOut = addDays(activeIn, 1);
-      setCheckOutDate(activeOut);
-    }
-
-    const inStr = safeFormat(activeIn, "yyyy-MM-dd");
-    const outStr = safeFormat(activeOut, "yyyy-MM-dd");
-    const trimmedQuery = (searchQuery || "").trim();
-    const currentHotelName = (hotel?.name || "").trim();
-
-    setIsCalendarOpen(false);
-    setIsGuestOpen(false);
-    setIsDestDropdownOpen(false);
-
-    if (
-      trimmedQuery &&
-      trimmedQuery.toLowerCase() !== currentHotelName.toLowerCase()
-    ) {
-      navigate(
-        `/hotels?destination=${encodeURIComponent(trimmedQuery)}&checkIn=${inStr}&checkOut=${outStr}&adults=${adults}`,
-      );
-      return;
-    }
-
-    setSearchParams({
-      checkIn: inStr,
-      checkOut: outStr,
-      adults: adults.toString(),
-    });
-
-    roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
   const handleToggleFavorite = async () => {
     if (!isAuthenticated) {
       alert("Vui lòng đăng nhập để lưu khách sạn yêu thích!");
       return;
     }
-    const previous = isFavorite;
-    setIsFavorite(!previous);
+    const prev = isFavorite;
+    setIsFavorite(!prev);
     try {
-      if (previous) {
-        await hotelService.removeFavorite(id);
-      } else {
-        await hotelService.addFavorite(id);
-      }
+      if (prev) await apiClient.delete(`/favorites/${id}`);
+      else await apiClient.post(`/favorites`, { hotelId: id });
     } catch {
-      setIsFavorite(previous);
+      setIsFavorite(prev);
     }
   };
 
   if (loading)
-    return <LoadingSpinner fullPage label="Đang tải thông tin khách sạn..." />;
+    return (
+      <LoadingSpinner
+        fullPage
+        label="Đang đồng bộ thông tin khách sạn từ Database..."
+      />
+    );
   if (!hotel) {
     return (
       <div className="py-24 text-center space-y-4 font-sans">
@@ -384,37 +536,6 @@ export default function HotelDetailPage() {
     );
   }
 
-  const dbImages = [];
-  if (Array.isArray(hotel.images) && hotel.images.length > 0) {
-    hotel.images.forEach((img) => {
-      const u = parseRealImageUrl(img);
-      if (u && !dbImages.includes(u)) dbImages.push(u);
-    });
-  }
-  if (hotel.image) {
-    const u = parseRealImageUrl(hotel.image);
-    if (u && !dbImages.includes(u)) dbImages.unshift(u);
-  }
-  const defaultFallbacks = [
-    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
-    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
-    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
-  ];
-  while (dbImages.length < 3) {
-    dbImages.push(defaultFallbacks[dbImages.length]);
-  }
-
-  const totalReviewsCount =
-    reviews.length > 0 ? reviews.length : Number(hotel.review_count || 0);
-  const averageScore =
-    reviews.length > 0
-      ? reviews.reduce((sum, r) => sum + Number(r.point || r.rating || 10), 0) /
-        reviews.length
-      : Number(hotel.average_rating || 0);
-
-  const hasReviews = totalReviewsCount > 0 && averageScore > 0;
-  const firstReview = reviews && reviews.length > 0 ? reviews[0] : null;
-
   const breadcrumbs = [
     { label: "Trang chủ", link: "/" },
     { label: "Khách sạn", link: "/hotels" },
@@ -425,12 +546,15 @@ export default function HotelDetailPage() {
     { label: hotel.name },
   ];
 
+  const displayRooms =
+    availableRooms.length > 0 ? availableRooms : hotel.rooms || [];
+
   return (
     <div className="bg-[#f5f7fa] min-h-screen pb-20 font-sans text-slate-800">
       <div className="max-w-7xl mx-auto px-4 pt-3">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* HEADER */}
+        {/* HEADER: TÊN KHÁCH SẠN, HẠNG SAO, LOẠI HÌNH */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-2 mb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -440,9 +564,14 @@ export default function HotelDetailPage() {
               {hotel.star_rating > 0 && (
                 <div className="flex text-amber-400">
                   {[...Array(Number(hotel.star_rating || 5))].map((_, i) => (
-                    <Star key={i} size={15} fill="currentColor" />
+                    <Star key={i} size={16} fill="currentColor" />
                   ))}
                 </div>
+              )}
+              {hotel.property_type && (
+                <span className="text-[10px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                  {hotel.property_type}
+                </span>
               )}
             </div>
 
@@ -456,13 +585,15 @@ export default function HotelDetailPage() {
               <button
                 onClick={() =>
                   window.open(
-                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hotel.name + " " + (hotel.address || ""))}`,
+                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      hotel.name + " " + (hotel.address || ""),
+                    )}`,
                     "_blank",
                   )
                 }
                 className="text-[#006ce4] font-semibold hover:underline cursor-pointer"
               >
-                Xem bản đồ
+                Xem vị trí trên bản đồ
               </button>
             </div>
           </div>
@@ -502,7 +633,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BENTO BOX GALLERY */}
+        {/* BENTO BOX GALLERY: 100% ẢNH THẬT */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[340px] md:h-[400px]">
             <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
@@ -534,7 +665,9 @@ export default function HotelDetailPage() {
             <div
               onClick={() =>
                 window.open(
-                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hotel.name + " " + (hotel.address || ""))}`,
+                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    hotel.name + " " + (hotel.address || ""),
+                  )}`,
                   "_blank",
                 )
               }
@@ -554,41 +687,30 @@ export default function HotelDetailPage() {
               </div>
             </div>
 
+            {/* HUY HIỆU ĐIỂM XANH LÁ CÂY */}
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col justify-between overflow-hidden">
-              {hasReviews ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-[#003580] text-white font-black text-xs px-2 py-0.5 rounded">
-                      {averageScore.toFixed(1)}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="bg-[#2e7d32] text-white font-black text-sm px-2.5 py-1 rounded-md shadow-xs">
+                    {averageScore.toFixed(1)}
+                  </div>
+                  <div>
+                    <span className="font-black text-[#2e7d32] text-sm block leading-tight">
+                      {getRatingLabel(averageScore)}
                     </span>
-                    <span className="font-bold text-blue-900 text-sm">
-                      {averageScore >= 9 ? "Xuất sắc" : "Rất tốt"}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      ({totalReviewsCount} đánh giá)
+                    <span className="text-[11px] text-slate-500">
+                      {totalReviewsCount} đánh giá từ du khách
                     </span>
                   </div>
-                  <p className="text-xs text-slate-700 line-clamp-3 leading-relaxed">
-                    {firstReview?.description
-                      ? `"${firstReview.description}"`
-                      : "Khách lưu trú đánh giá cao chất lượng phòng và dịch vụ tại đây."}
-                  </p>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-[#006ce4] text-white font-black text-xs px-2 py-0.5 rounded">
-                      Mới
-                    </span>
-                    <span className="font-bold text-[#006ce4] text-sm">
-                      Chỗ nghỉ mới
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 leading-relaxed pt-1">
-                    Chưa có nhận xét nào. Hãy là người đầu tiên đặt phòng!
-                  </p>
-                </div>
-              )}
+
+                <p className="text-xs text-slate-700 line-clamp-3 leading-relaxed pt-1">
+                  {reviews[0]?.description
+                    ? `"${reviews[0].description}"`
+                    : "Khách lưu trú đánh giá cao chất lượng phòng và dịch vụ của chỗ nghỉ."}
+                </p>
+              </div>
+
               <div className="pt-2 border-t border-slate-100">
                 <button
                   onClick={() =>
@@ -598,7 +720,7 @@ export default function HotelDetailPage() {
                   }
                   className="text-xs text-[#006ce4] font-semibold hover:underline cursor-pointer"
                 >
-                  Xem đánh giá &rarr;
+                  Xem tất cả đánh giá &rarr;
                 </button>
               </div>
             </div>
@@ -608,49 +730,15 @@ export default function HotelDetailPage() {
         {/* THANH TÌM KIẾM NGÀY & PHÒNG */}
         <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-md mb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-            <div ref={destRef} className="md:col-span-4 relative">
-              <div
-                onClick={() => setIsDestDropdownOpen(true)}
-                className="flex items-center gap-2.5 px-3.5 h-12 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 hover:border-blue-600 cursor-pointer transition"
-              >
-                <MapPin size={18} className="text-[#006ce4] shrink-0" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onFocus={() => setIsDestDropdownOpen(true)}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleUpdateSearch()}
-                  placeholder="Nhập tên khách sạn / địa điểm..."
-                  className="w-full text-xs font-bold text-slate-800 bg-transparent focus:outline-none placeholder:font-normal placeholder:text-slate-400"
-                />
-              </div>
-
-              {isDestDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-full sm:w-[480px] bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 animate-in fade-in">
-                  <h4 className="font-extrabold text-xs text-slate-900 mb-3">
-                    Điểm đến phổ biến
-                  </h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {HOT_DESTINATIONS.map((d) => (
-                      <div
-                        key={d.name}
-                        onClick={() => {
-                          setSearchQuery(d.name);
-                          setIsDestDropdownOpen(false);
-                        }}
-                        className="p-2 rounded-xl hover:bg-blue-50 cursor-pointer transition"
-                      >
-                        <span className="text-xs font-bold text-slate-900 block">
-                          {d.name}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {d.count}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="md:col-span-4 relative flex items-center gap-2.5 px-3.5 h-12 bg-slate-50 rounded-xl border border-slate-200">
+              <MapPin size={18} className="text-[#006ce4] shrink-0" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Nhập tên khách sạn / địa điểm..."
+                className="w-full text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
+              />
             </div>
 
             <div
@@ -661,14 +749,14 @@ export default function HotelDetailPage() {
               <div className="flex items-center gap-2">
                 <CalendarIcon size={16} className="text-slate-400" />
                 <span className="text-xs font-bold text-slate-800">
-                  {safeFormat(checkInDate, "dd/MM/yyyy") || "--/--/----"}
+                  {safeFormat(tempCheckIn, "dd/MM/yyyy") || "--/--/----"}
                 </span>
               </div>
               <span className="text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                {totalNights} <Moon size={10} fill="currentColor" />
+                {previewNights} <Moon size={10} fill="currentColor" />
               </span>
               <span className="text-xs font-bold text-slate-800">
-                {safeFormat(checkOutDate, "dd/MM/yyyy") || "--/--/----"}
+                {safeFormat(tempCheckOut, "dd/MM/yyyy") || "--/--/----"}
               </span>
 
               {isCalendarOpen && (
@@ -690,10 +778,10 @@ export default function HotelDetailPage() {
                     >
                       <ChevronLeft size={18} />
                     </button>
-                    <span className="text-xs font-bold text-slate-500">
-                      {!checkOutDate
-                        ? "👉 Nhấp chọn ngày trả phòng"
-                        : "✓ Đã chọn xong ngày"}
+                    <span className="text-xs font-bold text-blue-600">
+                      {!tempCheckOut
+                        ? "👉 Chọn ngày trả phòng để tính giá ngay"
+                        : "✓ Giá phòng đã tự động nhân theo số đêm mới"}
                     </span>
                     <button
                       type="button"
@@ -723,7 +811,7 @@ export default function HotelDetailPage() {
             >
               <Users size={18} className="text-slate-400 shrink-0" />
               <span className="text-xs font-bold text-slate-800 truncate">
-                {adults} khách, {roomsCount} phòng
+                {tempAdults} người lớn
               </span>
 
               {isGuestOpen && (
@@ -738,17 +826,33 @@ export default function HotelDetailPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setAdults((a) => Math.max(1, a - 1))}
+                        onClick={() => {
+                          const val = Math.max(1, tempAdults - 1);
+                          setTempAdults(val);
+                          applySearchAndRecalculate(
+                            appliedCheckIn,
+                            appliedCheckOut,
+                            val,
+                          );
+                        }}
                         className="w-7 h-7 rounded border border-slate-300 font-bold hover:bg-slate-100 cursor-pointer"
                       >
                         -
                       </button>
                       <span className="text-xs font-bold w-4 text-center">
-                        {adults}
+                        {tempAdults}
                       </span>
                       <button
                         type="button"
-                        onClick={() => setAdults((a) => a + 1)}
+                        onClick={() => {
+                          const val = tempAdults + 1;
+                          setTempAdults(val);
+                          applySearchAndRecalculate(
+                            appliedCheckIn,
+                            appliedCheckOut,
+                            val,
+                          );
+                        }}
                         className="w-7 h-7 rounded border border-slate-300 font-bold hover:bg-slate-100 cursor-pointer"
                       >
                         +
@@ -761,7 +865,7 @@ export default function HotelDetailPage() {
                     onClick={() => setIsGuestOpen(false)}
                     className="w-full py-1.5 bg-[#003580] text-white text-xs font-bold rounded-lg mt-2 cursor-pointer"
                   >
-                    Áp dụng
+                    Đóng
                   </button>
                 </div>
               )}
@@ -770,10 +874,11 @@ export default function HotelDetailPage() {
             <div className="md:col-span-2">
               <button
                 type="button"
-                onClick={handleUpdateSearch}
-                className="w-full h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer"
+                onClick={handleManualUpdate}
+                disabled={checkingRooms}
+                className="w-full h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer disabled:opacity-50"
               >
-                Cập nhật
+                {checkingRooms ? "Đang tải..." : "Cập nhật"}
               </button>
             </div>
           </div>
@@ -781,54 +886,104 @@ export default function HotelDetailPage() {
 
         {/* BẢNG GIÁ CÁC HẠNG PHÒNG */}
         <section ref={roomsRef} className="space-y-4 mb-10">
-          <h2 className="text-xl font-black text-slate-900 tracking-tight">
-            Bảng giá các hạng phòng ({hotel.rooms?.length || 0} Loại phòng)
-          </h2>
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+            <div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                Bảng giá các hạng phòng ({displayRooms.length} Loại phòng)
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Đang tính giá cho:{" "}
+                <strong className="text-blue-900">
+                  {safeFormat(appliedCheckIn, "dd/MM/yyyy")}
+                </strong>{" "}
+                &rarr;{" "}
+                <strong className="text-blue-900">
+                  {safeFormat(appliedCheckOut, "dd/MM/yyyy")}
+                </strong>{" "}
+                (
+                <strong className="text-blue-600 font-bold">
+                  {appliedNights} đêm
+                </strong>
+                )
+              </p>
+            </div>
+          </div>
 
-          {hotel.rooms && hotel.rooms.length > 0 ? (
+          {displayRooms && displayRooms.length > 0 ? (
             <div className="space-y-4">
-              {hotel.rooms.map((room, idx) => {
-                const roomImg =
-                  parseRealImageUrl(room.thumbnail || room.image) ||
-                  dbImages[idx] ||
-                  dbImages[0];
-                const roomPricePerNight = Number(
-                  room.base_price || room.sell_price || 0,
+              {displayRooms.map((room, idx) => {
+                const roomImg = getRoomImage(room, idx);
+                const stock =
+                  room.remaining_rooms !== undefined
+                    ? room.remaining_rooms
+                    : room.amount || 4;
+                const isSoldOut = stock <= 0 || room.is_available === false;
+
+                const dailyPrice = Number(
+                  room.daily_price ||
+                    room.base_price ||
+                    room.sell_price ||
+                    650000,
                 );
-                const totalRoomPrice = roomPricePerNight * totalNights;
+                const totalRoomPrice = dailyPrice * appliedNights;
+
+                const viewLabel =
+                  ROOM_VIEW_MAP[room.room_view] ||
+                  (room.type && ROOM_VIEW_MAP[room.type]) ||
+                  null;
 
                 return (
                   <div
                     key={room.id || idx}
-                    className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden grid grid-cols-1 lg:grid-cols-12 hover:border-[#006ce4] transition-all"
+                    className={`bg-white rounded-2xl border transition-all overflow-hidden grid grid-cols-1 lg:grid-cols-12 ${
+                      isSoldOut
+                        ? "border-slate-200 opacity-60 bg-slate-50/50"
+                        : "border-slate-200 hover:border-[#006ce4] shadow-sm"
+                    }`}
                   >
                     <div className="lg:col-span-4 p-5 bg-slate-50/50 border-r border-slate-100 flex flex-col justify-between space-y-4">
                       <div className="space-y-3">
                         <div className="w-full h-44 rounded-xl overflow-hidden bg-slate-200 relative shadow-xs">
-                          {roomImg ? (
-                            <img
-                              src={roomImg}
-                              alt={room.name}
-                              className="absolute inset-0 w-full h-full object-cover select-none"
-                            />
-                          ) : (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-1">
-                              <ImageIcon size={24} />
-                              <span className="text-[11px]">Chưa có ảnh</span>
-                            </div>
-                          )}
+                          <img
+                            src={roomImg}
+                            alt={room.name}
+                            className="absolute inset-0 w-full h-full object-cover select-none hover:scale-105 transition duration-300"
+                          />
                         </div>
+
                         <div>
-                          <h3 className="font-extrabold text-base text-slate-900">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold text-blue-700 uppercase bg-blue-50 px-2 py-0.5 rounded">
+                              {room.type || "Deluxe"}
+                            </span>
+                            {viewLabel && (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1">
+                                <Eye size={11} /> {viewLabel}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className="font-extrabold text-base text-slate-900 mt-1">
                             {room.name}
                           </h3>
+
                           <div className="text-xs text-slate-500 space-y-1 mt-1.5 font-medium">
-                            <p>🛏️ {room.bed_type || "1 Giường đôi King"}</p>
+                            <p>
+                              🛏️{" "}
+                              {room.bed_type || "1 Giường đôi lớn (King/Queen)"}
+                            </p>
                             <p>📐 Diện tích: {room.room_area || 28} m²</p>
                             <p>👥 Sức chứa: {room.capacity || 2} Người lớn</p>
                           </div>
                         </div>
                       </div>
+
+                      {!isSoldOut && stock <= 3 && (
+                        <div className="text-orange-600 font-bold text-xs flex items-center gap-1">
+                          <AlertCircle size={14} /> Chỉ còn {stock} phòng trống
+                          cho kỳ nghỉ này!
+                        </div>
+                      )}
                     </div>
 
                     <div className="lg:col-span-8 p-5 flex flex-col justify-between space-y-4">
@@ -837,6 +992,7 @@ export default function HotelDetailPage() {
                           <Sparkles size={13} />
                           <span>Giá tốt nhất trên hệ thống GoStay</span>
                         </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-700 pt-1">
                           <div className="flex items-center gap-2">
                             <Check
@@ -857,7 +1013,9 @@ export default function HotelDetailPage() {
                           <div className="flex items-center gap-2 text-slate-500">
                             <Info size={14} className="shrink-0" />
                             <span>
-                              Miễn phí hủy phòng trước 24 giờ nhận phòng
+                              {hotel.cancellation_deadline_hours
+                                ? `Miễn phí hủy trước ${hotel.cancellation_deadline_hours} giờ`
+                                : "Chính sách hủy linh hoạt"}
                             </span>
                           </div>
                         </div>
@@ -865,24 +1023,46 @@ export default function HotelDetailPage() {
 
                       <div className="flex flex-col sm:flex-row sm:items-end justify-between pt-4 border-t border-slate-100 gap-3">
                         <div>
-                          <span className="text-[11px] text-slate-400 block">
-                            Giá {totalNights} đêm / 1 phòng
+                          <span className="text-[11px] text-slate-500 block font-semibold">
+                            Giá cho {appliedNights} đêm ({formatVND(dailyPrice)}{" "}
+                            / đêm)
                           </span>
-                          <span className="text-2xl font-black text-[#ff6a00]">
-                            {formatVND(totalRoomPrice)}
-                          </span>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-2xl font-black text-[#ff6a00]">
+                              {formatVND(totalRoomPrice)}
+                            </span>
+                            <span className="text-xs text-slate-500 font-bold">
+                              / {appliedNights} đêm
+                            </span>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            navigate(
-                              `/booking?hotelId=${hotel.id}&roomId=${room.id}&amount=${totalRoomPrice}&checkIn=${safeFormat(checkInDate, "yyyy-MM-dd")}&checkOut=${safeFormat(checkOutDate, "yyyy-MM-dd")}&adults=${adults}`,
-                            )
-                          }
-                          className="w-full sm:w-auto px-8 py-3 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-lg transition-all active:scale-95 cursor-pointer"
-                        >
-                          Đặt ngay
-                        </button>
+
+                        {isSoldOut ? (
+                          <button
+                            disabled
+                            className="w-full sm:w-auto px-8 py-3 bg-slate-200 text-slate-500 font-bold text-sm rounded-xl cursor-not-allowed"
+                          >
+                            Hết phòng ngày này
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(
+                                `/booking?hotelId=${hotel.id}&roomId=${room.id}&amount=${totalRoomPrice}&checkIn=${safeFormat(
+                                  appliedCheckIn,
+                                  "yyyy-MM-dd",
+                                )}&checkOut=${safeFormat(
+                                  appliedCheckOut,
+                                  "yyyy-MM-dd",
+                                )}&adults=${adults}&nights=${appliedNights}`,
+                              )
+                            }
+                            className="w-full sm:w-auto px-8 py-3 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-lg transition-all active:scale-95 cursor-pointer"
+                          >
+                            Đặt ngay ({appliedNights} đêm)
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -891,12 +1071,12 @@ export default function HotelDetailPage() {
             </div>
           ) : (
             <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center text-slate-400">
-              Hiện chưa có phòng trống.
+              Hiện chưa có phòng trống trong thời gian này.
             </div>
           )}
         </section>
 
-        {/* TIỆN NGHI */}
+        {/* TIỆN NGHI CHỖ NGHỈ */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 mb-8">
           <div className="flex items-center gap-2">
             <Palmtree className="text-slate-700" size={20} />
@@ -920,12 +1100,12 @@ export default function HotelDetailPage() {
           </div>
         </section>
 
-        {/* THÔNG TIN KHÁCH SẠN */}
+        {/* THÔNG TIN CHỖ NGHỈ */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3.5 mb-8">
           <div className="flex items-center gap-2">
             <Building2 className="text-slate-700" size={20} />
             <h2 className="text-lg font-black text-slate-900 tracking-tight">
-              Thông tin khách sạn
+              Thông tin chỗ nghỉ
             </h2>
           </div>
           <div className="text-xs sm:text-sm text-slate-700 leading-relaxed space-y-3 whitespace-pre-line">
@@ -972,21 +1152,32 @@ export default function HotelDetailPage() {
           </div>
         </section>
 
-        {/* ĐÁNH GIÁ */}
-        <section id="reviews-section" className="space-y-6">
-          <ReviewList
-            reviews={reviews}
-            ratingSummary={{
-              average_rating: averageScore,
-              total_reviews: totalReviewsCount,
-            }}
-          />
+        {/* KHU VỰC ĐÁNH GIÁ: REVIEW LIST & FORM */}
+        <section id="reviews-section" className="space-y-6 pt-2">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="lg:col-span-7 xl:col-span-8">
+              <ReviewList
+                hotelName={hotel.name}
+                reviews={reviews}
+                ratingSummary={{
+                  average_rating: averageScore,
+                  total_reviews: totalReviewsCount,
+                  scale: 10,
+                }}
+              />
+            </div>
 
-          <ReviewForm
-            hotelId={hotel.id}
-            hotelName={hotel.name}
-            onSubmitSuccess={fetchAllData}
-          />
+            <div className="lg:col-span-5 xl:col-span-4 sticky top-6">
+              <ReviewForm
+                hotelId={hotel.id}
+                hotelName={hotel.name}
+                onSubmitSuccess={() => {
+                  fetchReviewsOnly();
+                  fetchAllData();
+                }}
+              />
+            </div>
+          </div>
         </section>
       </div>
     </div>

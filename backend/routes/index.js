@@ -1,37 +1,85 @@
 // backend/routes/index.js
 const express = require("express");
-const authRoutes = require("./auth.routes");
-const bookingRoutes = require("./booking.routes");
-const favoriteRoutes = require("./favorite.routes");
-const healthRoutes = require("./health.routes");
-const hotelRoutes = require("./hotel.routes");
-const notificationRoutes = require("./notification.routes");
-const paymentRoutes = require("./payment.routes");
-const promotionRoutes = require("./promotion.routes");
-const reviewRoutes = require("./review.routes");
-const roomRoutes = require("./room.routes");
-const usersRoutes = require("./users.routes");
-const adminRoutes = require("../admin/admin.routes");
-const ownerRoutes = require("./owner.routes");
-const chatbotRoutes = require("./chatbot.routes");
-const uploadRoutes = require("./upload.routes"); // 👈 BỔ SUNG ROUTE UPLOAD
-
 const router = express.Router();
+const reviewController = require("../controllers/review.controller");
+const { requireAuth } = require("../middleware/auth.middleware");
 
-router.use(healthRoutes);
-router.use("/auth", authRoutes);
-router.use("/bookings", bookingRoutes);
-router.use("/favorites", favoriteRoutes);
-router.use("/hotels", hotelRoutes);
-router.use("/notifications", notificationRoutes);
-router.use("/payments", paymentRoutes);
-router.use("/promotions", promotionRoutes);
-router.use("/reviews", reviewRoutes);
-router.use("/rooms", roomRoutes);
-router.use("/users", usersRoutes);
-router.use("/admin", adminRoutes);
-router.use("/owner", ownerRoutes);
-router.use("/chatbot", chatbotRoutes);
-router.use("/uploads", uploadRoutes); // 👈 GẮN VÀO /api/uploads
+// Hàm nạp an toàn
+const safeUse = (mountPath, relativePath) => {
+  try {
+    const routeModule = require(relativePath);
+    router.use(mountPath, routeModule);
+    console.log(`✓ Đã nạp thành công route [${mountPath}] từ ${relativePath}`);
+  } catch (err) {
+    if (err.code !== "MODULE_NOT_FOUND") {
+      console.warn(`⚠️ Lỗi cấu hình tại [${relativePath}]:`, err.message);
+    }
+  }
+};
+
+// Nạp các router hệ thống
+safeUse("/auth", "./auth.routes");
+safeUse("/hotels", "./hotel.routes");
+safeUse("/rooms", "./room.routes");
+safeUse("/bookings", "./booking.routes");
+safeUse("/owner", "./owner.routes");
+safeUse("/payments", "./payment.routes");
+safeUse("/favorites", "./favorite.routes");
+safeUse("/reviews", "./review.routes");
+
+// 👉 NẠP ROUTE ADMIN (Thử cả 2 đường dẫn phổ biến để chắc chắn tìm thấy file)
+try {
+  const adminRoutes = require("./admin.routes");
+  router.use("/admin", adminRoutes);
+  console.log("✓ Đã nạp thành công route [/admin] từ ./admin.routes");
+} catch (e1) {
+  try {
+    const adminRoutesAlt = require("../admin/admin.routes");
+    router.use("/admin", adminRoutesAlt);
+    console.log("✓ Đã nạp thành công route [/admin] từ ../admin/admin.routes");
+  } catch (e2) {
+    console.error("❌ Không tìm thấy file admin.routes:", e1.message);
+  }
+}
+
+// ─── REVIEW ROUTES TOÀN HỆ THỐNG ───
+if (typeof reviewController?.listHotelReviews === "function") {
+  router.get("/hotels/:id/reviews", reviewController.listHotelReviews);
+  router.get("/hotels/:hotelId/reviews", reviewController.listHotelReviews);
+}
+if (
+  typeof reviewController?.checkCanReview === "function" &&
+  typeof requireAuth === "function"
+) {
+  router.get(
+    "/hotels/:id/can-review",
+    requireAuth,
+    reviewController.checkCanReview,
+  );
+  router.get(
+    "/hotels/:hotelId/can-review",
+    requireAuth,
+    reviewController.checkCanReview,
+  );
+}
+if (
+  typeof reviewController?.createReview === "function" &&
+  typeof requireAuth === "function"
+) {
+  router.post(
+    "/hotels/:id/reviews",
+    requireAuth,
+    reviewController.createReview,
+  );
+  router.post(
+    "/hotels/:hotelId/reviews",
+    requireAuth,
+    reviewController.createReview,
+  );
+}
+
+router.get("/health", (req, res) => {
+  res.json({ status: "OK", timestamp: new Date().toISOString() });
+});
 
 module.exports = router;

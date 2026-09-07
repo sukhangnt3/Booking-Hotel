@@ -1,9 +1,13 @@
 // src/services/authService.js
+
 import apiClient from "./apiClient";
 
 export const authService = {
   login: async (email, password) => {
-    return await apiClient.post("/auth/login", { email, password });
+    return await apiClient.post("/auth/login", {
+      email,
+      password,
+    });
   },
 
   register: async (userData) => {
