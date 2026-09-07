@@ -1,17 +1,12 @@
 // src/stores/authStore.js
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import apiClient from "@/services/apiClient";
 
-/**
- * Tự động phân giải vai trò chuẩn xác từ mảng roles của PostgreSQL
- * (ADMIN, HOTEL_OWNER, CUSTOMER, RECEPTIONIST)
- */
 const resolveEffectiveUser = (user) => {
   if (!user) return null;
 
   let rolesList = [];
 
-  // 1. Trích xuất danh sách roles từ Backend
   if (Array.isArray(user.roles)) {
     rolesList = user.roles.map((r) =>
       typeof r === "object"
@@ -24,7 +19,6 @@ const resolveEffectiveUser = (user) => {
     rolesList = [String(user.role_name).toUpperCase()];
   }
 
-  // 2. Xác định vai trò ưu tiên cao nhất
   let primaryRole = "customer";
 
   if (rolesList.some((r) => r.includes("ADMIN")) || user.role_id === 1) {
@@ -49,67 +43,86 @@ const resolveEffectiveUser = (user) => {
   };
 };
 
-export const useAuthStore = create()(
-  persist(
-    (set, get) => ({
-      user: null, // Sẽ tự động reset thành null khi F5, buộc GuestLayout gọi lại API
+export const useAuthStore = create((set, get) => ({
+  // Khi F5, khôi phục tạm từ sessionStorage để không bị văng ra
+  user: JSON.parse(sessionStorage.getItem("authUser") || "null"),
+  token: sessionStorage.getItem("accessToken") || null,
+  isAuthenticated: Boolean(sessionStorage.getItem("accessToken")),
+  isLoadingUser: false,
+
+  // Đăng nhập
+  login: (userData, token) => {
+    const effectiveUser = resolveEffectiveUser(userData);
+    const finalToken = token || get().token;
+
+    if (finalToken) {
+      sessionStorage.setItem("accessToken", finalToken);
+    }
+    if (effectiveUser) {
+      sessionStorage.setItem("authUser", JSON.stringify(effectiveUser));
+    }
+
+    set({
+      user: effectiveUser,
+      token: finalToken,
+      isAuthenticated: true,
+      isLoadingUser: false,
+    });
+  },
+
+  // Đăng xuất
+  logout: () => {
+    sessionStorage.removeItem("accessToken");
+    sessionStorage.removeItem("authUser");
+    set({
+      user: null,
       token: null,
       isAuthenticated: false,
-      isRehydrated: false,
+      isLoadingUser: false,
+    });
+  },
 
-      // Đăng nhập
-      login: (userData, token) => {
+  // Cập nhật thông tin profile
+  updateUser: (userData) => {
+    const currentUser = get().user;
+    const mergedUser = resolveEffectiveUser({ ...currentUser, ...userData });
+    sessionStorage.setItem("authUser", JSON.stringify(mergedUser));
+    set({ user: mergedUser });
+  },
+
+  // Lấy dữ liệu mới nhất từ database
+  fetchUserProfile: async () => {
+    const token = get().token || sessionStorage.getItem("accessToken");
+    if (!token) {
+      get().logout();
+      return;
+    }
+
+    try {
+      const res = await apiClient.get(`/auth/profile?_t=${Date.now()}`);
+      const userData = res?.data?.user || res?.data?.data?.user || res?.data;
+
+      if (userData) {
+        const effectiveUser = resolveEffectiveUser(userData);
+        sessionStorage.setItem("authUser", JSON.stringify(effectiveUser));
         set({
-          user: resolveEffectiveUser(userData),
-          token,
+          user: effectiveUser,
           isAuthenticated: true,
         });
-      },
+      }
+    } catch (err) {
+      if (err?.status === 401 || err?.response?.status === 401) {
+        get().logout();
+      }
+    }
+  },
 
-      // Đăng xuất và xóa trắng trạng thái
-      logout: () => {
-        set({
-          user: null,
-          token: null,
-          isAuthenticated: false,
-        });
-        localStorage.removeItem("auth-storage");
-      },
-
-      // Cập nhật profile đồng bộ
-      updateUser: (userData) => {
-        const currentUser = get().user;
-        const mergedUser = { ...currentUser, ...userData };
-        set({
-          user: resolveEffectiveUser(mergedUser),
-        });
-      },
-
-      setToken: (newToken) => set({ token: newToken }),
-
-      // Kiểm tra role nhanh trong components
-      checkRole: (roleName) => {
-        const currentUser = get().user;
-        if (!currentUser) return false;
-        const target = String(roleName).toLowerCase();
-        return String(currentUser.role).toLowerCase() === target;
-      },
-    }),
-    {
-      name: "auth-storage",
-      storage: createJSONStorage(() => localStorage),
-      // 🚀 BÍ QUYẾT: CHỈ LƯU TOKEN XUỐNG MÁY, TUYỆT ĐỐI KHÔNG LƯU USER
-      partialize: (state) => ({
-        token: state.token,
-        isAuthenticated: state.isAuthenticated,
-      }),
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.isRehydrated = true;
-        }
-      },
-    },
-  ),
-);
+  checkRole: (roleName) => {
+    const currentUser = get().user;
+    if (!currentUser) return false;
+    const target = String(roleName).toLowerCase();
+    return String(currentUser.role).toLowerCase() === target;
+  },
+}));
 
 export default useAuthStore;

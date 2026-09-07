@@ -1,25 +1,32 @@
-import React from "react";
+// src/routes/AdminRoutes.jsx
+import React, { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { LoadingSpinner } from "@/components/common";
 
 const AdminRoutes = () => {
   const location = useLocation();
-  const { user, token, systemToken, isRehydrated } = useAuthStore();
-  const activeToken = token || systemToken;
+  const { user, isAuthenticated, isLoadingUser, fetchUserProfile } =
+    useAuthStore();
 
-  // 1. Chờ nạp xong dữ liệu từ LocalStorage
-  if (isRehydrated === false) {
+  // 1. Khi F5 mà chưa có user, tự động gọi lấy lại thông tin user từ Cookie
+  useEffect(() => {
+    if (!user && isLoadingUser) {
+      fetchUserProfile();
+    }
+  }, [user, isLoadingUser, fetchUserProfile]);
+
+  // 2. 🌟 QUAN TRỌNG: Đang tải lại profile từ Cookie -> Hiện spinner, KHÔNG ĐƯỢC REDIRECT!
+  if (isLoadingUser) {
     return <LoadingSpinner fullPage label="Đang xác thực quyền Admin..." />;
   }
 
-  // 2. Chưa đăng nhập -> Chuyển về login
-  if (!activeToken || !user) {
-    console.warn("⚠️ [AdminRoutes] Chưa có Token -> Chuyển về /login");
+  // 3. Sau khi tải xong mà thực sự không có user / chưa đăng nhập -> Mới chuyển về /login
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 3. BÓC TÁCH ROLE SIÊU LINH HOẠT (Hỗ trợ mọi kiểu Backend)
+  // 4. Kiểm tra quyền Admin
   const extractRoleString = (roleVal) => {
     if (!roleVal) return "";
     if (typeof roleVal === "string") return roleVal.toLowerCase();
@@ -35,33 +42,18 @@ const AdminRoutes = () => {
     user?.role,
     user?.role_name,
     user?.role_id,
-    user?.roleId,
-    user?.user_metadata?.role,
   ].filter(Boolean);
 
-  // Kiểm tra quyền Admin (Chấp nhận role chứa chữ 'admin' hoặc id === 1)
   const isAdmin = possibleRoles.some((r) => {
     const roleStr = extractRoleString(r);
     return roleStr.includes("admin") || r === 1 || r === "1";
   });
 
-  console.log("👉 [DEBUG ROLE CỦA BẠN]:", {
-    email: user.email,
-    rawRoles: possibleRoles,
-    isAdminMatched: isAdmin,
-  });
-
-  // 4. Nếu không phải Admin -> Đẩy về trang chủ
   if (!isAdmin) {
-    console.warn(
-      "⚠️ [AdminRoutes] Tài khoản này không phải Admin! Role hiện tại:",
-      possibleRoles,
-    );
     alert("Tài khoản của bạn không có quyền Quản trị viên (Admin).");
     return <Navigate to="/" replace />;
   }
 
-  // 5. Đủ quyền Admin -> Cho phép hiển thị
   return <Outlet />;
 };
 

@@ -1,35 +1,39 @@
-import React from "react";
+// src/components/auth/ProtectedRoute.jsx
+import React, { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { LoadingSpinner } from "@/components/common";
 
 const ProtectedRoute = ({ allowedRoles = [], redirectTo = "/login" }) => {
   const location = useLocation();
-  const { user, token, systemToken, isRehydrated } = useAuthStore();
+  const { user, token, isAuthenticated, fetchUserProfile } = useAuthStore();
 
-  // Kiểm tra token từ cả store lẫn localStorage
-  const activeToken =
-    token ||
-    systemToken ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("access_token");
-  const storedUser = user || JSON.parse(localStorage.getItem("user") || "null");
+  // Kiểm tra token từ cả store lẫn sessionStorage
+  const activeToken = token || sessionStorage.getItem("accessToken");
 
-  // 1. Chờ khôi phục dữ liệu
-  if (isRehydrated === false) {
-    return <LoadingSpinner fullPage label="Đang kiểm tra quyền truy cập..." />;
-  }
+  // Đồng bộ lại dữ liệu mới nhất từ CSDL khi vào route được bảo vệ
+  useEffect(() => {
+    if (activeToken && !user) {
+      fetchUserProfile();
+    }
+  }, [activeToken, user, fetchUserProfile]);
 
-  // 2. CHƯA ĐĂNG NHẬP -> Chuyển về /login
+  // 1. Nếu hoàn toàn không có token -> Mới chuyển về Login
   if (!activeToken) {
     console.warn("⚠️ [ProtectedRoute] Chưa đăng nhập -> Chuyển về /login");
     return <Navigate to={redirectTo} state={{ from: location }} replace />;
   }
 
-  // 3. BÓC TÁCH ROLE
+  // 2. Nếu có token mà user chưa kịp nạp xong -> Hiện loading ngắn thay vì đá văng ra ngoài
+  if (!user) {
+    return (
+      <LoadingSpinner fullPage label="Đang kiểm tra thông tin tài khoản..." />
+    );
+  }
+
+  // 3. Kiểm tra phân quyền nếu có yêu cầu role
   const getRoles = () => {
-    const raw =
-      storedUser?.role || storedUser?.role_name || storedUser?.roles || "";
+    const raw = user?.role || user?.role_name || user?.roles || "";
     if (Array.isArray(raw)) return raw.map((r) => String(r).toLowerCase());
     return [String(raw).toLowerCase()];
   };
@@ -39,12 +43,11 @@ const ProtectedRoute = ({ allowedRoles = [], redirectTo = "/login" }) => {
     String(role).toLowerCase(),
   );
 
-  // 4. KIỂM TRA QUYỀN (Nếu không yêu cầu role thì ai đăng nhập cũng vào được)
   const hasAccess =
     normalizedAllowedRoles.length === 0 ||
     userRoles.includes("admin") ||
     userRoles.includes("role_admin") ||
-    storedUser?.role_id === 1 ||
+    user?.role_id === 1 ||
     normalizedAllowedRoles.some((role) => userRoles.includes(role));
 
   if (!hasAccess) {
@@ -52,7 +55,6 @@ const ProtectedRoute = ({ allowedRoles = [], redirectTo = "/login" }) => {
     return <Navigate to="/" replace />;
   }
 
-  // 5. ĐỦ QUYỀN -> Render trang con
   return <Outlet />;
 };
 

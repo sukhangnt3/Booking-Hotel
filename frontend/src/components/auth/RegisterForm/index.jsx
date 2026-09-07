@@ -328,22 +328,8 @@ export const RegisterForm = () => {
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-800 pb-16">
-      {/* ── TOP HEADER AGODA STYLE ── */}
+      {/* ── TOP HEADER STYLE ── */}
       <header className="border-b border-slate-100 py-3.5 px-6 sm:px-12 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {/* Logo các chấm màu đặc trưng Agoda */}
-          <div className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-            <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
-          </div>
-          <span className="font-extrabold text-base tracking-tight text-slate-900 ml-1.5">
-            agoda
-          </span>
-        </div>
-
         <div className="flex items-center gap-4 text-xs font-semibold text-slate-600">
           <button
             onClick={() => navigate("/owner/hotels")}
