@@ -33,6 +33,8 @@ import UserManagementPage from "@/pages/admin/UserManagementPage";
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
+import RoomTimeSettingsPage from "@/pages/owner/RoomTimeSettingsPage";
+import RoomPricingPage from "@/pages/owner/RoomPricingPage"; // 👉 ĐÃ THÊM
 import BookingListPage from "@/pages/owner/BookingListPage";
 
 import { NotFoundPage, ServerErrorPage } from "@/pages/error";
@@ -51,13 +53,10 @@ const router = createBrowserRouter([
       { path: "booking", element: <BookingConfirmPage /> },
       { path: "booking-success", element: <BookingSuccessPage /> },
       { path: "checkout", element: <CheckoutPage /> },
-
-      // Điều hướng nhanh khi khách bấm xem chuyến đi từ Header
       {
         path: "my-bookings",
         element: <Navigate to="/profile?tab=trips" replace />,
       },
-
       {
         element: <ProtectedRoute />,
         children: [{ path: "profile", element: <UserProfilePage /> }],
@@ -82,18 +81,17 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="/owner/dashboard" replace /> },
           { path: "dashboard", element: <OwnerDashboardPage /> },
           { path: "hotels", element: <HotelManagementPage /> },
-
-          // 👉 THÊM DÒNG NÀY ĐỂ HẾT BỊ LỖI 404 KHI BẤM NÚT ĐĂNG KÝ CƠ SỞ MỚI:
           { path: "hotels/register", element: <RegisterForm /> },
-
           { path: "rooms", element: <RoomManagementPage /> },
+          { path: "room-time-settings", element: <RoomTimeSettingsPage /> },
+          { path: "pricing", element: <RoomPricingPage /> }, // 👉 ROUTE BẢNG GIÁ PHÒNG
           { path: "bookings", element: <BookingListPage /> },
         ],
       },
     ],
   },
 
-  // ── 4. PHÂN HỆ SUPER ADMIN (QUẢN TRỊ TRUNG TÂM) ──
+  // ── 4. PHÂN HỆ SUPER ADMIN ──
   {
     path: "/admin",
     element: <AdminRoutes />,

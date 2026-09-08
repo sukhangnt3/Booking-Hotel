@@ -7,6 +7,8 @@ import {
   BedDouble,
   CalendarCheck,
   Menu,
+  Clock,
+  Tags, // 👉 Icon cho Bảng giá phòng
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import Sidebar from "./Sidebar";
@@ -26,7 +28,7 @@ const OwnerLayout = () => {
   )?.state?.user;
   const user = storeUser || localUser || authStorageUser;
 
-  // 🎯 ĐỌC ROLE TỪ MẢNG ROLES CỦA POSTGRESQL
+  // Đọc role từ mảng roles của PostgreSQL
   let extractedRoles = [];
   if (Array.isArray(user?.roles)) {
     extractedRoles = user.roles;
@@ -46,7 +48,7 @@ const OwnerLayout = () => {
     normalizedRoles.includes("OWNER") ||
     normalizedRoles.includes("ADMIN");
 
-  // ── 🏨 DANH MỤC MENU CHUẨN XÁC 100% THEO YÊU CẦU CỦA ĐỀ BÀI ──
+  // Danh mục Menu bên trái
   const ownerNavItems = [
     {
       path: "/owner/dashboard",
@@ -60,8 +62,18 @@ const OwnerLayout = () => {
     },
     {
       path: "/owner/rooms",
-      label: "Thiết Lập Giá & Phòng Trống",
+      label: "Hạng Phòng & Phòng",
       icon: <BedDouble size={19} />,
+    },
+    {
+      path: "/owner/pricing",
+      label: "Bảng Giá Phòng",
+      icon: <Tags size={19} />,
+    },
+    {
+      path: "/owner/room-time-settings",
+      label: "Cấu Hình Giờ Nhận & Trả Phòng",
+      icon: <Clock size={19} />,
     },
     {
       path: "/owner/bookings",
@@ -174,7 +186,7 @@ const OwnerLayout = () => {
           </div>
         </header>
 
-        {/* NỘI DUNG TỪNG TRANG CON (DASHBOARD, HOTELS, ROOMS, BOOKINGS) */}
+        {/* NỘI DUNG TỪNG TRANG CON */}
         <main className="flex-1 overflow-y-auto p-6 bg-[#f8fafc]">
           <div className="max-w-7xl mx-auto">
             <Outlet />
