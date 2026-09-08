@@ -30,7 +30,7 @@ const ROOM_TYPES = [
 ];
 
 const AMENITY_ALIASES = [
-  ["biển", ["bien", "sea", "ocean"]],
+  ["biển", ["bien", "sea", "ocean", "beach"]],
   ["hồ bơi", ["ho boi", "pool"]],
   ["ban công", ["ban cong", "balcony"]],
   ["wifi", ["wifi", "wi-fi"]],
@@ -57,6 +57,8 @@ const BED_ALIASES = [
   ["giuong doi", "doi"],
   ["giuong don", "don"],
   ["giuong tang", "tang"],
+  ["phong doi", "doi"],
+  ["phong don", "don"],
 ];
 
 function normalizeText(value) {
@@ -148,12 +150,12 @@ function extractFilters(text) {
     filter.maxPrice = parseMoney(rangeMatch[3], rangeMatch[4] || rangeMatch[5]);
   } else {
     const priceMatch = normalizedText.match(
-      /(?:duoi|khong qua|toi da|max|budget)\s*([\d.,]+)\s*(trieu|tr|k|nghin)?/,
+      /(?:duoi|khong qua|toi da|max|budget|tam|khoang|gia khoang|ngan sach)\s*([\d.,]+)\s*(trieu|tr|k|nghin)?/,
     );
     if (priceMatch) filter.maxPrice = parseMoney(priceMatch[1], priceMatch[2]);
   }
   if (normalizedText.includes("trieu ruoi")) filter.maxPrice = 1500000;
-  if (/(?:^|\s)(?:re|gia re|tiet kiem)(?:\s|$)/.test(normalizedText) && !filter.maxPrice) {
+  if (/(?:^|\s)(?:re|gia re|tiet kiem|binh dan)(?:\s|$)/.test(normalizedText) && !filter.maxPrice) {
     filter.maxPrice = 1000000;
   }
 
@@ -170,6 +172,9 @@ function extractFilters(text) {
   } else if (normalizedText.includes("ngay mai")) {
     filter.checkIn = getRelativeDate(1);
     filter.checkOut = getRelativeDate(2);
+  } else if (normalizedText.includes("toi nay")) {
+    filter.checkIn = getRelativeDate(0);
+    filter.checkOut = getRelativeDate(1);
   } else if (normalizedText.includes("cuoi tuan") || normalizedText.includes("weekend")) {
     Object.assign(filter, getThisWeekend());
     const nightsMatch = normalizedText.match(/(\d+)\s*(dem|ngay)/);
@@ -180,8 +185,13 @@ function extractFilters(text) {
     }
   }
 
-  const guestMatch = normalizedText.match(/(\d+)\s*(nguoi|khach|adult|adults)/);
+  const guestMatch = normalizedText.match(/(\d+)\s*(nguoi|khach|adult|adults|nguoi lon)/);
   if (guestMatch) filter.guests = Number(guestMatch[1]);
+  const childrenMatch = normalizedText.match(/(\d+)\s*(tre em|tre|children|child)/);
+  if (childrenMatch) filter.children = Number(childrenMatch[1]);
+  if (filter.children) {
+    filter.guests = (filter.guests || 0) + filter.children;
+  }
   const roomCountMatch = normalizedText.match(/(\d+)\s*(phong|room)/);
   if (roomCountMatch) filter.rooms = Number(roomCountMatch[1]);
   if (normalizedText.includes("gia dinh")) filter.guests = Math.max(filter.guests || 0, 4);
@@ -228,6 +238,15 @@ function extractFilters(text) {
     filter.locationKeyword = "trung tam";
   }
 
+  if (
+    normalizedText.includes("gan bien") ||
+    normalizedText.includes("view bien") ||
+    normalizedText.includes("sat bien") ||
+    normalizedText.includes("ven bien")
+  ) {
+    filter.amenities.push(["bien", "sea", "ocean", "beach", "biển"]);
+  }
+
   if (normalizedText.includes("re hon") || normalizedText.includes("tiet kiem")) {
     filter.sortBy = "price";
   }
@@ -247,6 +266,11 @@ function extractFilters(text) {
         ),
     );
   }
+
+    filter.amenities = filter.amenities.filter(
+      (aliases, index, list) =>
+        list.findIndex((item) => item.join("|") === aliases.join("|")) === index,
+    );
 
   return filter;
 }
@@ -295,6 +319,7 @@ function mergeSessionFilters(previous, current, normalizedText) {
     : previous.bedTypes || [];
   if (current.rooms) merged.rooms = current.rooms;
   if (current.guests) merged.guests = current.guests;
+  if (current.children !== undefined) merged.children = current.children;
   if (current.exactStars || current.minStars) {
     delete merged.exactStars;
     delete merged.minStars;
