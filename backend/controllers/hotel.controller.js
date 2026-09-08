@@ -2,6 +2,14 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
+const PUBLIC_HOTEL_STATUS = "h.status::text IN ('active', 'approved')";
+
+function parseSearchDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
 // ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (CHỈ LẤY CƠ SỞ ACTIVE) ───
 async function listHotels(req, res, next) {
   try {
@@ -11,13 +19,122 @@ async function listHotels(req, res, next) {
       req.query.search ||
       ""
     ).trim();
+    const checkIn = parseSearchDate(req.query.checkIn || req.query.checkin_date);
+    const checkOut = parseSearchDate(req.query.checkOut || req.query.checkout_date);
+    if ((req.query.checkIn || req.query.checkin_date || req.query.checkOut || req.query.checkout_date) &&
+      (!checkIn || !checkOut || checkOut <= checkIn)) {
+      return res.status(400).json({
+        success: false,
+        message: "Ngày nhận phòng và trả phòng không hợp lệ.",
+      });
+    }
+
+    const adults = Math.max(1, Number(req.query.adults || 1));
+    const rooms = Math.max(1, Number(req.query.rooms || 1));
+    const minPrice = Number(req.query.minPrice || 0);
+    const maxPrice = Number(req.query.maxPrice || 0);
+    const stars = String(req.query.stars || "")
+      .split(",")
+      .map(Number)
+      .filter((star) => Number.isFinite(star) && star > 0);
     const params = [];
-    let where = "WHERE h.status = 'active'::public.hotel_status_enum";
+      const normalizedDestination = destination
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d");
+      const destinationVariants =
+        normalizedDestination.includes("khanh hoa")
+          ? ["%Khánh Hòa%", "%Nha Trang%"]
+          : [destination ? `%${destination}%` : null];
+      let where = `WHERE ${PUBLIC_HOTEL_STATUS}`;
 
     if (destination) {
-      params.push(`%${destination}%`);
-      where += ` AND (h.name ILIKE $1 OR h.city ILIKE $1 OR h.address ILIKE $1)`;
+        params.push(...destinationVariants);
+        const destinationConditions = destinationVariants
+          .map(
+            (_, index) =>
+              `(unaccent(lower(h.name)) ILIKE unaccent(lower($${index + 1}))
+                OR unaccent(lower(h.city)) ILIKE unaccent(lower($${index + 1}))
+                OR unaccent(lower(h.address)) ILIKE unaccent(lower($${index + 1})))`,
+          )
+          .join(" OR ");
+        where += ` AND (${destinationConditions})`;
     }
+
+      if (stars.length > 0) {
+        params.push(stars);
+        where += ` AND h.star_rating = ANY($${params.length}::int[])`;
+      }
+
+      if (minPrice > 0) {
+        params.push(minPrice);
+        where += ` AND EXISTS (
+          SELECT 1 FROM public.room rp
+          WHERE rp.hotel_id = h.id AND rp.is_active = true AND rp.base_price >= $${params.length}
+        )`;
+      }
+
+      if (maxPrice > 0) {
+        params.push(maxPrice);
+        where += ` AND EXISTS (
+          SELECT 1 FROM public.room rp
+          WHERE rp.hotel_id = h.id AND rp.is_active = true AND rp.base_price <= $${params.length}
+        )`;
+      }
+
+      if (checkIn && checkOut) {
+        params.push(checkIn, checkOut, adults, rooms);
+        const checkInParam = params.length - 3;
+        const checkOutParam = params.length - 2;
+        const adultsParam = params.length - 1;
+        const roomsParam = params.length;
+        where += ` AND EXISTS (
+          SELECT 1
+          FROM public.room ar
+          WHERE ar.hotel_id = h.id
+            AND ar.is_active = true
+            AND ar.capacity >= $${adultsParam}
+            AND NOT EXISTS (
+              SELECT 1
+              FROM generate_series(
+                $${checkInParam}::date,
+                ($${checkOutParam}::date - INTERVAL '1 day')::date,
+                INTERVAL '1 day'
+              ) AS stay(night_date)
+              LEFT JOIN public.room_inventory ri
+                ON ri.room_id = ar.id AND ri.inventory_date = stay.night_date
+              WHERE COALESCE(ri.status::text, 'active') <> 'active'
+                OR GREATEST(0, COALESCE(ri.available_count, ar.amount)
+                  - COALESCE((
+                    SELECT SUM(br.quantity)::int
+                    FROM public.booking_room br
+                    JOIN public.booking b ON b.id = br.booking_id
+                    WHERE br.room_id = ar.id
+                      AND b.status::text IN ('confirmed', 'checked_in', 'pending')
+                      AND b.checkin_date < $${checkOutParam}::date
+                      AND b.checkout_date > $${checkInParam}::date
+                  ), 0)
+                  - COALESCE((
+                    SELECT SUM(tl.quantity)::int
+                    FROM public.temporary_locks tl
+                    WHERE tl.room_id = ar.id
+                      AND tl.lock_date = stay.night_date
+                      AND tl.expires_at > NOW()
+                  ), 0)) < $${roomsParam}
+            )
+        )`;
+      }
+
+      const sortBy = String(req.query.sortBy || "popular");
+      const orderBy =
+        sortBy === "price_low"
+          ? "min_price ASC, h.average_rating DESC NULLS LAST"
+          : sortBy === "price_high"
+            ? "min_price DESC, h.average_rating DESC NULLS LAST"
+            : sortBy === "rating"
+              ? "h.average_rating DESC NULLS LAST, min_price ASC"
+              : "h.average_rating DESC NULLS LAST, h.review_count DESC NULLS LAST, min_price ASC";
 
     const sql = `
       SELECT
@@ -57,8 +174,8 @@ async function listHotels(req, res, next) {
          ) AS min_price
        FROM public.hotel h
        ${where}
-       ORDER BY h.created_at DESC
-       LIMIT 100;
+      ORDER BY ${orderBy}
+      LIMIT 100;
     `;
 
     const result = await pool.query(sql, params);
@@ -171,6 +288,13 @@ async function listHotelRoomAvailability(req, res, next) {
     req.query.checkout_date ||
     tomorrow.toISOString().split("T")[0];
 
+  if (!checkIn || !checkOut || new Date(checkOut) <= new Date(checkIn)) {
+    return res.status(400).json({
+      success: false,
+      message: "Ngày nhận phòng và trả phòng không hợp lệ.",
+    });
+  }
+
   try {
     const query = `
       WITH StayNights AS (
@@ -273,19 +397,22 @@ async function listDestinationSuggestions(req, res, next) {
       query = `
         SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type
         FROM public.hotel
-        WHERE status = 'active' AND (city ILIKE $1 OR name ILIKE $1)
+        WHERE status::text IN ('active', 'approved')
+          AND (unaccent(lower(city)) ILIKE unaccent(lower($1))
+            OR unaccent(lower(name)) ILIKE unaccent(lower($1)))
         GROUP BY city
         UNION
         SELECT name, 1 AS hotel_count, 'hotel' AS type
         FROM public.hotel
-        WHERE status = 'active' AND name ILIKE $1
+        WHERE status::text IN ('active', 'approved')
+          AND unaccent(lower(name)) ILIKE unaccent(lower($1))
         LIMIT 8;
       `;
     } else {
       query = `
         SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type
         FROM public.hotel
-        WHERE status = 'active'
+        WHERE status::text IN ('active', 'approved')
         GROUP BY city
         ORDER BY hotel_count DESC
         LIMIT 6;

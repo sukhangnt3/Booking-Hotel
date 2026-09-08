@@ -30,6 +30,13 @@ async function createBooking(req, res, next) {
       });
     }
 
+    if (new Date(checkout_date) <= new Date(checkin_date)) {
+      return res.status(400).json({
+        success: false,
+        message: "Ngày trả phòng phải sau ngày nhận phòng.",
+      });
+    }
+
     // Kiểm tra phòng trống
     const roomCountRes = await client.query(
       `SELECT COALESCE(SUM(amount), 0)::int AS total_rooms FROM public.room WHERE hotel_id = $1 AND is_active = true`,

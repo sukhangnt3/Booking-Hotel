@@ -26,6 +26,7 @@ safeUse("/owner", "./owner.routes");
 safeUse("/payments", "./payment.routes");
 safeUse("/favorites", "./favorite.routes");
 safeUse("/reviews", "./review.routes");
+safeUse("/chatbot", "./chatbot.routes");
 
 // 👉 NẠP ROUTE ADMIN (Thử cả 2 đường dẫn phổ biến để chắc chắn tìm thấy file)
 try {

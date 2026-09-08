@@ -36,7 +36,7 @@ async function listRooms(req, res, next) {
        FROM public.room r
        LEFT JOIN public.room_amenity ra ON ra.room_id = r.id
        LEFT JOIN public.amenity a ON a.id = ra.amenity_id
-       WHERE r.hotel_id::text = $1
+      WHERE r.hotel_id::text = $1 AND r.is_active = true
        GROUP BY r.id
        ORDER BY r.base_price ASC, r.created_at DESC`,
       [hotelId],

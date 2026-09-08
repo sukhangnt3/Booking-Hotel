@@ -104,6 +104,9 @@ async function initDatabaseTables() {
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`)
       .catch(() => {});
+    await pool
+      .query(`CREATE EXTENSION IF NOT EXISTS "unaccent";`)
+      .catch(() => {});
 
     // 1. Tự động thêm cột property_type nếu chưa có
     await pool
