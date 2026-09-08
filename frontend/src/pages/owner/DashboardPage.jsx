@@ -1,19 +1,11 @@
 // src/pages/owner/DashboardPage.jsx
 import React, { useState, useEffect, useCallback } from "react";
+import { RefreshCw, AlertCircle, ChevronDown, MapPin } from "lucide-react";
 import {
-  DollarSign,
-  BedDouble,
-  Clock,
-  RefreshCw,
-  Building2,
-  ArrowUpRight,
-  AlertCircle,
-} from "lucide-react";
-import {
-  AreaChart,
-  Area,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -26,278 +18,484 @@ import apiClient from "@/services/apiClient";
 export default function OwnerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
-
   const [myHotels, setMyHotels] = useState([]);
   const [selectedHotelId, setSelectedHotelId] = useState("all");
 
+  // Bộ lọc thời gian chuẩn theo ảnh mẫu (today, yesterday, 7days, this_month, last_month)
+  const [timeRange, setTimeRange] = useState("this_month");
+  const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
+
+  // Bộ lọc kiểu hiển thị doanh thu (day, hour, weekday)
+  const [revenueTab, setRevenueTab] = useState("day");
+
   const [stats, setStats] = useState({
-    totalRevenue: 0,
-    occupancyRate: 0,
-    totalRooms: 0,
-    activeRooms: 0,
-    todayArrivals: 0,
-    todayDepartures: 0,
-    chartData: [],
+    occupancyCurrent: {
+      occupied: 1,
+      vacant: 7,
+      total: 8,
+      rate: 13,
+      vacantRate: 88,
+    },
+    revenueTotal: 0,
+    occupancyTimeline: [],
+    revenueTimeline: [],
+    topRooms: [],
   });
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
+  const formatShortVND = (num) => {
+    const val = Number(num || 0);
+    if (val >= 1000000000) return (val / 1000000000).toFixed(1) + " tỷ";
+    if (val >= 1000000) return (val / 1000000).toFixed(0) + " tr";
+    if (val >= 1000) return (val / 1000).toFixed(0) + "k";
+    return val;
+  };
 
-  // 1. Tải danh sách khách sạn đã duyệt của Owner
-  const fetchOwnerHotels = useCallback(async () => {
+  const fetchHotels = useCallback(async () => {
     try {
       const res = await apiClient.get("/hotels/my-hotels?active_only=true");
       const list = res?.data || res?.hotels || res || [];
       setMyHotels(Array.isArray(list) ? list : []);
-    } catch (err) {
-      console.error("Lỗi lấy danh sách khách sạn:", err);
+    } catch {
       setMyHotels([]);
     }
   }, []);
 
-  // 2. Lấy dữ liệu thống kê từ Backend theo cơ sở được chọn (Nối trực tiếp ?hotel_id=)
-  const fetchOwnerStats = useCallback(async () => {
+  const fetchStats = useCallback(async () => {
     setLoading(true);
     setApiError("");
     try {
-      // 👉 Nối thẳng ?hotel_id= vào URL để truyền tham số chắc chắn 100%
-      const queryStr =
-        selectedHotelId && selectedHotelId !== "all"
-          ? `?hotel_id=${encodeURIComponent(selectedHotelId)}`
-          : "";
-
-      const res = await apiClient.get(`/owner/stats${queryStr}`);
-      const data = res?.data || res || {};
-
+      const res = await apiClient.get(
+        `/owner/stats?hotel_id=${selectedHotelId}&range=${timeRange}&rev_tab=${revenueTab}`,
+      );
       setStats({
-        totalRevenue: Number(data.totalRevenue || 0),
-        occupancyRate: Number(data.occupancyRate || 0),
-        totalRooms: Number(data.totalRooms || 0),
-        activeRooms: Number(data.activeRooms || 0),
-        todayArrivals: Number(data.todayArrivals || 0),
-        todayDepartures: Number(data.todayDepartures || 0),
-        chartData: Array.isArray(data.chartData) ? data.chartData : [],
+        occupancyCurrent: res.occupancyCurrent || {
+          occupied: 1,
+          vacant: 7,
+          total: 8,
+          rate: 13,
+          vacantRate: 88,
+        },
+        revenueTotal: res.revenueTotal || 0,
+        occupancyTimeline: Array.isArray(res.occupancyTimeline)
+          ? res.occupancyTimeline
+          : [],
+        revenueTimeline: Array.isArray(res.revenueTimeline)
+          ? res.revenueTimeline
+          : [],
+        topRooms: Array.isArray(res.topRooms) ? res.topRooms : [],
       });
     } catch (err) {
-      console.error("Lỗi lấy số liệu Dashboard:", err);
       setApiError(err.message || "Không thể tải báo cáo từ máy chủ.");
     } finally {
       setLoading(false);
     }
-  }, [selectedHotelId]);
+  }, [selectedHotelId, timeRange, revenueTab]);
 
   useEffect(() => {
-    fetchOwnerHotels();
-  }, [fetchOwnerHotels]);
+    fetchHotels();
+  }, [fetchHotels]);
 
   useEffect(() => {
-    fetchOwnerStats();
-  }, [fetchOwnerStats]);
+    fetchStats();
+  }, [fetchStats]);
+
+  const getTimeRangeLabel = () => {
+    switch (timeRange) {
+      case "today":
+        return "Hôm nay";
+      case "yesterday":
+        return "Hôm qua";
+      case "7days":
+        return "7 ngày qua";
+      case "last_month":
+        return "Tháng trước";
+      default:
+        return "Tháng này";
+    }
+  };
+
+  const currentHotelName =
+    myHotels.find((h) => String(h.id) === String(selectedHotelId))?.name ||
+    "Chi nhánh trung tâm";
 
   return (
-    <div className="space-y-7 font-sans pb-16 text-slate-800">
-      {/* HEADER & DROPDOWN LỌC KHÁCH SẠN */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
-            <Building2 size={16} /> Bảng Điều Khiển Đối Tác Lưu Trú (PostgreSQL
-            Realtime)
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            Doanh Thu & Hiệu Suất Lấp Đầy Phòng
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Dữ liệu đồng bộ trực tiếp từ các bảng <code>booking</code>,{" "}
-            <code>room</code> & <code>hotel</code>
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 w-full lg:w-auto">
-          {/* DROPDOWN CHỌN TỪNG CƠ SỞ */}
-          <select
-            value={selectedHotelId}
-            onChange={(e) => setSelectedHotelId(e.target.value)}
-            className="p-2.5 border rounded-2xl text-xs font-bold text-slate-700 bg-slate-50 outline-none cursor-pointer"
-          >
-            <option value="all">🏨 Tất cả khách sạn của tôi</option>
-            {myHotels.map((h) => (
-              <option key={h.id} value={h.id}>
-                🏨 {h.name}
-              </option>
-            ))}
-          </select>
-
-          <button
-            onClick={fetchOwnerStats}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer"
-            title="Làm mới số liệu"
-          >
-            <RefreshCw size={16} />
-          </button>
-        </div>
-      </div>
-
+    <div className="space-y-6 font-sans text-slate-800 pb-12 bg-slate-100/40 min-h-screen p-2 md:p-4">
       {apiError && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2 font-bold">
-          <AlertCircle size={16} /> <span>{apiError}</span>
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 font-semibold">
+          <AlertCircle size={15} /> <span>{apiError}</span>
         </div>
       )}
 
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border">
-          <LoadingSpinner size="lg" label="Đang truy vấn số liệu..." />
+        <div className="py-24 flex justify-center bg-white rounded-2xl border">
+          <LoadingSpinner size="lg" label="Đang tải hệ thống thống kê..." />
         </div>
       ) : (
         <>
-          {/* 4 THẺ KPI */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* THẺ 1: TỔNG DOANH THU */}
-            <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Tổng Doanh Thu
-                </span>
-                <DollarSign size={18} className="text-emerald-600" />
+          {/* ─── 1. CÔNG SUẤT PHÒNG HIỆN TẠI ─── */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                Công suất phòng hiện tại
+              </h2>
+              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600">
+                <MapPin size={14} />
+                <select
+                  value={selectedHotelId}
+                  onChange={(e) => setSelectedHotelId(e.target.value)}
+                  className="bg-transparent outline-none cursor-pointer font-bold text-blue-600"
+                >
+                  <option value="all">Tất cả chi nhánh</option>
+                  {myHotels.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight">
-                {formatVND(stats.totalRevenue)}
-              </h3>
-              <p className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
-                <ArrowUpRight size={14} /> Dòng tiền thực nhận (paid/completed)
-              </p>
             </div>
 
-            {/* THẺ 2: TỶ LỆ LẤP ĐẦY */}
-            <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Tỷ Lệ Lấp Đầy (Occupancy)
-                </span>
-                <BedDouble size={18} className="text-blue-600" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+              {/* Đang có khách */}
+              <div className="flex items-center gap-5 pt-2 md:pt-0">
+                <div className="relative w-16 h-16 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="26"
+                      stroke="#f1f5f9"
+                      strokeWidth="6"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="26"
+                      stroke="#10b981"
+                      strokeWidth="6"
+                      fill="transparent"
+                      strokeDasharray="163"
+                      strokeDashoffset={
+                        163 - (163 * stats.occupancyCurrent.rate) / 100
+                      }
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span className="absolute text-xs font-black text-slate-800">
+                    {stats.occupancyCurrent.rate}%
+                  </span>
+                </div>
+                <div>
+                  <div className="text-sm font-black text-slate-900">
+                    {stats.occupancyCurrent.occupied} /{" "}
+                    {stats.occupancyCurrent.total} phòng
+                  </div>
+                  <div className="text-xs font-semibold text-slate-500">
+                    Đang có khách
+                  </div>
+                </div>
               </div>
-              <h3 className="text-2xl font-black text-blue-700 tracking-tight">
-                {stats.occupancyRate}%
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
-                {stats.activeRooms} / {stats.totalRooms} phòng đang có khách ở
-              </p>
-            </div>
 
-            {/* THẺ 3: NHẬN PHÒNG HÔM NAY */}
-            <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Nhận Phòng Hôm Nay
-                </span>
-                <Clock size={18} className="text-amber-600" />
+              {/* Đang trống */}
+              <div className="flex items-center gap-5 pl-0 md:pl-6 pt-4 md:pt-0">
+                <div className="relative w-16 h-16 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="26"
+                      stroke="#f1f5f9"
+                      strokeWidth="6"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="26"
+                      stroke="#f59e0b"
+                      strokeWidth="6"
+                      fill="transparent"
+                      strokeDasharray="163"
+                      strokeDashoffset={
+                        163 - (163 * stats.occupancyCurrent.vacantRate) / 100
+                      }
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span className="absolute text-xs font-black text-slate-800">
+                    {stats.occupancyCurrent.vacantRate}%
+                  </span>
+                </div>
+                <div>
+                  <div className="text-sm font-black text-slate-900">
+                    {stats.occupancyCurrent.vacant} /{" "}
+                    {stats.occupancyCurrent.total} phòng
+                  </div>
+                  <div className="text-xs font-semibold text-slate-500">
+                    Đang trống
+                  </div>
+                </div>
               </div>
-              <h3 className="text-2xl font-black text-amber-700 tracking-tight">
-                {stats.todayArrivals} Khách
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Lịch nhận phòng trong ngày
-              </p>
-            </div>
-
-            {/* THẺ 4: TRẢ PHÒNG HÔM NAY */}
-            <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Trả Phòng Hôm Nay
-                </span>
-                <Clock size={18} className="text-rose-600" />
-              </div>
-              <h3 className="text-2xl font-black text-rose-600 tracking-tight">
-                {stats.todayDepartures} Khách
-              </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Đã hoàn tất trả phòng hôm nay
-              </p>
             </div>
           </div>
 
-          {/* BIỂU ĐỒ DOANH THU & ĐƠN ĐẶT */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-8 bg-white p-6 rounded-3xl border shadow-xs space-y-4">
-              <h3 className="font-black text-base text-slate-900">
-                Biểu Đồ Doanh Thu 6 Tháng Gần Nhất
-              </h3>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stats.chartData}>
-                    <defs>
-                      <linearGradient
-                        id="ownerRevGrad"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor="#059669"
-                          stopOpacity={0.25}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor="#059669"
-                          stopOpacity={0.0}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#e2e8f0"
-                    />
-                    <XAxis dataKey="month" stroke="#64748b" fontSize={11} />
-                    <YAxis
-                      stroke="#64748b"
-                      fontSize={11}
-                      tickFormatter={(v) => `${(v / 1000000).toFixed(1)}M`}
-                    />
-                    <Tooltip formatter={(v) => [formatVND(v), "Doanh thu"]} />
-                    <Area
-                      type="monotone"
-                      dataKey="revenue"
-                      stroke="#059669"
-                      strokeWidth={3}
-                      fill="url(#ownerRevGrad)"
-                      dot={{ r: 5, fill: "#059669" }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+          {/* ─── 2. BIỂU ĐỒ CÔNG SUẤT SỬ DỤNG PHÒNG THÁNG NÀY ─── */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 relative">
+              <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                Công suất sử dụng phòng {getTimeRangeLabel().toLowerCase()}
+              </h2>
+              <button
+                onClick={() => setIsTimeDropdownOpen(!isTimeDropdownOpen)}
+                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer bg-blue-50 px-3 py-1.5 rounded-lg"
+              >
+                <span>{getTimeRangeLabel()}</span>
+                <ChevronDown size={14} />
+              </button>
+
+              {isTimeDropdownOpen && (
+                <div className="absolute right-0 top-12 z-50 bg-white shadow-xl border border-slate-200 rounded-xl py-1 w-40 text-xs font-semibold">
+                  {[
+                    { id: "today", label: "Hôm nay" },
+                    { id: "yesterday", label: "Hôm qua" },
+                    { id: "7days", label: "7 ngày qua" },
+                    { id: "this_month", label: "Tháng này" },
+                    { id: "last_month", label: "Tháng trước" },
+                  ].map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        setTimeRange(item.id);
+                        setIsTimeDropdownOpen(false);
+                      }}
+                      className={`px-3 py-2 cursor-pointer hover:bg-slate-50 flex justify-between items-center ${
+                        timeRange === item.id
+                          ? "text-blue-600 font-bold bg-blue-50/50"
+                          : "text-slate-700"
+                      }`}
+                    >
+                      <span>{item.label}</span>
+                      {timeRange === item.id && (
+                        <span className="text-blue-600">✓</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="lg:col-span-4 bg-white p-6 rounded-3xl border shadow-xs space-y-4">
-              <h3 className="font-black text-base text-slate-900">
-                Số Lượt Đặt Phòng Thành Công
-              </h3>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.chartData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#e2e8f0"
-                    />
-                    <XAxis dataKey="month" stroke="#64748b" fontSize={10} />
-                    <YAxis
-                      stroke="#64748b"
-                      fontSize={11}
-                      allowDecimals={false}
-                    />
-                    <Tooltip
-                      formatter={(v) => [`${v} đơn`, "Số đơn thành công"]}
-                    />
-                    <Bar
-                      dataKey="bookings"
-                      fill="#003580"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={stats.occupancyTimeline}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#f1f5f9"
+                  />
+                  <XAxis
+                    dataKey="day"
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    interval={0}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    domain={[0, 100]}
+                    ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
+                    interval={0}
+                    tickFormatter={(v) => `${v}%`}
+                  />
+                  <Tooltip formatter={(v) => [`${v}%`, "Công suất"]} />
+                  <Line
+                    type="monotone"
+                    dataKey="rate"
+                    stroke="#0284c7"
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: "#0284c7" }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1 text-xs font-semibold text-slate-600">
+              <span className="w-3 h-3 bg-blue-500 rounded-xs inline-block" />
+              <span>{currentHotelName}</span>
+            </div>
+          </div>
+
+          {/* ─── 3. BIỂU ĐỒ DOANH THU THUẦN (CHUẨN ẢNH MẪU) ─── */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
+            <div className="flex justify-between items-center relative">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                  DOANH THU THUẦN THÁNG NÀY
+                </h2>
+                <div className="flex items-center gap-1 text-sm font-black text-[#0284c7]">
+                  <span className="w-4 h-4 rounded-full border-2 border-[#0284c7] flex items-center justify-center text-[10px]">
+                    ➔
+                  </span>
+                  <span>{stats.revenueTotal?.toLocaleString("vi-VN")}</span>
+                </div>
               </div>
+
+              <button
+                onClick={() => setIsTimeDropdownOpen(!isTimeDropdownOpen)}
+                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
+              >
+                <span>{getTimeRangeLabel()}</span>
+                <ChevronDown size={14} />
+              </button>
+            </div>
+
+            {/* Thanh Tab gạch chân */}
+            <div className="flex items-center gap-6 border-b border-slate-100 text-xs font-bold pb-2">
+              <button
+                onClick={() => setRevenueTab("day")}
+                className={`pb-2 relative transition cursor-pointer ${
+                  revenueTab === "day"
+                    ? "text-[#0284c7] font-black after:content-[''] after:absolute after:bottom-[-9px] after:left-0 after:w-full after:h-0.5 after:bg-[#0284c7]"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Theo ngày
+              </button>
+              <button
+                onClick={() => setRevenueTab("hour")}
+                className={`pb-2 relative transition cursor-pointer ${
+                  revenueTab === "hour"
+                    ? "text-[#0284c7] font-black after:content-[''] after:absolute after:bottom-[-9px] after:left-0 after:w-full after:h-0.5 after:bg-[#0284c7]"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Theo giờ
+              </button>
+              <button
+                onClick={() => setRevenueTab("weekday")}
+                className={`pb-2 relative transition cursor-pointer ${
+                  revenueTab === "weekday"
+                    ? "text-[#0284c7] font-black after:content-[''] after:absolute after:bottom-[-9px] after:left-0 after:w-full after:h-0.5 after:bg-[#0284c7]"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Theo thứ
+              </button>
+            </div>
+
+            <div className="h-72 w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.revenueTimeline} barCategoryGap="28%">
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#f1f5f9"
+                  />
+                  <XAxis
+                    dataKey="label"
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    interval={0}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickFormatter={(v) => {
+                      if (v === 0) return "0";
+                      return `${Math.round(v / 1000000)} tr`;
+                    }}
+                  />
+                  <Tooltip
+                    formatter={(v) => [
+                      Number(v || 0).toLocaleString("vi-VN") + " ₫",
+                      "Doanh thu",
+                    ]}
+                  />
+                  <Bar
+                    dataKey="revenue"
+                    fill="#0284c7"
+                    radius={[0, 0, 0, 0]}
+                    maxBarSize={36}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 pt-1 text-xs font-semibold text-slate-600">
+              <span className="w-3 h-3 bg-[#0284c7] rounded-xs inline-block" />
+              <span>{currentHotelName}</span>
+            </div>
+          </div>
+
+          {/* ─── 4. TOP 10 HẠNG PHÒNG (PHÒNG 01 GIƯỜNG ĐƠN...) ─── */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                  TOP 10 HẠNG PHÒNG TẠI {currentHotelName.toUpperCase()}{" "}
+                  {getTimeRangeLabel().toUpperCase()}
+                </h2>
+                <span className="text-xs font-bold text-[#0284c7] cursor-pointer">
+                  THEO DOANH THU ▾
+                </span>
+              </div>
+
+              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">
+                {getTimeRangeLabel()}
+              </span>
+            </div>
+
+            <div className="h-56 w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  layout="vertical"
+                  data={stats.topRooms}
+                  barCategoryGap="25%"
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    horizontal={false}
+                    stroke="#f1f5f9"
+                  />
+                  <XAxis
+                    type="number"
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickFormatter={(v) => {
+                      if (v === 0) return "0";
+                      if (v >= 1000000) return `${v / 1000000}M`;
+                      return `${v / 1000}k`;
+                    }}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    stroke="#475569"
+                    fontSize={11}
+                    width={160}
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="bg-[#0284c7] text-white px-3 py-1.5 rounded-md text-xs font-bold shadow-lg">
+                            {Number(d.revenue).toLocaleString("vi-VN")} -{" "}
+                            {d.name}
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar
+                    dataKey="revenue"
+                    fill="#0284c7"
+                    radius={[0, 0, 0, 0]}
+                    maxBarSize={30}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </>
