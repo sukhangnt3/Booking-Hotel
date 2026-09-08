@@ -4,12 +4,12 @@ const router = express.Router();
 const ownerController = require("../controllers/owner.controller");
 const { requireAuth } = require("../middleware/auth.middleware");
 
-// 1. Middleware bắt buộc đăng nhập
+// 1. Bắt buộc đăng nhập
 if (typeof requireAuth === "function") {
   router.use(requireAuth);
 }
 
-// 2. Chuẩn hóa triệt để id của Owner từ JWT token (req.user & req.auth)
+// 2. Chuẩn hóa ID
 router.use((req, res, next) => {
   const resolvedId =
     req.user?.id ||
@@ -17,7 +17,6 @@ router.use((req, res, next) => {
     req.auth?.sub ||
     req.auth?.id ||
     req.auth?.userId;
-
   if (!req.user) req.user = {};
   if (resolvedId) {
     req.user.id = resolvedId;
@@ -26,53 +25,56 @@ router.use((req, res, next) => {
   next();
 });
 
-// 🛡️ CHỐT CHẶN AN TOÀN TUYỆT ĐỐI: CHỈ ĐĂNG KÝ KHI HÀM TỒN TẠI (CHỐNG SẬP 100%)
+// Chốt chặn an toàn
 const safeRoute = (method, path, handler) => {
   if (typeof handler === "function") {
     router[method](path, handler);
   } else {
-    console.warn(
-      `⚠️ Cảnh báo: Hàm xử lý cho [${method.toUpperCase()} ${path}] chưa được export trong owner.controller.js`,
-    );
+    console.warn(`⚠️ Cảnh báo: Chưa export [${method.toUpperCase()} ${path}]`);
   }
 };
 
-// ─── THỐNG KÊ & DANH SÁCH ĐƠN HÀNG ───
-safeRoute("get", "/stats", ownerController.getOwnerStats);
-safeRoute("get", "/bookings", ownerController.getOwnerBookings);
+// ─── CÁC API SƠ ĐỒ PHÒNG LỄ TÂN ───
+// 1. Lấy sơ đồ phòng
+safeRoute("get", "/room-map", ownerController.getRoomMapData);
 
-// ─── ĐẶT PHÒNG TẠI QUẦY (WALK-IN) ───
+// 2. Nhận phòng / Đặt phòng tại quầy
 safeRoute("post", "/bookings/walk-in", ownerController.createWalkInBooking);
+safeRoute("post", "/bookings/walkin", ownerController.createWalkInBooking);
 
-// ─── CHECK-IN / CHECK-OUT ───
-safeRoute("post", "/bookings/:id/checkin", ownerController.handleOwnerCheckIn);
-safeRoute("patch", "/bookings/:id/checkin", ownerController.handleOwnerCheckIn);
-
+// 3. Trả phòng & thanh toán (Chuyển phòng sang Chưa dọn)
 safeRoute(
   "post",
   "/bookings/:id/checkout",
   ownerController.handleOwnerCheckOut,
 );
+
+// 4. Lễ tân xác nhận Đã dọn phòng
+safeRoute("post", "/rooms/mark-cleaned", ownerController.markRoomCleaned);
+
+// 5. Đổi phòng cho khách
 safeRoute(
-  "patch",
-  "/bookings/:id/checkout",
-  ownerController.handleOwnerCheckOut,
+  "post",
+  "/bookings/:id/change-room",
+  ownerController.handleChangeRoom,
 );
 
-// ─── CẬP NHẬT TRẠNG THÁI ĐƠN ───
+// 6. Thêm dịch vụ / phụ thu
+safeRoute(
+  "post",
+  "/bookings/:id/services",
+  ownerController.handleAddBookingService,
+);
+
+// ─── CÁC API KHÁC ───
+safeRoute("get", "/stats", ownerController.getOwnerStats);
+safeRoute("get", "/bookings", ownerController.getOwnerBookings);
+safeRoute("post", "/bookings/:id/checkin", ownerController.handleOwnerCheckIn);
 safeRoute(
   "patch",
   "/bookings/:id/status",
   ownerController.updateOwnerBookingStatus,
 );
-
-// ─── CẬP NHẬT CƠ SỞ CHỖ NGHỈ (HỖ TRỢ CẢ 2 ĐƯỜNG DẪN ĐỂ KHÔNG BAO GIỜ BỊ 404) ───
-// Trường hợp 1: Router được mount ở app.use("/api/owner", ...) -> đón URL: /api/owner/hotels/:id
 safeRoute("put", "/hotels/:id", ownerController.updateHotelInfo);
-safeRoute("patch", "/hotels/:id", ownerController.updateHotelInfo);
-
-// Trường hợp 2: Router được mount ở app.use("/api", ...) -> đón URL: /api/owner/hotels/:id
-safeRoute("put", "/owner/hotels/:id", ownerController.updateHotelInfo);
-safeRoute("patch", "/owner/hotels/:id", ownerController.updateHotelInfo);
 
 module.exports = router;

@@ -28,7 +28,7 @@ safeUse("/favorites", "./favorite.routes");
 safeUse("/reviews", "./review.routes");
 safeUse("/chatbot", "./chatbot.routes");
 
-// 👉 NẠP ROUTE ADMIN (Thử cả 2 đường dẫn phổ biến để chắc chắn tìm thấy file)
+// 👉 NẠP ROUTE ADMIN
 try {
   const adminRoutes = require("./admin.routes");
   router.use("/admin", adminRoutes);
