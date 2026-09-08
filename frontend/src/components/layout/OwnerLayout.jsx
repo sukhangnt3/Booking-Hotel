@@ -8,7 +8,8 @@ import {
   CalendarCheck,
   Menu,
   Clock,
-  Tags, // 👉 Icon cho Bảng giá phòng
+  Tags,
+  Grid3X3, // 👉 Icon Sơ đồ phòng Lễ tân
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import Sidebar from "./Sidebar";
@@ -48,12 +49,18 @@ const OwnerLayout = () => {
     normalizedRoles.includes("OWNER") ||
     normalizedRoles.includes("ADMIN");
 
-  // Danh mục Menu bên trái
+  // Danh mục Menu bên trái (ĐÃ BỔ SUNG MỤC LỄ TÂN)
   const ownerNavItems = [
     {
       path: "/owner/dashboard",
       label: "Tổng Quan & Báo Cáo Doanh Thu",
       icon: <LayoutDashboard size={19} />,
+    },
+    // 👉 1. MỤC SƠ ĐỒ PHÒNG LỄ TÂN (KIOTVIET STYLE)
+    {
+      path: "/owner/reception-map",
+      label: "Sơ Đồ Phòng & Lễ Tân",
+      icon: <Grid3X3 size={19} />,
     },
     {
       path: "/owner/hotels",
@@ -187,7 +194,7 @@ const OwnerLayout = () => {
         </header>
 
         {/* NỘI DUNG TỪNG TRANG CON */}
-        <main className="flex-1 overflow-y-auto p-6 bg-[#f8fafc]">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#f8fafc]">
           <div className="max-w-7xl mx-auto">
             <Outlet />
           </div>

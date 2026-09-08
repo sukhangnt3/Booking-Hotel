@@ -34,8 +34,11 @@ import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
 import RoomTimeSettingsPage from "@/pages/owner/RoomTimeSettingsPage";
-import RoomPricingPage from "@/pages/owner/RoomPricingPage"; // 👉 ĐÃ THÊM
+import RoomPricingPage from "@/pages/owner/RoomPricingPage";
 import BookingListPage from "@/pages/owner/BookingListPage";
+
+// 👉 1. IMPORT TRANG SƠ ĐỒ PHÒNG LỄ TÂN
+import ReceptionRoomMapPage from "@/pages/owner/ReceptionRoomMapPage";
 
 import { NotFoundPage, ServerErrorPage } from "@/pages/error";
 
@@ -80,11 +83,15 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/owner/dashboard" replace /> },
           { path: "dashboard", element: <OwnerDashboardPage /> },
+
+          // 👉 2. ROUTE SƠ ĐỒ PHÒNG LỄ TÂN (KIOTVIET STYLE)
+          { path: "reception-map", element: <ReceptionRoomMapPage /> },
+
           { path: "hotels", element: <HotelManagementPage /> },
           { path: "hotels/register", element: <RegisterForm /> },
           { path: "rooms", element: <RoomManagementPage /> },
           { path: "room-time-settings", element: <RoomTimeSettingsPage /> },
-          { path: "pricing", element: <RoomPricingPage /> }, // 👉 ROUTE BẢNG GIÁ PHÒNG
+          { path: "pricing", element: <RoomPricingPage /> },
           { path: "bookings", element: <BookingListPage /> },
         ],
       },

@@ -138,6 +138,7 @@ export default function RoomManagementPage() {
   const [modalTab, setModalTab] = useState("info");
   const [editingRoom, setEditingRoom] = useState(null);
 
+  // 👉 BỔ SUNG SỨC CHỨA TIÊU CHUẨN & TỐI ĐA VÀO FORM STATE
   const initialFormState = {
     hotel_id: "",
     code: "",
@@ -145,6 +146,10 @@ export default function RoomManagementPage() {
     type: "Tiêu chuẩn",
     room_view: "city_view",
     capacity: 2,
+    standard_adults: 1,
+    standard_children: 1,
+    max_adults: 1,
+    max_children: 1,
     hourly_price: "",
     base_price: "",
     overnight_price: "",
@@ -198,7 +203,6 @@ export default function RoomManagementPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Lấy danh sách khách sạn
   const fetchMyHotels = useCallback(async () => {
     try {
       const res = await apiClient.get("/hotels/my-hotels?active_only=true");
@@ -217,7 +221,6 @@ export default function RoomManagementPage() {
     }
   }, [selectedHotelId, setSearchParams]);
 
-  // Lấy danh sách phòng theo chi nhánh đã chọn
   const fetchRoomsByHotel = useCallback(async () => {
     if (!selectedHotelId || selectedHotelId === "all") {
       setRooms([]);
@@ -270,7 +273,6 @@ export default function RoomManagementPage() {
     fetchRoomsByHotel();
   }, [fetchRoomsByHotel]);
 
-  // Danh sách phòng sau khi áp dụng tìm kiếm & trạng thái
   const filteredRooms = useMemo(() => {
     return rooms.filter((r) => {
       const matchQuery =
@@ -332,7 +334,7 @@ export default function RoomManagementPage() {
     }
   };
 
-  // Mở modal thêm hạng phòng mới (gán sẵn chi nhánh đang chọn)
+  // Mở modal thêm hạng phòng mới
   const handleOpenAddModal = () => {
     setEditingRoom(null);
     setModalTab("info");
@@ -366,6 +368,11 @@ export default function RoomManagementPage() {
       overnight_price: overnightP,
       early_checkin_fee: room.early_checkin_fee || "",
       late_checkout_fee: room.late_checkout_fee || "",
+      // Nạp sức chứa
+      standard_adults: room.standard_adults || 1,
+      standard_children: room.standard_children ?? 1,
+      max_adults: room.max_adults || room.capacity || 1,
+      max_children: room.max_children ?? 1,
       images:
         room.thumbnail || room.image ? [room.thumbnail || room.image] : [],
     });
@@ -550,7 +557,12 @@ export default function RoomManagementPage() {
       const payload = {
         hotel_id: targetHotelId,
         name: formData.name.trim(),
-        capacity: Number(formData.capacity || 2),
+        capacity: Number(formData.max_adults || formData.capacity || 2),
+        // Gửi sức chứa tiêu chuẩn và tối đa
+        standard_adults: Number(formData.standard_adults || 1),
+        standard_children: Number(formData.standard_children || 0),
+        max_adults: Number(formData.max_adults || 2),
+        max_children: Number(formData.max_children || 1),
         base_price: dailyPrice,
         hourly_price: hourlyPrice,
         overnight_price: overnightPrice,
@@ -571,7 +583,6 @@ export default function RoomManagementPage() {
         await apiClient.post("/rooms", payload);
       }
 
-      // Nếu tạo phòng cho chi nhánh khác chi nhánh đang lọc, chuyển sang chi nhánh đó để xem ngay
       if (targetHotelId !== selectedHotelId) {
         setSelectedHotelId(targetHotelId);
         setSearchParams({ hotelId: targetHotelId });
@@ -1022,18 +1033,22 @@ export default function RoomManagementPage() {
                                         <b>{room.amount || 2}</b>
                                       </div>
                                       <div>
+                                        Sức chứa tiêu chuẩn:{" "}
+                                        <b>
+                                          {room.standard_adults || 1} lớn,{" "}
+                                          {room.standard_children || 1} trẻ
+                                        </b>
+                                      </div>
+                                      <div>
+                                        Sức chứa tối đa:{" "}
+                                        <b>
+                                          {room.max_adults || 1} lớn,{" "}
+                                          {room.max_children || 1} trẻ
+                                        </b>
+                                      </div>
+                                      <div>
                                         Giá theo ngày:{" "}
                                         <b>{formatVND(room.base_price)} đ</b>
-                                      </div>
-                                      <div>
-                                        Giá theo giờ:{" "}
-                                        <b>{formatVND(room.hourly_price)} đ</b>
-                                      </div>
-                                      <div>
-                                        Giá qua đêm:{" "}
-                                        <b>
-                                          {formatVND(room.overnight_price)} đ
-                                        </b>
                                       </div>
                                     </div>
                                     <div className="md:col-span-4 border-l pl-4">
@@ -1426,6 +1441,7 @@ export default function RoomManagementPage() {
                     </div>
                   </div>
 
+                  {/* DẢI ẢNH */}
                   <div className="pt-4 flex items-center gap-1.5">
                     <button
                       type="button"
@@ -1486,6 +1502,85 @@ export default function RoomManagementPage() {
                     >
                       <ChevronRight size={20} />
                     </button>
+                  </div>
+
+                  {/* ─── KHỐI SỨC CHỨA CHUẨN 100% THEO ẢNH BẠN GỬI ─── */}
+                  <div className="border border-slate-200 rounded-md overflow-hidden bg-white mt-4">
+                    <div className="bg-[#f1f5f9] px-4 py-2 font-bold text-slate-800 text-xs border-b border-slate-200">
+                      Sức chứa
+                    </div>
+                    <div className="p-4 space-y-3.5 text-xs">
+                      {/* Dòng 1: Tiêu chuẩn */}
+                      <div className="flex items-center gap-6">
+                        <span className="w-20 font-medium text-slate-700">
+                          Tiêu chuẩn
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            value={formData.standard_adults}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                standard_adults: Number(e.target.value),
+                              })
+                            }
+                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                          />
+                          <span className="text-slate-600">người lớn và</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.standard_children}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                standard_children: Number(e.target.value),
+                              })
+                            }
+                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                          />
+                          <span className="text-slate-600">trẻ em</span>
+                        </div>
+                      </div>
+
+                      {/* Dòng 2: Tối đa */}
+                      <div className="flex items-center gap-6">
+                        <span className="w-20 font-medium text-slate-700">
+                          Tối đa
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            value={formData.max_adults}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                max_adults: Number(e.target.value),
+                                capacity: Number(e.target.value),
+                              })
+                            }
+                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                          />
+                          <span className="text-slate-600">người lớn và</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.max_children}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                max_children: Number(e.target.value),
+                              })
+                            }
+                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                          />
+                          <span className="text-slate-600">trẻ em</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
