@@ -153,23 +153,23 @@ export default function ChatbotWidget() {
                       <div className="space-y-1.5 pt-1">
                         {m.suggestions.map((h) => (
                           <div
-                            key={h.id}
+                            key={h.room_id}
                             onClick={() => {
                               setIsOpen(false);
-                              navigate(`/hotel/${h.id}`);
+                              navigate(`/hotel/${h.hotel_id}`);
                             }}
                             className="p-2.5 bg-white border border-blue-200 rounded-xl hover:border-blue-500 cursor-pointer shadow-xs transition flex items-center justify-between"
                           >
                             <div className="overflow-hidden pr-2">
                               <span className="font-bold text-[11px] text-slate-900 block truncate">
-                                {h.name}
+                                {h.room_name} - {h.hotel_name}
                               </span>
                               <span className="text-[10px] text-slate-500">
-                                {h.city} • ⭐ {h.star_rating} sao
+                                {h.city} • Còn {h.remaining_rooms} phòng
                               </span>
                             </div>
                             <span className="text-[10px] font-bold text-emerald-600 shrink-0">
-                              {Number(h.price).toLocaleString("vi-VN")} ₫
+                              {Number(h.price).toLocaleString("vi-VN")} ₫/đêm
                             </span>
                           </div>
                         ))}
