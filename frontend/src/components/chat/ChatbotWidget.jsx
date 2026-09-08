@@ -29,6 +29,33 @@ export default function ChatbotWidget() {
 
   const sessionId = useRef(`guest_${Date.now()}`).current;
 
+  const renderMessage = (message) =>
+    String(message || "")
+      .split(/(\*\*.*?\*\*)/g)
+      .map((part, index) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>
+        ) : (
+          <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+        ),
+      );
+
+  const formatFilter = (filter = {}) => {
+    const labels = [];
+    if (filter.city) labels.push(filter.city);
+    if (filter.locationText) labels.push(filter.locationText);
+    if (filter.exactStars) labels.push(`${filter.exactStars} sao`);
+    else if (filter.minStars) labels.push(`từ ${filter.minStars} sao`);
+    if (filter.maxPrice) {
+      labels.push(`đến ${Number(filter.maxPrice).toLocaleString("vi-VN")}đ`);
+    }
+    if (filter.guests) labels.push(`${filter.guests} khách`);
+    if (filter.checkIn && filter.checkOut) {
+      labels.push(`${filter.checkIn} - ${filter.checkOut}`);
+    }
+    return labels;
+  };
+
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -64,6 +91,7 @@ export default function ChatbotWidget() {
           role: "assistant",
           message: botReply,
           suggestions: suggestions,
+          filter: res?.filter || {},
         },
       ]);
     } catch (err) {
@@ -145,20 +173,33 @@ export default function ChatbotWidget() {
                           : "bg-[#003580] text-white"
                       }`}
                     >
-                      {m.message}
+                      {isBot ? renderMessage(m.message) : m.message}
                     </div>
+
+                    {isBot && formatFilter(m.filter).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {formatFilter(m.filter).map((label) => (
+                          <span
+                            key={label}
+                            className="rounded-full border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] font-medium text-[#003580]"
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Thẻ gợi ý khách sạn có thể bấm xem ngay */}
                     {m.suggestions && m.suggestions.length > 0 && (
                       <div className="space-y-1.5 pt-1">
                         {m.suggestions.map((h) => (
-                          <div
+                          <button
                             key={h.room_id}
                             onClick={() => {
                               setIsOpen(false);
                               navigate(`/hotel/${h.hotel_id}`);
                             }}
-                            className="p-2.5 bg-white border border-blue-200 rounded-xl hover:border-blue-500 cursor-pointer shadow-xs transition flex items-center justify-between"
+                            className="w-full p-2.5 bg-white border border-blue-200 rounded-xl hover:border-blue-500 cursor-pointer shadow-xs transition flex items-center justify-between text-left"
                           >
                             <div className="overflow-hidden pr-2">
                               <span className="font-bold text-[11px] text-slate-900 block truncate">
@@ -171,7 +212,7 @@ export default function ChatbotWidget() {
                             <span className="text-[10px] font-bold text-emerald-600 shrink-0">
                               {Number(h.price).toLocaleString("vi-VN")} ₫/đêm
                             </span>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
