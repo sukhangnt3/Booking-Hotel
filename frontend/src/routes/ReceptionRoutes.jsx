@@ -3,29 +3,25 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { LoadingSpinner } from "@/components/common";
 
-const OwnerRoutes = () => {
+const ReceptionRoutes = () => {
   const location = useLocation();
   const { user, isAuthenticated, isLoadingUser, fetchUserProfile } =
     useAuthStore();
 
-  // 1. Tự động phục hồi User từ Cookie khi F5
   useEffect(() => {
     if (!user && isLoadingUser) {
       fetchUserProfile();
     }
   }, [user, isLoadingUser, fetchUserProfile]);
 
-  // 2. Đang xác thực -> Chờ, không được đá văng ra Login
   if (isLoadingUser) {
-    return <LoadingSpinner fullPage label="Đang xác thực quyền đối tác..." />;
+    return <LoadingSpinner fullPage label="Đang xác thực quyền lễ tân..." />;
   }
 
-  // 3. Chưa đăng nhập -> Chuyển về Login
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 4. Lấy danh sách Roles
   let extractedRoles = [];
   if (Array.isArray(user.roles)) {
     extractedRoles = user.roles;
@@ -44,35 +40,28 @@ const OwnerRoutes = () => {
       return String(roleStr).trim().toLowerCase();
     });
 
-  const isOwnerOrAdmin = normalizedRoles.some(
-    (r) => r.includes("owner") || r.includes("admin") || r.includes("manager"),
-  );
-
-  const isReceptionistOnly =
-    normalizedRoles.some(
-      (r) =>
-        r.includes("receptionist") ||
-        r.includes("staff") ||
-        r.includes("letan") ||
-        r.includes("le_tan"),
-    ) && !isOwnerOrAdmin;
-
-  // 👉 Nếu là Lễ tân cố tình vào Owner -> Đá sang trang Lễ tân
-  if (isReceptionistOnly) {
-    return <Navigate to="/reception/room-map" replace />;
-  }
-
   const isAllowed =
-    isOwnerOrAdmin ||
+    normalizedRoles.some((r) =>
+      [
+        "receptionist",
+        "staff",
+        "le_tan",
+        "letan",
+        "owner",
+        "admin",
+        "manager",
+      ].some((validRole) => r.includes(validRole)),
+    ) ||
     user?.role_id === 1 ||
     user?.role_id === 2 ||
-    user?.role_id === 3;
+    user?.role_id === 3 ||
+    user?.role_id === 4;
 
   if (!isAllowed) {
-    return <Navigate to="/register-owner" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <Outlet />;
 };
 
-export default OwnerRoutes;
+export default ReceptionRoutes;

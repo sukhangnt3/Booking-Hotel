@@ -14,11 +14,12 @@ import { LoadingSpinner, EmptyState } from "@/components/common";
 import { useAuthStore } from "@/stores/authStore";
 import apiClient from "@/services/apiClient";
 
-// 3 Roles chuẩn theo bảng roles trong Database PostgreSQL
+// 4 Roles chuẩn theo bảng roles trong Database PostgreSQL (Đã thêm RECEPTIONIST)
 const ROLE_TABS = [
   { id: "all", label: "Tất cả tài khoản" },
   { id: "ADMIN", label: "Quản trị viên (ADMIN)" },
   { id: "HOTEL_OWNER", label: "Chủ khách sạn (HOTEL_OWNER)" },
+  { id: "RECEPTIONIST", label: "Lễ tân (RECEPTIONIST)" },
   { id: "CUSTOMER", label: "Khách hàng (CUSTOMER)" },
 ];
 
@@ -72,19 +73,28 @@ export default function UserManagementPage() {
           .toLowerCase()
           .trim();
 
-        // 👉 ĐÃ SỬA TẠI ĐÂY: Đọc mảng u.roles từ câu SQL array_agg(r.name) của Backend
+        // Đọc role từ mảng u.roles hoặc u.role / u.role_name
         let rawRole = "";
         if (Array.isArray(u.roles) && u.roles.length > 0) {
-          rawRole = u.roles[0]; // Lấy role trong mảng roles: ['ADMIN']
+          rawRole = u.roles[0];
         } else {
           rawRole = u.role || u.role_name || "";
         }
 
         let role = String(rawRole).toUpperCase();
-        if (role.includes("ADMIN")) role = "ADMIN";
-        else if (role.includes("OWNER") || role.includes("HOTEL"))
+        if (role.includes("ADMIN")) {
+          role = "ADMIN";
+        } else if (role.includes("OWNER") || role.includes("HOTEL")) {
           role = "HOTEL_OWNER";
-        else role = "CUSTOMER";
+        } else if (
+          role.includes("RECEPTIONIST") ||
+          role.includes("STAFF") ||
+          role.includes("LE_TAN")
+        ) {
+          role = "RECEPTIONIST";
+        } else {
+          role = "CUSTOMER";
+        }
 
         return {
           id: u.id || u._id || u.user_id || `DB-U-${idx + 1}`,
@@ -342,10 +352,15 @@ export default function UserManagementPage() {
                             ? "bg-purple-50 text-purple-700 border-purple-200"
                             : u.role === "HOTEL_OWNER"
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200"
+                              : u.role === "RECEPTIONIST"
+                                ? "bg-amber-50 text-amber-800 border-amber-300"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
                         }`}
                       >
                         <option value="CUSTOMER">CUSTOMER (Khách)</option>
+                        <option value="RECEPTIONIST">
+                          RECEPTIONIST (Lễ tân)
+                        </option>
                         <option value="HOTEL_OWNER">
                           HOTEL_OWNER (Chủ KS)
                         </option>
@@ -368,7 +383,7 @@ export default function UserManagementPage() {
                       <button
                         disabled={isSelf}
                         onClick={() => handleToggleActive(u)}
-                        className={`p-2 rounded-xl border transition ${
+                        className={`p-2 rounded-xl border transition cursor-pointer ${
                           isSelf
                             ? "opacity-30 cursor-not-allowed"
                             : u.activate
@@ -465,9 +480,12 @@ export default function UserManagementPage() {
                         role: e.target.value,
                       })
                     }
-                    className="w-full p-2.5 border rounded-xl font-bold"
+                    className="w-full p-2.5 border rounded-xl font-bold cursor-pointer"
                   >
                     <option value="CUSTOMER">CUSTOMER (Khách hàng)</option>
+                    <option value="RECEPTIONIST">
+                      RECEPTIONIST (Nhân viên lễ tân)
+                    </option>
                     <option value="HOTEL_OWNER">
                       HOTEL_OWNER (Chủ khách sạn)
                     </option>
@@ -497,13 +515,13 @@ export default function UserManagementPage() {
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold"
+                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer"
                 >
                   Lưu Vào Database
                 </button>

@@ -8,8 +8,10 @@ import {
 
 // Layouts & Guards
 import { GuestLayout, AdminLayout, OwnerLayout } from "@/components/layout";
+import ReceptionLayout from "@/components/layout/ReceptionLayout";
 import AdminRoutes from "./AdminRoutes";
 import OwnerRoutes from "./OwnerRoutes";
+import ReceptionRoutes from "./ReceptionRoutes";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 
 // Guest Pages
@@ -32,13 +34,14 @@ import UserManagementPage from "@/pages/admin/UserManagementPage";
 // Owner Pages
 import OwnerDashboardPage from "@/pages/owner/DashboardPage";
 import HotelManagementPage from "@/pages/owner/HotelManagementPage";
+import StaffManagementPage from "@/pages/owner/StaffManagementPage";
 import RoomManagementPage from "@/pages/owner/RoomManagementPage";
 import RoomTimeSettingsPage from "@/pages/owner/RoomTimeSettingsPage";
 import RoomPricingPage from "@/pages/owner/RoomPricingPage";
 import BookingListPage from "@/pages/owner/BookingListPage";
 
-// 👉 1. IMPORT TRANG SƠ ĐỒ PHÒNG LỄ TÂN
-import ReceptionRoomMapPage from "@/pages/owner/ReceptionRoomMapPage";
+// 👉 TRANG RIÊNG CỦA LỄ TÂN TRONG FOLDER RECEPTION
+import ReceptionMapPage from "@/pages/reception/ReceptionMapPage";
 
 import { NotFoundPage, ServerErrorPage } from "@/pages/error";
 
@@ -72,7 +75,29 @@ const router = createBrowserRouter([
   { path: "/register", element: <RegisterForm /> },
   { path: "/register-owner", element: <RegisterForm /> },
 
-  // ── 3. PHÂN HỆ CHỦ KHÁCH SẠN & LỄ TÂN (PMS) ──
+  // ── 3. PHÂN HỆ DÀNH RIÊNG CHO LỄ TÂN (RECEPTION DESK) ──
+  {
+    path: "/reception",
+    element: <ReceptionRoutes />,
+    errorElement: <ServerErrorPage />,
+    children: [
+      {
+        element: <ReceptionLayout />,
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/reception/room-map" replace />,
+          },
+          // 👉 SƠ ĐỒ PHÒNG TẠI THƯ MỤC RECEPTION RIÊNG
+          { path: "room-map", element: <ReceptionMapPage /> },
+          // 👉 TIẾP NHẬN ĐƠN & CHECK-IN / CHECK-OUT
+          { path: "bookings", element: <BookingListPage /> },
+        ],
+      },
+    ],
+  },
+
+  // ── 4. PHÂN HỆ DÀNH CHO CHỦ KHÁCH SẠN (HOTEL OWNER) ──
   {
     path: "/owner",
     element: <OwnerRoutes />,
@@ -83,12 +108,9 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/owner/dashboard" replace /> },
           { path: "dashboard", element: <OwnerDashboardPage /> },
-
-          // 👉 2. ROUTE SƠ ĐỒ PHÒNG LỄ TÂN (KIOTVIET STYLE)
-          { path: "reception-map", element: <ReceptionRoomMapPage /> },
-
           { path: "hotels", element: <HotelManagementPage /> },
           { path: "hotels/register", element: <RegisterForm /> },
+          { path: "staff", element: <StaffManagementPage /> },
           { path: "rooms", element: <RoomManagementPage /> },
           { path: "room-time-settings", element: <RoomTimeSettingsPage /> },
           { path: "pricing", element: <RoomPricingPage /> },
@@ -98,7 +120,7 @@ const router = createBrowserRouter([
     ],
   },
 
-  // ── 4. PHÂN HỆ SUPER ADMIN ──
+  // ── 5. PHÂN HỆ SUPER ADMIN ──
   {
     path: "/admin",
     element: <AdminRoutes />,

@@ -1,4 +1,3 @@
-// src/pages/owner/RoomManagementPage.jsx
 import React, {
   useState,
   useEffect,
@@ -138,7 +137,6 @@ export default function RoomManagementPage() {
   const [modalTab, setModalTab] = useState("info");
   const [editingRoom, setEditingRoom] = useState(null);
 
-  // 👉 BỔ SUNG SỨC CHỨA TIÊU CHUẨN & TỐI ĐA VÀO FORM STATE
   const initialFormState = {
     hotel_id: "",
     code: "",
@@ -221,9 +219,11 @@ export default function RoomManagementPage() {
     }
   }, [selectedHotelId, setSearchParams]);
 
+  // Lấy danh sách hạng phòng và phòng vật lý thật từ Database
   const fetchRoomsByHotel = useCallback(async () => {
     if (!selectedHotelId || selectedHotelId === "all") {
       setRooms([]);
+      setRoomUnitsList([]);
       setLoading(false);
       return;
     }
@@ -231,32 +231,22 @@ export default function RoomManagementPage() {
     setLoading(true);
     setApiError("");
     try {
-      const res = await apiClient.get(`/rooms?hotel_id=${selectedHotelId}`);
+      const res = await apiClient.get(
+        `/rooms?hotel_id=${selectedHotelId}&_t=${Date.now()}`,
+      );
       const list = res?.data || res?.rooms || res || [];
       const loadedRooms = Array.isArray(list) ? list : [];
       setRooms(loadedRooms);
 
-      const units = [];
-      loadedRooms.forEach((r) => {
-        const count = Number(r.amount || 2);
-        for (let i = 1; i <= count; i++) {
-          units.push({
-            id: `${r.id}_unit_${i}`,
-            room_id: r.id,
-            room_type_name: r.name,
-            name: `${i < 10 ? "10" + i : "1" + i}`,
-            area: i % 2 === 0 ? "Tầng 2" : "Tầng 1",
-            hourly_price:
-              Number(r.hourly_price) ||
-              Math.round((Number(r.base_price) || 600000) * 0.25),
-            daily_price: Number(r.base_price) || 600000,
-            overnight_price:
-              Number(r.overnight_price) || Number(r.base_price) || 600000,
-            status: "active",
-          });
-        }
-      });
-      setRoomUnitsList(units);
+      try {
+        const resUnits = await apiClient.get(
+          `/rooms/units?hotel_id=${selectedHotelId}&_t=${Date.now()}`,
+        );
+        const realUnits = resUnits?.data?.units || resUnits?.units || [];
+        setRoomUnitsList(Array.isArray(realUnits) ? realUnits : []);
+      } catch {
+        setRoomUnitsList([]);
+      }
     } catch (err) {
       setApiError(err.message || "Không thể tải danh sách phòng.");
       setRooms([]);
@@ -334,7 +324,6 @@ export default function RoomManagementPage() {
     }
   };
 
-  // Mở modal thêm hạng phòng mới
   const handleOpenAddModal = () => {
     setEditingRoom(null);
     setModalTab("info");
@@ -348,7 +337,6 @@ export default function RoomManagementPage() {
     setIsAddMenuOpen(false);
   };
 
-  // Mở modal sửa hạng phòng
   const handleOpenEditRoomModal = (room, roomCode) => {
     const baseP = Number(room.base_price || 0);
     const hourlyP =
@@ -368,7 +356,6 @@ export default function RoomManagementPage() {
       overnight_price: overnightP,
       early_checkin_fee: room.early_checkin_fee || "",
       late_checkout_fee: room.late_checkout_fee || "",
-      // Nạp sức chứa
       standard_adults: room.standard_adults || 1,
       standard_children: room.standard_children ?? 1,
       max_adults: room.max_adults || room.capacity || 1,
@@ -380,7 +367,6 @@ export default function RoomManagementPage() {
     setIsModalOpen(true);
   };
 
-  // Xóa 1 hạng phòng
   const handleDeleteRoom = async (roomId, roomName) => {
     const confirmMsg = roomName
       ? `Bạn có chắc chắn muốn xóa hạng phòng "${roomName}"?`
@@ -390,17 +376,18 @@ export default function RoomManagementPage() {
     try {
       const res = await apiClient.delete(`/rooms/${roomId}`);
       alert(res?.message || "Đã xóa hạng phòng thành công!");
+      setRooms((prev) => prev.filter((r) => r.id !== roomId));
       setSelectedIds((prev) => prev.filter((id) => id !== roomId));
+      setRoomUnitsList((prev) => prev.filter((u) => u.room_id !== roomId));
       if (editingRoom && editingRoom.id === roomId) {
         setIsModalOpen(false);
       }
-      await fetchRoomsByHotel();
+      fetchRoomsByHotel();
     } catch (err) {
       alert(`Lỗi khi xóa: ${err.response?.data?.message || err.message}`);
     }
   };
 
-  // Xóa hàng loạt
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (
@@ -416,20 +403,28 @@ export default function RoomManagementPage() {
         await apiClient.delete(`/rooms/${id}`);
       }
       alert("Đã xóa thành công các hạng phòng đã chọn!");
+      setRooms((prev) => prev.filter((r) => !selectedIds.includes(r.id)));
       setSelectedIds([]);
-      await fetchRoomsByHotel();
+      fetchRoomsByHotel();
     } catch (err) {
       alert(`Lỗi khi xóa: ${err.response?.data?.message || err.message}`);
-      await fetchRoomsByHotel();
+      fetchRoomsByHotel();
     }
   };
 
-  // Xóa phòng vật lý
-  const handleDeleteRoomUnit = (unitId, unitName) => {
+  const handleDeleteRoomUnit = async (unitId, unitName) => {
     if (!window.confirm(`Bạn có chắc muốn xóa phòng "${unitName}"?`)) return;
-    setRoomUnitsList((prev) => prev.filter((u) => u.id !== unitId));
-    if (editingRoomUnit && editingRoomUnit.id === unitId) {
-      setIsRoomUnitModalOpen(false);
+
+    try {
+      await apiClient.delete(`/rooms/units/${unitId}`);
+      setRoomUnitsList((prev) => prev.filter((u) => u.id !== unitId));
+      if (editingRoomUnit && editingRoomUnit.id === unitId) {
+        setIsRoomUnitModalOpen(false);
+      }
+      alert(`✓ Đã xóa phòng "${unitName}" khỏi hệ thống!`);
+      fetchRoomsByHotel();
+    } catch (err) {
+      alert("Lỗi khi xóa phòng: " + err.message);
     }
   };
 
@@ -517,7 +512,6 @@ export default function RoomManagementPage() {
     setIsRoomUnitModalOpen(true);
   };
 
-  // Lưu Hạng phòng
   const handleSaveRoom = async (e, keepOpen = false) => {
     if (e) e.preventDefault();
     const targetHotelId = formData.hotel_id || selectedHotelId;
@@ -558,7 +552,6 @@ export default function RoomManagementPage() {
         hotel_id: targetHotelId,
         name: formData.name.trim(),
         capacity: Number(formData.max_adults || formData.capacity || 2),
-        // Gửi sức chứa tiêu chuẩn và tối đa
         standard_adults: Number(formData.standard_adults || 1),
         standard_children: Number(formData.standard_children || 0),
         max_adults: Number(formData.max_adults || 2),
@@ -606,8 +599,7 @@ export default function RoomManagementPage() {
     }
   };
 
-  // Lưu Phòng vật lý
-  const handleSaveRoomUnit = (e, keepOpen = false) => {
+  const handleSaveRoomUnit = async (e, keepOpen = false) => {
     if (e) e.preventDefault();
     if (!roomUnitFormData.name.trim()) {
       alert("Vui lòng nhập Tên phòng!");
@@ -618,38 +610,33 @@ export default function RoomManagementPage() {
       return;
     }
 
-    const parentRoom = rooms.find(
-      (r) => String(r.id) === String(roomUnitFormData.room_id),
-    );
-    const newUnit = {
-      id: editingRoomUnit ? editingRoomUnit.id : Date.now().toString(),
-      room_id: roomUnitFormData.room_id,
-      room_type_name: parentRoom?.name || "Tiêu chuẩn",
-      name: roomUnitFormData.name.trim(),
-      area: roomUnitFormData.area || "Tầng 1",
-      hourly_price: Number(roomUnitFormData.hourly_price || 0),
-      daily_price: Number(roomUnitFormData.daily_price || 0),
-      overnight_price: Number(roomUnitFormData.overnight_price || 0),
-      status: "active",
-    };
+    try {
+      await apiClient.post("/rooms/units", {
+        id: editingRoomUnit?.id,
+        room_id: roomUnitFormData.room_id,
+        hotel_id: selectedHotelId,
+        name: roomUnitFormData.name.trim(),
+        area: roomUnitFormData.area || "Tầng 1",
+      });
 
-    if (editingRoomUnit) {
-      setRoomUnitsList((prev) =>
-        prev.map((item) => (item.id === editingRoomUnit.id ? newUnit : item)),
+      alert(
+        `✓ Đã lưu phòng "${roomUnitFormData.name}" vào "${roomUnitFormData.area || "Tầng 1"}" thành công!`,
       );
-    } else {
-      setRoomUnitsList((prev) => [newUnit, ...prev]);
-    }
 
-    if (keepOpen) {
-      setRoomUnitFormData((prev) => ({
-        ...prev,
-        name: "",
-        images: [],
-      }));
-      setEditingRoomUnit(null);
-    } else {
-      setIsRoomUnitModalOpen(false);
+      await fetchRoomsByHotel();
+
+      if (keepOpen) {
+        setRoomUnitFormData((prev) => ({
+          ...prev,
+          name: "",
+          images: [],
+        }));
+        setEditingRoomUnit(null);
+      } else {
+        setIsRoomUnitModalOpen(false);
+      }
+    } catch (err) {
+      alert(`Lỗi lưu phòng: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -659,14 +646,12 @@ export default function RoomManagementPage() {
 
   return (
     <div className="space-y-4 font-sans text-slate-800 pb-16 min-h-screen">
-      {/* TIÊU ĐỀ & NÚT THAO TÁC TRÊN CÙNG */}
       <div className="flex justify-between items-center flex-wrap gap-4 pt-1">
         <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
           Hạng phòng & Phòng
         </h1>
 
         <div className="flex items-center gap-2">
-          {/* Nút xóa hàng loạt */}
           {selectedIds.length > 0 && activeTab === "room_types" && (
             <button
               onClick={handleBulkDelete}
@@ -725,9 +710,7 @@ export default function RoomManagementPage() {
         </div>
       )}
 
-      {/* BỐ CỤC CHÍNH */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-        {/* CỘT TRÁI: BỘ LỌC */}
         <div className="md:col-span-3 space-y-3.5">
           <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-2xs space-y-2">
             <label className="block text-xs font-bold text-slate-800">
@@ -742,7 +725,6 @@ export default function RoomManagementPage() {
             />
           </div>
 
-          {/* 1. KHU VỰC CHỌN CHI NHÁNH / KHÁCH SẠN */}
           <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-2xs space-y-3">
             <div
               onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
@@ -823,7 +805,6 @@ export default function RoomManagementPage() {
           </div>
         </div>
 
-        {/* CỘT PHẢI: BẢNG DỮ LIỆU */}
         <div className="md:col-span-9 space-y-0">
           <div className="flex items-center gap-1 border-b border-transparent">
             <button
@@ -1069,7 +1050,6 @@ export default function RoomManagementPage() {
                 </table>
               </div>
             ) : (
-              /* TAB 2: PHÒNG VẬT LÝ */
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -1098,7 +1078,7 @@ export default function RoomManagementPage() {
                           colSpan={7}
                           className="py-12 text-center text-slate-400"
                         >
-                          Chưa có phòng vật lý nào.
+                          Chưa có phòng vật lý nào trong chi nhánh này.
                         </td>
                       </tr>
                     ) : (
@@ -1113,7 +1093,9 @@ export default function RoomManagementPage() {
                             <span>Phòng {unit.name}</span>
                           </td>
                           <td className="py-3 px-4 font-medium text-slate-700">
-                            {unit.area}
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold rounded">
+                              {unit.area || "Tầng 1"}
+                            </span>
                           </td>
                           <td className="py-3 px-4 font-semibold text-slate-800">
                             {unit.room_type_name}
@@ -1174,7 +1156,6 @@ export default function RoomManagementPage() {
         </div>
       </div>
 
-      {/* MODAL 1: THÊM / SỬA HẠNG PHÒNG */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white rounded-md w-full max-w-2xl shadow-xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
@@ -1255,7 +1236,6 @@ export default function RoomManagementPage() {
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 items-start pt-2">
                     <div className="space-y-4">
-                      {/* CHỌN CHI NHÁNH / KHÁCH SẠN */}
                       <div className="flex items-center gap-3">
                         <label className="w-28 text-slate-700 font-normal">
                           Chi nhánh <b className="text-rose-500">*</b>
@@ -1441,7 +1421,6 @@ export default function RoomManagementPage() {
                     </div>
                   </div>
 
-                  {/* DẢI ẢNH */}
                   <div className="pt-4 flex items-center gap-1.5">
                     <button
                       type="button"
@@ -1504,13 +1483,11 @@ export default function RoomManagementPage() {
                     </button>
                   </div>
 
-                  {/* ─── KHỐI SỨC CHỨA CHUẨN 100% THEO ẢNH BẠN GỬI ─── */}
                   <div className="border border-slate-200 rounded-md overflow-hidden bg-white mt-4">
                     <div className="bg-[#f1f5f9] px-4 py-2 font-bold text-slate-800 text-xs border-b border-slate-200">
                       Sức chứa
                     </div>
                     <div className="p-4 space-y-3.5 text-xs">
-                      {/* Dòng 1: Tiêu chuẩn */}
                       <div className="flex items-center gap-6">
                         <span className="w-20 font-medium text-slate-700">
                           Tiêu chuẩn
@@ -1545,7 +1522,6 @@ export default function RoomManagementPage() {
                         </div>
                       </div>
 
-                      {/* Dòng 2: Tối đa */}
                       <div className="flex items-center gap-6">
                         <span className="w-20 font-medium text-slate-700">
                           Tối đa
@@ -1757,7 +1733,6 @@ export default function RoomManagementPage() {
         </div>
       )}
 
-      {/* MODAL 2: PHÒNG ĐƠN LẬP */}
       {isRoomUnitModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white rounded-md w-full max-w-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
@@ -1802,7 +1777,7 @@ export default function RoomManagementPage() {
                           name: e.target.value,
                         })
                       }
-                      placeholder="VD: 101, 102..."
+                      placeholder="VD: 101, 201..."
                       className="flex-1 py-1 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 font-semibold bg-transparent"
                     />
                   </div>
@@ -1820,7 +1795,7 @@ export default function RoomManagementPage() {
                             area: e.target.value,
                           })
                         }
-                        className="flex-1 outline-none text-slate-700 bg-transparent cursor-pointer"
+                        className="flex-1 outline-none text-slate-700 bg-transparent cursor-pointer font-bold text-blue-900"
                       >
                         <option value="">--Lựa chọn--</option>
                         {areasList.map((area, idx) => (
@@ -1833,7 +1808,7 @@ export default function RoomManagementPage() {
                         type="button"
                         onClick={() => {
                           const areaName = window.prompt(
-                            "Nhập tên khu vực mới:",
+                            "Nhập tên khu vực mới (VD: Tầng 2, Tầng 3):",
                           );
                           if (areaName && areaName.trim()) {
                             setAreasList((prev) => [...prev, areaName.trim()]);
