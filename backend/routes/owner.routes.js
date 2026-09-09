@@ -34,39 +34,52 @@ const safeRoute = (method, path, handler) => {
   }
 };
 
-// ─── CÁC API SƠ ĐỒ PHÒNG LỄ TÂN ───
-// 1. Lấy sơ đồ phòng
+// ─── 1. CÁC API SƠ ĐỒ PHÒNG LỄ TÂN ───
+// Lấy sơ đồ phòng
 safeRoute("get", "/room-map", ownerController.getRoomMapData);
 
-// 2. Nhận phòng / Đặt phòng tại quầy
+// Nhận phòng / Đặt phòng tại quầy (Walk-in)
 safeRoute("post", "/bookings/walk-in", ownerController.createWalkInBooking);
 safeRoute("post", "/bookings/walkin", ownerController.createWalkInBooking);
 
-// 3. Trả phòng & thanh toán (Chuyển phòng sang Chưa dọn)
+// Trả phòng & thanh toán (Chuyển phòng sang Chưa dọn)
 safeRoute(
   "post",
   "/bookings/:id/checkout",
   ownerController.handleOwnerCheckOut,
 );
 
-// 4. Lễ tân xác nhận Đã dọn phòng
+// Lễ tân xác nhận Đã dọn phòng
 safeRoute("post", "/rooms/mark-cleaned", ownerController.markRoomCleaned);
 
-// 5. Đổi phòng cho khách
+// Đổi phòng cho khách
 safeRoute(
   "post",
   "/bookings/:id/change-room",
   ownerController.handleChangeRoom,
 );
 
-// 6. Thêm dịch vụ / phụ thu
+// Thêm dịch vụ / phụ thu
 safeRoute(
   "post",
   "/bookings/:id/services",
   ownerController.handleAddBookingService,
 );
 
-// ─── CÁC API KHÁC ───
+// ─── 2. CÁC API QUẢN LÝ NHÂN VIÊN LỄ TÂN (MỚI THÊM) ───
+// Lấy danh sách nhân viên lễ tân của Owner
+safeRoute("get", "/staff", ownerController.getOwnerStaff);
+
+// Owner cấp tài khoản lễ tân mới gắn vào khách sạn
+safeRoute("post", "/staff", ownerController.createOwnerStaff);
+
+// Xóa tài khoản nhân viên lễ tân
+safeRoute("delete", "/staff/:id", ownerController.deleteOwnerStaff);
+
+// Khóa / Mở khóa tài khoản lễ tân
+safeRoute("patch", "/staff/:id/status", ownerController.toggleStaffStatus);
+
+// ─── 3. CÁC API QUẢN TRỊ OWNER KHÁC ───
 safeRoute("get", "/stats", ownerController.getOwnerStats);
 safeRoute("get", "/bookings", ownerController.getOwnerBookings);
 safeRoute("post", "/bookings/:id/checkin", ownerController.handleOwnerCheckIn);

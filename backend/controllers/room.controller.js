@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const pool = require("../config/database");
 const { formatRoom } = require("../utils/formatters");
 
-// ─── 1. LẤY DANH SÁCH PHÒNG THEO KHÁCH SẠN ───
+// ─── 1. LẤY DANH SÁCH HẠNG PHÒNG THEO KHÁCH SẠN (TỰ ĐỘNG ĐẾM ĐÚNG SL PHÒNG) ───
 async function listRooms(req, res, next) {
   try {
     const hotelId = req.query.hotel_id || req.params.hotelId || req.params.id;
@@ -19,9 +19,7 @@ async function listRooms(req, res, next) {
          r.name,
          r.capacity,
          r.base_price,
-         -- Nếu trong DB là 0 hoặc null thì tự tính = 25% giá ngày
          COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
-         -- Nếu trong DB là 0 hoặc null thì lấy bằng giá ngày
          COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
          COALESCE(r.early_checkin_fee, 0) AS early_checkin_fee,
          COALESCE(r.late_checkout_fee, 0) AS late_checkout_fee,
@@ -29,7 +27,12 @@ async function listRooms(req, res, next) {
          r.type,
          r.bed_type,
          r.room_area,
-         r.amount,
+         -- Tự động đếm số lượng phòng vật lý thực tế từ bảng room_unit
+         COALESCE(
+           NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+           r.amount,
+           1
+         ) AS amount,
          r.is_active,
          (
            SELECT img.path 
@@ -48,12 +51,12 @@ async function listRooms(req, res, next) {
       [hotelId],
     );
 
-    // Đảm bảo không bị formatRoom làm mất hourly_price và overnight_price
     const formattedRooms = result.rows.map((row) => {
       const formatted = formatRoom ? formatRoom(row) : {};
       return {
         ...row,
         ...formatted,
+        amount: Number(row.amount || 1),
         hourly_price: Number(
           row.hourly_price || Math.round(row.base_price * 0.25),
         ),
@@ -91,7 +94,11 @@ async function getRoomById(req, res, next) {
          r.type,
          r.bed_type,
          r.room_area,
-         r.amount,
+         COALESCE(
+           NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+           r.amount,
+           1
+         ) AS amount,
          r.is_active,
          (
            SELECT img.path 
@@ -118,6 +125,7 @@ async function getRoomById(req, res, next) {
     const finalRoom = {
       ...room,
       ...formatted,
+      amount: Number(room.amount || 1),
       hourly_price: Number(
         room.hourly_price || Math.round(room.base_price * 0.25),
       ),
@@ -134,7 +142,7 @@ async function getRoomById(req, res, next) {
   }
 }
 
-// ─── 3. TẠO HẠNG PHÒNG MỚI (LƯU CHÍNH XÁC CÁC MỨC GIÁ) ───
+// ─── 3. TẠO HẠNG PHÒNG MỚI ───
 async function createRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -167,7 +175,6 @@ async function createRoom(req, res, next) {
     const newRoomId = crypto.randomUUID();
     const parsedBasePrice = Number(base_price);
 
-    // Tính giá chuẩn xác: nếu người dùng không nhập hoặc nhập 0 thì tự tính
     const parsedHourlyPrice =
       Number(hourly_price) > 0
         ? Number(hourly_price)
@@ -207,12 +214,12 @@ async function createRoom(req, res, next) {
 
     const newRoom = result.rows[0];
 
-    // Tạo danh sách phòng vật lý tự động
+    // Tạo danh sách phòng vật lý tự động mặc định Tầng 1
     for (let i = 1; i <= Number(amount || 1); i++) {
       await client
         .query(
-          `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, status, created_at, updated_at)
-           VALUES (gen_random_uuid(), $1, $2, $3, 'available', NOW(), NOW())
+          `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, area, status, created_at, updated_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, 'Tầng 1', 'available', NOW(), NOW())
            ON CONFLICT DO NOTHING`,
           [
             hotel_id,
@@ -223,7 +230,6 @@ async function createRoom(req, res, next) {
         .catch(() => {});
     }
 
-    // Ảnh
     if (image) {
       await client.query(
         `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
@@ -232,7 +238,6 @@ async function createRoom(req, res, next) {
       );
     }
 
-    // Tiện nghi
     if (Array.isArray(amenities) && amenities.length > 0) {
       for (const amenityName of amenities) {
         if (!amenityName || !String(amenityName).trim()) continue;
@@ -277,7 +282,7 @@ async function createRoom(req, res, next) {
   }
 }
 
-// ─── 4. CẬP NHẬT HẠNG PHÒNG (SỬA ĐƯỢC MỌI GIÁ VÀ LƯU CHÍNH XÁC) ───
+// ─── 4. CẬP NHẬT HẠNG PHÒNG ───
 async function updateRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -301,7 +306,6 @@ async function updateRoom(req, res, next) {
 
     await client.query("BEGIN");
 
-    // Lấy thông tin phòng hiện tại trong DB
     const currentRes = await client.query(
       `SELECT * FROM public.room WHERE id::text = $1`,
       [id],
@@ -316,7 +320,6 @@ async function updateRoom(req, res, next) {
       ? Number(base_price)
       : currentRoom.base_price;
 
-    // Nếu có truyền hourly_price thì lấy, nếu không thì lấy giá cũ (hoặc tính 25% giá ngày)
     let finalHourlyPrice = currentRoom.hourly_price;
     if (
       hourly_price !== undefined &&
@@ -329,7 +332,6 @@ async function updateRoom(req, res, next) {
       finalHourlyPrice = Math.round(finalBasePrice * 0.25);
     }
 
-    // Nếu có truyền overnight_price thì lấy, nếu không thì lấy giá cũ (hoặc lấy bằng giá ngày)
     let finalOvernightPrice = currentRoom.overnight_price;
     if (
       overnight_price !== undefined &&
@@ -451,19 +453,17 @@ async function updateRoom(req, res, next) {
   }
 }
 
-// ─── 5. XÓA HOẶC CHUYỂN SANG NGỪNG KINH DOANH PHÒNG (AN TOÀN TUYỆT ĐỐI) ───
+// ─── 5. XÓA HOẶC CHUYỂN SANG NGỪNG KINH DOANH PHÒNG ───
 async function deleteRoom(req, res, next) {
   const client = await pool.connect();
   try {
     const { id } = req.params;
 
-    // 1. Kiểm tra xem phòng có phát sinh lịch sử đặt phòng nào chưa
     const checkBooking = await client.query(
       `SELECT id FROM public.booking_room WHERE room_id::text = $1 LIMIT 1`,
       [id],
     );
 
-    // Nếu đã có khách đặt: chuyển sang ngừng kinh doanh để giữ dữ liệu kế toán/thống kê
     if (checkBooking.rows.length > 0) {
       await client.query(
         `UPDATE public.room SET is_active = false, updated_at = NOW() WHERE id::text = $1`,
@@ -477,7 +477,6 @@ async function deleteRoom(req, res, next) {
       });
     }
 
-    // 2. Nếu là phòng mới/chưa có booking: Xóa toàn bộ liên kết để tránh lỗi Foreign Key
     await client.query("BEGIN");
     await client
       .query(`DELETE FROM public.temporary_locks WHERE room_id::text = $1`, [
@@ -746,6 +745,131 @@ async function releaseTemporaryLock(req, res, next) {
   }
 }
 
+// ─── 12. LẤY DANH SÁCH PHÒNG VẬT LÝ THẬT TỪ DATABASE ───
+async function listRoomUnits(req, res, next) {
+  try {
+    const hotelId = req.query.hotel_id;
+    if (!hotelId) return res.json({ success: true, units: [] });
+
+    const result = await pool.query(
+      `SELECT ru.id, ru.room_id, ru.hotel_id, ru.room_number AS name,
+              COALESCE(ru.area, 'Tầng 1') AS area,
+              r.name AS room_type_name,
+              COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
+              r.base_price AS daily_price,
+              COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
+              ru.status
+       FROM public.room_unit ru
+       JOIN public.room r ON r.id = ru.room_id
+       WHERE ru.hotel_id::text = $1
+       ORDER BY ru.area ASC, ru.room_number ASC`,
+      [hotelId],
+    );
+
+    return res.json({ success: true, units: result.rows || [] });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─── 13. TẠO HOẶC CẬP NHẬT PHÒNG VẬT LÝ (TỰ ĐỒNG BỘ AMOUNT VÀO BẢNG ROOM) ───
+async function upsertRoomUnit(req, res, next) {
+  try {
+    const { id, room_id, hotel_id, name, area } = req.body;
+    if (!room_id || !name) {
+      return res.status(400).json({ message: "Thiếu thông tin phòng." });
+    }
+
+    const targetHotelId =
+      hotel_id ||
+      (
+        await pool.query(
+          `SELECT hotel_id FROM public.room WHERE id::text = $1`,
+          [room_id],
+        )
+      ).rows[0]?.hotel_id;
+
+    let existing;
+    if (id && !String(id).includes("_unit_")) {
+      existing = await pool.query(
+        `SELECT id FROM public.room_unit WHERE id::text = $1`,
+        [id],
+      );
+    } else {
+      existing = await pool.query(
+        `SELECT id FROM public.room_unit WHERE hotel_id::text = $1 AND room_number = $2`,
+        [targetHotelId, name.trim()],
+      );
+    }
+
+    let savedUnit;
+    if (existing && existing.rows.length > 0) {
+      const updateRes = await pool.query(
+        `UPDATE public.room_unit 
+         SET room_number = $1, area = $2, room_id = $3, updated_at = NOW() 
+         WHERE id = $4 RETURNING *`,
+        [name.trim(), area || "Tầng 1", room_id, existing.rows[0].id],
+      );
+      savedUnit = updateRes.rows[0];
+    } else {
+      const insertRes = await pool.query(
+        `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, area, status, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'available', NOW(), NOW())
+         RETURNING *`,
+        [targetHotelId, room_id, name.trim(), area || "Tầng 1"],
+      );
+      savedUnit = insertRes.rows[0];
+    }
+
+    // Tự động cập nhật lại tổng số lượng phòng (amount) vào bảng room
+    await pool.query(
+      `UPDATE public.room 
+       SET amount = (SELECT COUNT(id) FROM public.room_unit WHERE room_id = $1),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [room_id],
+    );
+
+    return res.json({
+      success: true,
+      message: "Đã lưu phòng vào Database!",
+      unit: savedUnit,
+    });
+  } catch (error) {
+    console.error("Lỗi lưu room_unit:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─── 14. XÓA PHÒNG VẬT LÝ KHỎI DATABASE (GIẢM LẠI AMOUNT) ───
+async function deleteRoomUnit(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const findRes = await pool.query(
+      `SELECT room_id FROM public.room_unit WHERE id::text = $1`,
+      [id],
+    );
+    const roomId = findRes.rows[0]?.room_id;
+
+    await pool.query(`DELETE FROM public.room_unit WHERE id::text = $1`, [id]);
+
+    if (roomId) {
+      await pool.query(
+        `UPDATE public.room 
+         SET amount = GREATEST(1, (SELECT COUNT(id) FROM public.room_unit WHERE room_id = $1)),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [roomId],
+      );
+    }
+
+    return res.json({ success: true, message: "Đã xóa phòng khỏi Database!" });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 module.exports = {
   listRooms,
   getRoomById,
@@ -758,4 +882,7 @@ module.exports = {
   updateRoomInventory,
   createTemporaryLock,
   releaseTemporaryLock,
+  listRoomUnits,
+  upsertRoomUnit,
+  deleteRoomUnit,
 };
