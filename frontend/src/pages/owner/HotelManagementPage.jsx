@@ -16,6 +16,9 @@ import {
   BedDouble,
   Phone,
   Mail,
+  Sparkles,
+  Check,
+  Eye,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import apiClient from "@/services/apiClient";
@@ -43,6 +46,52 @@ const VIETNAM_BANKS = [
   { code: "TPB", name: "TPBank", fullName: "Ngân hàng Tiên Phong" },
 ];
 
+const HOTEL_AMENITIES_OPTIONS = [
+  { id: "wifi", label: "Wi-Fi miễn phí toàn khuôn viên" },
+  { id: "parking", label: "Bãi đỗ xe ô tô tại chỗ nghỉ" },
+  { id: "24h_front_desk", label: "Lễ tân phục vụ 24/7" },
+  { id: "elevator", label: "Thang máy di chuyển" },
+  { id: "pool_outdoor", label: "Hồ bơi ngoài trời / Vô cực" },
+  { id: "pool_indoor", label: "Hồ bơi trong nhà / Nước ấm" },
+  { id: "restaurant", label: "Nhà hàng & Khu ẩm thực" },
+  { id: "bar", label: "Quầy Bar / Lounge" },
+  { id: "spa", label: "Dịch vụ Spa & Massage" },
+  { id: "gym", label: "Phòng tập thể dục / Gym" },
+  { id: "private_beach", label: "Bãi biển riêng" },
+  { id: "room_service", label: "Dịch vụ phòng" },
+  { id: "air_conditioner", label: "Điều hòa máy lạnh" },
+  { id: "tv_smart", label: "Smart TV màn hình phẳng" },
+];
+
+// Chuẩn hóa chuỗi xóa dấu tiếng Việt và ký tự đặc biệt
+const normalizeAmenityText = (text) => {
+  if (!text) return "";
+  return String(text)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+};
+
+const AMENITY_KEYWORDS = {
+  wifi: ["wifi", "internet", "mang"],
+  parking: ["parking", "bando", "doxe", "chodaung", "baido"],
+  "24h_front_desk": ["24h", "letan", "frontdesk"],
+  elevator: ["elevator", "thangmay", "lift"],
+  pool_outdoor: ["pooloutdoor", "ngoaitroi", "vocuc"],
+  pool_indoor: ["poolindoor", "trongnha", "nuocam"],
+  restaurant: ["restaurant", "nhahang", "amthuc"],
+  bar: ["bar", "quaybar", "lounge"],
+  spa: ["spa", "massage"],
+  gym: ["gym", "theduc", "fitness"],
+  private_beach: ["beach", "bien", "baibien"],
+  room_service: ["roomservice", "dichvuphong"],
+  air_conditioner: ["airconditioner", "dieuhoa", "maylanh", "ac"],
+  tv_smart: ["smarttv", "tivi", "tv"],
+};
+
 export default function HotelManagementPage() {
   const navigate = useNavigate();
   const [hotels, setHotels] = useState([]);
@@ -69,9 +118,9 @@ export default function HotelManagementPage() {
     tax_code: "",
     description: "",
     image: "",
+    amenities: [],
   });
 
-  // 👉 TẢI DANH SÁCH KHÁCH SẠN TƯƠI MỚI (CHỐNG CACHE)
   const fetchMyHotels = useCallback(async () => {
     setLoading(true);
     setApiError("");
@@ -96,9 +145,40 @@ export default function HotelManagementPage() {
     fetchMyHotels();
   }, [fetchMyHotels]);
 
-  // MỞ FORM SỬA VÀ ĐỔ DỮ LIỆU HIỆN CÓ
-  const handleOpenEdit = (hotel) => {
-    setEditingHotel(hotel);
+  // Kiểm tra tiện ích đã được chọn hay chưa
+  const isAmenityChecked = (item, currentAmenities = []) => {
+    if (!Array.isArray(currentAmenities) || currentAmenities.length === 0)
+      return false;
+
+    const targetKey = item.id.toLowerCase();
+    const targetNormLabel = normalizeAmenityText(item.label);
+    const keywords = AMENITY_KEYWORDS[item.id] || [];
+
+    return currentAmenities.some((a) => {
+      if (!a) return false;
+      const rawStr =
+        typeof a === "object" ? a.name || a.label || a.id || "" : String(a);
+      const normA = normalizeAmenityText(rawStr);
+
+      if (rawStr.toLowerCase() === targetKey) return true;
+      if (normA === targetNormLabel) return true;
+
+      if (keywords.length > 0 && keywords.some((kw) => normA.includes(kw))) {
+        if (item.id === "pool_indoor" && normA.includes("ngoaitroi"))
+          return false;
+        if (
+          item.id === "pool_outdoor" &&
+          (normA.includes("trongnha") || normA.includes("nuocam"))
+        )
+          return false;
+        return true;
+      }
+
+      return false;
+    });
+  };
+
+  const populateHotelForm = (hotel, amenitiesList = []) => {
     setHotelForm({
       name: hotel.name || "",
       property_type: hotel.property_type || "hotel",
@@ -122,17 +202,51 @@ export default function HotelManagementPage() {
       tax_code: hotel.tax_code || "",
       description: hotel.description || "",
       image: hotel.image || hotel.image_url || "",
+      amenities: Array.isArray(amenitiesList) ? amenitiesList : [],
     });
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🚀 LƯU THAY ĐỔI VÀ ĐỒNG BỘ DỮ LIỆU NGAY LẬP TỨC
-  // ════════════════════════════════════════════════════════════════════════════
+  // Mở form sửa và lấy dữ liệu tươi mới nhất từ Database
+  const handleOpenEdit = async (hotel) => {
+    setEditingHotel(hotel);
+    const initialAmenities = Array.isArray(hotel.amenities)
+      ? hotel.amenities
+      : [];
+    populateHotelForm(hotel, initialAmenities);
+
+    try {
+      const res = await apiClient.get(`/hotels/${hotel.id}?_t=${Date.now()}`);
+      const freshHotel = res?.data?.hotel || res?.data?.data || res?.data;
+      if (freshHotel && Array.isArray(freshHotel.amenities)) {
+        setHotelForm((prev) => ({
+          ...prev,
+          description: freshHotel.description || prev.description,
+          checkin_time: freshHotel.checkin_time
+            ? String(freshHotel.checkin_time).slice(0, 5)
+            : prev.checkin_time,
+          checkout_time: freshHotel.checkout_time
+            ? String(freshHotel.checkout_time).slice(0, 5)
+            : prev.checkout_time,
+          amenities: freshHotel.amenities,
+        }));
+      }
+    } catch (err) {
+      console.warn("Không thể đồng bộ chi tiết phụ:", err);
+    }
+  };
+
+  // Lưu thông tin khách sạn
   const handleUpdateHotel = async (e) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
+      const checkInVal = String(hotelForm.checkin_time || "14:00").slice(0, 5);
+      const checkOutVal = String(hotelForm.checkout_time || "12:00").slice(
+        0,
+        5,
+      );
+
       const payload = {
         name: hotelForm.name.trim(),
         property_type: hotelForm.property_type,
@@ -143,11 +257,19 @@ export default function HotelManagementPage() {
         city: hotelForm.city.trim(),
         phone: hotelForm.phone.trim(),
         email: hotelForm.email.trim(),
-        checkin_time: hotelForm.checkin_time,
-        checkout_time: hotelForm.checkout_time,
+
+        checkin_time: checkInVal,
+        check_in_time: checkInVal,
+        checkout_time: checkOutVal,
+        check_out_time: checkOutVal,
+
         cancellation_deadline_hours: Number(
           hotelForm.cancellation_deadline_hours,
         ),
+        cancellationDeadlineHours: Number(
+          hotelForm.cancellation_deadline_hours,
+        ),
+
         bank_name: hotelForm.bank_name,
         bank_account: hotelForm.bank_account.trim(),
         bank_account_holder: hotelForm.bank_account_holder.trim().toUpperCase(),
@@ -155,31 +277,22 @@ export default function HotelManagementPage() {
         description: hotelForm.description,
         image: hotelForm.image.trim(),
         image_url: hotelForm.image.trim(),
+        amenities: hotelForm.amenities,
       };
 
-      // Thử gọi route chuẩn /owner/hotels/:id, fallback qua /hotels/:id nếu cấu hình route khác
-      let res;
-      try {
-        res = await apiClient.put(`/owner/hotels/${editingHotel.id}`, payload);
-      } catch (err1) {
-        if (err1.response?.status === 404) {
-          res = await apiClient.put(`/hotels/${editingHotel.id}`, payload);
-        } else {
-          throw err1;
-        }
-      }
-
+      const res = await apiClient.put(`/hotels/${editingHotel.id}`, payload);
       const updatedData = res?.data?.hotel || res?.data?.data || payload;
 
-      // Cập nhật ngay trên UI màn hình quản lý
       setHotels((prev) =>
         prev.map((h) =>
           h.id === editingHotel.id
             ? {
                 ...h,
                 ...updatedData,
-                image: payload.image || h.image,
-                image_url: payload.image || h.image_url,
+                description: payload.description,
+                checkin_time: payload.checkin_time,
+                checkout_time: payload.checkout_time,
+                amenities: payload.amenities,
               }
             : h,
         ),
@@ -189,8 +302,16 @@ export default function HotelManagementPage() {
       setEditingHotel(null);
       fetchMyHotels();
     } catch (err) {
-      console.error("Lỗi cập nhật khách sạn:", err);
-      alert(`Lỗi: ${err.response?.data?.message || err.message}`);
+      console.error(
+        "Chi tiết lỗi cập nhật khách sạn:",
+        err.response?.data || err,
+      );
+      const serverMsg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        "Lỗi không thể lưu thông tin khách sạn";
+      alert(`Lỗi khi lưu: ${serverMsg}`);
     } finally {
       setSubmitting(false);
     }
@@ -215,7 +336,7 @@ export default function HotelManagementPage() {
             Hồ Sơ Doanh Nghiệp Chỗ Nghỉ ({hotels.length} Cơ sở)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Dữ liệu đồng bộ trực tiếp từ Database PostgreSQL
+            Dữ liệu đồng bộ trực tiếp từ Database
           </p>
         </div>
 
@@ -359,13 +480,26 @@ export default function HotelManagementPage() {
                   </div>
                 </div>
 
-                <div className="p-6 pt-0 border-t mt-2 flex items-center justify-between pt-3">
-                  <button
-                    onClick={() => handleOpenEdit(hotel)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
-                  >
-                    <Edit3 size={14} /> Chỉnh sửa cơ sở
-                  </button>
+                <div className="p-6 pt-0 border-t mt-2 flex items-center justify-between pt-3 gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenEdit(hotel)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
+                    >
+                      <Edit3 size={14} /> Sửa
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(`/hotels/${hotel.id}`, "_blank")
+                      }
+                      className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-[#006ce4] rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
+                      title="Mở tab mới xem trực tiếp trang chi tiết khách sạn này"
+                    >
+                      <Eye size={14} /> Xem trang khách
+                    </button>
+                  </div>
 
                   <button
                     onClick={() => navigate(`/owner/rooms?hotelId=${hotel.id}`)}
@@ -397,7 +531,7 @@ export default function HotelManagementPage() {
                   Chỉnh Sửa Toàn Diện Cơ Sở Chỗ Nghỉ
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  Cập nhật các thuộc tính vận hành và tài chính của #
+                  Cập nhật các thuộc tính vận hành và tiện nghi của #
                   {String(editingHotel.id).slice(0, 8)}
                 </p>
               </div>
@@ -698,6 +832,66 @@ export default function HotelManagementPage() {
                 </div>
               </div>
 
+              {/* KHỐI 5: TIỆN NGHI & CƠ SỞ VẬT CHẤT */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <span className="font-bold text-slate-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+                  <Sparkles size={14} className="text-amber-500" /> 5. Tiện nghi
+                  & Cơ sở vật chất chỗ nghỉ
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                  {HOTEL_AMENITIES_OPTIONS.map((item) => {
+                    const isChecked = isAmenityChecked(
+                      item,
+                      hotelForm.amenities,
+                    );
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setHotelForm((prev) => {
+                            const list = Array.isArray(prev.amenities)
+                              ? prev.amenities
+                              : [];
+                            const checked = isAmenityChecked(item, list);
+                            if (checked) {
+                              return {
+                                ...prev,
+                                amenities: list.filter(
+                                  (a) => !isAmenityChecked(item, [a]),
+                                ),
+                              };
+                            } else {
+                              return {
+                                ...prev,
+                                amenities: [...list, item.label],
+                              };
+                            }
+                          });
+                        }}
+                        className={`flex items-center gap-2 p-2.5 rounded-xl text-left border transition cursor-pointer select-none text-xs ${
+                          isChecked
+                            ? "bg-emerald-50 border-emerald-400 text-emerald-900 font-bold shadow-2xs"
+                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition ${
+                            isChecked
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "border-slate-300 bg-white"
+                          }`}
+                        >
+                          {isChecked && <Check size={12} strokeWidth={3} />}
+                        </div>
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* MÔ TẢ */}
               <div>
                 <label className="block font-bold text-slate-600 mb-1">
@@ -709,6 +903,7 @@ export default function HotelManagementPage() {
                   onChange={(e) =>
                     setHotelForm({ ...hotelForm, description: e.target.value })
                   }
+                  placeholder="Nhập mô tả giới thiệu chỗ nghỉ..."
                   className="w-full p-3 border rounded-xl bg-white outline-none focus:border-blue-600"
                 />
               </div>

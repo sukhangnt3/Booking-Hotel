@@ -66,6 +66,16 @@ const AMENITY_MAP = {
   room_service: "Dịch vụ phòng",
   air_conditioner: "Điều hòa máy lạnh",
   tv_smart: "Smart TV màn hình phẳng",
+  hot_water: "Bình nóng lạnh",
+  hair_dryer: "Máy sấy tóc",
+  refrigerator: "Tủ lạnh",
+  balcony: "Ban công / Sân hiên",
+  bathtub: "Bồn tắm nằm",
+  kettle: "Ấm đun nước siêu tốc",
+  iron: "Bàn ủi / Bàn là",
+  safe_box: "Két an toàn",
+  slippers: "Dép đi trong phòng",
+  toiletries: "Đồ vệ sinh cá nhân miễn phí",
 };
 
 const ROOM_VIEW_MAP = {
@@ -75,6 +85,29 @@ const ROOM_VIEW_MAP = {
   garden_view: "Hướng vườn (Garden View)",
   mountain_view: "Hướng núi / Đồi",
   internal_view: "Hướng nội khu",
+};
+
+// Hàm chuẩn hóa mảng tiện ích từ Database (chống lỗi chuỗi JSON)
+export const parseAmenities = (amenities) => {
+  if (!amenities) return [];
+  if (Array.isArray(amenities)) return amenities;
+  if (typeof amenities === "string") {
+    const cleanStr = amenities.trim();
+    try {
+      const parsed = JSON.parse(cleanStr);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Bỏ qua lỗi JSON
+    }
+    // Gỡ ngoặc nhọn PostgreSQL {wifi,parking} nếu có
+    return cleanStr
+      .replace(/^\{|\}$/g, "")
+      .replace(/["']/g, "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
 };
 
 const formatAmenityName = (item) => {
@@ -171,9 +204,6 @@ export default function HotelDetailPage() {
       ? Math.max(1, differenceInDays(tempCheckOut, tempCheckIn))
       : 1;
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🚀 TẢI REVIEW TƯƠI MỚI (CHỐNG CACHE)
-  // ════════════════════════════════════════════════════════════════════════════
   const fetchReviewsOnly = useCallback(async () => {
     if (!id) return;
     try {
@@ -194,9 +224,6 @@ export default function HotelDetailPage() {
     }
   }, [id]);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🚀 TẢI TOÀN BỘ DỮ LIỆU KHÁCH SẠN
-  // ════════════════════════════════════════════════════════════════════════════
   const fetchAllData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -241,9 +268,6 @@ export default function HotelDetailPage() {
     fetchAllData();
   }, [fetchAllData]);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 🎯 TỰ ĐỘNG NHẬN VÀ NHÂN GIÁ
-  // ════════════════════════════════════════════════════════════════════════════
   const applySearchAndRecalculate = (finalIn, finalOut, guestCount) => {
     const newNights = Math.max(1, differenceInDays(finalOut, finalIn));
 
@@ -312,26 +336,17 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 📸 BỘ QUÉT ẢNH THẬT 100% TỪ DATABASE (KHÔNG TỰ Ý CHÈN ẢNH MẪU LẠ)
-  // ════════════════════════════════════════════════════════════════════════════
   const dbImages = [];
-
-  // 1. Ảnh đại diện chính của khách sạn
   if (hotel?.image) {
     const u = parseRealImageUrl(hotel.image);
     if (u && !dbImages.includes(u)) dbImages.push(u);
   }
-
-  // 2. Toàn bộ ảnh phụ trong bảng image của khách sạn
   if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
     hotel.images.forEach((img) => {
       const u = parseRealImageUrl(img);
       if (u && !dbImages.includes(u)) dbImages.push(u);
     });
   }
-
-  // 3. Gom ảnh từ danh sách phòng ngủ của chính khách sạn này
   if (Array.isArray(hotel?.rooms)) {
     hotel.rooms.forEach((r) => {
       const rImg =
@@ -342,14 +357,11 @@ export default function HotelDetailPage() {
       }
     });
   }
-
-  // 4. Nếu khách chỉ tải 1 ảnh, dùng chính ảnh đó nhân bản vào các ô bên cạnh (Không nhồi ảnh bể bơi Unsplash)
   if (dbImages.length > 0) {
     while (dbImages.length < 3) {
       dbImages.push(dbImages[0]);
     }
   } else {
-    // Chỉ fallback ảnh trống khi cơ sở hoàn toàn chưa có ảnh nào
     const defaultFallbacks = [
       "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
       "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
@@ -382,13 +394,9 @@ export default function HotelDetailPage() {
         if (u) return u;
       }
     }
-    // Dùng ảnh thật của khách sạn cho phòng nếu phòng chưa tải ảnh riêng
     return dbImages[roomIdx + 1] || dbImages[0];
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // ⭐ ĐÁNH GIÁ THANG ĐIỂM 10 CHUẨN XÁC
-  // ════════════════════════════════════════════════════════════════════════════
   const totalReviewsCount =
     reviews.length > 0 ? reviews.length : Number(hotel?.review_count || 0);
 
@@ -554,7 +562,7 @@ export default function HotelDetailPage() {
       <div className="max-w-7xl mx-auto px-4 pt-3">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* HEADER: TÊN KHÁCH SẠN, HẠNG SAO, LOẠI HÌNH */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-2 mb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -633,7 +641,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BENTO BOX GALLERY: 100% ẢNH THẬT */}
+        {/* BENTO GALLERY */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[340px] md:h-[400px]">
             <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
@@ -687,7 +695,6 @@ export default function HotelDetailPage() {
               </div>
             </div>
 
-            {/* HUY HIỆU ĐIỂM XANH LÁ CÂY */}
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col justify-between overflow-hidden">
               <div className="space-y-2">
                 <div className="flex items-center gap-2.5">
@@ -727,7 +734,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* THANH TÌM KIẾM NGÀY & PHÒNG */}
+        {/* THANH TÌM KIẾM */}
         <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-md mb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
             <div className="md:col-span-4 relative flex items-center gap-2.5 px-3.5 h-12 bg-slate-50 rounded-xl border border-slate-200">
@@ -884,7 +891,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BẢNG GIÁ CÁC HẠNG PHÒNG */}
+        {/* BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG */}
         <section ref={roomsRef} className="space-y-4 mb-10">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <div>
@@ -932,6 +939,9 @@ export default function HotelDetailPage() {
                   (room.type && ROOM_VIEW_MAP[room.type]) ||
                   null;
 
+                // Lấy tiện nghi của phòng
+                const roomAmenities = parseAmenities(room.amenities);
+
                 return (
                   <div
                     key={room.id || idx}
@@ -954,7 +964,7 @@ export default function HotelDetailPage() {
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[10px] font-bold text-blue-700 uppercase bg-blue-50 px-2 py-0.5 rounded">
-                              {room.type || "Deluxe"}
+                              {room.type || "Tiêu chuẩn"}
                             </span>
                             {viewLabel && (
                               <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1">
@@ -987,22 +997,38 @@ export default function HotelDetailPage() {
                     </div>
 
                     <div className="lg:col-span-8 p-5 flex flex-col justify-between space-y-4">
-                      <div className="space-y-3">
+                      <div className="space-y-3.5">
                         <div className="inline-flex items-center gap-1.5 bg-blue-50 text-[#006ce4] px-2.5 py-1 rounded-md text-[11px] font-black border border-blue-100">
                           <Sparkles size={13} />
                           <span>Giá tốt nhất trên hệ thống GoStay</span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-700 pt-1">
-                          <div className="flex items-center gap-2">
-                            <Check
-                              size={14}
-                              className="text-emerald-600 shrink-0"
-                            />
-                            <span className="font-bold">
-                              Wi-Fi miễn phí tốc độ cao
+                        {/* 👉 HIỂN THỊ TIỆN NGHI PHÒNG TỪ DATABASE */}
+                        {roomAmenities.length > 0 && (
+                          <div className="pt-1">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                              Tiện nghi hạng phòng:
                             </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-2 text-xs text-slate-700">
+                              {roomAmenities.map((amenity, aIdx) => (
+                                <div
+                                  key={aIdx}
+                                  className="flex items-center gap-1.5"
+                                >
+                                  <Check
+                                    size={13}
+                                    className="text-emerald-600 shrink-0 stroke-[2.5]"
+                                  />
+                                  <span className="font-semibold text-slate-800 truncate">
+                                    {formatAmenityName(amenity)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-700 pt-2 border-t border-slate-100">
                           <div className="flex items-center gap-2">
                             <Check
                               size={14}
@@ -1077,28 +1103,37 @@ export default function HotelDetailPage() {
         </section>
 
         {/* TIỆN NGHI CHỖ NGHỈ */}
-        <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 mb-8">
-          <div className="flex items-center gap-2">
-            <Palmtree className="text-slate-700" size={20} />
-            <h2 className="text-lg font-black text-slate-900 tracking-tight">
-              Tiện nghi & cơ sở vật chất
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-3.5 gap-x-6 text-xs text-slate-700 font-medium">
-            {(hotel.amenities && hotel.amenities.length > 0
-              ? hotel.amenities
-              : ["wifi", "parking", "24h_front_desk", "air_conditioner"]
-            ).map((item, idx) => (
-              <div key={idx} className="flex items-center gap-2.5">
-                <Check
-                  size={15}
-                  className="text-emerald-600 shrink-0 stroke-[2.5]"
-                />
-                <span>{formatAmenityName(item)}</span>
+        {(() => {
+          const hotelAmenities = parseAmenities(hotel.amenities);
+          return (
+            <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 mb-8">
+              <div className="flex items-center gap-2">
+                <Palmtree className="text-slate-700" size={20} />
+                <h2 className="text-lg font-black text-slate-900 tracking-tight">
+                  Tiện nghi & cơ sở vật chất
+                </h2>
               </div>
-            ))}
-          </div>
-        </section>
+
+              {hotelAmenities.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-3.5 gap-x-6 text-xs text-slate-700 font-medium">
+                  {hotelAmenities.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2.5">
+                      <Check
+                        size={15}
+                        className="text-emerald-600 shrink-0 stroke-[2.5]"
+                      />
+                      <span>{formatAmenityName(item)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400 italic py-2">
+                  Chỗ nghỉ chưa cập nhật tiện nghi & cơ sở vật chất.
+                </div>
+              )}
+            </section>
+          );
+        })()}
 
         {/* THÔNG TIN CHỖ NGHỈ */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3.5 mb-8">
@@ -1109,7 +1144,9 @@ export default function HotelDetailPage() {
             </h2>
           </div>
           <div className="text-xs sm:text-sm text-slate-700 leading-relaxed space-y-3 whitespace-pre-line">
-            {hotel.description || (
+            {hotel.description ? (
+              <p>{hotel.description}</p>
+            ) : (
               <p>
                 Tận hưởng kỳ nghỉ dưỡng tuyệt vời tại{" "}
                 <strong>{hotel.name}</strong> tọa lạc tại{" "}
@@ -1136,7 +1173,10 @@ export default function HotelDetailPage() {
                   Thời gian nhận phòng:
                 </span>
                 <strong className="text-slate-900 font-bold">
-                  Từ {hotel.checkin_time || "14:00"}
+                  Từ{" "}
+                  {String(
+                    hotel.checkin_time || hotel.check_in_time || "14:00",
+                  ).slice(0, 5)}
                 </strong>
               </div>
               <div className="flex items-center gap-3">
@@ -1145,14 +1185,17 @@ export default function HotelDetailPage() {
                   Thời gian trả phòng:
                 </span>
                 <strong className="text-slate-900 font-bold">
-                  Trước {hotel.checkout_time || "12:00"}
+                  Trước{" "}
+                  {String(
+                    hotel.checkout_time || hotel.check_out_time || "12:00",
+                  ).slice(0, 5)}
                 </strong>
               </div>
             </div>
           </div>
         </section>
 
-        {/* KHU VỰC ĐÁNH GIÁ: REVIEW LIST & FORM */}
+        {/* KHU VỰC ĐÁNH GIÁ */}
         <section id="reviews-section" className="space-y-6 pt-2">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             <div className="lg:col-span-7 xl:col-span-8">

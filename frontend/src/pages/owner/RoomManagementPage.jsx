@@ -346,6 +346,24 @@ export default function RoomManagementPage() {
     const overnightP =
       Number(room.overnight_price) > 0 ? Number(room.overnight_price) : baseP;
 
+    // Chuẩn hóa amenities khi đọc từ API
+    let parsedAmenities = [];
+    if (Array.isArray(room.amenities)) {
+      parsedAmenities = room.amenities;
+    } else if (typeof room.amenities === "string") {
+      try {
+        const parsed = JSON.parse(room.amenities);
+        parsedAmenities = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        parsedAmenities = room.amenities
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+    } else {
+      parsedAmenities = ["Máy lạnh", "TV", "Wifi", "Bình nóng lạnh"];
+    }
+
     setEditingRoom(room);
     setFormData({
       ...room,
@@ -360,6 +378,7 @@ export default function RoomManagementPage() {
       standard_children: room.standard_children ?? 1,
       max_adults: room.max_adults || room.capacity || 1,
       max_children: room.max_children ?? 1,
+      amenities: parsedAmenities, // Đảm bảo luôn là mảng
       images:
         room.thumbnail || room.image ? [room.thumbnail || room.image] : [],
     });
@@ -1619,30 +1638,45 @@ export default function RoomManagementPage() {
                     </label>
                     <div className="grid grid-cols-2 gap-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200 max-h-40 overflow-y-auto">
                       {ROOM_AMENITIES_LIST.map((item) => {
+                        const currentAmenities = Array.isArray(
+                          formData.amenities,
+                        )
+                          ? formData.amenities
+                          : [];
                         const isChecked =
-                          formData.amenities.includes(item.id) ||
-                          formData.amenities.includes(item.label);
+                          currentAmenities.includes(item.id) ||
+                          currentAmenities.includes(item.label);
                         return (
-                          <label
+                          <button
                             key={item.id}
+                            type="button"
                             onClick={() => {
-                              setFormData((prev) => ({
-                                ...prev,
-                                amenities: isChecked
-                                  ? prev.amenities.filter(
-                                      (a) => a !== item.id && a !== item.label,
-                                    )
-                                  : [...prev.amenities, item.label],
-                              }));
+                              setFormData((prev) => {
+                                const list = Array.isArray(prev.amenities)
+                                  ? prev.amenities
+                                  : [];
+                                const checked =
+                                  list.includes(item.id) ||
+                                  list.includes(item.label);
+                                return {
+                                  ...prev,
+                                  amenities: checked
+                                    ? list.filter(
+                                        (a) =>
+                                          a !== item.id && a !== item.label,
+                                      )
+                                    : [...list, item.label],
+                                };
+                              });
                             }}
-                            className={`flex items-center gap-2 p-1.5 rounded cursor-pointer select-none text-[11px] ${
+                            className={`flex items-center gap-2 p-1.5 rounded cursor-pointer select-none text-[11px] text-left transition ${
                               isChecked
                                 ? "bg-emerald-100/70 text-emerald-900 font-bold"
                                 : "hover:bg-slate-200/50 text-slate-700"
                             }`}
                           >
                             <div
-                              className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                              className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
                                 isChecked
                                   ? "bg-[#2e7d32] border-[#2e7d32] text-white"
                                   : "border-slate-300 bg-white"
@@ -1651,7 +1685,7 @@ export default function RoomManagementPage() {
                               {isChecked && <Check size={10} strokeWidth={3} />}
                             </div>
                             <span className="truncate">{item.label}</span>
-                          </label>
+                          </button>
                         );
                       })}
                     </div>

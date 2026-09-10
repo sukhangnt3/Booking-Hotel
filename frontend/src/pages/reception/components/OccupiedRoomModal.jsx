@@ -8,6 +8,7 @@ import {
   Paperclip,
   AlertTriangle,
 } from "lucide-react";
+import apiClient from "@/services/apiClient";
 
 export default function OccupiedRoomModal({
   room,
@@ -17,67 +18,95 @@ export default function OccupiedRoomModal({
 }) {
   if (!room) return null;
 
-  // 1. Tải cấu hình cài đặt thời gian từ trang RoomTimeSettingsPage
-  const hotelId = room.hotel_id || localStorage.getItem("selected_hotel_id");
-  const timeSettings = JSON.parse(
-    localStorage.getItem(`hotel_time_settings_${hotelId}`) || "{}",
-  );
-  const graceMinutes = timeSettings.hourly_grace_minutes || 30; // Quá 30p tính 1h
-  const graceHoursDaily = timeSettings.daily_grace_hours || 6; // Quá 6h tính 1 ngày
-
-  // 2. Tải bảng giá từ trang RoomPricingPage (nếu có)
-  const priceBooks = JSON.parse(
-    localStorage.getItem(`price_books_${hotelId}`) || "[]",
-  );
-  const activePriceBook = priceBooks.find((b) => b.is_active);
-  const customRoomPrice = activePriceBook?.room_prices?.find(
-    (rp) => rp.room_id === room.room_type_id || rp.name === room.type_name,
+  // 1. TẢI CẤU HÌNH THỜI GIAN TỪ DATABASE (NẾU CHƯA CÓ TRONG ROOM)
+  const [hotelSettings, setHotelSettings] = useState(
+    room.hotel_settings || null,
   );
 
-  // Đơn giá giờ (lấy từ bảng giá mới, nếu không có thì lấy giá mặc định của phòng)
-  const hourlyRate =
-    customRoomPrice?.hourly_tiers?.[0]?.price ||
-    room.hourly_price ||
-    Math.round((room.daily_price || 200000) * 0.25);
+  useEffect(() => {
+    if (hotelSettings || !room.hotel_id) return;
+    apiClient
+      .get(`/hotels/${room.hotel_id}`)
+      .then((res) => {
+        const h = res?.data?.hotel || res?.data || {};
+        setHotelSettings({
+          hourly_grace_minutes: Number(h.hourly_grace_minutes ?? 30),
+          daily_grace_hours: Number(h.daily_grace_hours ?? 6),
+          checkout_time: h.checkout_time || "12:00:00",
+        });
+      })
+      .catch(() => {
+        setHotelSettings({
+          hourly_grace_minutes: 30,
+          checkout_time: "12:00:00",
+        });
+      });
+  }, [room.hotel_id, hotelSettings]);
 
-  // 🌟 3. TÍNH TOÁN QUÁ GIỜ THỰC TẾ
+  const graceMinutes = Number(
+    hotelSettings?.hourly_grace_minutes ??
+      room.hotel?.hourly_grace_minutes ??
+      30,
+  );
+  const defaultCheckoutTime =
+    hotelSettings?.checkout_time ?? room.hotel?.checkout_time ?? "12:00:00";
+
+  // Lấy danh sách bậc thang trực tiếp từ DB (cột hourly_tiers của bảng room):
+  const hourlyTiers = room.hourly_tiers || [];
+
+  const firstHourRate = Number(
+    hourlyTiers[0]?.price || room.hourly_price || room.daily_price || 100000,
+  );
+
+  // 🌟 2. TÍNH TOÁN QUÁ GIỜ THỰC TẾ
   const now = new Date();
   const scheduledCheckout = new Date(room.booking?.checkout_date || now);
-  // Nếu ngày trả phòng chỉ có YYYY-MM-DD thì gán giờ trả quy định (VD: 12:00)
-  const defaultCheckoutTime = timeSettings.daily_checkout || "12:00";
-  const [defHour, defMin] = defaultCheckoutTime.split(":").map(Number);
+  const [defHour, defMin] = String(defaultCheckoutTime)
+    .slice(0, 5)
+    .split(":")
+    .map(Number);
   scheduledCheckout.setHours(defHour || 12, defMin || 0, 0, 0);
 
-  // Tính số phút trễ
   const diffLateMs = now.getTime() - scheduledCheckout.getTime();
   let lateMinutes = Math.max(0, Math.floor(diffLateMs / (1000 * 60)));
 
   let overtimeHours = 0;
   let overtimeFee = 0;
   let overtimeLabel = "";
-  let overtimeDisplayTime = "0 giờ"; // 🌟 Hiển thị cột thời gian
-  let overtimeDisplayRate = hourlyRate; // 🌟 Hiển thị cột đơn giá
+  let overtimeDisplayTime = "0 giờ";
 
   if (lateMinutes > 0) {
     const rawHours = Math.floor(lateMinutes / 60);
-    const remainingMins = lateMinutes % 60;
+    const remMins = lateMinutes % 60;
 
-    // Nếu số phút lẻ vượt quá mốc ân hạn (VD: > 30p) thì tính thêm 1 giờ
-    overtimeHours = rawHours + (remainingMins >= graceMinutes ? 1 : 0);
+    // Quá mốc ân hạn (ví dụ 30p) thì tính thêm 1 tiếng
+    overtimeHours = rawHours + (remMins >= graceMinutes ? 1 : 0);
 
-    // 🌟 TRƯỜNG HỢP 1: Quá mốc giờ ngày (VD: >= 6 tiếng) tính tròn 1 ngày phòng
-    if (overtimeHours >= graceHoursDaily) {
-      overtimeFee = Number(room.daily_price || 200000);
-      overtimeDisplayTime = "1 Ngày (Tròn ngày)"; // Cột thời gian ghi 1 Ngày
-      overtimeDisplayRate = overtimeFee; // Đơn giá là 200.000 để 1 x 200k = 200k khớp chuẩn
-      overtimeLabel = `Quá ${rawHours}h${remainingMins}p (Đã áp dụng mức giá tròn 1 ngày)`;
-    }
-    // 🌟 TRƯỜNG HỢP 2: Dưới 6 tiếng -> Tính theo số giờ x giá mỗi giờ
-    else if (overtimeHours > 0) {
-      overtimeFee = overtimeHours * hourlyRate;
+    // 🌟 TÍNH BẬC THANG TỪ DATABASE:
+    if (hourlyTiers.length > 0) {
+      const sortedTiers = [...hourlyTiers].sort(
+        (a, b) => Number(a.from_hour) - Number(b.from_hour),
+      );
+      let totalTierFee = 0;
+
+      for (let h = 1; h <= overtimeHours; h++) {
+        let applied = sortedTiers[0];
+        for (let i = sortedTiers.length - 1; i >= 0; i--) {
+          if (h >= Number(sortedTiers[i].from_hour)) {
+            applied = sortedTiers[i];
+            break;
+          }
+        }
+        totalTierFee += Number(applied.price || 0);
+      }
+
+      overtimeFee = totalTierFee;
       overtimeDisplayTime = `${overtimeHours} giờ`;
-      overtimeDisplayRate = hourlyRate;
-      overtimeLabel = `Quá ${rawHours}h${remainingMins}p (${overtimeHours} giờ x ${formatVND(hourlyRate)})`;
+      overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ - Áp dụng giá giờ bậc thang DB)`;
+    } else {
+      overtimeFee = overtimeHours * firstHourRate;
+      overtimeDisplayTime = `${overtimeHours} giờ`;
+      overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ x ${formatVND(firstHourRate)})`;
     }
   }
 
@@ -85,11 +114,10 @@ export default function OccupiedRoomModal({
   const baseRoomPrice = Number(
     room.booking?.total_price || room.daily_price || 0,
   );
-  const totalBill = baseRoomPrice + overtimeFee; // Tiền phòng + Phụ thu quá giờ
+  const totalBill = baseRoomPrice + overtimeFee;
   const customerPaid = Number(room.booking?.customer_paid || 0);
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
-  // State thanh toán
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [note, setNote] = useState(
@@ -120,7 +148,6 @@ export default function OccupiedRoomModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
       <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col">
-        {/* Header */}
         <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-200 bg-white shrink-0">
           <div className="flex items-center gap-3">
             <h3 className="font-extrabold text-base text-slate-900">
@@ -146,9 +173,7 @@ export default function OccupiedRoomModal({
           </button>
         </div>
 
-        {/* Body 2 cột */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1">
-          {/* CỘT TRÁI: BẢNG THÔNG TIN PHÒNG & PHỤ THU QUÁ GIỜ */}
           <div className="lg:col-span-7 space-y-4">
             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
@@ -169,7 +194,6 @@ export default function OccupiedRoomModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {/* 1. Dòng tiền phòng gốc */}
                   <tr className="hover:bg-slate-50">
                     <td className="py-3 px-3">
                       <div className="font-bold text-slate-900 text-xs">
@@ -195,7 +219,6 @@ export default function OccupiedRoomModal({
                     </td>
                   </tr>
 
-                  {/* 🌟 2. Dòng tự động tính phụ thu quá giờ - HIỂN THỊ CHUẨN XÁC PHÉP NHÂN */}
                   {overtimeFee > 0 && (
                     <tr className="bg-amber-50/50 hover:bg-amber-50 text-amber-950 border-t border-amber-200">
                       <td className="py-3 px-3">
@@ -208,17 +231,14 @@ export default function OccupiedRoomModal({
                         </div>
                       </td>
 
-                      {/* Cột thời gian: "1 Ngày (Tròn ngày)" hoặc "X giờ" */}
                       <td className="py-3 px-3 text-center font-bold text-amber-900">
                         {overtimeDisplayTime}
                       </td>
 
-                      {/* Cột đơn giá: đúng 200.000 (nếu tròn ngày) hoặc giá giờ */}
                       <td className="py-3 px-3 text-right font-medium text-amber-800">
-                        {formatVND(overtimeDisplayRate)}
+                        {formatVND(firstHourRate)}
                       </td>
 
-                      {/* Cột thành tiền */}
                       <td className="py-3 px-3 text-right font-black text-amber-900">
                         +{formatVND(overtimeFee)}
                       </td>
@@ -239,7 +259,6 @@ export default function OccupiedRoomModal({
             </div>
           </div>
 
-          {/* CỘT PHẢI: KHUNG TÍNH TOÁN & HOÀN THÀNH */}
           <div className="lg:col-span-5 border-l border-slate-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <select
@@ -288,7 +307,6 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* CÒN CẦN TRẢ */}
               <div className="flex justify-between items-center pt-2 border-t border-slate-200">
                 <span className="font-bold text-slate-800 text-xs">
                   Còn cần trả
@@ -298,7 +316,6 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* KHÁCH THANH TOÁN */}
               <div className="flex justify-between items-center pt-2">
                 <span className="font-bold text-slate-700 flex items-center gap-1.5">
                   Khách thanh toán (F8)
@@ -321,7 +338,6 @@ export default function OccupiedRoomModal({
               </div>
             </div>
 
-            {/* Phương thức thanh toán */}
             <div className="flex items-center justify-between pt-2 text-slate-700 font-semibold">
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
@@ -357,7 +373,6 @@ export default function OccupiedRoomModal({
               </label>
             </div>
 
-            {/* Nút tiền nhanh */}
             <div className="flex items-center gap-2 flex-wrap pt-1">
               {quickAmounts.map((amt, idx) => (
                 <button
@@ -381,7 +396,6 @@ export default function OccupiedRoomModal({
               />
             </div>
 
-            {/* Nút Hoàn thành */}
             <div className="pt-3 flex items-center gap-3">
               <button
                 type="button"

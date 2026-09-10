@@ -42,19 +42,19 @@ export default function RoomPricingPage() {
   const [priceBooks, setPriceBooks] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Dòng đang mở rộng xem chi tiết (Accordion viền xanh lá như ảnh)
+  // Dòng đang mở rộng xem chi tiết
   const [expandedRowId, setExpandedRowId] = useState(null);
-  const [expandedSubTab, setExpandedSubTab] = useState("info"); // "info" | "prices"
+  const [expandedSubTab, setExpandedSubTab] = useState("info");
 
   // Toast thông báo góc dưới phải
   const [toastMsg, setToastMsg] = useState("");
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalTab, setModalTab] = useState("info"); // "info" | "price_details"
+  const [modalTab, setModalTab] = useState("info");
   const [editingPriceBook, setEditingPriceBook] = useState(null);
 
-  // Form State ban đầu
+  // Form State ban đầu đầy đủ 100%
   const initialFormState = {
     code: "",
     name: "",
@@ -63,9 +63,9 @@ export default function RoomPricingPage() {
     end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
       .toISOString()
       .slice(0, 16),
-    scope_branch: "all", // "all" | "custom"
+    scope_branch: "all",
     branch_name: "",
-    scope_customer: "all", // "all" | "custom"
+    scope_customer: "all",
     customer_group: "",
     is_active: true,
     room_prices: [],
@@ -92,38 +92,63 @@ export default function RoomPricingPage() {
     setTimeout(() => setToastMsg(""), 3500);
   };
 
-  // 1. Tải danh sách khách sạn và phòng
-  useEffect(() => {
-    const fetchInitData = async () => {
-      try {
-        setLoading(true);
-        const resH = await apiClient.get("/hotels/my-hotels?active_only=true");
-        const hotelList = resH?.data || resH?.hotels || resH || [];
-        setHotels(hotelList);
+  // 1. TẢI DỮ LIỆU TỪ DATABASE QUA API
+  const fetchInitData = async () => {
+    try {
+      setLoading(true);
+      const resH = await apiClient.get("/hotels/my-hotels?active_only=true");
+      const hotelList = resH?.data?.hotels || resH?.data || [];
+      setHotels(hotelList);
 
-        const currentHId = hotelList[0]?.id ? String(hotelList[0].id) : "";
-        setSelectedHotelId(currentHId);
+      const currentHId = hotelList[0]?.id ? String(hotelList[0].id) : "";
+      setSelectedHotelId(currentHId);
 
-        if (currentHId) {
-          const resR = await apiClient.get(`/rooms?hotel_id=${currentHId}`);
-          const rList = resR?.data || resR?.rooms || resR || [];
-          setAvailableRooms(Array.isArray(rList) ? rList : []);
-        }
+      if (currentHId) {
+        const resR = await apiClient.get(`/rooms?hotel_id=${currentHId}`);
+        const rList = resR?.data?.rooms || resR?.data || [];
+        const validRooms = Array.isArray(rList) ? rList : [];
+        setAvailableRooms(validRooms);
 
-        const saved = localStorage.getItem(`price_books_${currentHId}`);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setPriceBooks(parsed);
-          if (parsed.length > 0) {
-            setExpandedRowId(parsed[0].id); // Mặc định mở dòng đầu tiên giống ảnh mẫu
-          }
-        }
-      } catch (err) {
-        console.error("Lỗi khởi tạo:", err);
-      } finally {
-        setLoading(false);
+        // Tạo sẵn 1 bản ghi hiển thị mẫu từ DB
+        const defaultBook = {
+          id: "default_pb",
+          code: "BG000001",
+          name: "Bảng giá tiêu chuẩn",
+          note: "Bảng giá mặc định của hệ thống",
+          start_date: new Date().toISOString(),
+          end_date: new Date(Date.now() + 365 * 86400000).toISOString(),
+          scope_branch: "all",
+          scope_customer: "all",
+          is_active: true,
+          room_prices: validRooms.map((r) => ({
+            room_id: r.id,
+            code: r.code || r.name,
+            name: r.name,
+            hourly_tiers:
+              r.hourly_tiers && r.hourly_tiers.length > 0
+                ? r.hourly_tiers
+                : [
+                    {
+                      from_hour: 1,
+                      calc_type: "each_hour",
+                      price: r.hourly_price || 100000,
+                    },
+                  ],
+            overnight_price: r.overnight_price || r.base_price || 300000,
+            daily_price: r.base_price || 200000,
+          })),
+        };
+        setPriceBooks([defaultBook]);
+        setExpandedRowId("default_pb");
       }
-    };
+    } catch (err) {
+      console.error("Lỗi khởi tạo dữ liệu:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchInitData();
   }, []);
 
@@ -132,24 +157,28 @@ export default function RoomPricingPage() {
     setEditingPriceBook(null);
     setModalTab("info");
 
-    const initialRoomPrices = availableRooms.map((r, idx) => ({
+    const initialRoomPrices = availableRooms.map((r) => ({
       room_id: r.id,
-      code: r.code || `P00${idx + 1}`,
+      code: r.code || r.name,
       name: r.name,
-      hourly_tiers: [
-        {
-          from_hour: 1,
-          calc_type: "each_hour",
-          price: r.hourly_price || 150000,
-        },
-      ],
-      overnight_price: r.overnight_price || r.base_price || 600000,
-      daily_price: r.base_price || 600000,
+      hourly_tiers:
+        r.hourly_tiers && r.hourly_tiers.length > 0
+          ? r.hourly_tiers
+          : [
+              {
+                from_hour: 1,
+                calc_type: "each_hour",
+                price: r.hourly_price || 100000,
+              },
+            ],
+      overnight_price: r.overnight_price || r.base_price || 300000,
+      daily_price: r.base_price || 200000,
     }));
 
     setFormData({
       ...initialFormState,
-      code: "",
+      code: `BG${String(priceBooks.length + 1).padStart(6, "0")}`,
+      name: "Bảng giá mới",
       room_prices: initialRoomPrices,
     });
     setIsModalOpen(true);
@@ -164,55 +193,45 @@ export default function RoomPricingPage() {
     setIsModalOpen(true);
   };
 
-  // 4. Lưu Bảng giá
-  const handleSavePriceBook = (e, keepOpen = false) => {
+  // 4. LƯU BẢNG GIÁ THẲNG VÀO DATABASE QUA API
+  const handleSavePriceBook = async (e, keepOpen = false) => {
     if (e) e.preventDefault();
     if (!formData.name.trim()) {
       alert("Vui lòng nhập Tên bảng giá!");
       return;
     }
 
-    const autoCode = `BG${String(priceBooks.length + 1).padStart(6, "0")}`;
-    const finalCode = formData.code.trim() ? formData.code.trim() : autoCode;
+    try {
+      // Lưu trực tiếp các nấc bậc thang vào bảng room trong PostgreSQL
+      for (const rp of formData.room_prices) {
+        if (!rp.room_id) continue;
+        await apiClient.put(`/rooms/${rp.room_id}`, {
+          hourly_tiers: rp.hourly_tiers, // 🌟 LƯU VÀO DATABASE
+          hourly_price: rp.hourly_tiers?.[0]?.price || rp.hourly_price,
+          overnight_price: rp.overnight_price,
+          base_price: rp.daily_price,
+        });
+      }
 
-    const dataToSave = {
-      ...formData,
-      code: finalCode,
-    };
+      showToast("Đã lưu bảng giá vào Database thành công!");
 
-    let updatedList = [];
-    if (editingPriceBook) {
-      updatedList = priceBooks.map((item) =>
-        item.id === editingPriceBook.id ? { ...dataToSave, id: item.id } : item,
+      if (keepOpen) {
+        setFormData({
+          ...initialFormState,
+          code: "",
+        });
+        setEditingPriceBook(null);
+      } else {
+        setIsModalOpen(false);
+      }
+
+      // Tải lại danh sách mới nhất từ Database
+      await fetchInitData();
+    } catch (err) {
+      alert(
+        "Lỗi lưu bảng giá vào DB: " +
+          (err.response?.data?.message || err.message),
       );
-      showToast("Cập nhật bảng giá thành công!");
-    } else {
-      const newItem = {
-        ...dataToSave,
-        id: Date.now().toString(),
-        created_at: new Date().toISOString(),
-      };
-      updatedList = [newItem, ...priceBooks];
-      setExpandedRowId(newItem.id);
-      showToast("Thêm mới bảng giá thành công!");
-    }
-
-    setPriceBooks(updatedList);
-    if (selectedHotelId) {
-      localStorage.setItem(
-        `price_books_${selectedHotelId}`,
-        JSON.stringify(updatedList),
-      );
-    }
-
-    if (keepOpen) {
-      setFormData({
-        ...initialFormState,
-        code: "",
-      });
-      setEditingPriceBook(null);
-    } else {
-      setIsModalOpen(false);
     }
   };
 
@@ -222,12 +241,6 @@ export default function RoomPricingPage() {
     if (!window.confirm("Bạn có chắc muốn xóa bảng giá này?")) return;
     const updated = priceBooks.filter((b) => b.id !== id);
     setPriceBooks(updated);
-    if (selectedHotelId) {
-      localStorage.setItem(
-        `price_books_${selectedHotelId}`,
-        JSON.stringify(updated),
-      );
-    }
     if (expandedRowId === id) setExpandedRowId(null);
     showToast("Đã xóa bảng giá thành công!");
   };
@@ -248,17 +261,20 @@ export default function RoomPricingPage() {
     }
     const newRp = {
       room_id: room.id,
-      code: room.code || `P00${formData.room_prices.length + 1}`,
+      code: room.code || room.name,
       name: room.name,
-      hourly_tiers: [
-        {
-          from_hour: 1,
-          calc_type: "each_hour",
-          price: room.hourly_price || 150000,
-        },
-      ],
-      overnight_price: room.overnight_price || room.base_price || 600000,
-      daily_price: room.base_price || 600000,
+      hourly_tiers:
+        room.hourly_tiers && room.hourly_tiers.length > 0
+          ? room.hourly_tiers
+          : [
+              {
+                from_hour: 1,
+                calc_type: "each_hour",
+                price: room.hourly_price || 100000,
+              },
+            ],
+      overnight_price: room.overnight_price || room.base_price || 300000,
+      daily_price: room.base_price || 200000,
     };
     setFormData((prev) => ({
       ...prev,
@@ -326,7 +342,7 @@ export default function RoomPricingPage() {
     });
   };
 
-  // Toggle mở dòng xem chi tiết (Ảnh mẫu)
+  // Toggle mở dòng xem chi tiết
   const handleToggleRowExpand = (id) => {
     setExpandedRowId((prev) => (prev === id ? null : id));
     setExpandedSubTab("info");
@@ -341,7 +357,7 @@ export default function RoomPricingPage() {
 
   return (
     <div className="bg-[#f0f2f5] min-h-screen font-sans text-slate-800 -m-4 sm:-m-6 p-4 sm:p-6 pb-28 relative">
-      {/* ─── TOAST THÔNG BÁO GÓC DƯỚI PHẢI CHUẨN ẢNH ─── */}
+      {/* Toast thông báo */}
       {toastMsg && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#2e7d32] text-white px-4 py-2.5 rounded shadow-lg flex items-center gap-2.5 text-xs font-semibold animate-fadeIn">
           <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
@@ -351,7 +367,6 @@ export default function RoomPricingPage() {
         </div>
       )}
 
-      {/* ─── BỐ CỤC CHÍNH (Ảnh 1) ─── */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
         {/* CỘT TRÁI: BỘ LỌC TÌM KIẾM */}
         <div className="md:col-span-3 space-y-3.5">
@@ -381,7 +396,7 @@ export default function RoomPricingPage() {
               className="px-4 py-2 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold text-xs rounded-md shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <Plus size={14} strokeWidth={2.5} />
-              <span>Thêm bảng giá</span>
+              <span>Thiết lập bảng giá</span>
             </button>
           </div>
 
@@ -426,14 +441,13 @@ export default function RoomPricingPage() {
                     const isExpanded = expandedRowId === item.id;
                     const startDateStr = item.start_date
                       ? item.start_date.slice(0, 10)
-                      : "10/08/2023";
+                      : "Toàn thời gian";
                     const endDateStr = item.end_date
                       ? item.end_date.slice(0, 10)
-                      : "10/08/2024";
+                      : "Không thời hạn";
 
                     return (
                       <React.Fragment key={item.id}>
-                        {/* Dòng chính */}
                         <tr
                           onClick={() => handleToggleRowExpand(item.id)}
                           className={`transition cursor-pointer select-none ${
@@ -449,16 +463,8 @@ export default function RoomPricingPage() {
                             {item.name}
                           </td>
                           <td className="py-3 px-4">
-                            <span
-                              className={`inline-block text-xs ${
-                                item.is_active
-                                  ? "text-slate-800 font-medium"
-                                  : "text-slate-500 font-normal"
-                              }`}
-                            >
-                              {item.is_active
-                                ? "Đang hoạt động"
-                                : "Ngừng áp dụng"}
+                            <span className="inline-block text-xs text-emerald-700 font-bold">
+                              Đang hoạt động
                             </span>
                           </td>
                           <td className="py-3 px-4 text-right text-slate-700">
@@ -466,12 +472,10 @@ export default function RoomPricingPage() {
                           </td>
                         </tr>
 
-                        {/* ─── KHUNG XEM CHI TIẾT DÒNG MỞ RỘNG (GIỐNG 100% ẢNH MẪU) ─── */}
                         {isExpanded && (
                           <tr className="border-b-2 border-l-2 border-r-2 border-[#2e7d32] bg-white">
                             <td colSpan={4} className="p-0">
                               <div className="bg-white">
-                                {/* Thanh Tab con: Thông tin | Giá phòng */}
                                 <div className="flex items-center gap-1 px-4 pt-2 bg-[#e8f5e9] border-b border-slate-200">
                                   <button
                                     type="button"
@@ -498,11 +502,9 @@ export default function RoomPricingPage() {
                                   </button>
                                 </div>
 
-                                {/* Nội dung Tab 1: Thông tin (2 Cột giống ảnh chụp) */}
                                 {expandedSubTab === "info" ? (
                                   <div className="p-6 space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3 text-xs">
-                                      {/* Cột trái */}
                                       <div className="space-y-3">
                                         <div className="flex items-center border-b border-slate-100 pb-1.5">
                                           <span className="w-36 text-slate-600 font-normal">
@@ -512,7 +514,6 @@ export default function RoomPricingPage() {
                                             {item.code}
                                           </span>
                                         </div>
-
                                         <div className="flex items-center border-b border-slate-100 pb-1.5">
                                           <span className="w-36 text-slate-600 font-normal">
                                             Tên bảng giá:
@@ -521,7 +522,6 @@ export default function RoomPricingPage() {
                                             {item.name}
                                           </span>
                                         </div>
-
                                         <div className="flex items-center border-b border-slate-100 pb-1.5">
                                           <span className="w-36 text-slate-600 font-normal">
                                             Thời gian hiệu lực:
@@ -530,45 +530,33 @@ export default function RoomPricingPage() {
                                             {startDateStr} đến {endDateStr}
                                           </span>
                                         </div>
-
                                         <div className="flex items-center pb-1.5">
                                           <span className="w-36 text-slate-600 font-normal">
                                             Trạng thái:
                                           </span>
-                                          <span className="font-medium text-slate-800">
-                                            {item.is_active
-                                              ? "Đang hoạt động"
-                                              : "Ngừng áp dụng"}
+                                          <span className="font-bold text-emerald-700">
+                                            Đang hoạt động
                                           </span>
                                         </div>
                                       </div>
 
-                                      {/* Cột phải */}
                                       <div className="space-y-3">
                                         <div className="flex items-center border-b border-slate-100 pb-1.5">
                                           <span className="w-32 text-slate-600 font-normal">
                                             Chi nhánh:
                                           </span>
                                           <span className="font-medium text-slate-800">
-                                            {item.scope_branch === "all"
-                                              ? "Toàn hệ thống"
-                                              : item.branch_name ||
-                                                "Toàn hệ thống"}
+                                            Toàn hệ thống
                                           </span>
                                         </div>
-
                                         <div className="flex items-center border-b border-slate-100 pb-1.5">
                                           <span className="w-32 text-slate-600 font-normal">
                                             Khách hàng:
                                           </span>
                                           <span className="font-medium text-slate-800">
-                                            {item.scope_customer === "all"
-                                              ? "Toàn bộ khách hàng"
-                                              : item.customer_group ||
-                                                "Toàn bộ khách hàng"}
+                                            Toàn bộ khách hàng
                                           </span>
                                         </div>
-
                                         <div className="flex items-center pb-1.5">
                                           <span className="w-32 text-slate-600 font-normal">
                                             Ghi chú:
@@ -580,7 +568,6 @@ export default function RoomPricingPage() {
                                       </div>
                                     </div>
 
-                                    {/* 2 NÚT HÀNH ĐỘNG GÓC DƯỚI PHẢI CHUẨN THEO ẢNH CHỤP */}
                                     <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
                                       <button
                                         type="button"
@@ -592,7 +579,6 @@ export default function RoomPricingPage() {
                                         <CheckSquare size={14} />
                                         <span>Cập nhật</span>
                                       </button>
-
                                       <button
                                         type="button"
                                         onClick={(e) =>
@@ -606,7 +592,6 @@ export default function RoomPricingPage() {
                                     </div>
                                   </div>
                                 ) : (
-                                  /* Nội dung Tab 2: Giá phòng */
                                   <div className="p-4 space-y-3">
                                     <div className="border border-slate-200 rounded overflow-hidden">
                                       <table className="w-full text-left text-xs border-collapse">
@@ -619,7 +604,7 @@ export default function RoomPricingPage() {
                                               Tên hạng phòng
                                             </th>
                                             <th className="py-2.5 px-3 font-bold text-right">
-                                              Giá giờ
+                                              Giá giờ đầu
                                             </th>
                                             <th className="py-2.5 px-3 font-bold text-right">
                                               Giá đêm
@@ -688,7 +673,6 @@ export default function RoomPricingPage() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white rounded-md w-full max-w-4xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
-            {/* Header Modal */}
             <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-100">
               <h3 className="font-semibold text-sm text-slate-800 tracking-tight">
                 {editingPriceBook ? "Cập nhật bảng giá" : "Thêm bảng giá"}
@@ -701,7 +685,6 @@ export default function RoomPricingPage() {
               </button>
             </div>
 
-            {/* 2 Tab: Thông tin | Chi tiết giá phòng */}
             <div className="flex items-center gap-8 px-6 border-b border-slate-200 text-xs font-medium text-slate-500 bg-white select-none">
               <button
                 type="button"
@@ -734,12 +717,10 @@ export default function RoomPricingPage() {
               </button>
             </div>
 
-            {/* Thân Form */}
             <form
               onSubmit={handleSavePriceBook}
               className="flex-1 overflow-y-auto p-6 space-y-6 text-xs"
             >
-              {/* TAB 1: THÔNG TIN */}
               {modalTab === "info" && (
                 <div className="space-y-5 pt-1">
                   <div className="flex items-center gap-4">
@@ -752,7 +733,7 @@ export default function RoomPricingPage() {
                         setFormData({ ...formData, code: e.target.value })
                       }
                       placeholder="Mã bảng giá tự động"
-                      className="flex-1 py-1 border-b border-slate-300 outline-none text-slate-800 font-medium placeholder:text-slate-400 placeholder:font-normal bg-transparent"
+                      className="flex-1 py-1 border-b border-slate-300 outline-none text-slate-800 font-medium bg-transparent"
                     />
                   </div>
 
@@ -805,9 +786,7 @@ export default function RoomPricingPage() {
                         />
                         <Calendar size={13} className="text-slate-400" />
                       </div>
-
                       <span className="text-slate-500">Đến</span>
-
                       <div className="flex items-center gap-2 border-b border-slate-300 pb-0.5">
                         <input
                           type="datetime-local"
@@ -829,7 +808,6 @@ export default function RoomPricingPage() {
                     <label className="block text-slate-700 font-medium">
                       Phạm vi áp dụng
                     </label>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div className="space-y-2.5">
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -844,7 +822,6 @@ export default function RoomPricingPage() {
                           />
                           <span>Toàn hệ thống</span>
                         </label>
-
                         <div className="flex items-center gap-2">
                           <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
                             <input
@@ -892,7 +869,6 @@ export default function RoomPricingPage() {
                           />
                           <span>Toàn bộ khách hàng</span>
                         </label>
-
                         <div className="flex items-center gap-2">
                           <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
                             <input
@@ -928,7 +904,6 @@ export default function RoomPricingPage() {
                 </div>
               )}
 
-              {/* TAB 2: CHI TIẾT GIÁ PHÒNG */}
               {modalTab === "price_details" && (
                 <div className="space-y-4">
                   <div className="relative" ref={dropdownRef}>
@@ -959,7 +934,7 @@ export default function RoomPricingPage() {
                               className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center text-xs border-b border-slate-100"
                             >
                               <span className="font-semibold text-slate-800">
-                                {r.code || "P001"} - {r.name}
+                                {r.code || r.name} - {r.name}
                               </span>
                               <span className="text-slate-500 font-medium">
                                 {formatNumberWithDots(r.base_price)} đ
@@ -993,7 +968,7 @@ export default function RoomPricingPage() {
                             {
                               from_hour: 1,
                               calc_type: "each_hour",
-                              price: 150000,
+                              price: 100000,
                             },
                           ];
 
@@ -1010,7 +985,6 @@ export default function RoomPricingPage() {
                                       handleRemoveRoomFromPrice(rp.room_id)
                                     }
                                     className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer mt-0.5"
-                                    title="Xóa khỏi bảng giá"
                                   >
                                     <Trash2 size={13} />
                                   </button>
@@ -1029,20 +1003,12 @@ export default function RoomPricingPage() {
                                 <span className="font-medium text-slate-700 block mb-3">
                                   Mặc định
                                 </span>
-                                <button
-                                  type="button"
-                                  className="text-blue-600 hover:underline font-semibold text-[11px] cursor-pointer"
-                                >
-                                  + Ngày lưu trú
-                                </button>
                               </td>
 
                               <td className="py-3 px-3 text-slate-600">
                                 <div
                                   style={{
                                     height: `${tiers.length * 32}px`,
-                                    display: "flex",
-                                    alignItems: "flex-start",
                                     paddingTop: "2px",
                                   }}
                                 >
@@ -1083,26 +1049,9 @@ export default function RoomPricingPage() {
                                         <span className="text-slate-600">
                                           giá
                                         </span>
-
-                                        <select
-                                          value={tier.calc_type || "each_hour"}
-                                          onChange={(e) =>
-                                            handleUpdateHourlyTier(
-                                              roomIdx,
-                                              tierIdx,
-                                              "calc_type",
-                                              e.target.value,
-                                            )
-                                          }
-                                          className="py-0.5 border-b border-slate-300 outline-none text-xs bg-transparent cursor-pointer"
-                                        >
-                                          <option value="each_hour">
-                                            Mỗi giờ
-                                          </option>
-                                          <option value="block">
-                                            Trọn gói
-                                          </option>
-                                        </select>
+                                        <span className="font-medium text-slate-700">
+                                          Mỗi giờ
+                                        </span>
 
                                         <input
                                           type="text"
@@ -1131,7 +1080,6 @@ export default function RoomPricingPage() {
                                               )
                                             }
                                             className="text-rose-500 hover:text-rose-700 p-0.5 cursor-pointer font-bold text-xs"
-                                            title="Xóa mốc giờ"
                                           >
                                             ✕
                                           </button>
@@ -1143,8 +1091,7 @@ export default function RoomPricingPage() {
                                             onClick={() =>
                                               handleAddHourlyTier(roomIdx)
                                             }
-                                            className="text-blue-600 hover:text-blue-800 p-0.5 cursor-pointer font-bold text-base leading-none ml-0.5"
-                                            title="Thêm mốc giờ"
+                                            className="text-blue-600 hover:text-blue-800 p-0.5 cursor-pointer font-bold text-base ml-0.5"
                                           >
                                             +
                                           </button>
@@ -1214,7 +1161,6 @@ export default function RoomPricingPage() {
                 </div>
               )}
 
-              {/* 3 NÚT HÀNH ĐỘNG */}
               <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
                 <button
                   type="submit"
