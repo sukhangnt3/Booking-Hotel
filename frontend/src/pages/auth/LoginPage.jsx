@@ -8,14 +8,17 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between font-sans">
       {/* Header thương hiệu GoStay */}
-      <header className="bg-[#003580] text-white px-6 sm:px-10 py-4 flex justify-between items-center shadow-md">
+      <header className="bg-[#0a2540] text-white px-6 sm:px-10 py-4 flex justify-between items-center shadow-md">
         <Link to="/" className="flex items-center gap-2.5">
-          <div className="bg-white/15 p-1.5 rounded-xl">
+          <div className="bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-[#0a2540] p-2 rounded-xl shadow-md group-hover:scale-105 transition-all duration-300">
             <Building2 size={24} />
           </div>
-          <span className="text-2xl font-black tracking-tight">GoStay</span>
+          
+          <span className="text-2xl sm:text-3xl font-serif tracking-wide font-black bg-gradient-to-r from-white via-slate-100 to-amber-200 bg-clip-text text-transparent">
+            GoStay
+          </span>
         </Link>
-        <span className="text-xs text-blue-200 hidden sm:inline font-medium">
+        <span className="text-xs text-white hidden sm:inline font-medium">
           Hệ thống đặt phòng trực tuyến hàng đầu
         </span>
       </header>
