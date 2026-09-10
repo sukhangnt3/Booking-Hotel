@@ -345,7 +345,7 @@ export default function HotelManagementPage() {
             onClick={() => navigate("/owner/hotels/register")}
             className="px-5 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-full shadow-xs transition flex items-center gap-2 cursor-pointer active:scale-95"
           >
-            <Plus size={16} /> + Đăng Ký Cơ Sở Mới
+            <Plus size={24} /> Đăng Ký Cơ Sở Mới
           </button>
           <button
             onClick={fetchMyHotels}

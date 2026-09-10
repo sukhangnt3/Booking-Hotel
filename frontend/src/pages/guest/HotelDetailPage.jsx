@@ -43,6 +43,7 @@ import { vi } from "date-fns/locale";
 import { Button } from "@/components/ui";
 import { Breadcrumb, LoadingSpinner } from "@/components/common";
 import { ReviewList, ReviewForm } from "@/components/review";
+import NewestHotelsSlider from "@/components/hotel/NewestHotelsSlider";
 
 import apiClient from "@/services/apiClient";
 import { useAuthStore } from "@/stores/authStore";
@@ -87,15 +88,42 @@ const ROOM_VIEW_MAP = {
   internal_view: "Hướng nội khu",
 };
 
-// Hàm chuẩn hóa mảng tiện ích từ Database (chống lỗi chuỗi JSON)
+// Hàm chuẩn hóa mảng tiện ích từ Database (chống lỗi chuỗi JSON, mảng rỗng Postgres '{}' và chuỗi 'null')
 export const parseAmenities = (amenities) => {
   if (!amenities) return [];
-  if (Array.isArray(amenities)) return amenities;
+  if (Array.isArray(amenities)) {
+    return amenities.filter(
+      (item) =>
+        item &&
+        item !== "null" &&
+        item !== "undefined" &&
+        item !== "{}" &&
+        item !== "[]",
+    );
+  }
   if (typeof amenities === "string") {
     const cleanStr = amenities.trim();
+    if (
+      !cleanStr ||
+      cleanStr === "{}" ||
+      cleanStr === "[]" ||
+      cleanStr === "null" ||
+      cleanStr === "undefined"
+    ) {
+      return [];
+    }
     try {
       const parsed = JSON.parse(cleanStr);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter(
+          (item) =>
+            item &&
+            item !== "null" &&
+            item !== "undefined" &&
+            item !== "{}" &&
+            item !== "[]",
+        );
+      }
     } catch {
       // Bỏ qua lỗi JSON
     }
@@ -105,7 +133,7 @@ export const parseAmenities = (amenities) => {
       .replace(/["']/g, "")
       .split(",")
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter((s) => s && s !== "null" && s !== "undefined");
   }
   return [];
 };
@@ -939,7 +967,7 @@ export default function HotelDetailPage() {
                   (room.type && ROOM_VIEW_MAP[room.type]) ||
                   null;
 
-                // Lấy tiện nghi của phòng
+                // Lấy tiện nghi của phòng (được lọc sạch mảng rỗng)
                 const roomAmenities = parseAmenities(room.amenities);
 
                 return (
@@ -1194,6 +1222,9 @@ export default function HotelDetailPage() {
             </div>
           </div>
         </section>
+
+        {/* 👉 CHỖ NGHỈ NỔI BẬT & MỚI NHẤT (HIỂN THỊ 4 CÁI, MỚI LÊN ĐẦU, BẤM MŨI TÊN ĐỂ LƯỚT) */}
+        <NewestHotelsSlider excludeHotelId={hotel.id} />
 
         {/* KHU VỰC ĐÁNH GIÁ */}
         <section id="reviews-section" className="space-y-6 pt-2">

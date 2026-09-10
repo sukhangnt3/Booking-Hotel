@@ -320,13 +320,6 @@ export default function BookingListPage() {
 
         <div className="flex items-center gap-2 w-full md:w-auto">
           <button
-            onClick={() => setIsWalkInOpen(true)}
-            className="px-4 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-2xl shadow-xs transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
-          >
-            <UserPlus size={16} /> + Đặt Phòng Tại Quầy (Walk-in)
-          </button>
-
-          <button
             onClick={fetchOwnerBookings}
             className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer"
             title="Làm mới danh sách"

@@ -108,6 +108,49 @@ const MountainPlaceholderIcon = () => (
   </svg>
 );
 
+// ✅ Chuẩn hóa tên tiện nghi ĐỘC LẬP - SO KHỚP CHÍNH XÁC 100%, KHÔNG DÙNG INCLUDES
+const normalizeAmenityKey = (val) => {
+  if (!val) return "";
+  const s = String(val).toLowerCase().trim();
+
+  // Chỉ gom nhóm chính xác các từ đồng nghĩa của Điều hòa / Máy lạnh
+  if (
+    s === "máy lạnh" ||
+    s === "điều hòa" ||
+    s === "máy điều hòa" ||
+    s === "điều hòa máy lạnh" ||
+    s === "air_conditioner"
+  ) {
+    return "air_conditioner";
+  }
+
+  // Bình nóng lạnh là một mục hoàn toàn độc lập
+  if (s === "bình nóng lạnh" || s === "nước nóng" || s === "hot_water") {
+    return "hot_water";
+  }
+
+  // Tủ lạnh là một mục hoàn toàn độc lập
+  if (s === "tủ lạnh" || s === "refrigerator" || s === "fridge") {
+    return "refrigerator";
+  }
+
+  // Máy sấy tóc là một mục hoàn toàn độc lập
+  if (s === "máy sấy tóc" || s === "hair_dryer") {
+    return "hair_dryer";
+  }
+
+  return s;
+};
+
+const isSameAmenity = (a, item) => {
+  if (!a || !item) return false;
+  const keyA = normalizeAmenityKey(a);
+  const keyItemId = normalizeAmenityKey(item.id);
+  const keyItemLabel = normalizeAmenityKey(item.label);
+
+  return keyA === keyItemId || keyA === keyItemLabel;
+};
+
 export default function RoomManagementPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [hotels, setHotels] = useState([]);
@@ -158,7 +201,7 @@ export default function RoomManagementPage() {
     bed_type: "1 Giường đôi King",
     room_area: 28,
     status: "active",
-    amenities: ["Máy lạnh", "TV", "Wifi", "Bình nóng lạnh"],
+    amenities: [],
     images: [],
   };
   const [formData, setFormData] = useState(initialFormState);
@@ -331,6 +374,7 @@ export default function RoomManagementPage() {
       ...initialFormState,
       hotel_id: selectedHotelId || (hotels[0]?.id ? String(hotels[0].id) : ""),
       code: "",
+      amenities: [],
       images: [],
     });
     setIsModalOpen(true);
@@ -346,22 +390,38 @@ export default function RoomManagementPage() {
     const overnightP =
       Number(room.overnight_price) > 0 ? Number(room.overnight_price) : baseP;
 
-    // Chuẩn hóa amenities khi đọc từ API
+    // Chuẩn hóa tiện nghi: Lọc sạch mảng rỗng, không tự ý gán giá trị mặc định
     let parsedAmenities = [];
     if (Array.isArray(room.amenities)) {
-      parsedAmenities = room.amenities;
+      parsedAmenities = room.amenities.filter(
+        (a) =>
+          a && a !== "null" && a !== "undefined" && a !== "{}" && a !== "[]",
+      );
     } else if (typeof room.amenities === "string") {
-      try {
-        const parsed = JSON.parse(room.amenities);
-        parsedAmenities = Array.isArray(parsed) ? parsed : [];
-      } catch {
-        parsedAmenities = room.amenities
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
+      const cleanStr = room.amenities.trim();
+      if (
+        cleanStr &&
+        cleanStr !== "{}" &&
+        cleanStr !== "[]" &&
+        cleanStr !== "null" &&
+        cleanStr !== "undefined"
+      ) {
+        try {
+          const parsed = JSON.parse(cleanStr);
+          parsedAmenities = Array.isArray(parsed)
+            ? parsed.filter((a) => a && a !== "null" && a !== "undefined")
+            : [];
+        } catch {
+          parsedAmenities = cleanStr
+            .replace(/^\{|\}$/g, "")
+            .replace(/["']/g, "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s && s !== "null" && s !== "undefined");
+        }
       }
     } else {
-      parsedAmenities = ["Máy lạnh", "TV", "Wifi", "Bình nóng lạnh"];
+      parsedAmenities = [];
     }
 
     setEditingRoom(room);
@@ -378,7 +438,7 @@ export default function RoomManagementPage() {
       standard_children: room.standard_children ?? 1,
       max_adults: room.max_adults || room.capacity || 1,
       max_children: room.max_children ?? 1,
-      amenities: parsedAmenities, // Đảm bảo luôn là mảng
+      amenities: parsedAmenities,
       images:
         room.thumbnail || room.image ? [room.thumbnail || room.image] : [],
     });
@@ -586,7 +646,7 @@ export default function RoomManagementPage() {
         room_area: Number(formData.room_area || 28),
         description: formData.description || "",
         image: selectedImg,
-        amenities: formData.amenities,
+        amenities: Array.isArray(formData.amenities) ? formData.amenities : [],
       };
 
       if (editingRoom) {
@@ -607,6 +667,7 @@ export default function RoomManagementPage() {
           ...initialFormState,
           hotel_id: targetHotelId,
           code: "",
+          amenities: [],
           images: [],
         });
         setEditingRoom(null);
@@ -1225,7 +1286,7 @@ export default function RoomManagementPage() {
                     : "hover:text-slate-800"
                 }`}
               >
-                Mô tả chi tiết
+                Mô tả chi tiết & Tiện nghi
                 {modalTab === "description" && (
                   <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2e7d32]" />
                 )}
@@ -1582,24 +1643,6 @@ export default function RoomManagementPage() {
 
               {modalTab === "description" && (
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-slate-700 font-medium mb-1">
-                      Mô tả hạng phòng
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={formData.description}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          description: e.target.value,
-                        })
-                      }
-                      placeholder="Nhập mô tả chi tiết..."
-                      className="w-full p-2 border border-slate-300 rounded outline-none focus:border-[#2e7d32]"
-                    />
-                  </div>
-
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-slate-700 font-medium mb-1">
@@ -1631,11 +1674,70 @@ export default function RoomManagementPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block font-bold mb-1.5 text-slate-800 flex items-center gap-1">
-                      <Sparkles size={13} className="text-amber-500" /> Tiện
-                      nghi hạng phòng:
-                    </label>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-slate-800 flex items-center gap-1">
+                        <Sparkles size={13} className="text-amber-500" /> Tiện
+                        nghi hạng phòng:
+                      </label>
+
+                      {/* 👉 NÚT BẤM XÓA HẾT MỌI TIỆN NGHI */}
+                      {Array.isArray(formData.amenities) &&
+                        formData.amenities.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                amenities: [],
+                              }))
+                            }
+                            className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded cursor-pointer transition flex items-center gap-1"
+                          >
+                            <Trash2 size={12} />
+                            <span>
+                              Xóa tất cả ({formData.amenities.length})
+                            </span>
+                          </button>
+                        )}
+                    </div>
+
+                    {/* HIỂN THỊ CÁC TIỆN NGHI ĐANG ĐƯỢC CHỌN (KÈM NÚT XÓA TRỰC TIẾP) */}
+                    {Array.isArray(formData.amenities) &&
+                      formData.amenities.length > 0 && (
+                        <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-md">
+                          <span className="text-[10px] font-bold text-emerald-800 block mb-1 uppercase tracking-wider">
+                            Đang chọn ({formData.amenities.length}):
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {formData.amenities.map((item, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-md"
+                              >
+                                <span>{item}</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      amenities: prev.amenities.filter(
+                                        (_, i) => i !== idx,
+                                      ),
+                                    }))
+                                  }
+                                  className="text-emerald-700 hover:text-rose-700 cursor-pointer ml-0.5"
+                                  title="Xóa tiện nghi này"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    {/* DANH SÁCH TẤT CẢ TIỆN NGHI: TÍCH CÁI NÀO CHỈ SÁNG CÁI ĐÓ */}
                     <div className="grid grid-cols-2 gap-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200 max-h-40 overflow-y-auto">
                       {ROOM_AMENITIES_LIST.map((item) => {
                         const currentAmenities = Array.isArray(
@@ -1643,9 +1745,12 @@ export default function RoomManagementPage() {
                         )
                           ? formData.amenities
                           : [];
-                        const isChecked =
-                          currentAmenities.includes(item.id) ||
-                          currentAmenities.includes(item.label);
+
+                        // So khớp CHÍNH XÁC mục tiêu
+                        const isChecked = currentAmenities.some((a) =>
+                          isSameAmenity(a, item),
+                        );
+
                         return (
                           <button
                             key={item.id}
@@ -1655,15 +1760,14 @@ export default function RoomManagementPage() {
                                 const list = Array.isArray(prev.amenities)
                                   ? prev.amenities
                                   : [];
-                                const checked =
-                                  list.includes(item.id) ||
-                                  list.includes(item.label);
+                                const checked = list.some((a) =>
+                                  isSameAmenity(a, item),
+                                );
                                 return {
                                   ...prev,
                                   amenities: checked
                                     ? list.filter(
-                                        (a) =>
-                                          a !== item.id && a !== item.label,
+                                        (a) => !isSameAmenity(a, item),
                                       )
                                     : [...list, item.label],
                                 };

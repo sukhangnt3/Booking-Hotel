@@ -6,3 +6,4 @@ export { default as HotelFilter } from "./HotelFilter";
 export { default as HotelGallery } from "./HotelGallery";
 export { default as HotelInfo } from "./HotelInfo";
 export { default as AmenityList } from "./AmenityList";
+export { default as NewestHotelsSlider } from "./NewestHotelsSlider";

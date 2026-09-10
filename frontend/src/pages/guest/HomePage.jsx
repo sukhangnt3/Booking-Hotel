@@ -85,6 +85,10 @@ export default function HomePage() {
   const [favoriteHotelIds, setFavoriteHotelIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
+  // State vị trí trượt Carousel (chỉ hiển thị 4 cái)
+  const [newestIndex, setNewestIndex] = useState(0);
+  const VISIBLE_COUNT = 4;
+
   const today = startOfToday();
   const [destination, setDestination] = useState("");
   const [isDestDropdownOpen, setIsDestDropdownOpen] = useState(false);
@@ -142,7 +146,14 @@ export default function HomePage() {
           };
         });
 
-        // Điểm đến thịnh hành tính toán từ CSDL
+        // SẮP XẾP MỚI NHẤT LÊN ĐẦU
+        formattedHotels.sort((a, b) => {
+          const dateA = new Date(a.created_at || a.createdAt || 0).getTime();
+          const dateB = new Date(b.created_at || b.createdAt || 0).getTime();
+          if (dateB !== dateA) return dateB - dateA;
+          return (Number(b.id) || 0) - (Number(a.id) || 0);
+        });
+
         const cityStatsMap = new Map();
         formattedHotels.forEach((h) => {
           const cityName = h.city || "Hồ Chí Minh";
@@ -233,6 +244,16 @@ export default function HomePage() {
     checkInDate && checkOutDate
       ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
       : 1;
+
+  const maxNewestIndex = Math.max(0, uniqueStays.length - VISIBLE_COUNT);
+
+  const handlePrevNewest = () => {
+    setNewestIndex((prev) => Math.max(0, prev - 1));
+  };
+
+  const handleNextNewest = () => {
+    setNewestIndex((prev) => Math.min(maxNewestIndex, prev + 1));
+  };
 
   const renderMonthCalendar = (monthDate) => {
     const start = startOfMonth(monthDate);
@@ -719,7 +740,7 @@ export default function HomePage() {
       )}
 
       {/* SECTION 2: CHỖ NGHỈ NỔI BẬT & MỚI NHẤT */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 select-none">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -732,6 +753,39 @@ export default function HomePage() {
               Các cơ sở lưu trú thực tế đang mở bán trên hệ thống GoStay
             </p>
           </div>
+
+          {/* NÚT MŨI TÊN ĐIỀU HƯỚNG TRƯỢT */}
+          {uniqueStays.length > VISIBLE_COUNT && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handlePrevNewest}
+                disabled={newestIndex === 0}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all ${
+                  newestIndex === 0
+                    ? "border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50"
+                    : "border-gray-300 text-gray-700 hover:bg-[#003580] hover:text-white hover:border-[#003580] shadow-sm active:scale-95 cursor-pointer"
+                }`}
+                title="Xem khách sạn trước"
+              >
+                <ChevronLeft size={20} />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNextNewest}
+                disabled={newestIndex >= maxNewestIndex}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all ${
+                  newestIndex >= maxNewestIndex
+                    ? "border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50"
+                    : "border-gray-300 text-gray-700 hover:bg-[#003580] hover:text-white hover:border-[#003580] shadow-sm active:scale-95 cursor-pointer"
+                }`}
+                title="Xem thêm khách sạn tiếp theo"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -744,29 +798,40 @@ export default function HomePage() {
             ))}
           </div>
         ) : uniqueStays.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {uniqueStays.map((stay) => {
-              const stayId = String(stay.id);
-              const isSavedInDb = favoriteHotelIds.has(stayId);
+          <div className="overflow-hidden py-2 -my-2">
+            <div
+              className="flex flex-nowrap transition-transform duration-500 ease-out -mx-3"
+              style={{
+                transform: `translateX(-${newestIndex * 25}%)`,
+              }}
+            >
+              {uniqueStays.map((stay) => {
+                const stayId = String(stay.id);
+                const isSavedInDb = favoriteHotelIds.has(stayId);
 
-              return (
-                <HotelCard
-                  key={stayId}
-                  id={stayId}
-                  hotel={stay}
-                  image={stay.image}
-                  type={stay.type || "Khách sạn"}
-                  title={stay.title || stay.name}
-                  location={stay.location || stay.address}
-                  rating={stay.rating || 9.0}
-                  reviewsCount={stay.review_count || 0}
-                  salePrice={stay.salePrice || stay.min_price || 650000}
-                  stars={stay.star_rating || 3}
-                  isFavoriteInitial={isSavedInDb}
-                  onClick={() => navigate(`/hotel/${stayId}`)}
-                />
-              );
-            })}
+                return (
+                  <div
+                    key={stayId}
+                    className="w-full sm:w-1/2 lg:w-1/4 shrink-0 px-3"
+                  >
+                    <HotelCard
+                      id={stayId}
+                      hotel={stay}
+                      image={stay.image}
+                      type={stay.type || "Khách sạn"}
+                      title={stay.title || stay.name}
+                      location={stay.location || stay.address}
+                      rating={stay.rating || 9.0}
+                      reviewsCount={stay.review_count || 0}
+                      salePrice={stay.salePrice || stay.min_price || 650000}
+                      stars={stay.star_rating || 3}
+                      isFavoriteInitial={isSavedInDb}
+                      onClick={() => navigate(`/hotel/${stayId}`)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="bg-white p-12 text-center rounded-3xl border border-slate-200 text-slate-400">
