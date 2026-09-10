@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const pool = require("../config/database");
 const { formatRoom } = require("../utils/formatters");
 
-// ─── 1. LẤY DANH SÁCH HẠNG PHÒNG THEO KHÁCH SẠN (TỰ ĐỘNG ĐẾM ĐÚNG SL PHÒNG) ───
+// ─── 1. LẤY DANH SÁCH HẠNG PHÒNG THEO KHÁCH SẠN ───
 async function listRooms(req, res, next) {
   try {
     const hotelId = req.query.hotel_id || req.params.hotelId || req.params.id;
@@ -18,6 +18,8 @@ async function listRooms(req, res, next) {
          r.hotel_id,
          r.name,
          r.capacity,
+         r.code,
+         r.hourly_tiers, -- 🌟 LẤY BẬC THANG
          r.base_price,
          COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
          COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
@@ -27,7 +29,6 @@ async function listRooms(req, res, next) {
          r.type,
          r.bed_type,
          r.room_area,
-         -- Tự động đếm số lượng phòng vật lý thực tế từ bảng room_unit
          COALESCE(
            NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
            r.amount,
@@ -56,6 +57,7 @@ async function listRooms(req, res, next) {
       return {
         ...row,
         ...formatted,
+        hourly_tiers: row.hourly_tiers || [],
         amount: Number(row.amount || 1),
         hourly_price: Number(
           row.hourly_price || Math.round(row.base_price * 0.25),
@@ -83,8 +85,10 @@ async function getRoomById(req, res, next) {
       `SELECT
          r.id,
          r.hotel_id,
+         r.code,
          r.name,
          r.capacity,
+         r.hourly_tiers,
          r.base_price,
          COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
          COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
@@ -125,6 +129,7 @@ async function getRoomById(req, res, next) {
     const finalRoom = {
       ...room,
       ...formatted,
+      hourly_tiers: room.hourly_tiers || [],
       amount: Number(room.amount || 1),
       hourly_price: Number(
         room.hourly_price || Math.round(room.base_price * 0.25),
@@ -142,16 +147,18 @@ async function getRoomById(req, res, next) {
   }
 }
 
-// ─── 3. TẠO HẠNG PHÒNG MỚI ───
+// ─── 3. TẠO HẠNG PHÒNG MỚI (TỰ ĐỘNG SINH MÃ P001, P002...) ───
 async function createRoom(req, res, next) {
   const client = await pool.connect();
   try {
     const {
       hotel_id,
+      code,
       name,
       capacity,
       base_price,
       hourly_price,
+      hourly_tiers = [], // 🌟 NHẬN BẬC THANG NẾU CÓ
       overnight_price,
       early_checkin_fee,
       late_checkout_fee,
@@ -172,35 +179,46 @@ async function createRoom(req, res, next) {
 
     await client.query("BEGIN");
 
+    // 1. Tự động sinh mã phòng P001, P002...
+    let finalCode = code ? String(code).trim() : "";
+    if (!finalCode) {
+      const countRes = await client.query(
+        `SELECT COUNT(*)::int AS total FROM public.room WHERE hotel_id = $1`,
+        [hotel_id],
+      );
+      const nextNumber = (countRes.rows[0]?.total || 0) + 1;
+      finalCode = `P${String(nextNumber).padStart(3, "0")}`;
+    }
+
     const newRoomId = crypto.randomUUID();
     const parsedBasePrice = Number(base_price);
-
     const parsedHourlyPrice =
       Number(hourly_price) > 0
         ? Number(hourly_price)
         : Math.round(parsedBasePrice * 0.25);
-
     const parsedOvernightPrice =
       Number(overnight_price) > 0 ? Number(overnight_price) : parsedBasePrice;
-
     const parsedEarlyFee = Number(early_checkin_fee || 0);
     const parsedLateFee = Number(late_checkout_fee || 0);
 
+    // 2. Lưu vào Database (có lưu cả code và hourly_tiers)
     const result = await client.query(
       `INSERT INTO public.room (
-         id, hotel_id, name, capacity, base_price, hourly_price, overnight_price,
+         id, hotel_id, code, name, capacity, base_price, hourly_price, hourly_tiers, overnight_price,
          early_checkin_fee, late_checkout_fee, amount, type, bed_type, room_area,
          description, is_active, created_at, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true, NOW(), NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, true, NOW(), NOW())
        RETURNING *`,
       [
         newRoomId,
         hotel_id,
+        finalCode,
         name.trim(),
         Number(capacity || 2),
         parsedBasePrice,
         parsedHourlyPrice,
+        JSON.stringify(hourly_tiers || []), // 🌟 LƯU BẬC THANG VÀO DB
         parsedOvernightPrice,
         parsedEarlyFee,
         parsedLateFee,
@@ -282,7 +300,7 @@ async function createRoom(req, res, next) {
   }
 }
 
-// ─── 4. CẬP NHẬT HẠNG PHÒNG ───
+// ─── 4. CẬP NHẬT HẠNG PHÒNG (ĐÃ THÊM LƯU hourly_tiers VÀO DATABASE) ───
 async function updateRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -291,7 +309,9 @@ async function updateRoom(req, res, next) {
       name,
       capacity,
       base_price,
+      code,
       hourly_price,
+      hourly_tiers, // 🌟 NHẬN CÁC NẤC BẬC THANG TỪ FRONTEND
       overnight_price,
       early_checkin_fee,
       late_checkout_fee,
@@ -358,24 +378,28 @@ async function updateRoom(req, res, next) {
         ? Number(late_checkout_fee)
         : currentRoom.late_checkout_fee;
 
+    // 🌟 ĐÃ THÊM CẬP NHẬT hourly_tiers VÀO CÂU LỆNH UPDATE
     const result = await client.query(
       `UPDATE public.room
-       SET name = COALESCE($1, name),
-           capacity = COALESCE($2, capacity),
-           base_price = $3,
-           hourly_price = $4,
-           overnight_price = $5,
-           early_checkin_fee = $6,
-           late_checkout_fee = $7,
-           amount = COALESCE($8, amount),
-           type = COALESCE($9, type),
-           bed_type = COALESCE($10, bed_type),
-           room_area = COALESCE($11, room_area),
-           description = COALESCE($12, description),
+       SET code = COALESCE($1, code),
+           name = COALESCE($2, name),
+           capacity = COALESCE($3, capacity),
+           base_price = $4,
+           hourly_price = $5,
+           overnight_price = $6,
+           early_checkin_fee = $7,
+           late_checkout_fee = $8,
+           amount = COALESCE($9, amount),
+           type = COALESCE($10, type),
+           bed_type = COALESCE($11, bed_type),
+           room_area = COALESCE($12, room_area),
+           description = COALESCE($13, description),
+           hourly_tiers = COALESCE($14::jsonb, hourly_tiers), -- 🌟 LƯU BẬC THANG
            updated_at = NOW()
-       WHERE id::text = $13
+       WHERE id::text = $15
        RETURNING *`,
       [
+        code ? code.trim() : null,
         name,
         capacity ? Number(capacity) : null,
         finalBasePrice,
@@ -388,6 +412,7 @@ async function updateRoom(req, res, next) {
         bed_type,
         room_area ? Number(room_area) : null,
         description,
+        hourly_tiers ? JSON.stringify(hourly_tiers) : null, // 🌟 TRUYỀN MẢNG JSON
         id,
       ],
     );
@@ -821,7 +846,6 @@ async function upsertRoomUnit(req, res, next) {
       savedUnit = insertRes.rows[0];
     }
 
-    // Tự động cập nhật lại tổng số lượng phòng (amount) vào bảng room
     await pool.query(
       `UPDATE public.room 
        SET amount = (SELECT COUNT(id) FROM public.room_unit WHERE room_id = $1),
@@ -841,7 +865,7 @@ async function upsertRoomUnit(req, res, next) {
   }
 }
 
-// ─── 14. XÓA PHÒNG VẬT LÝ KHỎI DATABASE (GIẢM LẠI AMOUNT) ───
+// ─── 14. XÓA PHÒNG VẬT LÝ KHỎI DATABASE ───
 async function deleteRoomUnit(req, res, next) {
   try {
     const { id } = req.params;

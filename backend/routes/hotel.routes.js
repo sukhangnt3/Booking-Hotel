@@ -13,6 +13,7 @@ const {
   listTrendingDestinations,
   listDiscoverVietnam,
   listUniqueStays,
+  updateHotel,
 } = require("../controllers/hotel.controller");
 
 const {
@@ -28,7 +29,7 @@ const router = express.Router();
 // ─── 1. ROUTE ĐỐI TÁC (OWNER) ───
 router.post("/register", requireAuth, registerHotel);
 router.get("/my-hotels", requireAuth, getMyHotels);
-
+router.put("/:id", requireAuth, updateHotel);
 // ─── 2. DANH SÁCH & TÌM KIẾM CÔNG KHAI ───
 router.get("/", listHotels);
 router.get("/property-types", listPropertyTypes);
