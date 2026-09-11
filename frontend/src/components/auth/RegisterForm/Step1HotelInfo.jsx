@@ -11,6 +11,7 @@ import {
   Phone,
   User,
   CheckCircle2,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -20,6 +21,16 @@ export const Step1HotelInfo = ({
   errors = {},
 }) => {
   const { user, isAuthenticated } = useAuthStore();
+
+  // Kiểm tra tài khoản đã đăng ký (từ AuthStore hoặc từ cờ đã lưu trong data của form)
+  const isAccountReady =
+    isAuthenticated ||
+    Boolean(data?.isAccountCreated) ||
+    Boolean(data?.ownerId) ||
+    Boolean(data?.userId);
+
+  const displayOwnerName = user?.full_name || data?.ownerName || "Chủ cơ sở";
+  const displayEmail = user?.email || data?.emailContact || "";
 
   return (
     <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
@@ -38,8 +49,33 @@ export const Step1HotelInfo = ({
         </p>
       </div>
 
-      {/* ── KHỐI 1: TẠO TÀI KHOẢN ĐỐI TÁC (NẰM NGAY TẠI BƯỚC 1) ── */}
-      {!isAuthenticated ? (
+      {/* ── KHỐI 1: TÀI KHOẢN ĐỐI TÁC ── */}
+      {isAccountReady ? (
+        /* TRƯỜNG HỢP 1: ĐÃ ĐĂNG NHẬP HOẶC VỪA TẠO THÀNH CÔNG (KHI QUAY LẠI SẼ HIỂN THỊ CÁI NÀY) */
+        <div className="p-4 sm:p-5 bg-emerald-50/70 border border-emerald-300 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <CheckCircle2 size={22} />
+            </div>
+            <div>
+              <span className="text-[11px] font-extrabold text-emerald-800 uppercase tracking-wider block">
+                ✓ Tài khoản đối tác đã thiết lập
+              </span>
+              <span className="text-sm font-black text-slate-900 block">
+                {displayOwnerName} {displayEmail && `(${displayEmail})`}
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Tài khoản đã sẵn sàng. Bạn không cần nhập lại mật khẩu khi quay
+                lại bước này.
+              </p>
+            </div>
+          </div>
+          <span className="hidden sm:flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-100/80 px-3 py-1.5 rounded-xl border border-emerald-200 shrink-0">
+            <ShieldCheck size={14} /> Đã kích hoạt
+          </span>
+        </div>
+      ) : (
+        /* TRƯỜNG HỢP 2: CHƯA CÓ TÀI KHOẢN -> HIỂN THỊ FORM ĐĂNG KÝ */
         <div className="p-5 sm:p-7 bg-[#e8f2ff]/50 border border-blue-200 rounded-2xl space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-black text-[#003580] uppercase tracking-wider flex items-center gap-2">
@@ -169,26 +205,6 @@ export const Step1HotelInfo = ({
             </div>
           </div>
         </div>
-      ) : (
-        /* NẾU ĐÃ ĐĂNG NHẬP SẴN */
-        <div className="p-4 sm:p-5 bg-emerald-50/60 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
-              <CheckCircle2 size={20} />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
-                Đang đăng ký bằng tài khoản
-              </span>
-              <span className="text-sm font-black text-slate-900">
-                {user?.full_name || "Chủ cơ sở"} ({user?.email})
-              </span>
-            </div>
-          </div>
-          <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-lg">
-            Đã đăng nhập
-          </span>
-        </div>
       )}
 
       {/* ── KHỐI 2: TÊN CHỖ NGHỈ & LOẠI HÌNH ── */}
@@ -249,7 +265,7 @@ export const Step1HotelInfo = ({
         </div>
       </div>
 
-      {/* ── KHỐI 3: ĐỊA CHỈ (KHỚP 100% ẢNH MẪU BOOKING.COM) ── */}
+      {/* ── KHỐI 3: ĐỊA CHỈ ── */}
       <div className="p-5 sm:p-7 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-4 shadow-xs">
         <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
           <MapPin size={16} className="text-[#006ce4]" /> 3. Chỗ nghỉ tọa lạc ở

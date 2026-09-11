@@ -30,6 +30,8 @@ import apiClient from "@/services/apiClient";
 
 const initialFormData = {
   // 1. Tài khoản đối tác & Vị trí (Bước 1)
+  isAccountCreated: false,
+  ownerId: null,
   ownerName: "",
   phoneContact: "",
   emailContact: "",
@@ -150,6 +152,8 @@ export const RegisterForm = () => {
     if (user && user.email) {
       setFormData((prev) => ({
         ...prev,
+        isAccountCreated: true,
+        ownerId: user.id || prev.ownerId,
         ownerName: user.full_name || prev.ownerName,
         emailContact: user.email,
         phoneContact: user.phone || prev.phoneContact,
@@ -173,8 +177,18 @@ export const RegisterForm = () => {
     const err = {};
 
     if (currentStep === 1) {
-      // 1. Nếu chưa có phiên đăng nhập, kiểm tra thông tin tài khoản
-      if (!isAuthenticated && !localStorage.getItem("token")) {
+      const existingToken =
+        localStorage.getItem("token") || localStorage.getItem("access_token");
+      const isAlreadyReady =
+        isAuthenticated ||
+        formData.isAccountCreated ||
+        Boolean(formData.ownerId) ||
+        (existingToken &&
+          existingToken !== "undefined" &&
+          existingToken !== "null");
+
+      // Chỉ kiểm tra thông tin tài khoản nếu CHƯA có tài khoản
+      if (!isAlreadyReady) {
         if (!formData.ownerName?.trim()) {
           err.ownerName = "Vui lòng nhập họ và tên chủ cơ sở!";
         }
@@ -189,7 +203,7 @@ export const RegisterForm = () => {
         }
       }
 
-      // 2. Kiểm tra thông tin chỗ nghỉ
+      // Kiểm tra thông tin chỗ nghỉ
       if (!formData.hotelName?.trim()) {
         err.hotelName = "Vui lòng nhập tên cơ sở lưu trú!";
       }
@@ -259,22 +273,33 @@ export const RegisterForm = () => {
   };
 
   // ════════════════════════════════════════════════════════════════════════════
-  // 👉 NÚT TIẾP THEO: XỬ LÝ ĐĂNG KÝ HOẶC TỰ ĐỘNG ĐĂNG NHẬP NẾU TRÙNG TÀI KHOẢN
+  // 👉 NÚT TIẾP THEO: XỬ LÝ ĐĂNG KÝ HOẶC BỎ QUA NẾU ĐÃ TẠO TÀI KHOẢN RỒI
   // ════════════════════════════════════════════════════════════════════════════
   const handleNext = async () => {
     if (!validateCurrentStep()) return;
 
-    // NẾU CHƯA CÓ TOKEN Ở BƯỚC 1 -> THỰC HIỆN ĐĂNG KÝ HOẶC ĐĂNG NHẬP NGAY
     const existingToken =
       localStorage.getItem("token") || localStorage.getItem("access_token");
+    const hasValidToken =
+      existingToken &&
+      existingToken !== "undefined" &&
+      existingToken !== "null";
 
-    if (currentStep === 1 && (!isAuthenticated || !existingToken)) {
+    // Kiểm tra tài khoản đã hoàn tất chưa
+    const isAccountReady =
+      isAuthenticated ||
+      hasValidToken ||
+      formData.isAccountCreated ||
+      Boolean(formData.ownerId);
+
+    // NẾU ĐANG Ở BƯỚC 1 VÀ CHƯA CÓ TÀI KHOẢN -> MỚI GỌI API ĐĂNG KÝ
+    if (currentStep === 1 && !isAccountReady) {
       setLoading(true);
-      const email = formData.emailContact.trim().toLowerCase();
+      const email = (formData.emailContact || "").trim().toLowerCase();
       const password = formData.password;
 
       try {
-        // 1. Thử gọi API Đăng ký tài khoản mới
+        // 1. Thử gọi API tạo tài khoản mới
         const regRes = await apiClient.post("/auth/register", {
           full_name: formData.ownerName.trim(),
           name: formData.ownerName.trim(),
@@ -284,10 +309,34 @@ export const RegisterForm = () => {
           role: "HOTEL_OWNER",
         });
 
-        const token =
+        let token =
           regRes.data?.token || regRes.data?.data?.token || regRes.token;
-        const createdUser =
+        let createdUser =
           regRes.data?.user || regRes.data?.data?.user || regRes.user;
+
+        // Nếu Backend không trả về token trong response register, tự động gọi login để lấy token
+        if (!token) {
+          try {
+            const loginRes = await apiClient.post("/auth/login", {
+              email: email,
+              password: password,
+            });
+            token =
+              loginRes.data?.token ||
+              loginRes.data?.data?.token ||
+              loginRes.token;
+            createdUser =
+              loginRes.data?.user ||
+              loginRes.data?.data?.user ||
+              loginRes.user ||
+              createdUser;
+          } catch (autoLoginErr) {
+            console.warn(
+              "Không thể tự động đăng nhập sau đăng ký:",
+              autoLoginErr,
+            );
+          }
+        }
 
         if (token) {
           localStorage.setItem("token", token);
@@ -295,22 +344,37 @@ export const RegisterForm = () => {
           if (setAuth) setAuth(token, createdUser);
         }
 
-        // Tạo mới thành công -> Cho qua bước 2
+        // 🌟 LƯU CỜ ĐÃ TẠO TÀI KHOẢN: Khi quay lại bước 1 sẽ không bị gọi lại đăng ký nữa
+        setFormData((prev) => ({
+          ...prev,
+          isAccountCreated: true,
+          ownerId: createdUser?.id || prev.ownerId,
+        }));
+
         setCurrentStep(2);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
-        const errorMsg = err.response?.data?.message || err.message || "";
+        const errorMsg =
+          err.response?.data?.message ||
+          err.response?.data?.error ||
+          err.message ||
+          "";
+        const lowerMsg = errorMsg.toLowerCase();
 
-        // 👉 NẾU TRÙNG TÀI KHOẢN (EMAIL ĐÃ TỒN TẠI): TỰ ĐỘNG CHUYỂN SANG ĐĂNG NHẬP LUÔN!
-        if (
-          errorMsg.toLowerCase().includes("tồn tại") ||
-          errorMsg.toLowerCase().includes("already") ||
-          errorMsg.toLowerCase().includes("duplicate") ||
+        // Kiểm tra xem lỗi có phải do email đã tồn tại / đã được sử dụng hay không
+        const isEmailDuplicate =
+          lowerMsg.includes("sử dụng") ||
+          lowerMsg.includes("tồn tại") ||
+          lowerMsg.includes("already") ||
+          lowerMsg.includes("duplicate") ||
+          lowerMsg.includes("đăng ký") ||
           err.response?.status === 409 ||
-          err.response?.status === 400
-        ) {
+          err.response?.status === 400 ||
+          err.response?.status === 422;
+
+        if (isEmailDuplicate) {
           try {
-            // Tự động gọi API đăng nhập bằng email & password người dùng vừa gõ
+            // Tự động đăng nhập bằng email & password đã điền
             const loginRes = await apiClient.post("/auth/login", {
               email: email,
               password: password,
@@ -328,17 +392,22 @@ export const RegisterForm = () => {
               localStorage.setItem("access_token", loginToken);
               if (setAuth) setAuth(loginToken, loginUser);
 
-              // Đăng nhập thành công với tài khoản đã có -> Qua bước 2 ngon lành!
+              setFormData((prev) => ({
+                ...prev,
+                isAccountCreated: true,
+                ownerId: loginUser?.id || prev.ownerId,
+                ownerName: loginUser?.full_name || prev.ownerName,
+              }));
+
               setCurrentStep(2);
               window.scrollTo({ top: 0, behavior: "smooth" });
               return;
             }
           } catch (loginErr) {
-            // Trường hợp tài khoản đã có sẵn nhưng người dùng gõ sai mật khẩu của họ
             setErrors((prev) => ({
               ...prev,
               password:
-                "Email này đã có tài khoản trên hệ thống. Vui lòng nhập đúng mật khẩu đã đăng ký để tiếp tục!",
+                "Email này đã có tài khoản trên hệ thống. Vui lòng nhập đúng mật khẩu để tiếp tục!",
             }));
             return;
           }
@@ -350,7 +419,7 @@ export const RegisterForm = () => {
         setLoading(false);
       }
     } else {
-      // Đã có tài khoản & đã đăng nhập -> Chuyển bước tiếp theo bình thường
+      // 🌟 ĐÃ CÓ TÀI KHOẢN (hoặc vừa quay lại từ Bước 2): BỎ QUA GỌI API ĐĂNG KÝ, CHUYỂN TIẾP NGAY
       setCurrentStep((prev) => Math.min(prev + 1, 8));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -518,7 +587,6 @@ export const RegisterForm = () => {
         images: allImages,
       };
 
-      // GỬI KÈM TOKEN TRỰC TIẾP QUA HEADER ĐỂ CHỐNG LỖI 401
       const res = await apiClient.post("/hotels/register", payload, {
         headers: {
           Authorization: `Bearer ${token}`,
