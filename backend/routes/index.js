@@ -1,25 +1,32 @@
 // backend/routes/index.js
+
 const express = require("express");
 const router = express.Router();
+
 const reviewController = require("../controllers/review.controller");
 const { requireAuth } = require("../middleware/auth.middleware");
 
-// Thay hàm safeUse cũ bằng hàm này để hiện rõ nguyên nhân:
+/* ============================================================
+   LOAD ROUTE HELPER
+   ============================================================ */
+
 const safeUse = (mountPath, relativePath) => {
   try {
     const routeModule = require(relativePath);
+
     router.use(mountPath, routeModule);
-    console.log(`✓ Đã nạp thành công route [${mountPath}] từ ${relativePath}`);
+
+    console.log(`✓ Route [${mountPath}] loaded from ${relativePath}`);
   } catch (err) {
-    console.error(
-      `❌ KHÔNG THỂ nạp route [${mountPath}] từ [${relativePath}]. LỖI THẬT:`,
-      err.message,
-    );
+    console.error(`❌ Route [${mountPath}] FAILED:`, err);
   }
 };
 
-// ─── NẠP CÁC ROUTER HỆ THỐNG ───
-safeUse("/users", "./user.routes"); // 👈 ĐÃ BỔ SUNG ĐỂ SỬA HỒ SƠ & FAVORITES LƯU VÀO DATABASE
+/* ============================================================
+   SYSTEM ROUTES
+   ============================================================ */
+
+safeUse("/users", "./user.routes");
 safeUse("/auth", "./auth.routes");
 safeUse("/hotels", "./hotel.routes");
 safeUse("/rooms", "./room.routes");
@@ -30,26 +37,38 @@ safeUse("/favorites", "./favorite.routes");
 safeUse("/reviews", "./review.routes");
 safeUse("/chatbot", "./chatbot.routes");
 
-// 👉 NẠP ROUTE ADMIN
+/* ============================================================
+   ADMIN ROUTES
+   ============================================================ */
+
 try {
   const adminRoutes = require("./admin.routes");
+
   router.use("/admin", adminRoutes);
-  console.log("✓ Đã nạp thành công route [/admin] từ ./admin.routes");
-} catch (e1) {
+
+  console.log("✓ Route [/admin] loaded from ./admin.routes");
+} catch (error1) {
   try {
     const adminRoutesAlt = require("../admin/admin.routes");
+
     router.use("/admin", adminRoutesAlt);
-    console.log("✓ Đã nạp thành công route [/admin] từ ../admin/admin.routes");
-  } catch (e2) {
-    console.error("❌ Không tìm thấy file admin.routes:", e1.message);
+
+    console.log("✓ Route [/admin] loaded from ../admin/admin.routes");
+  } catch (error2) {
+    console.error("❌ Cannot load admin.routes:", error1.message);
   }
 }
 
-// ─── REVIEW ROUTES TOÀN HỆ THỐNG ───
+/* ============================================================
+   REVIEW ROUTES
+   ============================================================ */
+
 if (typeof reviewController?.listHotelReviews === "function") {
   router.get("/hotels/:id/reviews", reviewController.listHotelReviews);
+
   router.get("/hotels/:hotelId/reviews", reviewController.listHotelReviews);
 }
+
 if (
   typeof reviewController?.checkCanReview === "function" &&
   typeof requireAuth === "function"
@@ -59,12 +78,14 @@ if (
     requireAuth,
     reviewController.checkCanReview,
   );
+
   router.get(
     "/hotels/:hotelId/can-review",
     requireAuth,
     reviewController.checkCanReview,
   );
 }
+
 if (
   typeof reviewController?.createReview === "function" &&
   typeof requireAuth === "function"
@@ -74,6 +95,7 @@ if (
     requireAuth,
     reviewController.createReview,
   );
+
   router.post(
     "/hotels/:hotelId/reviews",
     requireAuth,
@@ -81,8 +103,19 @@ if (
   );
 }
 
+/* ============================================================
+   HEALTH CHECK
+   ============================================================ */
+
 router.get("/health", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+  });
 });
+
+/* ============================================================
+   EXPORT
+   ============================================================ */
 
 module.exports = router;
