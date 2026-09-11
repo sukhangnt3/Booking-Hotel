@@ -104,38 +104,6 @@ export const Step4PricingAndPayout = ({
         </p>
       </div>
 
-      {/* CHƯƠNG TRÌNH KHỞI ĐỘNG */}
-      <div className="p-4 sm:p-5 rounded-2xl border border-blue-200 bg-[#e8f2ff]/60 flex items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-black text-[#003580]">
-              Khuyến mại khởi động (Giảm 20% cho 3 đơn đầu)
-            </h3>
-            <span className="text-[10px] font-black uppercase bg-[#006ce4] text-white px-2 py-0.5 rounded-full">
-              Khuyên dùng
-            </span>
-          </div>
-          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-            Giúp cơ sở của bạn có ngay những đánh giá đầu tiên từ khách hàng,
-            tăng 1.7 lần lượt đặt phòng trong tháng đầu.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleTogglePromo}
-          className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 shrink-0 ${
-            enableFirstBookingDiscount ? "bg-[#006ce4]" : "bg-slate-300"
-          }`}
-        >
-          <div
-            className={`bg-white w-4 h-4 rounded-full shadow transform transition-transform duration-300 ${
-              enableFirstBookingDiscount ? "translate-x-6" : "translate-x-0"
-            }`}
-          />
-        </button>
-      </div>
-
       {/* CÁC PHƯƠNG THỨC NHẬN TIỀN */}
       <div className="space-y-3">
         <div
@@ -157,7 +125,7 @@ export const Step4PricingAndPayout = ({
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black text-slate-900">
-                  Chuyển khoản ngân hàng trực tiếp (Napas 24/7 / VietQR)
+                  Chuyển khoản ngân hàng trực tiếp (VietQR)
                 </span>
                 <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
                   Tự động & Phổ biến nhất
@@ -239,18 +207,6 @@ export const Step4PricingAndPayout = ({
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleVerifyBank}
-                  disabled={isVerifyingBank}
-                  className="w-full sm:w-auto px-4 h-10 bg-[#003580] hover:bg-blue-900 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-50"
-                >
-                  <QrCode size={14} />
-                  {isVerifyingBank
-                    ? "Đang xác thực..."
-                    : "Kiểm tra VietQR / Napas"}
-                </button>
-
                 {bankVerifyResult && (
                   <div
                     className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-1 w-full ${
@@ -298,8 +254,7 @@ export const Step4PricingAndPayout = ({
               <div className="flex items-center gap-2">
                 <Banknote size={16} className="text-amber-600" />
                 <span className="text-xs font-black text-slate-900">
-                  Khách thanh toán trực tiếp tại khách sạn (Tiền mặt / Quẹt thẻ
-                  quầy)
+                  Khách thanh toán trực tiếp tại khách sạn (Tiền mặt)
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
