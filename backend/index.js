@@ -50,7 +50,7 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 app.use("/uploads", express.static(path.resolve("uploads")));
 app.use("/uploads", express.static(path.resolve("backend/uploads")));
 
-// Đo lưu lượng HTTP Requests tự động (bảng 22: request_logs)
+// Đo lưu lượng HTTP Requests tự động (bảng request_logs)
 app.use((req, res, next) => {
   const url = req.originalUrl || req.url || "";
   if (
@@ -115,7 +115,7 @@ async function initDatabaseTables() {
       )
       .catch(() => {});
 
-    // 2. 👉 SỬA LỖI CONSTRAINT: XÓA CHẶN 5 ĐIỂM CŨ VÀ TẠO CHẶN MỚI TỪ 1 ĐẾN 10 ĐIỂM
+    // 2. SỬA LỖI CONSTRAINT: XÓA CHẶN 5 ĐIỂM CŨ VÀ TẠO CHẶN MỚI TỪ 1 ĐẾN 10 ĐIỂM
     await pool
       .query(
         `ALTER TABLE public.review DROP CONSTRAINT IF EXISTS chk_review_point;
@@ -140,24 +140,6 @@ async function initDatabaseTables() {
     await pool
       .query(
         `
-      CREATE TABLE IF NOT EXISTS public.notification (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id UUID NOT NULL,
-          title VARCHAR(255) NOT NULL,
-          content TEXT NOT NULL,
-          type VARCHAR(50) DEFAULT 'system',
-          link VARCHAR(500),
-          read_at TIMESTAMP,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_notification_user_id ON public.notification(user_id);
-    `,
-      )
-      .catch(() => {});
-
-    await pool
-      .query(
-        `
       CREATE TABLE IF NOT EXISTS public.chatbot_log (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID,
@@ -175,7 +157,7 @@ async function initDatabaseTables() {
       "✓ Đồng bộ và bảo vệ cấu trúc Database hoàn tất (Đã mở khóa thang điểm 10).",
     );
   } catch (err) {
-    console.warn("Khởi tạo bảng phụ trợ:", err.message);
+    console.warn("Khởi tạo bảng phụ trợ thất bại:", err.message);
   }
 }
 

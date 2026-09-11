@@ -228,7 +228,6 @@ async function getHotelById(req, res, next) {
 
     const hotelData = hotelRes.rows[0];
 
-    // Lấy tất cả ảnh của khách sạn
     const imagesRes = await pool
       .query(
         `SELECT id, path, is_thumbnail, display_order, room_id 
@@ -239,7 +238,6 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // Lấy tất cả phòng và ảnh riêng của từng phòng
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -451,7 +449,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (LƯU 100% ẢNH KHÁCH SẠN VÀ ẢNH PHÒNG) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -542,7 +540,6 @@ async function registerHotel(req, res, next) {
 
     const newHotel = hotelResult.rows[0];
 
-    // 1. Lưu ảnh đại diện chính của khách sạn
     if (image) {
       await client.query(
         `INSERT INTO public.image (id, hotel_id, path, is_thumbnail, display_order, created_at)
@@ -551,7 +548,6 @@ async function registerHotel(req, res, next) {
       );
     }
 
-    // 2. 👉 LƯU TOÀN BỘ ẢNH PHỤ CỦA KHÁCH SẠN
     const extraHotelImages =
       Array.isArray(images) && images.length > 0
         ? images
@@ -571,7 +567,6 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // 3. 👉 LƯU PHÒNG & ẢNH CỦA TỪNG PHÒNG VÀO BẢNG IMAGE
     if (Array.isArray(rooms) && rooms.length > 0) {
       let roomFloor = 1;
       for (const r of rooms) {
@@ -596,7 +591,6 @@ async function registerHotel(req, res, next) {
           ],
         );
 
-        // Lưu ảnh phòng vào bảng image (gắn room_id)
         const roomImg = r.image || r.image_url || r.thumbnail;
         if (roomImg) {
           await client.query(
@@ -727,19 +721,19 @@ async function registerHotel(req, res, next) {
   }
 }
 
-// ─── 6. LẤY DANH SÁCH KHÁCH SẠN CỦA OWNER ───
+// ─── 6. LẤY DANH SÁCH KHÁCH SẠN CỦA OWNER HOẶC LỄ TÂN ĐƯỢC GÁN ───
 async function getMyHotels(req, res, next) {
   try {
-    const ownerId = req.user?.id || req.auth?.sub || req.auth?.id;
-    if (!ownerId) {
+    const userId = req.user?.id || req.auth?.sub || req.auth?.id;
+    if (!userId) {
       return res
         .status(401)
-        .json({ message: "Chưa xác thực danh tính đối tác." });
+        .json({ message: "Chưa xác thực danh tính người dùng." });
     }
 
     const activeOnly = req.query.active_only === "true";
 
-    // 👉 ĐÃ THÊM SUBQUERY LẤY TIỆN NGHI AMENITIES TỪ BẢNG HOTEL_AMENITY
+    // 🌟 QUAN TRỌNG: Cho phép lấy khách sạn nếu User là OWNER hoặc là LỄ TÂN (hotel_staff)
     let sql = `
       SELECT 
          h.*,
@@ -760,7 +754,7 @@ async function getMyHotels(req, res, next) {
          ) AS room_count,
          COALESCE(
            (
-             SELECT json_agg(a.name)
+             SELECT json_agg(a.name) 
              FROM public.hotel_amenity ha
              JOIN public.amenity a ON a.id = ha.amenity_id
              WHERE ha.hotel_id = h.id
@@ -768,10 +762,13 @@ async function getMyHotels(req, res, next) {
            '[]'::json
          ) AS amenities
        FROM public.hotel h
-       WHERE h.owner_id = $1
+       WHERE (
+         h.owner_id = $1 
+         OR h.id IN (SELECT hs.hotel_id FROM public.hotel_staff hs WHERE hs.user_id = $1)
+       )
     `;
 
-    const params = [ownerId];
+    const params = [userId];
 
     if (activeOnly) {
       sql += ` AND h.status = 'active'::public.hotel_status_enum`;
@@ -825,6 +822,7 @@ async function listTrendingDestinations(req, res, next) {
     return next(error);
   }
 }
+
 // ─── 8. CẬP NHẬT THÔNG TIN KHÁCH SẠN (OWNER / ADMIN) ───
 async function updateHotel(req, res, next) {
   const client = await pool.connect();
@@ -842,7 +840,6 @@ async function updateHotel(req, res, next) {
         .json({ message: "Vui lòng đăng nhập để cập nhật khách sạn." });
     }
 
-    // Kiểm tra khách sạn có tồn tại không
     const checkHotel = await client.query(
       `SELECT id, owner_id FROM public.hotel WHERE id::text = $1 LIMIT 1`,
       [hotelId],
@@ -854,7 +851,6 @@ async function updateHotel(req, res, next) {
         .json({ message: "Không tìm thấy khách sạn trong hệ thống." });
     }
 
-    // 👉 LẤY THÊM 4 CỘT THỜI GIAN MỚI TỪ REQ.BODY
     const {
       name,
       address,
@@ -895,7 +891,6 @@ async function updateHotel(req, res, next) {
       ? String(overnight_checkout_time).slice(0, 5) + ":00"
       : null;
 
-    // 1. Cập nhật bảng hotel (ĐÃ THÊM 4 CỘT MỚI VÀO CÂU UPDATE)
     const updateSql = `
       UPDATE public.hotel
       SET 
@@ -946,7 +941,6 @@ async function updateHotel(req, res, next) {
 
     const updatedHotel = updatedHotelRes.rows[0];
 
-    // 2. Cập nhật ảnh đại diện (giữ nguyên logic cũ của bạn)
     if (image && String(image).trim()) {
       const imgPath = String(image).trim();
       const existingThumb = await client.query(
@@ -967,7 +961,6 @@ async function updateHotel(req, res, next) {
       }
     }
 
-    // 3. Cập nhật tiện nghi (giữ nguyên logic cũ của bạn)
     if (Array.isArray(amenities)) {
       await client.query(
         `DELETE FROM public.hotel_amenity WHERE hotel_id = $1`,
@@ -1016,6 +1009,7 @@ async function updateHotel(req, res, next) {
     client.release();
   }
 }
+
 async function searchHotels(req, res, next) {
   return listHotels(req, res, next);
 }

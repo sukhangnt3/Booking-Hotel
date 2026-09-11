@@ -4,20 +4,22 @@ const router = express.Router();
 const reviewController = require("../controllers/review.controller");
 const { requireAuth } = require("../middleware/auth.middleware");
 
-// Hàm nạp an toàn
+// Thay hàm safeUse cũ bằng hàm này để hiện rõ nguyên nhân:
 const safeUse = (mountPath, relativePath) => {
   try {
     const routeModule = require(relativePath);
     router.use(mountPath, routeModule);
     console.log(`✓ Đã nạp thành công route [${mountPath}] từ ${relativePath}`);
   } catch (err) {
-    if (err.code !== "MODULE_NOT_FOUND") {
-      console.warn(`⚠️ Lỗi cấu hình tại [${relativePath}]:`, err.message);
-    }
+    console.error(
+      `❌ KHÔNG THỂ nạp route [${mountPath}] từ [${relativePath}]. LỖI THẬT:`,
+      err.message,
+    );
   }
 };
 
-// Nạp các router hệ thống
+// ─── NẠP CÁC ROUTER HỆ THỐNG ───
+safeUse("/users", "./user.routes"); // 👈 ĐÃ BỔ SUNG ĐỂ SỬA HỒ SƠ & FAVORITES LƯU VÀO DATABASE
 safeUse("/auth", "./auth.routes");
 safeUse("/hotels", "./hotel.routes");
 safeUse("/rooms", "./room.routes");

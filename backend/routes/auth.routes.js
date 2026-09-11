@@ -1,3 +1,4 @@
+// backend/routes/auth.routes.js
 const express = require("express");
 
 const {
@@ -6,13 +7,10 @@ const {
   login,
   register,
   updateProfile,
-  uploadAvatar,
   changePassword,
 } = require("../controllers/auth.controller");
 
 const { requireAuth } = require("../middleware/auth.middleware");
-
-const uploadAvatarMiddleware = require("../middleware/uploadAvatar");
 
 const router = express.Router();
 
@@ -115,8 +113,6 @@ router.post("/register", register);
  *                 type: string
  *               dob:
  *                 type: string
- *               avatar:
- *                 type: string
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -124,37 +120,6 @@ router.post("/register", register);
 router.get("/profile", requireAuth, profile);
 
 router.put("/profile", requireAuth, updateProfile);
-
-/**
- * @swagger
- * /auth/profile/avatar:
- *   post:
- *     summary: Upload ảnh đại diện
- *     tags: [Auth]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             required:
- *               - avatar
- *             properties:
- *               avatar:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Upload avatar thành công
- */
-router.post(
-  "/profile/avatar",
-  requireAuth,
-  uploadAvatarMiddleware.single("avatar"),
-  uploadAvatar,
-);
 
 /**
  * @swagger

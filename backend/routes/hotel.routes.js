@@ -27,9 +27,11 @@ const { requireAuth, optionalAuth } = require("../middleware/auth.middleware");
 const router = express.Router();
 
 // ─── 1. ROUTE ĐỐI TÁC (OWNER) ───
-router.post("/register", requireAuth, registerHotel);
+// 👉 ĐÃ ĐỔI requireAuth THÀNH optionalAuth ĐỂ CHO PHÉP ĐĂNG KÝ MỚI MÀ KHÔNG BỊ CHẶN 401
+router.post("/register", optionalAuth, registerHotel);
 router.get("/my-hotels", requireAuth, getMyHotels);
 router.put("/:id", requireAuth, updateHotel);
+
 // ─── 2. DANH SÁCH & TÌM KIẾM CÔNG KHAI ───
 router.get("/", listHotels);
 router.get("/property-types", listPropertyTypes);
