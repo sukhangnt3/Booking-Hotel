@@ -114,10 +114,36 @@ export default function HomePage() {
   const [favoriteHotelIds, setFavoriteHotelIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
-  // Giới hạn hiển thị 4 khách sạn cùng lúc trên màn hình lớn
+  // Chỉ số trượt và số lượng hiển thị linh hoạt theo kích cỡ màn hình
   const [newestIndex, setNewestIndex] = useState(0);
-  const VISIBLE_COUNT = 4;
-  const MAX_DISPLAY_STAYS = 10; // Giới hạn chỉ lấy tối đa 10 khách sạn mới nhất để trượt mượt mà
+  const [visibleCount, setVisibleCount] = useState(4);
+  const MAX_DISPLAY_STAYS = 12; // Số khách sạn tối đa cho danh mục
+
+  // Lắng nghe resize để tính đúng số thẻ nhìn thấy và bước trượt
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      if (width < 640) {
+        setVisibleCount(1); // Mobile: 1 card full màn hình
+      } else if (width < 1024) {
+        setVisibleCount(2); // Tablet: 2 card
+      } else {
+        setVisibleCount(4); // Desktop: 4 card
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Tự động điều chỉnh newestIndex không vượt quá giới hạn khi resize màn hình
+  const maxNewestIndex = Math.max(0, uniqueStays.length - visibleCount);
+  useEffect(() => {
+    if (newestIndex > maxNewestIndex) {
+      setNewestIndex(maxNewestIndex);
+    }
+  }, [visibleCount, uniqueStays.length, maxNewestIndex, newestIndex]);
 
   const today = startOfToday();
   const [destination, setDestination] = useState("");
@@ -137,6 +163,34 @@ export default function HomePage() {
   const destRef = useRef(null);
   const calendarRef = useRef(null);
   const guestRef = useRef(null);
+
+  // Hỗ trợ vuốt chạm ngón tay trên điện thoại
+  const touchStartX = useRef(0);
+  const touchEndX = useRef(0);
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchMove = (e) => {
+    touchEndX.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return;
+    const distance = touchStartX.current - touchEndX.current;
+    const isSwipeLeft = distance > 50;
+    const isSwipeRight = distance < -50;
+
+    if (isSwipeLeft) {
+      handleNextNewest();
+    } else if (isSwipeRight) {
+      handlePrevNewest();
+    }
+
+    touchStartX.current = 0;
+    touchEndX.current = 0;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -177,20 +231,19 @@ export default function HomePage() {
           };
         });
 
-        // 🌟 SẮP XẾP KHÁCH SẠN MỚI NHẤT LÊN ĐẦU (The newest first)
+        // 🌟 SẮP XẾP KHÁCH SẠN MỚI NHẤT LÊN ĐẦU
         formattedHotels.sort((a, b) => {
           const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           if (dateB !== dateA) return dateB - dateA;
 
-          // Nếu ngày bằng nhau hoặc không có ngày, sắp xếp theo ID (nếu là số)
           const numA = Number(a.id);
           const numB = Number(b.id);
           if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
           return String(b.id).localeCompare(String(a.id));
         });
 
-        // Thống kê điểm đến thịnh hành & gán đúng ảnh
+        // Thống kê điểm đến thịnh hành
         const cityStatsMap = new Map();
         formattedHotels.forEach((h) => {
           const cityName = h.city ? h.city.trim() : "Hồ Chí Minh";
@@ -227,7 +280,6 @@ export default function HomePage() {
 
         if (!isMounted) return;
 
-        // Giới hạn chỉ giữ lại danh sách mới nhất vừa phải (10 chỗ nghỉ) để carousel mượt
         setUniqueStays(formattedHotels.slice(0, MAX_DISPLAY_STAYS));
         setTrendingDestinations(validTrendingCities);
         setFavoriteHotelIds(favIdsSet);
@@ -282,9 +334,6 @@ export default function HomePage() {
     checkInDate && checkOutDate
       ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
       : 1;
-
-  // 🌟 GIỚI HẠN VỊ TRÍ TRƯỢT CHUẨN XÁC: Tránh việc kéo lố bị trắng góc phải
-  const maxNewestIndex = Math.max(0, uniqueStays.length - VISIBLE_COUNT);
 
   const handlePrevNewest = () => {
     setNewestIndex((prev) => Math.max(0, prev - 1));
@@ -406,6 +455,9 @@ export default function HomePage() {
 
     navigate(`/hotels?${query.toString()}`);
   };
+
+  // Tính phần trăm dịch chuyển tương ứng với mỗi card theo độ rộng màn hình
+  const cardTranslatePercentage = 100 / visibleCount;
 
   return (
     <div className="w-full pb-24 bg-gray-50/50 font-sans">
@@ -789,12 +841,13 @@ export default function HomePage() {
               </h2>
             </div>
             <p className="text-gray-500 text-sm mt-1">
-              Các cơ sở lưu trú thực tế đang mở bán trên hệ thống GoStay
+              Các cơ sở lưu trú thực tế đang mở bán trên hệ thống GoStay (
+              {uniqueStays.length} chỗ nghỉ)
             </p>
           </div>
 
           {/* NÚT MŨI TÊN ĐIỀU HƯỚNG TRƯỢT */}
-          {uniqueStays.length > VISIBLE_COUNT && (
+          {uniqueStays.length > visibleCount && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -837,11 +890,16 @@ export default function HomePage() {
             ))}
           </div>
         ) : uniqueStays.length > 0 ? (
-          <div className="overflow-hidden py-2 -my-2">
+          <div
+            className="overflow-hidden py-2 -my-2 touch-pan-y"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
             <div
               className="flex flex-nowrap transition-transform duration-500 ease-out -mx-3"
               style={{
-                transform: `translateX(-${newestIndex * 25}%)`,
+                transform: `translateX(-${newestIndex * cardTranslatePercentage}%)`,
               }}
             >
               {uniqueStays.map((stay) => {
