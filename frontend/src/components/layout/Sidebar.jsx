@@ -6,15 +6,7 @@ import {
   ChevronRight,
   LogOut,
   Home,
-  LayoutDashboard,
   Building2,
-  Users,
-  BedDouble,
-  CalendarCheck,
-  Receipt,
-  Sparkles,
-  BarChart3,
-  UserCheck,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 
@@ -88,30 +80,6 @@ const Sidebar = ({
           </NavLink>
         ))}
       </nav>
-
-      {/* Footer Actions */}
-      <div className="p-4 border-t border-slate-100 bg-slate-50/70 shrink-0 flex gap-2">
-        <Link
-          to="/"
-          className={cn(
-            "flex items-center justify-center bg-slate-900 hover:bg-black text-white rounded-2xl",
-            isCollapsed ? "w-11 h-11" : "flex-1 py-3 text-xs font-bold gap-2",
-          )}
-        >
-          <Home size={16} />
-          {!isCollapsed && "Trang chủ"}
-        </Link>
-        <button
-          onClick={onLogout}
-          className={cn(
-            "flex items-center justify-center bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-2xl border border-rose-200 cursor-pointer",
-            isCollapsed ? "w-11 h-11" : "flex-1 py-3 text-xs font-bold gap-2",
-          )}
-        >
-          <LogOut size={16} />
-          {!isCollapsed && "Đăng xuất"}
-        </button>
-      </div>
     </aside>
   );
 };

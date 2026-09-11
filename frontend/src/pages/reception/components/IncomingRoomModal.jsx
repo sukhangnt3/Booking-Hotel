@@ -9,12 +9,14 @@ import {
   Edit3,
   Receipt,
   Trash2,
+  ArrowRightLeft,
 } from "lucide-react";
 
 export default function IncomingRoomModal({
   room,
   onClose,
   onOpenConfirmCheckIn,
+  onOpenChangeRoom,
   formatDisplayDateTime,
   countdownText,
   formatVND,
@@ -141,13 +143,17 @@ export default function IncomingRoomModal({
 
           <button
             type="button"
-            onClick={() => alert("Chức năng đổi phòng")}
-            className="px-4 py-2 border border-[#1b6a38] text-[#1b6a38] hover:bg-emerald-50 font-bold rounded-lg cursor-pointer transition text-xs shadow-2xs"
+            onClick={() => {
+              if (onOpenChangeRoom) {
+                onOpenChangeRoom(room);
+              }
+            }}
+            className="px-4 py-2 border border-amber-600 text-amber-700 hover:bg-amber-50 font-bold rounded-lg cursor-pointer transition text-xs shadow-2xs flex items-center gap-1.5"
           >
-            Đổi phòng
+            <ArrowRightLeft size={13} />
+            <span>Đổi phòng</span>
           </button>
 
-          {/* Bấm nút này mở Modal Xác nhận nhận phòng (Hình 1) */}
           <button
             type="button"
             onClick={onOpenConfirmCheckIn}

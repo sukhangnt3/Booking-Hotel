@@ -4,7 +4,7 @@ import { Calendar, Search, Plus, Building2 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 import { LoadingSpinner } from "@/components/common";
 
-// Import các component đã tách
+// Import các modal component
 import RoomCard from "./components/RoomCard";
 import IncomingRoomModal from "./components/IncomingRoomModal";
 import ConfirmCheckInModal from "./components/ConfirmCheckInModal";
@@ -12,6 +12,7 @@ import CheckInGuestStayModal from "./components/CheckInGuestStayModal";
 import AddGuestDocModal from "./components/AddGuestDocModal";
 import OccupiedRoomModal from "./components/OccupiedRoomModal";
 import QuickBookingModal from "./components/QuickBookingModal";
+import ChangeRoomModal from "./components/ChangeRoomModal";
 
 const toDatetimeLocal = (date) => {
   const d = new Date(date);
@@ -62,12 +63,15 @@ export default function ReceptionMapPage() {
   });
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Menu dọn phòng
   const [activeCleaningMenuId, setActiveCleaningMenuId] = useState(null);
 
   // Modal State
   const [activeIncomingRoom, setActiveIncomingRoom] = useState(null);
   const [activeOccupiedRoom, setActiveOccupiedRoom] = useState(null);
+
+  // Modal Đổi phòng
+  const [isChangeRoomOpen, setIsChangeRoomOpen] = useState(false);
+  const [changeRoomTarget, setChangeRoomTarget] = useState(null);
 
   // Flow Nhận phòng
   const [isConfirmCheckInOpen, setIsConfirmCheckInOpen] = useState(false);
@@ -150,6 +154,7 @@ export default function ReceptionMapPage() {
     return () => window.removeEventListener("click", handleClickOutside);
   }, []);
 
+  // Lấy khách sạn hợp lệ
   useEffect(() => {
     async function loadHotels() {
       try {
@@ -157,25 +162,28 @@ export default function ReceptionMapPage() {
         let list = [];
         try {
           const res = await apiClient.get("/hotels/my-hotels?active_only=true");
-          list = res?.data?.hotels || res?.data || res?.hotels || res || [];
-        } catch {}
-
-        if (!Array.isArray(list) || list.length === 0) {
-          const resAll = await apiClient.get("/hotels?active_only=true");
           list =
-            resAll?.data?.hotels ||
-            resAll?.data ||
-            resAll?.hotels ||
-            resAll ||
+            res?.data?.hotels ||
+            res?.data?.data ||
+            res?.data ||
+            res?.hotels ||
             [];
+        } catch (err) {
+          console.error("Lỗi gọi /hotels/my-hotels:", err);
         }
 
         const validHotels = Array.isArray(list) ? list : [];
         setHotels(validHotels);
-        if (validHotels.length > 0)
+
+        if (validHotels.length > 0) {
           setSelectedHotelId(String(validHotels[0].id));
+        } else {
+          setSelectedHotelId("");
+        }
       } catch (err) {
         console.error("Lỗi lấy khách sạn:", err);
+        setHotels([]);
+        setSelectedHotelId("");
       } finally {
         setLoading(false);
       }
@@ -184,7 +192,10 @@ export default function ReceptionMapPage() {
   }, []);
 
   const fetchRoomMap = useCallback(async () => {
-    if (!selectedHotelId) return;
+    if (!selectedHotelId) {
+      setRooms([]);
+      return;
+    }
     setLoading(true);
     try {
       const res = await apiClient.get(
@@ -240,7 +251,6 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // Click phòng
   const handleRoomCardClick = (room) => {
     if (room.status === "occupied" || room.status === "checkout_soon") {
       setActiveOccupiedRoom(room);
@@ -251,7 +261,6 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // Mở Đặt phòng nhanh
   const handleOpenQuickBooking = (room = null) => {
     const targetRoom =
       room || rooms.find((r) => r.status === "available") || rooms[0];
@@ -306,7 +315,7 @@ export default function ReceptionMapPage() {
           customer_name: quickBookingData.customer_name.trim() || "Khách lẻ",
           guest_phone: quickBookingData.customer_phone.trim(),
           total_price: item.price,
-          customer_paid: Number(quickBookingData.customer_paid || 0), // 🌟 PHẢI CÓ DÒNG NÀY ĐỂ GỬI 100.000 ĐI
+          customer_paid: Number(quickBookingData.customer_paid || 0),
           checkin_date: item.checkin_date,
           checkout_date: item.checkout_date,
           is_check_in_now: isCheckInNow,
@@ -322,7 +331,44 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // Mở xác nhận nhận phòng
+  // Mở Modal Đổi phòng
+  const handleOpenChangeRoom = (room) => {
+    setChangeRoomTarget(room);
+    setIsChangeRoomOpen(true);
+  };
+
+  // Thực hiện đổi phòng qua API (chuẩn KiotViet)
+  const handleExecuteChangeRoom = async ({
+    newRoomNumber,
+    mode,
+    newTotalPrice,
+    roomLegs,
+  }) => {
+    if (!changeRoomTarget?.booking?.id) return;
+    try {
+      await apiClient.post(
+        `/owner/bookings/${changeRoomTarget.booking.id}/change-room`,
+        {
+          new_room_number: newRoomNumber,
+          hotel_id: selectedHotelId,
+          mode: mode,
+          new_total_price: newTotalPrice,
+          room_legs: roomLegs,
+        },
+      );
+      alert(
+        `✓ Đã đổi sang phòng ${newRoomNumber} thành công! (${mode === "split_stay" ? "Tính thời gian cả 2 phòng" : "Chuyển toàn bộ"})`,
+      );
+      setIsChangeRoomOpen(false);
+      setActiveOccupiedRoom(null);
+      setActiveIncomingRoom(null);
+      await fetchRoomMap();
+    } catch (err) {
+      alert("Lỗi đổi phòng: " + (err.response?.data?.message || err.message));
+      throw err;
+    }
+  };
+
   const handleOpenConfirmCheckIn = () => {
     if (!activeIncomingRoom?.booking) return;
     const now = new Date();
@@ -367,7 +413,6 @@ export default function ReceptionMapPage() {
     setIsConfirmCheckInOpen(true);
   };
 
-  // Mở form nhập CCCD
   const handleOpenGuestDocForm = (guestItem = null, index = null) => {
     setEditingGuestIndex(index);
     if (guestItem) {
@@ -382,7 +427,6 @@ export default function ReceptionMapPage() {
     setIsAddGuestDocOpen(true);
   };
 
-  // Lưu CCCD vào danh sách
   const handleGuestDocSubmit = (e) => {
     e.preventDefault();
     if (!guestDocForm.full_name.trim())
@@ -407,7 +451,6 @@ export default function ReceptionMapPage() {
     setIsAddGuestDocOpen(false);
   };
 
-  // Hoàn tất check-in
   const handleFinalExecuteCheckIn = async () => {
     if (!activeIncomingRoom?.booking?.id) return;
     try {
@@ -433,14 +476,12 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // Chỉ lưu thông tin khách
   const handleSaveGuestStayInfoOnly = () => {
     alert("✓ Đã lưu thông tin khách lưu trú!");
     setIsCheckInGuestStayOpen(false);
     setIsConfirmCheckInOpen(true);
   };
 
-  // Trả phòng
   const handleCompleteCheckOut = async (bookingCode) => {
     const code = bookingCode || activeOccupiedRoom?.booking?.code;
     const room =
@@ -463,7 +504,6 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // Dọn phòng
   const handleMarkCleaned = async (room) => {
     try {
       await apiClient.post("/owner/rooms/mark-cleaned", {
@@ -511,11 +551,17 @@ export default function ReceptionMapPage() {
               onChange={(e) => setSelectedHotelId(e.target.value)}
               className="bg-transparent outline-none font-bold text-white cursor-pointer text-xs"
             >
-              {hotels.map((h) => (
-                <option key={h.id} value={h.id} className="text-slate-800">
-                  {h.name}
+              {hotels.length === 0 ? (
+                <option value="" className="text-slate-800">
+                  Không có cơ sở nào
                 </option>
-              ))}
+              ) : (
+                hotels.map((h) => (
+                  <option key={h.id} value={h.id} className="text-slate-800">
+                    {h.name}
+                  </option>
+                ))
+              )}
             </select>
           </div>
         </div>
@@ -599,6 +645,14 @@ export default function ReceptionMapPage() {
           <div className="py-24 flex justify-center">
             <LoadingSpinner size="lg" label="Đang tải sơ đồ phòng..." />
           </div>
+        ) : hotels.length === 0 ? (
+          <div className="py-24 text-center text-slate-500">
+            Tài khoản này chưa được gán vào khách sạn nào.
+          </div>
+        ) : Object.keys(groupedRooms).length === 0 ? (
+          <div className="py-24 text-center text-slate-500">
+            Không tìm thấy phòng nào phù hợp bộ lọc.
+          </div>
         ) : (
           Object.keys(groupedRooms).map((area) => {
             const roomList = groupedRooms[area];
@@ -634,11 +688,12 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* TẬP HỢP TẤT CẢ CÁC MODAL ĐÃ TÁCH */}
+      {/* MODAL PHÒNG SẮP ĐẾN */}
       <IncomingRoomModal
         room={activeIncomingRoom}
         onClose={() => setActiveIncomingRoom(null)}
         onOpenConfirmCheckIn={handleOpenConfirmCheckIn}
+        onOpenChangeRoom={handleOpenChangeRoom}
         formatDisplayDateTime={formatDisplayDateTime}
         countdownText={getCheckinCountdownText(
           activeIncomingRoom?.booking?.checkin_date,
@@ -646,6 +701,28 @@ export default function ReceptionMapPage() {
         formatVND={formatVND}
       />
 
+      {/* MODAL PHÒNG ĐANG CÓ KHÁCH */}
+      <OccupiedRoomModal
+        room={activeOccupiedRoom}
+        onClose={() => setActiveOccupiedRoom(null)}
+        onCheckOut={handleCompleteCheckOut}
+        onOpenChangeRoom={handleOpenChangeRoom}
+        formatVND={formatVND}
+      />
+
+      {/* MODAL ĐỔI PHÒNG (CHUẨN KIOTVIET) */}
+      <ChangeRoomModal
+        isOpen={isChangeRoomOpen}
+        onClose={() => {
+          setIsChangeRoomOpen(false);
+          setChangeRoomTarget(null);
+        }}
+        currentRoom={changeRoomTarget}
+        allRooms={rooms}
+        onConfirmChange={handleExecuteChangeRoom}
+      />
+
+      {/* CÁC MODAL CHECK-IN KHÁC */}
       <ConfirmCheckInModal
         isOpen={isConfirmCheckInOpen}
         onClose={() => setIsConfirmCheckInOpen(false)}
@@ -683,13 +760,6 @@ export default function ReceptionMapPage() {
         formData={guestDocForm}
         setFormData={setGuestDocForm}
         onSubmit={handleGuestDocSubmit}
-      />
-
-      <OccupiedRoomModal
-        room={activeOccupiedRoom}
-        onClose={() => setActiveOccupiedRoom(null)}
-        onCheckOut={handleCompleteCheckOut}
-        formatVND={formatVND}
       />
 
       <QuickBookingModal

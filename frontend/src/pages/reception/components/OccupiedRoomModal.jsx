@@ -7,6 +7,7 @@ import {
   QrCode,
   Paperclip,
   AlertTriangle,
+  ArrowRightLeft,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 
@@ -14,11 +15,11 @@ export default function OccupiedRoomModal({
   room,
   onClose,
   onCheckOut,
+  onOpenChangeRoom,
   formatVND,
 }) {
   if (!room) return null;
 
-  // 1. TẢI CẤU HÌNH THỜI GIAN TỪ DATABASE (NẾU CHƯA CÓ TRONG ROOM)
   const [hotelSettings, setHotelSettings] = useState(
     room.hotel_settings || null,
   );
@@ -51,14 +52,11 @@ export default function OccupiedRoomModal({
   const defaultCheckoutTime =
     hotelSettings?.checkout_time ?? room.hotel?.checkout_time ?? "12:00:00";
 
-  // Lấy danh sách bậc thang trực tiếp từ DB (cột hourly_tiers của bảng room):
   const hourlyTiers = room.hourly_tiers || [];
-
   const firstHourRate = Number(
     hourlyTiers[0]?.price || room.hourly_price || room.daily_price || 100000,
   );
 
-  // 🌟 2. TÍNH TOÁN QUÁ GIỜ THỰC TẾ
   const now = new Date();
   const scheduledCheckout = new Date(room.booking?.checkout_date || now);
   const [defHour, defMin] = String(defaultCheckoutTime)
@@ -78,17 +76,13 @@ export default function OccupiedRoomModal({
   if (lateMinutes > 0) {
     const rawHours = Math.floor(lateMinutes / 60);
     const remMins = lateMinutes % 60;
-
-    // Quá mốc ân hạn (ví dụ 30p) thì tính thêm 1 tiếng
     overtimeHours = rawHours + (remMins >= graceMinutes ? 1 : 0);
 
-    // 🌟 TÍNH BẬC THANG TỪ DATABASE:
     if (hourlyTiers.length > 0) {
       const sortedTiers = [...hourlyTiers].sort(
         (a, b) => Number(a.from_hour) - Number(b.from_hour),
       );
       let totalTierFee = 0;
-
       for (let h = 1; h <= overtimeHours; h++) {
         let applied = sortedTiers[0];
         for (let i = sortedTiers.length - 1; i >= 0; i--) {
@@ -99,10 +93,9 @@ export default function OccupiedRoomModal({
         }
         totalTierFee += Number(applied.price || 0);
       }
-
       overtimeFee = totalTierFee;
       overtimeDisplayTime = `${overtimeHours} giờ`;
-      overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ - Áp dụng giá giờ bậc thang DB)`;
+      overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ)`;
     } else {
       overtimeFee = overtimeHours * firstHourRate;
       overtimeDisplayTime = `${overtimeHours} giờ`;
@@ -110,7 +103,11 @@ export default function OccupiedRoomModal({
     }
   }
 
-  // ─── TÍNH TỔNG TIỀN THANH TOÁN ───
+  const roomLegs =
+    Array.isArray(room.booking?.room_legs) && room.booking.room_legs.length > 0
+      ? room.booking.room_legs
+      : null;
+
   const baseRoomPrice = Number(
     room.booking?.total_price || room.daily_price || 0,
   );
@@ -123,7 +120,7 @@ export default function OccupiedRoomModal({
   const [note, setNote] = useState(
     overtimeLabel ? `Phụ thu: ${overtimeLabel}` : "",
   );
-  const [paymentAccount, setPaymentAccount] = useState("Chưa xác định");
+  const [paymentAccount, setPaymentAccount] = useState("Quầy lễ tân");
 
   useEffect(() => {
     setGuestPayment(remainingAmount);
@@ -156,6 +153,18 @@ export default function OccupiedRoomModal({
                 {room.booking?.customer_name || "Khách lẻ"}
               </span>
             </h3>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenChangeRoom) onOpenChangeRoom(room);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-amber-500 bg-amber-50 text-amber-800 font-bold text-[11px] hover:bg-amber-100 cursor-pointer shadow-2xs transition"
+            >
+              <ArrowRightLeft size={13} className="text-amber-700" />
+              <span>Đổi phòng</span>
+            </button>
+
             <button
               type="button"
               className="px-2.5 py-1 rounded-md border border-[#1b6a38] text-[#1b6a38] font-semibold text-[11px] hover:bg-emerald-50 cursor-pointer shadow-2xs"
@@ -194,30 +203,70 @@ export default function OccupiedRoomModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  <tr className="hover:bg-slate-50">
-                    <td className="py-3 px-3">
-                      <div className="font-bold text-slate-900 text-xs">
-                        {room.type_name}
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-300 font-bold text-[10px] text-slate-700">
-                          {room.room_number}
-                        </span>
-                        <span className="px-1.5 py-0.2 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
-                          Đang trả
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-center font-semibold text-slate-700">
-                      {room.booking?.stay_duration || "1 Ngày"}
-                    </td>
-                    <td className="py-3 px-3 text-right font-medium text-slate-600">
-                      {formatVND(room.daily_price || baseRoomPrice)}
-                    </td>
-                    <td className="py-3 px-3 text-right font-bold text-slate-900">
-                      {formatVND(baseRoomPrice)}
-                    </td>
-                  </tr>
+                  {roomLegs ? (
+                    roomLegs.map((leg, idx) => (
+                      <tr
+                        key={idx}
+                        className={
+                          leg.is_closed ? "bg-slate-50/80" : "hover:bg-slate-50"
+                        }
+                      >
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-slate-900 text-xs">
+                            {leg.type_name || room.type_name}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-300 font-bold text-[10px] text-slate-700">
+                              {leg.room_number}
+                            </span>
+                            {leg.is_closed ? (
+                              <span className="px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 font-semibold text-[10px]">
+                                Đã ở (Chặng 1)
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
+                                Đang trả (Chặng 2)
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-center font-semibold text-slate-700">
+                          {leg.duration_text}
+                        </td>
+                        <td className="py-3 px-3 text-right font-medium text-slate-600">
+                          {formatVND(leg.unit_price)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-slate-900">
+                          {formatVND(leg.amount)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr className="hover:bg-slate-50">
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-900 text-xs">
+                          {room.type_name}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-300 font-bold text-[10px] text-slate-700">
+                            {room.room_number}
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
+                            Đang trả
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-center font-semibold text-slate-700">
+                        {room.booking?.stay_duration || "1 Ngày"}
+                      </td>
+                      <td className="py-3 px-3 text-right font-medium text-slate-600">
+                        {formatVND(room.daily_price || baseRoomPrice)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-bold text-slate-900">
+                        {formatVND(baseRoomPrice)}
+                      </td>
+                    </tr>
+                  )}
 
                   {overtimeFee > 0 && (
                     <tr className="bg-amber-50/50 hover:bg-amber-50 text-amber-950 border-t border-amber-200">
@@ -230,15 +279,12 @@ export default function OccupiedRoomModal({
                           {overtimeLabel}
                         </div>
                       </td>
-
                       <td className="py-3 px-3 text-center font-bold text-amber-900">
                         {overtimeDisplayTime}
                       </td>
-
                       <td className="py-3 px-3 text-right font-medium text-amber-800">
                         {formatVND(firstHourRate)}
                       </td>
-
                       <td className="py-3 px-3 text-right font-black text-amber-900">
                         +{formatVND(overtimeFee)}
                       </td>
@@ -254,7 +300,7 @@ export default function OccupiedRoomModal({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer text-xs"
               >
                 <Paperclip size={13} />
-                <span>Chọn file tải lên</span>
+                <span>Chọn file đính kèm</span>
               </button>
             </div>
           </div>
@@ -266,9 +312,9 @@ export default function OccupiedRoomModal({
                 onChange={(e) => setPaymentAccount(e.target.value)}
                 className="border border-slate-300 rounded-lg px-2 py-1 outline-none text-slate-700 bg-white cursor-pointer"
               >
-                <option value="Chưa xác định">Chưa xác định</option>
                 <option value="Quầy lễ tân">Quầy lễ tân</option>
                 <option value="Tài khoản công ty">Tài khoản công ty</option>
+                <option value="Chưa xác định">Chưa xác định</option>
               </select>
 
               <div className="flex items-center gap-1.5 text-slate-600 font-semibold border border-slate-200 rounded-lg px-2 py-1 bg-slate-50">
@@ -280,7 +326,7 @@ export default function OccupiedRoomModal({
 
             <div className="space-y-2 pt-1 border-t border-slate-100">
               <div className="flex justify-between items-center text-slate-700">
-                <span>Tiền phòng gốc:</span>
+                <span>Tiền phòng:</span>
                 <span className="font-semibold text-slate-900">
                   {formatVND(baseRoomPrice)}
                 </span>
@@ -294,7 +340,7 @@ export default function OccupiedRoomModal({
               )}
 
               <div className="flex justify-between items-center text-slate-700">
-                <span>Tổng tiền hàng:</span>
+                <span>Tổng hoá đơn:</span>
                 <span className="font-bold text-slate-900">
                   {formatVND(totalBill)}
                 </span>

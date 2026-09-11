@@ -1,8 +1,18 @@
 // src/components/auth/RegisterForm/index.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Check,
+  ChevronRight,
+  ChevronLeft,
+  Eye,
+  ShieldCheck,
+  Building2,
+  HelpCircle,
+  Loader2,
+} from "lucide-react";
 
-// 👉 IMPORT ĐỦ 8 BƯỚC CHUẨN AGODA
+// Import đủ 8 bước chuẩn OTA
 import { Step1HotelInfo } from "./Step1HotelInfo.jsx";
 import { Step2Amenities } from "./Step2Amenities.jsx";
 import { Step3RoomsAndPricing } from "./Step3RoomsAndPricing.jsx";
@@ -12,58 +22,72 @@ import { Step6PropertyDetails } from "./Step6PropertyDetails.jsx";
 import { Step7HostProfile } from "./Step7HostProfile.jsx";
 import { Step8Publish } from "./Step8Publish.jsx";
 import { ReviewModal } from "./ReviewModal.jsx";
+import { AuditReportView } from "./AuditReportView.jsx";
 import SubmittedSuccessView from "./SubmittedSuccessView.jsx";
 
-import {
-  Check,
-  ChevronRight,
-  ChevronLeft,
-  Eye,
-  AlertCircle,
-} from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import apiClient from "@/services/apiClient";
 
 const initialFormData = {
-  // 1. Vị trí
-  province: "Hồ Chí Minh",
-  city: "Hồ Chí Minh",
-  district: "Quận 1",
+  // 1. Tài khoản đối tác & Vị trí (Bước 1)
+  ownerName: "",
+  phoneContact: "",
+  emailContact: "",
+  password: "",
+  hotelName: "",
+  propertyType: "hotel",
   address: "",
   buildingInfo: "",
-  zipCode: "",
+  residenceCountry: "Việt Nam",
+  city: "Hồ Chí Minh",
+  province: "Hồ Chí Minh",
+  district: "Quận 1",
+  zipCode: "700000",
   latitude: 10.7769,
   longitude: 106.7009,
 
-  // 2. Tiện nghi
-  propertyAmenities: ["wifi", "parking", "24h_front_desk", "air_conditioner"],
+  // 2. Tiện nghi khách sạn
+  propertyAmenities: [
+    "wifi",
+    "parking",
+    "24h_front_desk",
+    "elevator",
+    "air_conditioner",
+  ],
 
-  // 3. Phòng & Giá cơ bản
+  // 3. Hạng phòng & Giá bán (Chuẩn Booking.com)
   rooms: [
     {
       id: "room-default-1",
-      name: "Phòng Cao Cấp (Deluxe)",
+      category: "double",
+      name: "Phòng Deluxe Giường Đôi",
+      custom_name: "Deluxe Double Room",
+      smoking_policy: "non_smoking",
+      type: "Deluxe",
       room_view: "city_view",
       bed_type: "1 Giường đôi lớn (King/Queen Size)",
       room_area: 28,
       capacity: 2,
-      amount: 4,
-      roomNumbersText: "P.101, P.102, P.103, P.104",
+      amount: 10,
+      roomNumbersText:
+        "P.101, P.102, P.103, P.104, P.105, P.106, P.107, P.108, P.109, P.110",
       base_price: 650000,
-      description: "Phòng nghỉ hiện đại, tiện nghi.",
-      type: "Deluxe",
+      description: "Phòng nghỉ hiện đại, tiện nghi thoáng mát.",
       roomAmenities: [
         "air_conditioner",
         "tv_smart",
         "wifi",
-        "hot_water_shower",
+        "hot_water",
+        "hair_dryer",
+        "toiletries",
       ],
     },
   ],
   hasBreakfast: "no",
 
-  // 4. Khuyến mại & Phương thức nhận tiền VN
+  // 4. Khuyến mại & Quyết toán
   enableFirstBookingDiscount: true,
+  initialPromoPercent: 20,
   payoutMethod: "bank_transfer",
   bankName: "Vietcombank",
   bankAccount: "",
@@ -73,9 +97,7 @@ const initialFormData = {
   hotelMainImage: "",
   hotelImages: [],
 
-  // 6. Chi tiết (Tên, Sao, Giờ, Hủy)
-  hotelName: "",
-  propertyType: "hotel",
+  // 6. Quy định & Sao
   starRating: 3,
   description: "",
   checkInFrom: "14:00",
@@ -83,59 +105,54 @@ const initialFormData = {
   checkOutTo: "12:00",
   cancellation_deadline_hours: 24,
 
-  // 7. Hồ sơ Host
+  // 7. Thông tin mở rộng của Host
   firstName: "",
   lastName: "",
-  ownerName: "",
   nationality: "Việt Nam",
   dob: "1995-01-01",
-  residenceCountry: "Việt Nam",
   preferredLanguage: "Tiếng Việt",
-  phoneContact: "",
-  emailContact: "",
-  password: "",
 
-  // 8. Đăng tải
+  // 8. Pháp lý & Đăng tải
   taxCode: "",
   businessLicenseUrl: "",
   commissionRate: 18.0,
   acceptedTerms: false,
 };
 
-// 👉 8 BƯỚC CHUẨN MENU TRÁI AGODA
 const AGODA_STEPS = [
-  { id: 1, title: "Vị trí" },
-  { id: 2, title: "Tiện nghi" },
-  { id: 3, title: "Phòng" },
-  { id: 4, title: "Định giá" },
-  { id: 5, title: "Ảnh" },
-  { id: 6, title: "Chi tiết" },
-  { id: 7, title: "Hồ sơ" },
-  { id: 8, title: "Đăng" },
+  { id: 1, title: "Tài khoản & Chỗ nghỉ" },
+  { id: 2, title: "Tiện nghi cơ sở" },
+  { id: 3, title: "Hạng phòng & Giá" },
+  { id: 4, title: "Quyết toán doanh thu" },
+  { id: 5, title: "Bộ sưu tập ảnh" },
+  { id: 6, title: "Quy định chỗ nghỉ" },
+  { id: 7, title: "Hồ sơ đối tác" },
+  { id: 8, title: "Đăng tải mở bán" },
 ];
 
 export const RegisterForm = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const editHotelId = searchParams.get("editHotelId");
+
+  const { user, isAuthenticated, setAuth } = useAuthStore();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const { user, isAuthenticated } = useAuthStore();
-
   const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [submittedApplication, setSubmittedApplication] = useState(null);
 
+  // ĐỒNG BỘ NẾU ĐÃ CÓ TÀI KHOẢN ĐĂNG NHẬP SẴN
   useEffect(() => {
     if (user && user.email) {
       setFormData((prev) => ({
         ...prev,
         ownerName: user.full_name || prev.ownerName,
         emailContact: user.email,
-        phoneContact: user.phone || prev.phoneContact || "0901234567",
+        phoneContact: user.phone || prev.phoneContact,
         bankAccountHolder:
           user.full_name?.toUpperCase() || prev.bankAccountHolder,
       }));
@@ -151,37 +168,86 @@ export const RegisterForm = () => {
     });
   };
 
+  // VALIDATE TỪNG BƯỚC
   const validateCurrentStep = () => {
     const err = {};
 
     if (currentStep === 1) {
-      if (!formData.address?.trim())
-        err.address = "Vui lòng nhập địa chỉ đường phố!";
+      // 1. Nếu chưa có phiên đăng nhập, kiểm tra thông tin tài khoản
+      if (!isAuthenticated && !localStorage.getItem("token")) {
+        if (!formData.ownerName?.trim()) {
+          err.ownerName = "Vui lòng nhập họ và tên chủ cơ sở!";
+        }
+        if (!formData.phoneContact?.trim()) {
+          err.phoneContact = "Vui lòng nhập số điện thoại liên lạc!";
+        }
+        if (!formData.emailContact?.trim()) {
+          err.emailContact = "Vui lòng nhập email đăng nhập!";
+        }
+        if (!formData.password || formData.password.length < 6) {
+          err.password = "Mật khẩu tối thiểu 6 ký tự!";
+        }
+      }
+
+      // 2. Kiểm tra thông tin chỗ nghỉ
+      if (!formData.hotelName?.trim()) {
+        err.hotelName = "Vui lòng nhập tên cơ sở lưu trú!";
+      }
+      if (!formData.address?.trim()) {
+        err.address = "Vui lòng nhập địa chỉ phố!";
+      }
+      if (!formData.city?.trim()) {
+        err.city = "Vui lòng nhập tên thành phố!";
+      }
     }
+
     if (currentStep === 3) {
       if (!formData.rooms || formData.rooms.length === 0) {
-        err.rooms = "Cần ít nhất 1 phòng để mở bán!";
+        err.rooms = "Cần ít nhất 1 loại phòng để sẵn sàng mở bán!";
+      } else {
+        formData.rooms.forEach((r, i) => {
+          if (!r.name?.trim()) {
+            err[`room_${i}_name`] = "Vui lòng chọn hoặc nhập tên phòng!";
+          }
+          if (!r.base_price || Number(r.base_price) <= 0) {
+            err[`room_${i}_price`] = "Giá bán phòng phải lớn hơn 0 ₫!";
+          }
+        });
       }
     }
+
+    if (currentStep === 4) {
+      if (formData.payoutMethod === "bank_transfer") {
+        if (!formData.bankAccount?.trim()) {
+          err.bankAccount = "Vui lòng cung cấp số tài khoản ngân hàng!";
+        }
+        if (!formData.bankAccountHolder?.trim()) {
+          err.bankAccountHolder = "Vui lòng nhập tên chủ tài khoản thụ hưởng!";
+        }
+      }
+    }
+
     if (currentStep === 5) {
-      if (!formData.hotelImages || formData.hotelImages.length < 3) {
-        err.hotelImages = "Thêm ít nhất 3 ảnh để tiếp tục!";
+      const totalPhotos = (formData.hotelImages || []).length;
+      if (totalPhotos < 3) {
+        err.hotelImages = "Vui lòng tải lên tối thiểu 3 hình ảnh sắc nét!";
       }
     }
+
     if (currentStep === 6) {
-      if (!formData.hotelName?.trim())
-        err.hotelName = "Vui lòng nhập tên cơ sở lưu trú!";
+      if (!formData.checkInFrom) {
+        err.checkInFrom = "Vui lòng chọn thời gian nhận phòng!";
+      }
+      if (!formData.checkOutTo) {
+        err.checkOutTo = "Vui lòng chọn thời gian trả phòng!";
+      }
     }
-    if (currentStep === 7) {
-      if (!formData.ownerName?.trim())
-        err.ownerName = "Vui lòng nhập họ và tên!";
-      if (!formData.phoneContact?.trim())
-        err.phoneContact = "Vui lòng nhập số điện thoại!";
-    }
+
     if (currentStep === 8) {
-      if (!formData.acceptedTerms)
+      if (!formData.acceptedTerms) {
         err.acceptedTerms =
-          "Quý đối tác cần đồng ý với Điều khoản để đăng tải!";
+          "Quý đối tác cần đọc và chấp nhận Quy chế hoạt động để kích hoạt mở bán!";
+      }
     }
 
     setErrors(err);
@@ -192,16 +258,108 @@ export const RegisterForm = () => {
     return true;
   };
 
-  const handleNext = () => {
-    if (validateCurrentStep()) {
+  // ════════════════════════════════════════════════════════════════════════════
+  // 👉 NÚT TIẾP THEO: XỬ LÝ ĐĂNG KÝ HOẶC TỰ ĐỘNG ĐĂNG NHẬP NẾU TRÙNG TÀI KHOẢN
+  // ════════════════════════════════════════════════════════════════════════════
+  const handleNext = async () => {
+    if (!validateCurrentStep()) return;
+
+    // NẾU CHƯA CÓ TOKEN Ở BƯỚC 1 -> THỰC HIỆN ĐĂNG KÝ HOẶC ĐĂNG NHẬP NGAY
+    const existingToken =
+      localStorage.getItem("token") || localStorage.getItem("access_token");
+
+    if (currentStep === 1 && (!isAuthenticated || !existingToken)) {
+      setLoading(true);
+      const email = formData.emailContact.trim().toLowerCase();
+      const password = formData.password;
+
+      try {
+        // 1. Thử gọi API Đăng ký tài khoản mới
+        const regRes = await apiClient.post("/auth/register", {
+          full_name: formData.ownerName.trim(),
+          name: formData.ownerName.trim(),
+          email: email,
+          phone: formData.phoneContact.trim(),
+          password: password,
+          role: "HOTEL_OWNER",
+        });
+
+        const token =
+          regRes.data?.token || regRes.data?.data?.token || regRes.token;
+        const createdUser =
+          regRes.data?.user || regRes.data?.data?.user || regRes.user;
+
+        if (token) {
+          localStorage.setItem("token", token);
+          localStorage.setItem("access_token", token);
+          if (setAuth) setAuth(token, createdUser);
+        }
+
+        // Tạo mới thành công -> Cho qua bước 2
+        setCurrentStep(2);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (err) {
+        const errorMsg = err.response?.data?.message || err.message || "";
+
+        // 👉 NẾU TRÙNG TÀI KHOẢN (EMAIL ĐÃ TỒN TẠI): TỰ ĐỘNG CHUYỂN SANG ĐĂNG NHẬP LUÔN!
+        if (
+          errorMsg.toLowerCase().includes("tồn tại") ||
+          errorMsg.toLowerCase().includes("already") ||
+          errorMsg.toLowerCase().includes("duplicate") ||
+          err.response?.status === 409 ||
+          err.response?.status === 400
+        ) {
+          try {
+            // Tự động gọi API đăng nhập bằng email & password người dùng vừa gõ
+            const loginRes = await apiClient.post("/auth/login", {
+              email: email,
+              password: password,
+            });
+
+            const loginToken =
+              loginRes.data?.token ||
+              loginRes.data?.data?.token ||
+              loginRes.token;
+            const loginUser =
+              loginRes.data?.user || loginRes.data?.data?.user || loginRes.user;
+
+            if (loginToken) {
+              localStorage.setItem("token", loginToken);
+              localStorage.setItem("access_token", loginToken);
+              if (setAuth) setAuth(loginToken, loginUser);
+
+              // Đăng nhập thành công với tài khoản đã có -> Qua bước 2 ngon lành!
+              setCurrentStep(2);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+              return;
+            }
+          } catch (loginErr) {
+            // Trường hợp tài khoản đã có sẵn nhưng người dùng gõ sai mật khẩu của họ
+            setErrors((prev) => ({
+              ...prev,
+              password:
+                "Email này đã có tài khoản trên hệ thống. Vui lòng nhập đúng mật khẩu đã đăng ký để tiếp tục!",
+            }));
+            return;
+          }
+        } else {
+          alert(`Đăng ký tài khoản thất bại: ${errorMsg}`);
+          return;
+        }
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Đã có tài khoản & đã đăng nhập -> Chuyển bước tiếp theo bình thường
       setCurrentStep((prev) => Math.min(prev + 1, 8));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
   const handleBack = () => {
-    if (currentStep === 1) navigate("/owner/hotels");
-    else {
+    if (currentStep === 1) {
+      navigate("/");
+    } else {
       setCurrentStep((prev) => Math.max(prev - 1, 1));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -213,14 +371,80 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
+  const handleAutoFillDemo = () => {
+    setFormData((prev) => ({
+      ...prev,
+      ownerName: prev.ownerName || "Nguyễn Thành Long",
+      phoneContact: prev.phoneContact || "0901234567",
+      emailContact: prev.emailContact || "partner.demo@gostay.vn",
+      password: prev.password || "123456",
+      hotelName: "GoStay Grand Luxury Hotel & Resort",
+      propertyType: "hotel",
+      address: "123 Đường Hai Bà Trưng, Phường Bến Nghé",
+      buildingInfo: "Tòa A, Khu Phố Cổ",
+      city: "Hồ Chí Minh",
+      province: "Hồ Chí Minh",
+      district: "Quận 1",
+      zipCode: "700000",
+      latitude: 10.7769,
+      longitude: 106.7009,
+      starRating: 5,
+      description:
+        "Tọa lạc ngay giữa trung tâm hoa lệ, GoStay Grand Luxury Hotel mang đến cho bạn trải nghiệm nghỉ dưỡng 5 sao đẳng cấp với tầm nhìn panorama hướng sông tuyệt đẹp, hồ bơi vô cực trên tầng thượng và hệ thống ẩm thực quốc tế đỉnh cao.",
+      checkInFrom: "14:00",
+      checkInTo: "23:00",
+      checkOutTo: "12:00",
+      cancellation_deadline_hours: 24,
+      bankAccount: "0071001999888",
+      bankAccountHolder: prev.ownerName?.toUpperCase() || "NGUYEN THANH LONG",
+      taxCode: "0312345678",
+      acceptedTerms: true,
+      hotelMainImage:
+        "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
+      hotelImages: [
+        {
+          id: "demo-1",
+          url: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
+          title: "Mặt tiền khách sạn",
+        },
+        {
+          id: "demo-2",
+          url: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
+          title: "Hồ bơi vô cực ngoài trời",
+        },
+        {
+          id: "demo-3",
+          url: "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
+          title: "Phòng ngủ Deluxe City View",
+        },
+      ],
+    }));
+    setIsAuditOpen(false);
+  };
+
   // ════════════════════════════════════════════════════════════════════════════
-  // 🚀 NỘP HỒ SƠ LÊN POSTGRESQL (BƯỚC 8 ĐĂNG TẢI)
+  // 👉 NỘP ĐƠN ĐĂNG TẢI KHÁCH SẠN (GẮN TOKEN TRỰC TIẾP TRÁNH TUYỆT ĐỐI LỖI 401)
   // ════════════════════════════════════════════════════════════════════════════
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
       return;
     }
+
+    const token =
+      localStorage.getItem("token") ||
+      localStorage.getItem("access_token") ||
+      useAuthStore.getState().token;
+
+    if (!token) {
+      alert(
+        "Phiên làm việc chưa có mã xác thực. Vui lòng quay lại Bước 1 kiểm tra tài khoản!",
+      );
+      setIsReviewOpen(false);
+      setCurrentStep(1);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -241,14 +465,19 @@ export const RegisterForm = () => {
           name: r.name || `Phòng Hạng ${rIdx + 1}`,
           capacity: Number(r.capacity || 2),
           base_price: Number(r.base_price || 650000),
-          description: r.description || "Phòng nghỉ tiêu chuẩn cao cấp",
+          description: r.description || "Phòng nghỉ hiện đại, tiện nghi.",
           type: r.type || "Deluxe",
           room_view: r.room_view || "city_view",
           bed_type: r.bed_type || "1 Giường đôi lớn (King/Queen Size)",
           room_area: Number(r.room_area || 28),
           amount: numbers.length,
           room_numbers: numbers,
-          amenities: r.roomAmenities || [],
+          amenities: r.roomAmenities || [
+            "air_conditioner",
+            "tv_smart",
+            "wifi",
+            "hot_water",
+          ],
         };
       });
 
@@ -269,7 +498,9 @@ export const RegisterForm = () => {
         phone: formData.phoneContact || user?.phone || "0900000000",
         email: formData.emailContact || user?.email || "hotel@contact.com",
         star_rating: Number(formData.starRating || 3),
-        description: formData.description || "Khách sạn chất lượng cao.",
+        description:
+          formData.description ||
+          `Tận hưởng kỳ nghỉ dưỡng tuyệt vời tại ${formData.hotelName} với dịch vụ chất lượng cao và vị trí đắc địa.`,
         checkin_time: sanitizeTimeToPostgres(formData.checkInFrom, "14:00:00"),
         checkout_time: sanitizeTimeToPostgres(formData.checkOutTo, "12:00:00"),
         cancellation_deadline_hours: Number(
@@ -281,28 +512,24 @@ export const RegisterForm = () => {
         tax_code: formData.taxCode || null,
         business_license_url: formData.businessLicenseUrl || null,
         commission_rate: Number(formData.commissionRate || 18.0),
-
         image: formData.hotelMainImage || allImages[0]?.path || "",
-        owner_name: formData.ownerName,
-        owner_phone: formData.phoneContact,
-        owner_email: formData.emailContact,
-        password: formData.password || "123456",
-
         rooms: processedRooms,
         amenities: formData.propertyAmenities,
         images: allImages,
       };
 
-      const res = await apiClient.post("/hotels/register", payload);
-      const createdHotel = res.hotel || res.data?.hotel || res.data || res;
+      // GỬI KÈM TOKEN TRỰC TIẾP QUA HEADER ĐỂ CHỐNG LỖI 401
+      const res = await apiClient.post("/hotels/register", payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-      alert(
-        "🎉 Đăng tải thành công! Hồ sơ cơ sở lưu trú của quý đối tác đã được gửi lên hệ thống.",
-      );
+      const createdHotel = res.hotel || res.data?.hotel || res.data || res;
 
       setSubmittedApplication({
         applicationId:
-          createdHotel.id || `AGD-${Date.now().toString().slice(-6)}`,
+          createdHotel.id || `GST-${Date.now().toString().slice(-6)}`,
         hotelId: createdHotel.id,
         submittedAt: new Date().toISOString(),
         data: createdHotel,
@@ -310,8 +537,12 @@ export const RegisterForm = () => {
 
       setIsReviewOpen(false);
     } catch (err) {
-      console.error("Lỗi đăng tải:", err);
-      alert(`Lỗi: ${err.response?.data?.message || err.message}`);
+      console.error("Lỗi đăng tải khách sạn:", err);
+      const errorMsg =
+        err.response?.data?.message ||
+        err.message ||
+        "Đã xảy ra lỗi khi đăng tải.";
+      alert(`Đăng ký chưa thành công: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -327,77 +558,101 @@ export const RegisterForm = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white font-sans text-slate-800 pb-16">
-      {/* ── TOP HEADER STYLE ── */}
-      <header className="border-b border-slate-100 py-3.5 px-6 sm:px-12 flex items-center justify-between">
-        <div className="flex items-center gap-4 text-xs font-semibold text-slate-600">
-          <button
-            onClick={() => navigate("/owner/hotels")}
-            className="hover:underline cursor-pointer text-slate-500"
-          >
-            Lưu và thoát
-          </button>
-          <span className="text-base cursor-pointer" title="Tiếng Việt">
-            🇻🇳
-          </span>
+    <div className="min-h-screen bg-[#f5f7fa] font-sans text-slate-800 pb-20">
+      {/* ── TOP HEADER ĐỒNG BỘ ── */}
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 sm:px-12 py-3 shadow-xs">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#003580] text-white flex items-center justify-center font-black shadow-md">
+              <Building2 size={22} />
+            </div>
+            <div>
+              <span className="font-black text-[#003580] text-lg tracking-tight block leading-none">
+                GoStay Partner Hub
+              </span>
+              <span className="text-[11px] font-bold text-slate-400">
+                Đăng ký mở bán cơ sở lưu trú trực tuyến
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button
+              type="button"
+              onClick={() => setIsAuditOpen(true)}
+              className="text-xs font-bold text-[#006ce4] bg-[#e8f2ff] hover:bg-blue-100 px-3.5 py-2 rounded-xl border border-blue-200 flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <ShieldCheck size={16} />
+              <span className="hidden sm:inline">
+                Kiểm định hồ sơ (Auditor)
+              </span>
+            </button>
+
+            <button
+              onClick={() => navigate("/")}
+              className="text-xs font-bold text-slate-600 hover:text-slate-900 px-3 py-2 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+            >
+              Lưu & Thoát
+            </button>
+          </div>
         </div>
       </header>
 
       {/* ── KHUNG GIAO DIỆN CHÍNH (CỘT TRÁI STEPPER + NỘI DUNG PHẢI) ── */}
-      <div className="max-w-6xl mx-auto pt-8 px-4 sm:px-8 grid grid-cols-1 md:grid-cols-12 gap-8">
-        {/* ── CỘT MENU BÊN TRÁI: STEPPER 8 BƯỚC AGODA ── */}
-        <div className="hidden md:block md:col-span-3 lg:col-span-3 pr-4">
-          <div className="sticky top-8 space-y-0">
-            {AGODA_STEPS.map((s, idx) => {
+      <div className="max-w-7xl mx-auto pt-8 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+        {/* ── CỘT MENU BÊN TRÁI: STEPPER 8 BƯỚC ── */}
+        <div className="hidden md:block md:col-span-4 lg:col-span-3 sticky top-20 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="text-xs font-black text-[#003580] uppercase tracking-wider pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
+            <span>Tiến trình hồ sơ</span>
+            <span className="text-[#006ce4] font-black">{currentStep}/8</span>
+          </div>
+
+          <div className="space-y-1">
+            {AGODA_STEPS.map((s) => {
               const isPassed = currentStep > s.id;
               const isCurrent = currentStep === s.id;
 
               return (
-                <div key={s.id} className="relative flex items-start group">
-                  {/* Đường kẻ nối dọc */}
-                  {idx < AGODA_STEPS.length - 1 && (
-                    <div
-                      className={`absolute left-[13px] top-7 w-[2px] h-8 -ml-[0.5px] ${
-                        isPassed ? "bg-blue-600" : "bg-slate-200"
-                      }`}
-                    />
-                  )}
-
-                  {/* Vòng tròn số bước */}
+                <div
+                  key={s.id}
+                  onClick={() => s.id <= currentStep && setCurrentStep(s.id)}
+                  className={`flex items-center gap-3 p-2.5 rounded-xl text-xs font-bold cursor-pointer transition ${
+                    isCurrent
+                      ? "bg-[#e8f2ff] text-[#003580] shadow-xs"
+                      : isPassed
+                        ? "text-slate-700 hover:bg-slate-50"
+                        : "text-slate-400 opacity-60 cursor-not-allowed"
+                  }`}
+                >
                   <div
-                    onClick={() => s.id <= currentStep && setCurrentStep(s.id)}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition cursor-pointer z-10 ${
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black shrink-0 transition ${
                       isPassed
-                        ? "bg-blue-600 text-white"
+                        ? "bg-emerald-600 text-white"
                         : isCurrent
-                          ? "bg-blue-600 text-white ring-4 ring-blue-100"
-                          : "bg-white border-2 border-slate-300 text-slate-400"
+                          ? "bg-[#003580] text-white shadow"
+                          : "bg-slate-100 text-slate-400 border border-slate-200"
                     }`}
                   >
                     {isPassed ? <Check size={13} strokeWidth={3} /> : s.id}
                   </div>
-
-                  {/* Tên bước */}
-                  <span
-                    onClick={() => s.id <= currentStep && setCurrentStep(s.id)}
-                    className={`ml-3 text-xs font-semibold pt-1 cursor-pointer transition ${
-                      isCurrent
-                        ? "text-blue-600 font-bold"
-                        : isPassed
-                          ? "text-slate-800"
-                          : "text-slate-400"
-                    }`}
-                  >
-                    {s.title}
-                  </span>
+                  <span className="truncate">{s.title}</span>
                 </div>
               );
             })}
           </div>
+
+          <div className="mt-6 pt-4 border-t border-slate-100 text-[11px] text-slate-500 leading-relaxed space-y-1">
+            <p className="font-bold text-slate-700 flex items-center gap-1">
+              <HelpCircle size={13} className="text-[#006ce4]" /> Hỗ trợ đối tác
+              24/7
+            </p>
+            <p>Hotline: 1900 6868 (Phím 2)</p>
+            <p>Email: partner@gostay.vn</p>
+          </div>
         </div>
 
         {/* ── CỘT NỘI DUNG BÊN PHẢI (HIỂN THỊ TỪNG BƯỚC) ── */}
-        <div className="md:col-span-9 lg:col-span-8">
+        <div className="md:col-span-8 lg:col-span-9 bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
           {currentStep === 1 && (
             <Step1HotelInfo
               data={formData}
@@ -451,42 +706,58 @@ export const RegisterForm = () => {
             />
           )}
 
-          {/* ── NÚT ĐIỀU HƯỚNG DẠNG VIÊN THUỐC BO TRÒN CHUẨN AGODA ── */}
-          <div className="max-w-2xl mx-auto flex items-center justify-between pt-8 mt-8 border-t border-slate-100">
+          {/* ── THANH ĐIỀU HƯỚNG DƯỚI CÙNG ── */}
+          <div className="flex items-center justify-between pt-8 mt-10 border-t border-slate-100 gap-3">
             <button
               type="button"
               onClick={handleBack}
-              className="px-8 h-11 border border-slate-300 hover:bg-slate-50 rounded-full font-bold text-xs text-slate-700 transition cursor-pointer"
+              className="px-6 h-12 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
             >
-              Quay trở lại
+              <ChevronLeft size={16} /> Quay lại
             </button>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:gap-3">
               <button
                 type="button"
                 onClick={() => setIsReviewOpen(true)}
-                className="px-5 h-11 border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-full font-bold text-xs transition cursor-pointer flex items-center gap-1"
+                className="px-5 h-12 border border-blue-200 bg-[#e8f2ff] hover:bg-blue-100 text-[#003580] rounded-xl font-black text-xs transition cursor-pointer flex items-center gap-1.5"
               >
-                <Eye size={15} /> Xem lại
+                <Eye size={16} /> Xem lại hồ sơ
               </button>
 
               {currentStep < 8 ? (
                 <button
                   type="button"
                   onClick={handleNext}
-                  className="px-10 h-11 bg-[#1964d2] hover:bg-blue-700 text-white font-bold text-xs rounded-full shadow-md transition cursor-pointer active:scale-95"
+                  disabled={loading}
+                  className="px-8 h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-[0.98] cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  Tiếp theo
+                  {loading && currentStep === 1 ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" /> Đang xác
+                      thực tài khoản...
+                    </>
+                  ) : (
+                    <>
+                      Tiếp theo <ChevronRight size={16} />
+                    </>
+                  )}
                 </button>
               ) : (
-                /* 👉 NÚT ĐĂNG TẢI CHUẨN BƯỚC 8 CỦA AGODA */
                 <button
                   type="button"
                   onClick={handleFinalSubmit}
                   disabled={loading}
-                  className="px-12 h-11 bg-[#1964d2] hover:bg-blue-700 text-white font-bold text-xs rounded-full shadow-lg transition cursor-pointer active:scale-95 disabled:opacity-50"
+                  className="px-10 h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-[0.98] cursor-pointer disabled:opacity-50 flex items-center gap-2"
                 >
-                  {loading ? "Đang đăng tải..." : "Đăng tải"}
+                  {loading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" /> Đang xử lý
+                      đăng tải...
+                    </>
+                  ) : (
+                    "Xác nhận & Mở bán"
+                  )}
                 </button>
               )}
             </div>
@@ -494,6 +765,7 @@ export const RegisterForm = () => {
         </div>
       </div>
 
+      {/* MODAL XEM LẠI TOÀN BỘ HỒ SƠ */}
       <ReviewModal
         data={formData}
         isOpen={isReviewOpen}
@@ -501,6 +773,17 @@ export const RegisterForm = () => {
         onConfirmSubmit={handleFinalSubmit}
         loading={loading}
       />
+
+      {/* MODAL KIỂM ĐỊNH AUDIT REPORT */}
+      {isAuditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <AuditReportView
+            data={formData}
+            onClose={() => setIsAuditOpen(false)}
+            onAutoFillDemo={handleAutoFillDemo}
+          />
+        </div>
+      )}
     </div>
   );
 };

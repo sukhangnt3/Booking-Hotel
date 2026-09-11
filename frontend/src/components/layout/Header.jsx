@@ -11,11 +11,11 @@ import {
   Bell,
   Check,
   Ticket,
+  User as UserIcon,
 } from "lucide-react";
 
 import { Button } from "../ui";
 import { useAuthStore } from "@/stores/authStore";
-import { useNotification } from "@/hooks/useNotification";
 import { authService } from "@/services";
 import apiClient from "@/services/apiClient";
 import { cn } from "@/utils/cn";
@@ -25,16 +25,33 @@ export default function Header() {
 
   const { user: storeUser, isAuthenticated, logout } = useAuthStore();
 
-  const { notifications, unreadCount, markAsRead, markAllAsRead } =
-    useNotification();
-
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
 
   const menuRef = useRef(null);
   const notifRef = useRef(null);
 
-  const user = storeUser || null;
+  // =====================================================
+  // ĐỒNG BỘ DỮ LIỆU USER VỚI ADMINLAYOUT & OWNERLAYOUT
+  // =====================================================
+  const localUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  })();
+
+  const authStorageUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("auth-storage") || "{}")?.state
+        ?.user;
+    } catch {
+      return null;
+    }
+  })();
+
+  const user = storeUser || localUser || authStorageUser || null;
 
   // =====================================================
   // ĐÓNG MENU KHI CLICK RA NGOÀI
@@ -78,7 +95,12 @@ export default function Header() {
 
           if (u) {
             const dbAvatar =
-              u.avatar || u.avatar_url || u.picture || u.image || "";
+              u.avatar ||
+              u.avatar_url ||
+              u.picture ||
+              u.image ||
+              u.photoURL ||
+              "";
 
             const mergedUser = {
               ...user,
@@ -116,15 +138,42 @@ export default function Header() {
   }, []);
 
   // =====================================================
-  // ROLE
+  // ROLE (ĐỒNG BỘ PHÂN QUYỀN MẢNG VÀ CHUỖI NHƯ OWNERLAYOUT)
   // =====================================================
+  let extractedRoles = [];
+  if (Array.isArray(user?.roles)) {
+    extractedRoles = user.roles;
+  } else if (user?.role) {
+    extractedRoles = [user.role];
+  } else if (user?.role_name) {
+    extractedRoles = [user.role_name];
+  }
+
+  const normalizedRoles = extractedRoles
+    .flat()
+    .filter(Boolean)
+    .map((r) => String(r).trim().toLowerCase());
+
   const role = String(user?.role || user?.role_name || "").toLowerCase();
 
-  const isAdmin = role.includes("admin") || user?.role_id === 1;
+  const isAdmin =
+    normalizedRoles.some((r) => r.includes("admin")) ||
+    role.includes("admin") ||
+    user?.role_id === 1;
 
-  const isOwner = role.includes("owner") || role.includes("hotel_owner");
+  const isOwner =
+    normalizedRoles.some((r) => r.includes("owner")) ||
+    role.includes("owner") ||
+    role.includes("hotel_owner") ||
+    user?.role_id === 2;
 
-  const isStaff = role.includes("staff") || role.includes("receptionist");
+  const isStaff =
+    normalizedRoles.some(
+      (r) => r.includes("staff") || r.includes("receptionist"),
+    ) ||
+    role.includes("staff") ||
+    role.includes("receptionist") ||
+    user?.role_id === 3;
 
   // =====================================================
   // TÊN HIỂN THỊ
@@ -183,21 +232,30 @@ export default function Header() {
   };
 
   // =====================================================
-  // LẤY AVATAR TỪ DATABASE
+  // LẤY AVATAR TỪ DATABASE (ĐỒNG BỘ VỚI GOOGLE VÀ LOCALSTORAGE)
   // =====================================================
   const rawAvatar =
-    user?.avatar || user?.avatar_url || user?.picture || user?.image || "";
+    user?.avatar ||
+    user?.avatar_url ||
+    user?.picture ||
+    user?.photoURL ||
+    user?.image ||
+    (user?.email
+      ? localStorage.getItem(`google_avatar_${user.email}`)
+      : null) ||
+    "";
 
   const avatarUrl = rawAvatar ? resolveAvatarUrl(rawAvatar) : fallbackAvatar;
 
   // =====================================================
-  // LOGOUT
+  // LOGOUT (ĐỒNG BỘ DỌN SẠCH TẤT CẢ STORAGE)
   // =====================================================
   const handleLogout = () => {
     if (logout) logout();
 
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("auth-storage");
 
     setIsMenuOpen(false);
 
@@ -234,14 +292,14 @@ export default function Header() {
             2. ACTIONS & THÔNG BÁO
         ===================================================== */}
         <div className="flex items-center gap-2 sm:gap-4">
-          {/* KÊNH LỄ TÂN */}
+          {/* KÊNH LỄ TÂN (ĐÃ ĐỒNG BỘ VỀ BÀN TRỰC LỄ TÂN /reception/room-map) */}
           {isStaff && (
             <button
-              onClick={() => navigate("/owner/bookings")}
+              onClick={() => navigate("/reception/room-map")}
               className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-3.5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition cursor-pointer"
             >
               <CalendarCheck size={16} />
-              Kênh Lễ Tân
+              Bàn Trực Lễ Tân
             </button>
           )}
 
@@ -254,97 +312,6 @@ export default function Header() {
             >
               Đăng chỗ nghỉ của Quý vị
             </Button>
-          )}
-
-          {/* =====================================================
-              CHUÔNG THÔNG BÁO
-          ===================================================== */}
-          {isUserLoggedIn && (
-            <div className="relative" ref={notifRef}>
-              <button
-                onClick={() => setIsNotifOpen(!isNotifOpen)}
-                className="p-2.5 rounded-full hover:bg-white/10 text-white relative transition cursor-pointer"
-                title="Thông báo"
-              >
-                <Bell size={20} />
-
-                {unreadCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] bg-rose-500 text-white rounded-full text-[10px] font-black flex items-center justify-center px-1 border-2 border-[#0a2540] animate-pulse">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                )}
-              </button>
-
-              {/* HỘP THÔNG BÁO */}
-              {isNotifOpen && (
-                <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl z-[70] border border-gray-100 text-gray-800 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
-                  <div className="p-4 bg-[#003580] text-white flex justify-between items-center">
-                    <div>
-                      <h4 className="font-bold text-sm">Thông báo</h4>
-
-                      <p className="text-[10px] text-blue-200">
-                        {unreadCount} thông báo mới
-                      </p>
-                    </div>
-
-                    {unreadCount > 0 && (
-                      <button
-                        onClick={markAllAsRead}
-                        className="text-[11px] text-blue-200 hover:text-white font-semibold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Check size={13} />
-                        Đã đọc tất cả
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 text-xs">
-                    {notifications.length > 0 ? (
-                      notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => {
-                            markAsRead(n.id);
-
-                            if (n.link) {
-                              navigate(n.link);
-                            }
-                          }}
-                          className={`p-3.5 hover:bg-slate-50 transition cursor-pointer space-y-1 ${
-                            !n.read_at && !n.readAt ? "bg-blue-50/50" : ""
-                          }`}
-                        >
-                          <div className="flex justify-between items-start">
-                            <strong className="font-bold text-slate-900 block line-clamp-1">
-                              {n.title}
-                            </strong>
-
-                            {!n.read_at && !n.readAt && (
-                              <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0 mt-1" />
-                            )}
-                          </div>
-
-                          <p className="text-slate-600 line-clamp-2 leading-relaxed font-normal">
-                            {n.content}
-                          </p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="py-8 text-center text-slate-400 space-y-1">
-                        <Bell
-                          size={28}
-                          className="mx-auto text-slate-300 mb-1"
-                        />
-
-                        <p className="font-medium text-xs">
-                          Không có thông báo nào
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
           )}
 
           {/* =====================================================
@@ -419,17 +386,17 @@ export default function Header() {
                     </p>
                   </div>
 
-                  {/* KÊNH LỄ TÂN */}
+                  {/* KÊNH LỄ TÂN (ĐÃ ĐỒNG BỘ VỀ /reception/room-map) */}
                   {isStaff && (
                     <button
                       onClick={() => {
                         setIsMenuOpen(false);
-                        navigate("/owner/bookings");
+                        navigate("/reception/room-map");
                       }}
                       className="w-full text-left px-4 py-3 text-sm bg-amber-50 text-amber-900 font-black hover:bg-amber-100 flex items-center gap-3 transition cursor-pointer"
                     >
                       <CalendarCheck size={18} className="text-amber-600" />
-                      Kênh Lễ Tân
+                      Bàn Trực Lễ Tân
                     </button>
                   )}
 
@@ -461,7 +428,7 @@ export default function Header() {
                     </button>
                   )}
 
-                  {/* CHUYẾN ĐI */}
+                  {/* CHUYẾN ĐI CỦA TÔI */}
                   <button
                     onClick={() => {
                       setIsMenuOpen(false);

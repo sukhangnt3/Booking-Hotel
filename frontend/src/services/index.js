@@ -5,5 +5,4 @@ export { default as bookingService } from "./bookingService";
 export { default as paymentService } from "./paymentService";
 export { default as reviewService } from "./reviewService";
 export { default as promotionService } from "./promotionService";
-export { default as notificationService } from "./notificationService";
 export { default as uploadService } from "./uploadService";

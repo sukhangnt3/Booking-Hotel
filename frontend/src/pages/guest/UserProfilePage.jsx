@@ -19,13 +19,11 @@ import {
   Ticket,
   Printer,
   X,
-  KeyRound,
   Star,
   Send,
-  MessageSquare,
 } from "lucide-react";
 
-import { authService, hotelService } from "@/services";
+import { hotelService } from "@/services";
 import apiClient from "@/services/apiClient";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -58,18 +56,17 @@ export default function UserProfilePage() {
   const [toast, setToast] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  // 🌟 STATE CHO MODAL ĐÁNH GIÁ (KHI ĐÃ CHECK-OUT)
+  // Modal đánh giá khi đã check-out
   const [reviewingBooking, setReviewingBooking] = useState(null);
   const [reviewPoint, setReviewPoint] = useState(10);
   const [reviewComment, setReviewComment] = useState("");
   const [isSendingReview, setIsSendingReview] = useState(false);
 
   // ==================================================
-  // XỬ LÝ URL ẢNH ĐẠI DIỆN CHUẨN XÁC
+  // XỬ LÝ URL ẢNH ĐẠI DIỆN
   // ==================================================
   const resolveAvatarUrl = (url) => {
     if (!url) return "";
-
     const avatarUrl = String(url).trim();
 
     if (
@@ -94,37 +91,25 @@ export default function UserProfilePage() {
   };
 
   // ==================================================
-  // FORM THÔNG TIN CÁ NHÂN
+  // FORM THÔNG TIN CÁ NHÂN (ĐÚNG THEO BẢNG users CỦA DB)
   // ==================================================
   const [profileForm, setProfileForm] = useState({
-    full_name: user?.full_name || user?.name || "",
+    full_name: user?.full_name || "",
     email: user?.email || "",
     phone: user?.phone || "",
-    dob: user?.dob ? user.dob.split("T")[0] : "",
+    dob: user?.dob ? String(user.dob).split("T")[0] : "",
   });
 
   useEffect(() => {
     if (user) {
-      setProfileForm((prev) => ({
-        ...prev,
-        full_name: user.full_name || user.name || prev.full_name,
-        email: user.email || prev.email,
-        phone: user.phone || prev.phone,
-        dob: user.dob ? user.dob.split("T")[0] : prev.dob,
-      }));
+      setProfileForm({
+        full_name: user.full_name || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        dob: user.dob ? String(user.dob).split("T")[0] : "",
+      });
     }
   }, [user]);
-
-  // ==================================================
-  // FORM ĐỔI MẬT KHẨU
-  // ==================================================
-  const [passwordForm, setPasswordForm] = useState({
-    oldPassword: "",
-    newPassword: "",
-    confirmNewPassword: "",
-  });
-
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -178,44 +163,40 @@ export default function UserProfilePage() {
   const syncGlobalUser = (updatedData) => {
     if (!updatedData) return;
 
-    const finalAvatar =
-      updatedData.avatar ||
-      updatedData.avatar_url ||
-      updatedData.picture ||
-      updatedData.image ||
-      "";
-
     const updatedUser = {
       ...user,
-      ...updatedData,
-      avatar: finalAvatar,
-      avatar_url: finalAvatar,
-      picture: finalAvatar,
+      full_name: updatedData.full_name ?? user?.full_name ?? "",
+      email: updatedData.email ?? user?.email ?? "",
+      phone: updatedData.phone ?? user?.phone ?? "",
+      dob: updatedData.dob ?? user?.dob ?? "",
+      avatar:
+        updatedData.avatar !== undefined
+          ? updatedData.avatar
+          : user?.avatar || "",
     };
 
     useAuthStore.setState({ user: updatedUser });
     if (updateUser) updateUser(updatedUser);
 
     setProfileForm({
-      full_name:
-        updatedData.full_name ||
-        updatedData.name ||
-        updatedUser.full_name ||
-        "",
-      email: updatedData.email || updatedUser.email || "",
-      phone: updatedData.phone || updatedUser.phone || "",
-      dob: updatedData.dob ? updatedData.dob.split("T")[0] : "",
+      full_name: updatedUser.full_name || "",
+      email: updatedUser.email || "",
+      phone: updatedUser.phone || "",
+      dob: updatedUser.dob ? String(updatedUser.dob).split("T")[0] : "",
     });
   };
 
+  // ==================================================
+  // ĐỌC THÔNG TIN TRỰC TIẾP TỪ /users/profile TRONG DB
+  // ==================================================
   const fetchProfileFromDB = async () => {
     try {
-      const response = await apiClient.get(`/auth/profile?t=${Date.now()}`);
+      const response = await apiClient.get(`/users/profile?t=${Date.now()}`);
       const databaseUser =
         response?.data?.user ||
         response?.data?.data?.user ||
-        response?.data ||
-        response?.user;
+        response?.data?.data ||
+        response?.data;
 
       if (databaseUser) {
         syncGlobalUser(databaseUser);
@@ -241,7 +222,7 @@ export default function UserProfilePage() {
             : []);
       setBookings(databaseBookings);
     } catch (error) {
-      console.error("❌ Lỗi lấy đơn đặt phòng từ Database:", error);
+      console.error("❌ Lỗi lấy đơn đặt phòng:", error);
       setBookings([]);
     } finally {
       setIsLoading(false);
@@ -265,7 +246,7 @@ export default function UserProfilePage() {
   }, []);
 
   // ==================================================
-  // LƯU THÔNG TIN HỒ SƠ
+  // LƯU HỒ SƠ - GHI THẲNG VÀO POSTGRESQL QUA /users/profile
   // ==================================================
   const handleProfileSubmit = async (event) => {
     event.preventDefault();
@@ -277,29 +258,41 @@ export default function UserProfilePage() {
 
     setIsSubmitting(true);
 
+    // Chuẩn hóa đúng kiểu cho PostgreSQL (rỗng -> null)
+    const payload = {
+      full_name: profileForm.full_name.trim(),
+      phone:
+        profileForm.phone && profileForm.phone.trim() !== ""
+          ? profileForm.phone.trim()
+          : null,
+      dob:
+        profileForm.dob && profileForm.dob.trim() !== ""
+          ? profileForm.dob.trim()
+          : null,
+    };
+
     try {
-      const payload = {
-        full_name: profileForm.full_name.trim(),
-        phone: profileForm.phone ? profileForm.phone.trim() : null,
-        dob: profileForm.dob || null,
-      };
-
-      const response = await authService.updateProfile(payload);
+      const res = await apiClient.put("/users/profile", payload);
       const updatedUser =
-        response?.data?.user ||
-        response?.data?.data?.user ||
-        response?.data ||
-        response?.user;
+        res?.data?.user ||
+        res?.data?.data?.user ||
+        res?.data?.data ||
+        res?.data;
 
-      if (updatedUser) {
+      if (updatedUser && typeof updatedUser === "object") {
         syncGlobalUser(updatedUser);
+      } else {
+        syncGlobalUser(payload);
       }
 
+      await fetchProfileFromDB();
       showToast("Đã lưu thông tin vào Database thành công!");
-    } catch (error) {
+    } catch (err) {
+      console.error("❌ Lỗi cập nhật profile:", err);
       const errorMsg =
-        error?.message ||
-        error?.response?.data?.message ||
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
         "Cập nhật thông tin thất bại.";
       showToast(errorMsg, "error");
     } finally {
@@ -308,54 +301,7 @@ export default function UserProfilePage() {
   };
 
   // ==================================================
-  // ĐỔI MẬT KHẨU
-  // ==================================================
-  const handleChangePasswordSubmit = async (event) => {
-    event.preventDefault();
-    const { oldPassword, newPassword, confirmNewPassword } = passwordForm;
-
-    if (!oldPassword || !newPassword || !confirmNewPassword) {
-      showToast("Vui lòng nhập đầy đủ thông tin.", "error");
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      showToast("Mật khẩu mới phải có ít nhất 6 ký tự.", "error");
-      return;
-    }
-
-    if (newPassword !== confirmNewPassword) {
-      showToast("Mật khẩu xác nhận không khớp.", "error");
-      return;
-    }
-
-    if (oldPassword === newPassword) {
-      showToast("Mật khẩu mới phải khác mật khẩu hiện tại.", "error");
-      return;
-    }
-
-    try {
-      setIsChangingPassword(true);
-      await authService.changePassword(oldPassword, newPassword);
-      showToast("Đổi mật khẩu thành công!");
-      setPasswordForm({
-        oldPassword: "",
-        newPassword: "",
-        confirmNewPassword: "",
-      });
-    } catch (error) {
-      const errorMsg =
-        error?.message ||
-        error?.response?.data?.message ||
-        "Đổi mật khẩu thất bại.";
-      showToast(errorMsg, "error");
-    } finally {
-      setIsChangingPassword(false);
-    }
-  };
-
-  // ==================================================
-  // HỦY BOOKING (CHỈ HỦY ĐƯỢC KHI CHƯA NHẬN PHÒNG)
+  // HỦY BOOKING
   // ==================================================
   const handleCancelBooking = async (event, bookingCode) => {
     event.stopPropagation();
@@ -370,7 +316,7 @@ export default function UserProfilePage() {
       await apiClient.patch(`/bookings/${bookingCode}/cancel`);
       showToast("Đã hủy đơn đặt phòng thành công!");
       fetchDatabaseBookings();
-    } catch (error) {
+    } catch {
       showToast("Không thể hủy đơn lúc này.", "error");
     }
   };
@@ -390,13 +336,13 @@ export default function UserProfilePage() {
         ),
       );
       showToast("Đã xóa khỏi danh sách yêu thích");
-    } catch (error) {
+    } catch {
       showToast("Không thể xóa khách sạn yêu thích.", "error");
     }
   };
 
   // ==================================================
-  // 🌟 GỬI ĐÁNH GIÁ TRỰC TIẾP TỪ ĐƠN ĐÃ CHECK-OUT
+  // ĐÁNH GIÁ KỲ NGHỈ
   // ==================================================
   const handleOpenReviewModal = (booking) => {
     setReviewingBooking(booking);
@@ -424,7 +370,6 @@ export default function UserProfilePage() {
       showToast("✓ Đã gửi đánh giá thành công!");
       setReviewingBooking(null);
 
-      // Cập nhật lại đơn này thành đã đánh giá trên giao diện
       setBookings((prev) =>
         prev.map((item) =>
           item.id === reviewingBooking.id
@@ -442,7 +387,6 @@ export default function UserProfilePage() {
     }
   };
 
-  // 🟢 HÀM KIỂM TRA CHECKOUT KHÔNG PHÂN BIỆT HOA THƯỜNG
   const isBookingCheckedOut = (status) => {
     const s = String(status || "")
       .toLowerCase()
@@ -450,7 +394,6 @@ export default function UserProfilePage() {
     return ["checked_out", "checkout", "completed", "done"].includes(s);
   };
 
-  // 🟢 BỘ LỌC ĐƠN ĐẶT PHÒNG THÔNG MINH
   const filteredBookings = bookings.filter((b) => {
     const s = String(b.status || "")
       .toLowerCase()
@@ -464,10 +407,10 @@ export default function UserProfilePage() {
   });
 
   const fallbackAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    profileForm.full_name || profileForm.email || "User",
+    profileForm.full_name || "User",
   )}&background=003580&color=fff&bold=true`;
 
-  const finalAvatarSrc = resolveAvatarUrl(user?.avatar || user?.picture || "");
+  const finalAvatarSrc = resolveAvatarUrl(user?.avatar || "");
   const displayAvatarUrl = finalAvatarSrc || fallbackAvatarUrl;
 
   return (
@@ -545,7 +488,7 @@ export default function UserProfilePage() {
             }`}
           >
             <User size={17} />
-            Thông tin tài khoản & Bảo mật
+            Thông tin tài khoản
           </button>
         </div>
 
@@ -564,7 +507,6 @@ export default function UserProfilePage() {
             {/* TAB 1: CHUYẾN ĐI CỦA TÔI */}
             {activeTab === "trips" && (
               <div className="space-y-5">
-                {/* 🟢 4 NÚT LỌC CHUẨN (CÓ TAB ĐÃ HOÀN THÀNH) */}
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "all", label: `Tất cả (${bookings.length})` },
@@ -650,7 +592,6 @@ export default function UserProfilePage() {
                               </span>
                             </div>
 
-                            {/* 🟢 HUY HIỆU TRẠNG THÁI CHUẨN XÁC */}
                             {isCancelled ? (
                               <span className="px-2.5 py-1 bg-rose-50 text-rose-700 font-semibold rounded-md border border-rose-200 flex items-center gap-1">
                                 <XCircle size={13} /> Đã hủy
@@ -748,9 +689,7 @@ export default function UserProfilePage() {
                                 </strong>
                               </div>
 
-                              {/* 🌟 CÁC NÚT THAO TÁC */}
                               <div className="flex flex-wrap items-center gap-2">
-                                {/* Chỉ cho hủy khi chưa nhận phòng và chưa hủy */}
                                 {!isCancelled &&
                                   !isCheckedIn &&
                                   !isCheckedOut && (
@@ -773,7 +712,6 @@ export default function UserProfilePage() {
                                   Phiếu đặt phòng
                                 </button>
 
-                                {/* 🟢 NÚT ĐÁNH GIÁ: CHỈ HIỂN THỊ KHI ĐÃ TRẢ PHÒNG (CHECK-OUT) */}
                                 {isCheckedOut ? (
                                   isReviewed ? (
                                     <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs rounded-lg flex items-center gap-1">
@@ -827,7 +765,7 @@ export default function UserProfilePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {favorites.map((item) => {
                       const hotel = item.hotel || item;
-                      const hotelId = hotel.id || hotel.hotel_id || hotel._id;
+                      const hotelId = hotel.id || hotel.hotel_id;
                       const hotelImage =
                         hotel.image ||
                         hotel.images?.[0]?.path ||
@@ -897,9 +835,9 @@ export default function UserProfilePage() {
               </div>
             )}
 
-            {/* TAB 3: THÔNG TIN TÀI KHOẢN & ĐỔI MẬT KHẨU */}
+            {/* TAB 3: THÔNG TIN TÀI KHOẢN (ĐÚNG CỘT DB users) */}
             {activeTab === "profile" && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="max-w-2xl mx-auto">
                 <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs">
                   <div className="border-b border-slate-100 pb-4 mb-5">
                     <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
@@ -907,7 +845,7 @@ export default function UserProfilePage() {
                       nhân
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Đồng bộ trực tiếp với Database
+                      Cập nhật thông tin tài khoản của bạn
                     </p>
                   </div>
 
@@ -932,7 +870,7 @@ export default function UserProfilePage() {
 
                     <div>
                       <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                        Địa chỉ Email (Định danh tài khoản)
+                        Địa chỉ Email
                       </label>
                       <input
                         type="email"
@@ -962,7 +900,7 @@ export default function UserProfilePage() {
 
                     <div>
                       <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                        Ngày sinh (dob)
+                        Ngày sinh
                       </label>
                       <input
                         type="date"
@@ -977,7 +915,7 @@ export default function UserProfilePage() {
                       />
                     </div>
 
-                    <div className="pt-3 flex justify-end">
+                    <div className="pt-4 flex justify-end">
                       <button
                         type="submit"
                         disabled={isSubmitting}
@@ -990,99 +928,13 @@ export default function UserProfilePage() {
                     </div>
                   </form>
                 </div>
-
-                <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs h-fit">
-                  <div className="border-b border-slate-100 pb-4 mb-5">
-                    <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                      <KeyRound size={18} className="text-amber-600" /> Đổi mật
-                      khẩu
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Cập nhật mật khẩu mã hóa trong cơ sở dữ liệu
-                    </p>
-                  </div>
-
-                  <form
-                    onSubmit={handleChangePasswordSubmit}
-                    className="space-y-4"
-                  >
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                        Mật khẩu hiện tại *
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        placeholder="••••••••"
-                        value={passwordForm.oldPassword}
-                        onChange={(e) =>
-                          setPasswordForm((prev) => ({
-                            ...prev,
-                            oldPassword: e.target.value,
-                          }))
-                        }
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-[#003580]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                        Mật khẩu mới (Tối thiểu 6 ký tự) *
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        placeholder="••••••••"
-                        value={passwordForm.newPassword}
-                        onChange={(e) =>
-                          setPasswordForm((prev) => ({
-                            ...prev,
-                            newPassword: e.target.value,
-                          }))
-                        }
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-[#003580]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                        Xác nhận mật khẩu mới *
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        placeholder="••••••••"
-                        value={passwordForm.confirmNewPassword}
-                        onChange={(e) =>
-                          setPasswordForm((prev) => ({
-                            ...prev,
-                            confirmNewPassword: e.target.value,
-                          }))
-                        }
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-[#003580]"
-                      />
-                    </div>
-
-                    <div className="pt-3 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={isChangingPassword}
-                        className="px-6 py-2.5 bg-slate-900 hover:bg-black text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
-                      >
-                        {isChangingPassword
-                          ? "Đang xử lý..."
-                          : "Cập nhật mật khẩu"}
-                      </button>
-                    </div>
-                  </form>
-                </div>
               </div>
             )}
           </>
         )}
       </main>
 
-      {/* 🌟 MODAL ĐÁNH GIÁ THANG ĐIỂM 10 */}
+      {/* MODAL ĐÁNH GIÁ */}
       {reviewingBooking && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
@@ -1105,7 +957,6 @@ export default function UserProfilePage() {
             </div>
 
             <form onSubmit={handleSubmitReview} className="p-6 space-y-5">
-              {/* CHỌN ĐIỂM TỪ 1 ĐẾN 10 */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-slate-700">
@@ -1134,7 +985,6 @@ export default function UserProfilePage() {
                 </div>
               </div>
 
-              {/* NHẬP BÌNH LUẬN */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 block">
                   Chia sẻ nhận xét của bạn *

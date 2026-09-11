@@ -65,15 +65,14 @@ export const hotelService = {
     }
   },
 
-  // ─── 5. YÊU THÍCH (FAVORITES) - ĐÃ SỬA CHỐNG BỊ ĐÁ RA LOGIN ───
+  // ─── 5. YÊU THÍCH (FAVORITES) ───
   getFavorites: async () => {
-    // 👈 KIỂM TRA ĐĂNG NHẬP TRƯỚC: Chưa login thì trả về [] ngay, KHÔNG gọi API
     const token =
       useAuthStore.getState().token || useAuthStore.getState().systemToken;
     if (!token) return [];
 
     try {
-      const res = await apiClient.get(`/users/favorites?_t=${Date.now()}`);
+      const res = await apiClient.get(`/favorites?_t=${Date.now()}`);
       const list = res?.favorites || res?.data || res;
       return Array.isArray(list)
         ? list.map((item) => mapHotelData(item.hotel || item))
@@ -84,13 +83,12 @@ export const hotelService = {
   },
 
   getFavoriteHotels: async () => {
-    // 👈 KIỂM TRA ĐĂNG NHẬP TRƯỚC: Chưa login thì trả về [] ngay, KHÔNG gọi API
     const token =
       useAuthStore.getState().token || useAuthStore.getState().systemToken;
     if (!token) return [];
 
     try {
-      const res = await apiClient.get(`/users/favorites?_t=${Date.now()}`);
+      const res = await apiClient.get(`/favorites?_t=${Date.now()}`);
       const list = res?.favorites || res?.data || res;
       return Array.isArray(list)
         ? list.map((item) => mapHotelData(item.hotel || item))

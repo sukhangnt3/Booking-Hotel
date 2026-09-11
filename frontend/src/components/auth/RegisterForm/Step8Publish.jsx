@@ -5,9 +5,9 @@ import {
   Building2,
   Upload,
   FileCheck,
-  CheckSquare,
-  Square,
   AlertCircle,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 
 export const Step8Publish = ({
@@ -34,23 +34,24 @@ export const Step8Publish = ({
     "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
 
   return (
-    <div className="max-w-2xl mx-auto space-y-7 font-sans text-slate-800 animate-fadeIn">
-      {/* ── TIÊU ĐỀ BƯỚC 8 CHUẨN AGODA ── */}
+    <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
       <div>
-        <div className="flex items-center justify-between text-xs text-slate-400 font-bold mb-1">
-          <span>Bước 8/8</span>
+        <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
+          <Sparkles size={14} className="text-[#006ce4]" /> Bước 8 / 8: Kiểm
+          duyệt & Kích hoạt mở bán
         </div>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-          Đăng tải
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          Hoàn tất hồ sơ & Đăng tải
         </h1>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          Xem lại bản xem trước của khách sạn trên GoStay trước khi gửi duyệt
+          chính thức.
+        </p>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          KHU VỰC 1: THẺ TÓM TẮT CHỖ NGHỈ (PREVIEW CARD CHUẨN AGODA)
-      ════════════════════════════════════════════════════════════════════════ */}
-      <div className="p-4 rounded-3xl bg-slate-50 border border-slate-200/90 flex items-center gap-4 shadow-2xs">
-        {/* Ảnh đại diện chính */}
-        <div className="w-24 h-20 sm:w-28 sm:h-22 rounded-2xl overflow-hidden bg-slate-200 shrink-0 border border-slate-300">
+      {/* THẺ TÓM TẮT CHỖ NGHỈ */}
+      <div className="p-4 rounded-2xl bg-[#e8f2ff]/40 border border-blue-200 flex items-center gap-4">
+        <div className="w-24 h-20 sm:w-28 sm:h-24 rounded-xl overflow-hidden bg-slate-200 shrink-0 border border-slate-300">
           <img
             src={coverImage}
             alt="Property Cover"
@@ -58,50 +59,47 @@ export const Step8Publish = ({
           />
         </div>
 
-        {/* Tên và vị trí */}
         <div className="space-y-1 overflow-hidden">
-          <h3 className="font-extrabold text-base text-slate-900 truncate">
+          <h3 className="font-black text-base text-[#003580] truncate">
             {data?.hotelName || "Tên cơ sở lưu trú"}
           </h3>
           <p className="text-xs text-slate-600 flex items-center gap-1.5 truncate">
-            <MapPin size={14} className="text-blue-600 shrink-0" />
+            <MapPin size={14} className="text-[#006ce4] shrink-0" />
             <span className="truncate">
               {data?.address ? `${data.address}, ` : ""}
               {data?.city || "Việt Nam"}
             </span>
           </p>
-          <span className="text-[11px] font-bold text-amber-500 block">
+          <span className="text-xs font-bold text-amber-500 block">
             {"⭐".repeat(data?.starRating || 3)} ({data?.starRating || 3} sao)
           </span>
         </div>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          KHU VỰC 2: PHÁP LÝ & MÃ SỐ THUẾ (KHỚP DATABASE POSTGRESQL)
-      ════════════════════════════════════════════════════════════════════════ */}
-      <div className="p-5 rounded-3xl bg-white border border-slate-200 space-y-4 shadow-2xs">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-900 uppercase tracking-wider">
-          <FileCheck size={16} className="text-blue-600" />
-          <span>Hồ sơ pháp lý & Thuế cơ sở lưu trú</span>
+      {/* HỒ SƠ PHÁP LÝ & MÃ SỐ THUẾ */}
+      <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-3">
+        <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
+          <FileCheck size={16} className="text-[#006ce4]" />
+          <span>Thông tin Thuế & Giấy phép đăng ký kinh doanh</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-[11px] font-medium text-slate-500 mb-1">
-              Mã số thuế (Doanh nghiệp hoặc Hộ KD)
+            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+              Mã số thuế (Doanh nghiệp hoặc Hộ KD cá thể)
             </label>
             <input
               type="text"
               value={data?.taxCode || ""}
               onChange={(e) => onChange({ taxCode: e.target.value })}
               placeholder="VD: 0101234567"
-              className="w-full h-11 px-3.5 text-xs font-mono font-semibold bg-white rounded-xl border border-slate-300 outline-none focus:border-blue-600"
+              className="w-full h-11 px-3.5 text-xs font-mono font-bold bg-slate-50 rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-slate-500 mb-1">
-              Giấy phép ĐKKD (business_license_url)
+            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+              Bản chụp GPKD (business_license)
             </label>
             <input
               type="file"
@@ -113,66 +111,42 @@ export const Step8Publish = ({
             <button
               type="button"
               onClick={() => licenseInputRef.current?.click()}
-              className="w-full h-11 px-3.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition"
+              className="w-full h-11 px-3.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 text-[#003580] text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition"
             >
               <Upload size={14} />
               <span className="truncate">
                 {data?.businessLicenseUrl
-                  ? "✓ Đã đính kèm tài liệu"
-                  : "Tải bản chụp GPKD"}
+                  ? "✓ Đã đính kèm tệp giấy phép"
+                  : "Tải lên tài liệu PDF / Ảnh"}
               </span>
             </button>
           </div>
         </div>
       </div>
 
-      <hr className="border-slate-100" />
-
-      {/* ════════════════════════════════════════════════════════════════════════
-          KHU VỰC 3: CHẤP NHẬN CÁC ĐIỀU KHOẢN VÀ ĐIỀU KIỆN (CHUẨN AGODA)
-      ════════════════════════════════════════════════════════════════════════ */}
-      <div className="space-y-3">
-        <h2 className="text-lg font-bold text-slate-900">
-          Chấp nhận các Điều khoản và Điều kiện
-        </h2>
-
-        {/* Ô Checkbox cam kết chuẩn Agoda */}
+      {/* ĐIỀU KHOẢN */}
+      <div className="space-y-3 pt-2">
         <label className="flex items-start gap-3 p-4 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 cursor-pointer transition select-none">
           <input
             type="checkbox"
             checked={data?.acceptedTerms || false}
             onChange={(e) => onChange({ acceptedTerms: e.target.checked })}
-            className="w-5 h-5 mt-0.5 accent-blue-600 rounded cursor-pointer shrink-0"
+            className="w-5 h-5 mt-0.5 accent-[#006ce4] rounded cursor-pointer shrink-0"
           />
-          <div className="text-xs text-slate-700 leading-relaxed">
-            Tôi công nhận rằng mình đã đọc và đồng ý với{" "}
-            <span className="text-blue-600 font-bold hover:underline">
-              Điều khoản và Điều kiện
-            </span>{" "}
-            và{" "}
-            <span className="text-blue-600 font-bold hover:underline">
-              Chính sách Quyền riêng tư
-            </span>{" "}
-            của hệ thống. Ngoài ra, tôi xác nhận tuân theo tất cả{" "}
-            <span className="text-blue-600 font-bold hover:underline">
-              điều lệ và luật pháp địa phương
-            </span>{" "}
-            liên quan.
+          <div className="text-xs text-slate-700 leading-relaxed font-medium">
+            Tôi xác nhận đã đọc và cam kết tuân thủ{" "}
+            <span className="text-[#006ce4] font-black hover:underline">
+              Quy chế hoạt động sàn TMĐT GoStay
+            </span>
+            , chịu trách nhiệm pháp lý về tính trung thực của các thông tin giá,
+            phòng và hình ảnh cơ sở đã khai báo.
           </div>
         </label>
         {errors?.acceptedTerms && (
-          <p className="text-xs text-rose-500 font-bold flex items-center gap-1">
-            <AlertCircle size={13} /> {errors.acceptedTerms}
+          <p className="text-xs text-rose-500 font-black flex items-center gap-1">
+            <AlertCircle size={14} /> {errors.acceptedTerms}
           </p>
         )}
-
-        {/* Đoạn mô tả pháp lý chuẩn Agoda */}
-        <p className="text-[11px] text-slate-400 leading-relaxed pt-1">
-          Xin lưu ý, các thông tin cơ sở lưu trú của quý đối tác sẽ được hội
-          đồng quản trị thẩm định pháp lý và kích hoạt mở bán trên sàn TMĐT. Quý
-          đối tác xác nhận các thông tin về giá, phòng và quyền sở hữu là hoàn
-          toàn chính xác.
-        </p>
       </div>
     </div>
   );

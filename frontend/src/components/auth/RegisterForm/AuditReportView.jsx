@@ -1,17 +1,7 @@
 // src/components/auth/RegisterForm/AuditReportView.jsx
 import React from "react";
-import {
-  CheckCircle2,
-  XCircle,
-  Sparkles,
-  ShieldCheck,
-  Info,
-  X,
-} from "lucide-react";
+import { CheckCircle2, XCircle, Sparkles, ShieldCheck, X } from "lucide-react";
 
-// ════════════════════════════════════════════════════════════════════════════
-// 🔍 HÀM KIỂM TOÁN TỰ ĐỘNG CHUẨN LOGIC AGODA & BOOKING.COM
-// ════════════════════════════════════════════════════════════════════════════
 const checkAuditLogic = (data) => {
   const checks = [
     {
@@ -35,14 +25,13 @@ const checkAuditLogic = (data) => {
     },
     {
       id: "rooms",
-      title: "Thiết lập tối thiểu 1 loại phòng & số phòng thực tế",
+      title: "Thiết lập tối thiểu 1 loại phòng & giá bán",
       category: "Phòng ốc",
-      tip: "Cần ít nhất 1 loại phòng có giá bán, sức chứa và danh sách số phòng (room_unit).",
+      tip: "Cần ít nhất 1 loại phòng có giá bán, sức chứa và danh sách số phòng.",
       passed: Boolean(
         data?.rooms?.length > 0 &&
         data.rooms[0]?.name &&
-        Number(data.rooms[0]?.base_price) > 0 &&
-        data.rooms[0]?.roomNumbersText,
+        Number(data.rooms[0]?.base_price) > 0,
       ),
     },
     {
@@ -68,7 +57,7 @@ const checkAuditLogic = (data) => {
       id: "cancellation",
       title: "Chính sách hủy phòng minh bạch",
       category: "Chính sách",
-      tip: "Thiết lập rõ ràng thời hạn hủy phòng miễn phí (24h, 72h hoặc không hoàn tiền).",
+      tip: "Thiết lập rõ ràng thời hạn hủy phòng miễn phí.",
       passed: data?.cancellation_deadline_hours !== undefined,
     },
     {
@@ -80,9 +69,9 @@ const checkAuditLogic = (data) => {
     },
     {
       id: "legal",
-      title: "Cam kết điều khoản hoạt động OTA",
+      title: "Cam kết điều khoản hoạt động GoStay",
       category: "Pháp lý",
-      tip: "Xác nhận đồng ý với Quy chế hoạt động và cam kết tính chính xác của hồ sơ.",
+      tip: "Xác nhận đồng ý với Quy chế hoạt động và tính chính xác của hồ sơ.",
       passed: Boolean(data?.acceptedTerms),
     },
   ];
@@ -97,69 +86,58 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
   const audit = checkAuditLogic(data);
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-fadeIn font-sans text-slate-800 max-w-2xl mx-auto">
-      {/* HEADER */}
-      <div className="bg-slate-900 text-white p-6 relative">
+    <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-fadeIn font-sans text-slate-800 max-w-2xl w-full mx-auto">
+      {/* HEADER ĐỒNG BỘ */}
+      <div className="bg-[#003580] text-white p-6 relative">
         {onClose && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-slate-400 hover:text-white p-1.5 rounded-xl transition cursor-pointer"
+            className="absolute top-4 right-4 text-white/80 hover:text-white p-1.5 rounded-xl transition cursor-pointer"
           >
             <X size={18} />
           </button>
         )}
-        <div className="flex items-center gap-2 text-blue-400 text-xs font-bold uppercase tracking-wider mb-1.5">
-          <ShieldCheck size={16} /> Hệ Thống Kiểm Định Hồ Sơ Đối Tác (OTA
-          Auditor)
+        <div className="flex items-center gap-2 text-blue-200 text-xs font-black uppercase tracking-wider mb-1">
+          <ShieldCheck size={16} /> Kiểm Định Tiêu Chuẩn Mở Bán OTA
         </div>
-        <h2 className="text-xl font-extrabold tracking-tight">
-          Đánh Giá Tính Hoàn Thiện Hồ Sơ Chỗ Nghỉ
+        <h2 className="text-xl font-black tracking-tight">
+          Báo Cáo Đánh Giá Tính Hoàn Thiện Hồ Sơ
         </h2>
-        <p className="text-xs text-slate-400 mt-1">
-          Đối chiếu tự động theo tiêu chuẩn đối tác của Agoda YCS & Booking.com
-        </p>
 
-        {/* PROGRESS BAR & SCORE */}
-        <div className="mt-5 flex items-center gap-4 bg-slate-800/90 p-4 rounded-2xl border border-slate-700">
+        {/* TIẾN ĐỘ ĐIỂM */}
+        <div className="mt-4 flex items-center gap-4 bg-white/10 backdrop-blur-xs p-4 rounded-2xl border border-white/20">
           <div className="text-center shrink-0">
             <span
               className={`text-3xl font-black ${
                 audit.score >= 80
-                  ? "text-emerald-400"
+                  ? "text-emerald-300"
                   : audit.score >= 50
-                    ? "text-amber-400"
-                    : "text-rose-400"
+                    ? "text-amber-300"
+                    : "text-rose-300"
               }`}
             >
               {audit.score}%
             </span>
-            <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-              Độ Chuẩn Hóa
+            <span className="block text-[10px] text-blue-100 font-bold uppercase tracking-wider">
+              Chuẩn Hóa
             </span>
           </div>
           <div className="flex-1">
-            <div className="h-2.5 bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-2.5 bg-black/20 rounded-full overflow-hidden">
               <div
-                className={`h-full transition-all duration-500 rounded-full ${
-                  audit.score >= 80
-                    ? "bg-emerald-500"
-                    : audit.score >= 50
-                      ? "bg-amber-500"
-                      : "bg-rose-500"
-                }`}
+                className="h-full bg-emerald-400 transition-all duration-500 rounded-full"
                 style={{ width: `${audit.score}%` }}
               />
             </div>
-            <p className="text-xs text-slate-300 mt-2 font-medium">
+            <p className="text-xs text-blue-100 mt-2 font-medium">
               {audit.score === 100 ? (
-                <span className="text-emerald-400 font-bold">
-                  ✓ Hồ sơ đạt 100% chuẩn logic OTA, sẵn sàng phê duyệt mở bán
-                  ngay!
+                <span className="text-emerald-300 font-bold">
+                  ✓ Hồ sơ đạt 100% tiêu chuẩn, sẵn sàng kích hoạt mở bán ngay!
                 </span>
               ) : (
                 <span>
                   Còn {audit.checks.filter((c) => !c.passed).length} tiêu chí
-                  cần bổ sung để hồ sơ đạt chuẩn cao nhất.
+                  cần bổ sung để tối ưu lượng khách đặt phòng.
                 </span>
               )}
             </p>
@@ -167,18 +145,18 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
         </div>
       </div>
 
-      {/* BODY - CHECKLIST */}
+      {/* CHECKLIST TIÊU CHÍ */}
       <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900">
+          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
             Chi Tiết {audit.checks.length} Tiêu Chí Vận Hành:
           </h3>
           {onAutoFillDemo && (
             <button
               onClick={onAutoFillDemo}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-full border border-blue-200 flex items-center gap-1.5 transition cursor-pointer"
+              className="text-xs font-bold text-[#006ce4] bg-[#e8f2ff] hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-200 flex items-center gap-1.5 transition cursor-pointer"
             >
-              <Sparkles size={13} /> Điền mẫu 100% điểm
+              <Sparkles size={13} /> Điền mẫu đạt 100%
             </button>
           )}
         </div>
@@ -189,7 +167,7 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
               key={check.id}
               className={`p-3.5 rounded-2xl border flex items-start gap-3 transition ${
                 check.passed
-                  ? "bg-emerald-50/50 border-emerald-200"
+                  ? "bg-emerald-50/60 border-emerald-200"
                   : "bg-slate-50 border-slate-200"
               }`}
             >

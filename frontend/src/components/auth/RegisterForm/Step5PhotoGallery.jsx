@@ -9,7 +9,7 @@ import {
   Lightbulb,
   Camera,
   Loader2,
-  Check,
+  Sparkles,
 } from "lucide-react";
 
 export const Step5PhotoGallery = ({
@@ -28,12 +28,8 @@ export const Step5PhotoGallery = ({
   const hotelImages = data?.hotelImages || [];
   const rooms = data?.rooms || [];
 
-  // Lọc ảnh cơ sở lưu trú (không gắn room_id) và ảnh phòng (có gắn room_id)
   const propertyPhotos = hotelImages.filter((img) => !img.roomId);
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 📸 NÉN VÀ TẢI NHIỀU ẢNH AN TOÀN BẰNG PROMISE.ALL
-  // ════════════════════════════════════════════════════════════════════════════
   const processAndUploadFiles = async (files, targetRoomId = null) => {
     if (!files || files.length === 0) return;
     setIsCompressing(true);
@@ -57,7 +53,7 @@ export const Step5PhotoGallery = ({
             resolve({
               id: `img-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
               url: compressed,
-              roomId: targetRoomId, // null: ảnh cơ sở, uuid: ảnh phòng
+              roomId: targetRoomId,
               title: file.name.replace(/\.[^/.]+$/, ""),
             });
           };
@@ -75,14 +71,13 @@ export const Step5PhotoGallery = ({
       const updated = [...hotelImages, ...newImages];
       const updates = { hotelImages: updated };
 
-      // Nếu chưa có Main photo thì lấy ảnh đầu tiên làm Main photo
       if (!data?.hotelMainImage && updated.length > 0) {
         updates.hotelMainImage = updated[0].url;
       }
 
       onChange(updates);
     } catch (err) {
-      console.error("Lỗi nén ảnh:", err);
+      console.error("Lỗi tải ảnh:", err);
     } finally {
       setIsCompressing(false);
     }
@@ -119,174 +114,117 @@ export const Step5PhotoGallery = ({
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 font-sans text-slate-800 animate-fadeIn">
-      {/* ── TIÊU ĐỀ BƯỚC 5 CHUẨN AGODA ── */}
+    <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
       <div>
-        <div className="flex items-center justify-between text-xs text-slate-400 font-bold mb-1">
-          <span>Bước 5/6</span>
+        <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
+          <Sparkles size={14} className="text-[#006ce4]" /> Bước 5 / 8: Bộ sưu
+          tập hình ảnh
         </div>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-          Ảnh
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          Hình ảnh cơ sở & Các hạng phòng
         </h1>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          Ảnh bìa chính sẽ hiển thị trực tiếp trên thẻ khách sạn ở Trang chủ và
+          trang Danh sách.
+        </p>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          KHU VỰC 1: ẢNH CƠ SỞ LƯU TRÚ (PROPERTY PHOTOS)
-      ════════════════════════════════════════════════════════════════════════ */}
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">
-            Ảnh cơ sở lưu trú
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Giới thiệu cơ sở lưu trú của quý đối tác với ảnh chất lượng cao để
-            thu hút đơn đặt phòng.
-          </p>
-        </div>
+      <div className="p-3.5 bg-[#e8f2ff] border border-blue-200 rounded-2xl flex items-center gap-2.5 text-xs text-[#003580] font-bold">
+        <Info size={16} className="text-[#006ce4] shrink-0" />
+        <span>
+          Vui lòng đăng tải tối thiểu 3 hình ảnh sắc nét về cơ sở lưu trú.
+        </span>
+      </div>
 
-        {/* Thông báo xanh: "Thêm ít nhất 3 ảnh để tiếp tục" */}
-        <div className="p-3.5 bg-blue-50/80 border border-blue-200/90 rounded-2xl flex items-center gap-2.5 text-xs text-blue-900 font-medium">
-          <Info size={16} className="text-blue-600 shrink-0" />
-          <span>Thêm ít nhất 3 ảnh để tiếp tục</span>
-        </div>
+      {errors?.hotelImages && (
+        <p className="text-xs text-rose-500 font-black">{errors.hotelImages}</p>
+      )}
 
-        {errors?.hotelImages && (
-          <p className="text-xs text-rose-500 font-bold">
-            {errors.hotelImages}
-          </p>
-        )}
+      <input
+        type="file"
+        multiple
+        accept="image/*"
+        ref={propertyPhotoInputRef}
+        onChange={handlePropertyUpload}
+        className="hidden"
+      />
 
-        {/* Input file ẩn cho ảnh cơ sở */}
-        <input
-          type="file"
-          multiple
-          accept="image/*"
-          ref={propertyPhotoInputRef}
-          onChange={handlePropertyUpload}
-          className="hidden"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+        {propertyPhotos.map((img, idx) => {
+          const isMain =
+            data?.hotelMainImage === img.url ||
+            (!data?.hotelMainImage && idx === 0);
 
-        {/* LƯỚI ẢNH CƠ SỞ LƯU TRÚ */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-          {propertyPhotos.map((img, idx) => {
-            const isMain =
-              data?.hotelMainImage === img.url ||
-              (!data?.hotelMainImage && idx === 0);
+          return (
+            <div
+              key={img.id || idx}
+              onClick={() => handleSetMainCover(img.url)}
+              className={`group relative h-48 rounded-2xl overflow-hidden border-2 bg-slate-100 cursor-pointer shadow-xs transition ${
+                isMain
+                  ? "border-[#006ce4] ring-4 ring-blue-100"
+                  : "border-slate-200 hover:border-slate-400"
+              }`}
+            >
+              <img
+                src={img.url}
+                alt=""
+                className="w-full h-full object-cover"
+              />
 
-            return (
-              <div
-                key={img.id || idx}
-                onClick={() => handleSetMainCover(img.url)}
-                className={`group relative h-48 rounded-2xl overflow-hidden border-2 bg-slate-100 cursor-pointer shadow-xs transition ${
-                  isMain
-                    ? "border-blue-600 ring-2 ring-blue-600/30"
-                    : "border-slate-200 hover:border-slate-400"
-                }`}
+              {isMain ? (
+                <span className="absolute top-2.5 left-2.5 bg-[#003580] text-white text-[11px] font-black px-2.5 py-1 rounded-lg shadow-sm flex items-center gap-1">
+                  ★ Ảnh bìa chính
+                </span>
+              ) : (
+                <span className="absolute top-2.5 left-2.5 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition">
+                  Đặt làm ảnh bìa
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeletePhoto(img.id, img.url);
+                }}
+                className="absolute top-2.5 right-2.5 w-7 h-7 bg-rose-600 hover:bg-rose-700 text-white rounded-lg flex items-center justify-center shadow transition cursor-pointer"
               >
-                <img
-                  src={img.url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-
-                {/* Tag "Main photo" chuẩn Agoda */}
-                {isMain ? (
-                  <span className="absolute top-2.5 left-2.5 bg-white/95 text-slate-900 text-[11px] font-bold px-2.5 py-1 rounded-md shadow-sm flex items-center gap-1">
-                    Main photo
-                  </span>
-                ) : (
-                  <span className="absolute top-2.5 left-2.5 bg-black/60 text-white text-[10px] font-medium px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition">
-                    Đặt làm ảnh chính
-                  </span>
-                )}
-
-                {/* Nút xóa ảnh */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeletePhoto(img.id, img.url);
-                  }}
-                  className="absolute top-2.5 right-2.5 w-7 h-7 bg-rose-600 hover:bg-rose-700 text-white rounded-lg flex items-center justify-center shadow-md transition cursor-pointer opacity-80 hover:opacity-100"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            );
-          })}
-
-          {/* Ô BỔ SUNG ẢNH (DẠNG NÉT ĐỨT CHUẨN AGODA) */}
-          <div
-            onClick={() =>
-              !isCompressing && propertyPhotoInputRef.current?.click()
-            }
-            className="h-48 border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/50 hover:bg-blue-50/30 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition select-none"
-          >
-            {isCompressing ? (
-              <Loader2 size={24} className="animate-spin text-blue-600" />
-            ) : (
-              <Plus size={24} className="text-blue-600" />
-            )}
-            <span className="text-xs font-bold text-blue-600">
-              {isCompressing ? "Đang xử lý ảnh..." : "Bổ sung ảnh"}
-            </span>
-          </div>
-        </div>
-
-        {/* Link "Need some tips?" chuẩn Agoda */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowTips(!showTips)}
-            className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1.5 cursor-pointer"
-          >
-            <Lightbulb size={14} /> Need some tips? (Mẹo chụp ảnh đẹp)
-          </button>
-
-          {showTips && (
-            <div className="mt-2 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 space-y-1 animate-fadeIn">
-              <p>
-                • Chụp vào ban ngày với ánh sáng tự nhiên, góc chụp rộng toàn
-                cảnh.
-              </p>
-              <p>
-                • Nên có ảnh mặt tiền, sảnh đón tiếp, quang cảnh bên ngoài và
-                tiện ích chung.
-              </p>
-              <p>
-                • Độ phân giải tối thiểu 1280 × 900 pixel để hiển thị sắc nét
-                nhất.
-              </p>
+                <Trash2 size={13} />
+              </button>
             </div>
+          );
+        })}
+
+        <div
+          onClick={() =>
+            !isCompressing && propertyPhotoInputRef.current?.click()
+          }
+          className="h-48 border-2 border-dashed border-slate-300 hover:border-[#006ce4] bg-slate-50/50 hover:bg-[#e8f2ff]/30 rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition select-none"
+        >
+          {isCompressing ? (
+            <Loader2 size={24} className="animate-spin text-[#006ce4]" />
+          ) : (
+            <Plus size={24} className="text-[#006ce4]" />
           )}
+          <span className="text-xs font-bold text-[#006ce4]">
+            {isCompressing ? "Đang xử lý ảnh..." : "Tải thêm ảnh cơ sở"}
+          </span>
         </div>
       </div>
 
-      <hr className="border-slate-100" />
-
-      {/* ════════════════════════════════════════════════════════════════════════
-          KHU VỰC 2: ẢNH PHÒNG (ROOM PHOTOS - ACCORDION AGODA)
-      ════════════════════════════════════════════════════════════════════════ */}
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Ảnh phòng</h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Quý đối tác có thể thêm ảnh ngay lúc này hoặc sau khi trang thông
-            tin đã được đăng tải.
-          </p>
-        </div>
-
-        {/* Nút bấm "∨ Bổ sung ảnh" dạng Accordion của Agoda */}
+      {/* ẢNH CỤ THỂ CHO TỪNG HẠNG PHÒNG */}
+      <div className="pt-4 border-t border-slate-100 space-y-4">
         <button
           type="button"
           onClick={() => setOpenRoomPhotos(!openRoomPhotos)}
-          className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 cursor-pointer transition py-1"
+          className="text-xs font-black text-[#003580] hover:text-[#006ce4] flex items-center gap-1.5 cursor-pointer"
         >
           {openRoomPhotos ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          <span>Bổ sung ảnh phòng ({rooms.length} phòng)</span>
+          <span>
+            Bộ sưu tập ảnh riêng cho từng hạng phòng ({rooms.length} phòng)
+          </span>
         </button>
 
-        {/* Input ẩn cho upload ảnh phòng */}
         <input
           type="file"
           multiple
@@ -296,9 +234,8 @@ export const Step5PhotoGallery = ({
           className="hidden"
         />
 
-        {/* DANH SÁCH CÁC PHÒNG ĐỂ TẢI ẢNH RIÊNG */}
         {openRoomPhotos && (
-          <div className="space-y-4 pt-1 animate-fadeIn">
+          <div className="space-y-4 animate-fadeIn">
             {rooms.map((room, rIdx) => {
               const roomImages = hotelImages.filter(
                 (img) => img.roomId === room.id,
@@ -307,28 +244,27 @@ export const Step5PhotoGallery = ({
               return (
                 <div
                   key={room.id || rIdx}
-                  className="p-5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3"
+                  className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3"
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-xs font-bold text-slate-900">
-                        {room.name || `Phòng #${rIdx + 1}`}
+                      <h4 className="text-xs font-black text-slate-900">
+                        {room.name || `Hạng phòng #${rIdx + 1}`}
                       </h4>
-                      <p className="text-[11px] text-slate-400">
-                        {roomImages.length} ảnh đã tải cho phòng này
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        {roomImages.length} ảnh đã gán cho hạng phòng này
                       </p>
                     </div>
 
                     <button
                       type="button"
                       onClick={() => triggerRoomUpload(room.id)}
-                      className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-2xs transition"
+                      className="px-3.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-[#003580] text-xs font-black rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                     >
-                      <Plus size={13} /> Thêm ảnh phòng này
+                      <Plus size={13} /> Thêm ảnh phòng
                     </button>
                   </div>
 
-                  {/* Lưới ảnh riêng của phòng này */}
                   {roomImages.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {roomImages.map((img) => (
@@ -344,7 +280,7 @@ export const Step5PhotoGallery = ({
                           <button
                             type="button"
                             onClick={() => handleDeletePhoto(img.id, img.url)}
-                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-rose-600 text-white rounded-md flex items-center justify-center shadow opacity-80 hover:opacity-100 transition cursor-pointer"
+                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-rose-600 text-white rounded-md flex items-center justify-center shadow cursor-pointer"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -353,8 +289,8 @@ export const Step5PhotoGallery = ({
                     </div>
                   ) : (
                     <p className="text-[11px] text-slate-400 italic">
-                      Chưa có ảnh nào cho phòng này. Bấm "Thêm ảnh phòng này" để
-                      tải ảnh phòng ngủ/phòng tắm.
+                      Chưa có ảnh riêng cho phòng này. Bấm nút để tải ảnh phòng
+                      ngủ/phòng tắm.
                     </p>
                   )}
                 </div>

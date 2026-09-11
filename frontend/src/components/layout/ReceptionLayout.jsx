@@ -1,22 +1,38 @@
-import React, { useState } from "react";
+// src/components/layout/ReceptionLayout.jsx
+import React, { useState, useMemo } from "react";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import {
   Grid3X3,
   CalendarCheck,
   LogOut,
   Building2,
-  User,
   Menu,
   X,
+  Home,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import apiClient from "@/services/apiClient";
 import { cn } from "@/utils/cn";
 
 export default function ReceptionLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuthStore();
+  const { user: storeUser, logout } = useAuthStore();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  // Đảm bảo dữ liệu user luôn sẵn sàng khi F5
+  const user = useMemo(() => {
+    if (storeUser) return storeUser;
+    try {
+      const localUser = JSON.parse(localStorage.getItem("user") || "null");
+      const authStorageUser = JSON.parse(
+        localStorage.getItem("auth-storage") || "{}",
+      )?.state?.user;
+      return localUser || authStorageUser || null;
+    } catch {
+      return null;
+    }
+  }, [storeUser]);
 
   // Chỉ hiển thị 2 nghiệp vụ đón khách của Lễ tân
   const receptionNavItems = [
@@ -36,10 +52,57 @@ export default function ReceptionLayout() {
     receptionNavItems.find((item) => item.path === location.pathname)?.label ||
     "Bàn Trực Lễ Tân";
 
-  const staffName = user?.full_name || user?.name || "Nhân viên Lễ Tân";
+  const staffName =
+    user?.full_name || user?.name || user?.username || "Nhân viên Lễ Tân";
+
+  const fallbackStaffAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    staffName,
+  )}&background=1b6a38&color=fff&bold=true`;
+
+  const staffAvatarUrl = useMemo(() => {
+    const raw =
+      user?.avatar ||
+      user?.picture ||
+      user?.photoURL ||
+      user?.avatar_url ||
+      user?.image ||
+      (user?.email
+        ? localStorage.getItem(`google_avatar_${user.email}`)
+        : null);
+
+    if (
+      !raw ||
+      typeof raw !== "string" ||
+      raw.trim() === "" ||
+      raw === "null" ||
+      raw === "undefined"
+    ) {
+      return fallbackStaffAvatar;
+    }
+
+    if (
+      raw.startsWith("http://") ||
+      raw.startsWith("https://") ||
+      raw.startsWith("data:") ||
+      raw.startsWith("blob:")
+    ) {
+      return raw;
+    }
+
+    const cleanPath = raw.replace(/\\/g, "/").replace(/^\/+/, "");
+    const backendBase =
+      apiClient.defaults?.baseURL?.replace(/\/api\/?$/, "") ||
+      import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") ||
+      "http://localhost:5000";
+
+    return `${backendBase}/${cleanPath}`;
+  }, [user, fallbackStaffAvatar]);
 
   const handleLogout = () => {
-    logout();
+    if (logout) logout();
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("auth-storage");
     navigate("/login");
   };
 
@@ -102,12 +165,20 @@ export default function ReceptionLayout() {
           </nav>
         </div>
 
-        {/* Thông tin ca trực & Đăng xuất */}
+        {/* Thông tin ca trực, Avatar & Đăng xuất */}
         <div className="p-4 border-t border-slate-100 bg-slate-50/70 space-y-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-800 font-bold text-xs">
-              <User size={15} />
-            </div>
+            <img
+              key={staffAvatarUrl}
+              src={staffAvatarUrl}
+              alt={staffName}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = fallbackStaffAvatar;
+              }}
+              className="w-9 h-9 rounded-full border border-emerald-500 object-cover bg-white shrink-0"
+            />
             <div className="overflow-hidden">
               <p className="text-xs font-bold text-slate-800 truncate">
                 {staffName}
@@ -118,13 +189,23 @@ export default function ReceptionLayout() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="w-full py-2 px-3 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 transition flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <LogOut size={14} />
-            <span>Đăng xuất ca trực</span>
-          </button>
+          <div className="flex gap-2">
+            <Link
+              to="/"
+              className="flex-1 py-2 px-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 rounded-xl border border-slate-200 transition flex items-center justify-center gap-1.5"
+            >
+              <Home size={14} />
+              <span>Trang chủ</span>
+            </Link>
+
+            <button
+              onClick={handleLogout}
+              className="flex-1 py-2 px-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <LogOut size={14} />
+              <span>Đăng xuất</span>
+            </button>
+          </div>
         </div>
       </aside>
 
