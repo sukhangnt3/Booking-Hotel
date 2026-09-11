@@ -119,7 +119,7 @@ const initialFormData = {
   acceptedTerms: false,
 };
 
-const AGODA_STEPS = [
+const STEPS = [
   { id: 1, title: "Tài khoản & Chỗ nghỉ" },
   { id: 2, title: "Tiện nghi cơ sở" },
   { id: 3, title: "Hạng phòng & Giá" },
@@ -608,7 +608,7 @@ export const RegisterForm = () => {
           </div>
 
           <div className="space-y-1">
-            {AGODA_STEPS.map((s) => {
+            {STEPS.map((s) => {
               const isPassed = currentStep > s.id;
               const isCurrent = currentStep === s.id;
 

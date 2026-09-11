@@ -211,8 +211,7 @@ export const Step3RoomsAndPricing = ({
           Chi tiết hạng phòng của bạn
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Thiết lập cấu hình phòng theo tiêu chuẩn hiển thị của Booking.com &
-          Agoda.
+          Thiết lập cấu hình phòng chuẩn
         </p>
       </div>
 

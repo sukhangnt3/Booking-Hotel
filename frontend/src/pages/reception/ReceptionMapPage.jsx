@@ -1,4 +1,3 @@
-// src/pages/reception/ReceptionMapPage.jsx
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Calendar, Search, Plus, Building2 } from "lucide-react";
 import apiClient from "@/services/apiClient";
@@ -331,13 +330,11 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // Mở Modal Đổi phòng
   const handleOpenChangeRoom = (room) => {
     setChangeRoomTarget(room);
     setIsChangeRoomOpen(true);
   };
 
-  // Thực hiện đổi phòng qua API (chuẩn KiotViet)
   const handleExecuteChangeRoom = async ({
     newRoomNumber,
     mode,
@@ -451,22 +448,37 @@ export default function ReceptionMapPage() {
     setIsAddGuestDocOpen(false);
   };
 
+  // ─── CHECK-IN VÀ CẬP NHẬT TIỀN ĐÃ THU TẠI QUẦY ───
   const handleFinalExecuteCheckIn = async () => {
     if (!activeIncomingRoom?.booking?.id) return;
-    try {
-      await apiClient.post(
-        `/owner/bookings/${activeIncomingRoom.booking.id}/checkin`,
-        {
-          room_number: activeIncomingRoom.room_number,
-          checkin_date: confirmCheckInData.checkin_time,
-          checkout_date: confirmCheckInData.checkout_time,
-          adult_total: checkInGuestCount.adult,
-          children_total: checkInGuestCount.children,
-          guests: checkInGuestList,
-        },
-      );
+    const b = activeIncomingRoom.booking;
 
-      alert(`✓ Đã nhận phòng ${activeIncomingRoom.room_number} thành công!`);
+    // Tính tiền thu nốt tại quầy nếu khách cọc 30%
+    const isDeposit =
+      b.payment_type === "DEPOSIT_30" ||
+      Number(b.deposit_amount) > 0 ||
+      Number(b.remaining_amount) > 0;
+    const remainingToCollect = isDeposit
+      ? Number(b.remaining_amount) || Math.round(Number(b.total_price) * 0.7)
+      : 0;
+
+    try {
+      await apiClient.post(`/owner/bookings/${b.id}/checkin`, {
+        room_number: activeIncomingRoom.room_number,
+        checkin_date: confirmCheckInData.checkin_time,
+        checkout_date: confirmCheckInData.checkout_time,
+        adult_total: checkInGuestCount.adult,
+        children_total: checkInGuestCount.children,
+        guests: checkInGuestList,
+        collected_at_counter: remainingToCollect,
+      });
+
+      alert(
+        `✓ Đã nhận phòng ${activeIncomingRoom.room_number} thành công!` +
+          (isDeposit
+            ? ` (Đã thu nốt số tiền còn lại tại quầy: ${formatVND(remainingToCollect)} ₫)`
+            : ""),
+      );
       setIsConfirmCheckInOpen(false);
       setIsCheckInGuestStayOpen(false);
       setActiveIncomingRoom(null);
@@ -666,21 +678,35 @@ export default function ReceptionMapPage() {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                  {roomList.map((room) => (
-                    <RoomCard
-                      key={room.id}
-                      room={room}
-                      onClick={() => handleRoomCardClick(room)}
-                      activeCleaningMenuId={activeCleaningMenuId}
-                      setActiveCleaningMenuId={setActiveCleaningMenuId}
-                      onMarkCleaned={handleMarkCleaned}
-                      onMarkDirty={handleMarkDirty}
-                      formatVND={formatVND}
-                      countdownText={getCheckinCountdownText(
-                        room.booking?.checkin_date,
-                      )}
-                    />
-                  ))}
+                  {roomList.map((room) => {
+                    const b = room.booking;
+                    const isDep =
+                      b?.payment_type === "DEPOSIT_30" ||
+                      Number(b?.deposit_amount) > 0 ||
+                      Number(b?.remaining_amount) > 0;
+                    const remAmount = isDep
+                      ? Number(b?.remaining_amount) ||
+                        Math.round(Number(b?.total_price) * 0.7)
+                      : 0;
+
+                    return (
+                      <RoomCard
+                        key={room.id}
+                        room={room}
+                        onClick={() => handleRoomCardClick(room)}
+                        activeCleaningMenuId={activeCleaningMenuId}
+                        setActiveCleaningMenuId={setActiveCleaningMenuId}
+                        onMarkCleaned={handleMarkCleaned}
+                        onMarkDirty={handleMarkDirty}
+                        formatVND={formatVND}
+                        countdownText={getCheckinCountdownText(
+                          room.booking?.checkin_date,
+                        )}
+                        isDeposit={isDep}
+                        remainingAmount={remAmount}
+                      />
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -688,7 +714,7 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* MODAL PHÒNG SẮP ĐẾN */}
+      {/* MODAL PHÒNG SẮP ĐẾN: TRUYỀN THÊM THÔNG TIN CỌC 30% ĐỂ LỄ TÂN BIẾT */}
       <IncomingRoomModal
         room={activeIncomingRoom}
         onClose={() => setActiveIncomingRoom(null)}
@@ -722,7 +748,7 @@ export default function ReceptionMapPage() {
         onConfirmChange={handleExecuteChangeRoom}
       />
 
-      {/* CÁC MODAL CHECK-IN KHÁC */}
+      {/* MODAL XÁC NHẬN NHẬN PHÒNG */}
       <ConfirmCheckInModal
         isOpen={isConfirmCheckInOpen}
         onClose={() => setIsConfirmCheckInOpen(false)}

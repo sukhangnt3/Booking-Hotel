@@ -21,6 +21,7 @@ import {
   X,
   Star,
   Send,
+  Building2,
 } from "lucide-react";
 
 import { hotelService } from "@/services";
@@ -56,15 +57,11 @@ export default function UserProfilePage() {
   const [toast, setToast] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
-  // Modal đánh giá khi đã check-out
   const [reviewingBooking, setReviewingBooking] = useState(null);
   const [reviewPoint, setReviewPoint] = useState(10);
   const [reviewComment, setReviewComment] = useState("");
   const [isSendingReview, setIsSendingReview] = useState(false);
 
-  // ==================================================
-  // XỬ LÝ URL ẢNH ĐẠI DIỆN
-  // ==================================================
   const resolveAvatarUrl = (url) => {
     if (!url) return "";
     const avatarUrl = String(url).trim();
@@ -90,9 +87,6 @@ export default function UserProfilePage() {
     return `${backendBase}/${cleanPath}`;
   };
 
-  // ==================================================
-  // FORM THÔNG TIN CÁ NHÂN (ĐÚNG THEO BẢNG users CỦA DB)
-  // ==================================================
   const [profileForm, setProfileForm] = useState({
     full_name: user?.full_name || "",
     email: user?.email || "",
@@ -186,9 +180,6 @@ export default function UserProfilePage() {
     });
   };
 
-  // ==================================================
-  // ĐỌC THÔNG TIN TRỰC TIẾP TỪ /users/profile TRONG DB
-  // ==================================================
   const fetchProfileFromDB = async () => {
     try {
       const response = await apiClient.get(`/users/profile?t=${Date.now()}`);
@@ -245,9 +236,6 @@ export default function UserProfilePage() {
     }
   }, []);
 
-  // ==================================================
-  // LƯU HỒ SƠ - GHI THẲNG VÀO POSTGRESQL QUA /users/profile
-  // ==================================================
   const handleProfileSubmit = async (event) => {
     event.preventDefault();
 
@@ -258,7 +246,6 @@ export default function UserProfilePage() {
 
     setIsSubmitting(true);
 
-    // Chuẩn hóa đúng kiểu cho PostgreSQL (rỗng -> null)
     const payload = {
       full_name: profileForm.full_name.trim(),
       phone:
@@ -300,9 +287,6 @@ export default function UserProfilePage() {
     }
   };
 
-  // ==================================================
-  // HỦY BOOKING
-  // ==================================================
   const handleCancelBooking = async (event, bookingCode) => {
     event.stopPropagation();
     if (
@@ -321,9 +305,6 @@ export default function UserProfilePage() {
     }
   };
 
-  // ==================================================
-  // XÓA KHÁCH SẠN YÊU THÍCH
-  // ==================================================
   const handleRemoveFavorite = async (event, hotelId) => {
     event.stopPropagation();
     try {
@@ -341,9 +322,6 @@ export default function UserProfilePage() {
     }
   };
 
-  // ==================================================
-  // ĐÁNH GIÁ KỲ NGHỈ
-  // ==================================================
   const handleOpenReviewModal = (booking) => {
     setReviewingBooking(booking);
     setReviewPoint(10);
@@ -574,6 +552,35 @@ export default function UserProfilePage() {
                         rawStatus === "confirmed";
                       const isReviewed = b.is_reviewed || Boolean(b.review_id);
 
+                      // ─── LOGIC PHÂN BIỆT 100% VÀ CỌC 30% CHUẨN XÁC TUYỆT ĐỐI ───
+                      const totalPrice = Number(b.total_price || 0);
+                      const paidMoney = Number(
+                        b.customer_paid ??
+                          b.paid_amount ??
+                          b.deposit_amount ??
+                          0,
+                      );
+                      const remMoney = Number(b.remaining_amount || 0);
+
+                      // CHỈ ĐƯỢC COI LÀ CỌC NẾU TIỀN ĐÃ TRẢ NHỎ HƠN TỔNG TIỀN VÀ CÒN NỢ TIỀN
+                      const isDeposit =
+                        (b.payment_type === "DEPOSIT_30" &&
+                          paidMoney < totalPrice) ||
+                        (paidMoney > 0 && paidMoney < totalPrice) ||
+                        (remMoney > 0 && paidMoney < totalPrice);
+
+                      const depositAmount = isDeposit
+                        ? paidMoney > 0
+                          ? paidMoney
+                          : Math.round(totalPrice * 0.3)
+                        : totalPrice;
+
+                      const remainingAmount = isDeposit
+                        ? remMoney > 0
+                          ? remMoney
+                          : totalPrice - depositAmount
+                        : 0;
+
                       return (
                         <div
                           key={bookingCode}
@@ -592,6 +599,7 @@ export default function UserProfilePage() {
                               </span>
                             </div>
 
+                            {/* HUY HIỆU TRẠNG THÁI: PHÂN BIỆT RÕ 100% VÀ 30% */}
                             {isCancelled ? (
                               <span className="px-2.5 py-1 bg-rose-50 text-rose-700 font-semibold rounded-md border border-rose-200 flex items-center gap-1">
                                 <XCircle size={13} /> Đã hủy
@@ -604,9 +612,17 @@ export default function UserProfilePage() {
                               <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-semibold rounded-md border border-blue-200 flex items-center gap-1">
                                 🏨 Đang lưu trú
                               </span>
+                            ) : isDeposit ? (
+                              <span className="px-2.5 py-1 bg-amber-50 text-amber-800 font-bold rounded-md border border-amber-200 flex items-center gap-1">
+                                <Building2
+                                  size={13}
+                                  className="text-amber-700"
+                                />
+                                Đã cọc 30% (Thu nốt tại quầy)
+                              </span>
                             ) : isPaid ? (
-                              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-semibold rounded-md border border-emerald-200 flex items-center gap-1">
-                                <CheckCircle2 size={13} /> Đã xác nhận
+                              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 font-bold rounded-md border border-emerald-200 flex items-center gap-1">
+                                <CheckCircle2 size={13} /> Đã thanh toán 100%
                               </span>
                             ) : (
                               <span className="px-2.5 py-1 bg-amber-50 text-amber-800 font-semibold rounded-md border border-amber-200 flex items-center gap-1">
@@ -679,14 +695,35 @@ export default function UserProfilePage() {
                               </div>
                             </div>
 
+                            {/* CỘT HIỂN THỊ TIỀN: NẾU 100% THÌ CHỈ HIỆN 1 DÒNG DUY NHẤT */}
                             <div className="w-full md:w-auto flex md:flex-col justify-between items-end gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-slate-100">
-                              <div className="text-left md:text-right">
-                                <span className="text-[10px] text-slate-400 block font-medium">
-                                  Tổng tiền
-                                </span>
-                                <strong className="text-xl font-bold text-[#ff6a00]">
-                                  {formatVND(b.total_price)}
-                                </strong>
+                              <div className="text-left md:text-right space-y-1">
+                                {isDeposit ? (
+                                  <>
+                                    <div className="text-xs text-slate-500 font-medium">
+                                      Tổng tiền:{" "}
+                                      <strong className="text-slate-800">
+                                        {formatVND(totalPrice)}
+                                      </strong>
+                                    </div>
+                                    <div className="text-xs text-emerald-700 font-bold">
+                                      ✓ Đã cọc 30%: {formatVND(depositAmount)}
+                                    </div>
+                                    <div className="text-xs font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-200">
+                                      Cần trả tại quầy:{" "}
+                                      {formatVND(remainingAmount)}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div>
+                                    <span className="text-[10px] text-slate-400 block font-medium">
+                                      Đã thanh toán (100%)
+                                    </span>
+                                    <strong className="text-xl font-bold text-[#1b6a38]">
+                                      {formatVND(totalPrice)}
+                                    </strong>
+                                  </div>
+                                )}
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
@@ -835,7 +872,7 @@ export default function UserProfilePage() {
               </div>
             )}
 
-            {/* TAB 3: THÔNG TIN TÀI KHOẢN (ĐÚNG CỘT DB users) */}
+            {/* TAB 3: THÔNG TIN TÀI KHOẢN */}
             {activeTab === "profile" && (
               <div className="max-w-2xl mx-auto">
                 <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs">
@@ -1022,109 +1059,163 @@ export default function UserProfilePage() {
       )}
 
       {/* MODAL PHIẾU ĐẶT PHÒNG */}
-      {selectedTicket && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
-            <div className="bg-[#003580] text-white p-5 flex justify-between items-center">
-              <div>
-                <span className="text-[10px] text-blue-200 block font-semibold uppercase">
-                  Phiếu Đặt Phòng Điện Tử (Voucher)
-                </span>
-                <h3 className="font-bold text-base">
-                  {selectedTicket.hotel_name || "Khách sạn GoStay"}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedTicket(null)}
-                className="p-1 rounded-full hover:bg-white/10 text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      {selectedTicket &&
+        (() => {
+          const total = Number(selectedTicket.total_price || 0);
+          const paidMoney = Number(
+            selectedTicket.customer_paid ??
+              selectedTicket.paid_amount ??
+              selectedTicket.deposit_amount ??
+              0,
+          );
+          const remMoney = Number(selectedTicket.remaining_amount || 0);
 
-            <div className="p-5 space-y-4 text-xs">
-              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <div>
-                  <span className="text-slate-500 font-medium block">
-                    Mã đặt phòng:
-                  </span>
-                  <span className="font-mono font-bold text-sm text-[#003580]">
-                    #{selectedTicket.booking_code || selectedTicket.id}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-slate-400 block text-[11px]">
-                    Ngày đặt:
-                  </span>
-                  <strong className="text-slate-700 text-[11px]">
-                    {formatBookingCreatedTime(selectedTicket.created_at)}
-                  </strong>
-                </div>
-              </div>
+          // PHÂN BIỆT RÕ 100% VÀ 30%
+          const isDep =
+            (selectedTicket.payment_type === "DEPOSIT_30" &&
+              paidMoney < total) ||
+            (paidMoney > 0 && paidMoney < total) ||
+            (remMoney > 0 && paidMoney < total);
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                  <span className="text-slate-500 block font-medium">
-                    Nhận phòng (Check-in)
-                  </span>
-                  <strong className="text-slate-900 text-xs block mt-0.5">
-                    {formatStayDateTime(selectedTicket.checkin_date, "14:00")}
-                  </strong>
-                </div>
-                <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
-                  <span className="text-slate-500 block font-medium">
-                    Trả phòng (Check-out)
-                  </span>
-                  <strong className="text-slate-900 text-xs block mt-0.5">
-                    {formatStayDateTime(selectedTicket.checkout_date, "12:00")}
-                  </strong>
-                </div>
-              </div>
+          const dep = isDep
+            ? paidMoney > 0
+              ? paidMoney
+              : Math.round(total * 0.3)
+            : total;
 
-              <div className="space-y-1.5 pt-1 border-t border-slate-100">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Hạng phòng:</span>
-                  <strong className="text-slate-800">
-                    {selectedTicket.room_name || "Phòng tiêu chuẩn"}
-                  </strong>
-                </div>
-                {selectedTicket.room_number && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Số phòng bàn giao:</span>
-                    <strong className="text-blue-700 font-bold">
-                      {selectedTicket.room_number}
-                    </strong>
+          const rem = isDep ? (remMoney > 0 ? remMoney : total - dep) : 0;
+
+          return (
+            <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+                <div className="bg-[#003580] text-white p-5 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] text-blue-200 block font-semibold uppercase">
+                      Phiếu Đặt Phòng Điện Tử (Voucher)
+                    </span>
+                    <h3 className="font-bold text-base">
+                      {selectedTicket.hotel_name || "Khách sạn GoStay"}
+                    </h3>
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Tổng thanh toán:</span>
-                  <strong className="text-[#ff6a00] font-bold text-sm">
-                    {formatVND(selectedTicket.total_price)}
-                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTicket(null)}
+                    className="p-1 rounded-full hover:bg-white/10 text-white cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4 text-xs">
+                  <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div>
+                      <span className="text-slate-500 font-medium block">
+                        Mã đặt phòng:
+                      </span>
+                      <span className="font-mono font-bold text-sm text-[#003580]">
+                        #{selectedTicket.booking_code || selectedTicket.id}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-slate-400 block text-[11px]">
+                        Ngày đặt:
+                      </span>
+                      <strong className="text-slate-700 text-[11px]">
+                        {formatBookingCreatedTime(selectedTicket.created_at)}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
+                      <span className="text-slate-500 block font-medium">
+                        Nhận phòng (Check-in)
+                      </span>
+                      <strong className="text-slate-900 text-xs block mt-0.5">
+                        {formatStayDateTime(
+                          selectedTicket.checkin_date,
+                          "14:00",
+                        )}
+                      </strong>
+                    </div>
+                    <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
+                      <span className="text-slate-500 block font-medium">
+                        Trả phòng (Check-out)
+                      </span>
+                      <strong className="text-slate-900 text-xs block mt-0.5">
+                        {formatStayDateTime(
+                          selectedTicket.checkout_date,
+                          "12:00",
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Hạng phòng:</span>
+                      <strong className="text-slate-800">
+                        {selectedTicket.room_name || "Phòng tiêu chuẩn"}
+                      </strong>
+                    </div>
+                    {selectedTicket.room_number && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">
+                          Số phòng bàn giao:
+                        </span>
+                        <strong className="text-blue-700 font-bold">
+                          {selectedTicket.room_number}
+                        </strong>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between pt-1 border-t border-slate-100 text-slate-700">
+                      <span>Tổng tiền phòng:</span>
+                      <strong className="text-slate-900 font-bold">
+                        {formatVND(total)}
+                      </strong>
+                    </div>
+
+                    {isDep ? (
+                      <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1 mt-1">
+                        <div className="flex justify-between text-emerald-800 font-bold">
+                          <span>Đã thanh toán cọc (30%):</span>
+                          <span>{formatVND(dep)}</span>
+                        </div>
+                        <div className="flex justify-between text-rose-600 font-black">
+                          <span>Cần thanh toán tại quầy:</span>
+                          <span>{formatVND(rem)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between text-emerald-700 font-bold pt-1">
+                        <span>Đã thanh toán (100%):</span>
+                        <span>{formatVND(total)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="flex-1 py-2.5 border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Printer size={14} /> In phiếu
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTicket(null)}
+                      className="flex-1 py-2.5 bg-[#003580] text-white font-semibold rounded-xl hover:bg-blue-900 cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="flex-1 py-2.5 border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Printer size={14} /> In phiếu
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTicket(null)}
-                  className="flex-1 py-2.5 bg-[#003580] text-white font-semibold rounded-xl hover:bg-blue-900 cursor-pointer"
-                >
-                  Đóng
-                </button>
-              </div>
             </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
     </div>
   );
 }

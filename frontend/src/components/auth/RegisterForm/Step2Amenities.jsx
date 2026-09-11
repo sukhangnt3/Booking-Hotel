@@ -21,7 +21,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 
-export const AGODA_AMENITIES = [
+export const AMENITIES = [
   { id: "wifi", label: "Wi-Fi miễn phí toàn khuôn viên", icon: Wifi },
   { id: "parking", label: "Bãi đỗ xe ô tô tại chỗ nghỉ", icon: Car },
   { id: "24h_front_desk", label: "Lễ tân phục vụ 24/7", icon: Clock },
@@ -73,7 +73,7 @@ export const Step2Amenities = ({ data = {}, onChange = () => {} }) => {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-        {AGODA_AMENITIES.map((item) => {
+        {AMENITIES.map((item) => {
           const Icon = item.icon;
           const isSelected = selectedAmenities.includes(item.id);
 

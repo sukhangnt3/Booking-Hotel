@@ -193,7 +193,7 @@ export default function Header() {
     : isStaff
       ? "Lễ tân"
       : isOwner
-        ? "Chủ nhà"
+        ? "Owner"
         : "Khách hàng";
 
   // =====================================================

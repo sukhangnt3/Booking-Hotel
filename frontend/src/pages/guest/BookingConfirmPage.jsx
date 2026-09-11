@@ -1,18 +1,16 @@
-// src/pages/guest/BookingConfirmPage.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   CalendarDays,
   ShieldCheck,
-  Sparkles,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
   ChevronRight,
-  Ticket,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
+  CreditCard,
+  Building2,
+  Check,
+  Clock,
 } from "lucide-react";
 import {
   format,
@@ -34,9 +32,9 @@ import { vi } from "date-fns/locale";
 
 import { Button, Input, Badge, StarRating } from "@/components/ui";
 import { LoadingSpinner, Breadcrumb } from "@/components/common";
-import { BookingStepper, CountdownTimer } from "@/components/booking";
+import { BookingStepper } from "@/components/booking";
 
-import { hotelService, promotionService } from "@/services";
+import { hotelService } from "@/services";
 import { useAuthStore } from "@/stores/authStore";
 import apiClient from "@/services/apiClient";
 
@@ -71,6 +69,9 @@ export default function BookingConfirmPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // 'FULL' (100%) hoặc 'DEPOSIT_30' (Cọc trước 30%)
+  const [paymentOption, setPaymentOption] = useState("FULL");
+
   // Form khách hàng
   const [formData, setFormData] = useState({
     fullName: "",
@@ -79,12 +80,55 @@ export default function BookingConfirmPage() {
     specialRequest: "",
   });
 
-  // Quản lý mã giảm giá từ PostgreSQL (Bảng 17 & 18)
-  const [promoCode, setPromoCode] = useState("");
-  const [appliedPromo, setAppliedPromo] = useState(null); // { promoId, discountAmount, code }
-  const [promoLoading, setPromoLoading] = useState(false);
-  const [promoError, setPromoError] = useState("");
-  const [promoSuccess, setPromoSuccess] = useState("");
+  // ─── ĐỒNG BỘ MỐC 15 PHÚT GIỮ PHÒNG XUYÊN SUỐT CÁC BƯỚC ───
+  const getSessionExpiresAt = () => {
+    const storageKey = `booking_session_lock_${hotelId || "temp"}`;
+    let savedExpireTime = sessionStorage.getItem(storageKey);
+    if (!savedExpireTime) {
+      savedExpireTime = Date.now() + 15 * 60 * 1000;
+      sessionStorage.setItem(storageKey, savedExpireTime.toString());
+    } else {
+      savedExpireTime = parseInt(savedExpireTime, 10);
+    }
+    const remainingSeconds = Math.floor((savedExpireTime - Date.now()) / 1000);
+    return remainingSeconds > 0 ? remainingSeconds : 0;
+  };
+
+  const [timeLeft, setTimeLeft] = useState(getSessionExpiresAt);
+
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      alert("⚠️ Thời gian giữ phòng 15 phút đã hết! Vui lòng chọn lại phòng.");
+      sessionStorage.removeItem(`booking_session_lock_${hotelId || "temp"}`);
+      navigate(`/hotel/${hotelId}`);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          sessionStorage.removeItem(
+            `booking_session_lock_${hotelId || "temp"}`,
+          );
+          alert(
+            "⚠️ Thời gian giữ phòng 15 phút đã hết! Vui lòng chọn lại phòng.",
+          );
+          navigate(`/hotel/${hotelId}`);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timeLeft, hotelId, navigate]);
+
+  const formatCountdown = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
 
   useEffect(() => {
     if (user) {
@@ -149,49 +193,17 @@ export default function BookingConfirmPage() {
       ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
       : 1;
 
-  // ─── TÍNH TOÁN TIỀN PHÒNG & GIẢM GIÁ ───
+  // GIÁ PHÒNG THỰC TẾ (KHÔNG CỘNG VAT & KHÔNG VOUCHER)
   const basePrice = Number(room?.sell_price || room?.base_price || 500000);
-  const subtotal = basePrice * totalNights * quantity;
-  const discountAmount = Number(appliedPromo?.discountAmount || 0);
-  const priceAfterDiscount = Math.max(0, subtotal - discountAmount);
-  const vatTaxAmount = Math.round(priceAfterDiscount * 0.08); // 8% VAT
-  const totalPrice = priceAfterDiscount + vatTaxAmount;
+  const totalPrice = basePrice * totalNights * quantity;
+
+  // Tiền đặt cọc 30% và phần còn lại
+  const depositAmount = Math.round(totalPrice * 0.3);
+  const remainingAmount = totalPrice - depositAmount;
+  const amountToPayNow =
+    paymentOption === "DEPOSIT_30" ? depositAmount : totalPrice;
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
-
-  // Áp dụng mã ưu đãi gọi API checkPromotionCode vào PostgreSQL
-  const handleApplyPromoCode = async () => {
-    if (!promoCode.trim()) return;
-    setPromoLoading(true);
-    setPromoError("");
-    setPromoSuccess("");
-
-    try {
-      const res = await promotionService.checkCode(
-        promoCode.trim().toUpperCase(),
-        {
-          hotelId: hotelId,
-          totalAmount: subtotal,
-        },
-      );
-
-      setAppliedPromo({
-        promoId: res.promoId,
-        discountAmount: res.discountAmount,
-        code: res.code,
-      });
-      setPromoSuccess(res.message || `✓ Đã áp dụng mã thành công!`);
-    } catch (err) {
-      setPromoError(
-        err?.response?.data?.message ||
-          err?.message ||
-          "Mã ưu đãi không hợp lệ.",
-      );
-      setAppliedPromo(null);
-    } finally {
-      setPromoLoading(false);
-    }
-  };
 
   const renderMonthCalendar = (monthDate) => {
     const start = startOfMonth(monthDate);
@@ -297,8 +309,6 @@ export default function BookingConfirmPage() {
     const payload = {
       hotel_id: hotelId,
       room_id: room?.id || roomId,
-      promotion_id: appliedPromo?.promoId || null,
-      discount: discountAmount,
       checkin_date: format(checkInDate, "yyyy-MM-dd"),
       checkout_date: format(checkOutDate, "yyyy-MM-dd"),
       quantity: quantity,
@@ -306,8 +316,11 @@ export default function BookingConfirmPage() {
       guest_email: formData.email.trim(),
       guest_phone: formData.phone.trim(),
       special_require: formData.specialRequest.trim(),
-      subtotal: subtotal,
       total_price: totalPrice,
+      payment_type: paymentOption,
+      deposit_amount: paymentOption === "DEPOSIT_30" ? depositAmount : 0,
+      remaining_amount: paymentOption === "DEPOSIT_30" ? remainingAmount : 0,
+      amount_to_pay: amountToPayNow,
     };
 
     try {
@@ -316,8 +329,16 @@ export default function BookingConfirmPage() {
       const code = data?.booking_code || data?.code || data?.id;
 
       if (code) {
+        // Lấy mốc thời gian hết hạn hiện tại để chuyển sang CheckoutPage
+        const currentExpireTime =
+          sessionStorage.getItem(`booking_session_lock_${hotelId || "temp"}`) ||
+          (Date.now() + timeLeft * 1000).toString();
+
+        // Lưu mốc hết hạn cho mã đơn này để CheckoutPage đọc tiếp
+        localStorage.setItem(`lock_expires_${code}`, currentExpireTime);
+
         navigate(
-          `/checkout?code=${code}&amount=${totalPrice}&hotelId=${hotelId}`,
+          `/checkout?code=${code}&amount=${amountToPayNow}&totalAmount=${totalPrice}&paymentType=${paymentOption}&remainingAmount=${remainingAmount}&hotelId=${hotelId}`,
         );
       } else {
         navigate("/profile?tab=trips");
@@ -326,15 +347,16 @@ export default function BookingConfirmPage() {
       alert(
         err.response?.data?.message ||
           err.message ||
-          "Không thể đặt phòng. Vui lòng thử lại!",
+          "Không thể tạo đơn đặt phòng. Vui lòng thử lại!",
       );
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading)
+  if (loading) {
     return <LoadingSpinner fullPage label="Đang chuẩn bị đơn đặt phòng..." />;
+  }
 
   const breadcrumbs = [
     { label: "Khách sạn", link: "/hotels" },
@@ -357,13 +379,22 @@ export default function BookingConfirmPage() {
           onSubmit={handleSubmit}
           className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-6"
         >
-          {/* CỘT TRÁI: THÔNG TIN KHÁCH HÀNG */}
+          {/* CỘT TRÁI: THÔNG TIN KHÁCH HÀNG & 2 LỰA CHỌN THANH TOÁN */}
           <div className="lg:col-span-7 space-y-6">
-            <CountdownTimer
-              initialMinutes={15}
-              onExpire={() => alert("Thời gian giữ phòng đã hết!")}
-            />
+            {/* ĐỒNG HỒ ĐẾM NGƯỢC 15 PHÚT GIỮ CHỖ */}
+            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 flex items-center justify-between text-amber-900 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <Clock size={18} className="animate-pulse text-amber-700" />
+                <span className="text-xs font-bold">
+                  Phòng của bạn đang được giữ tạm thời trong:
+                </span>
+              </div>
+              <span className="font-mono font-black text-base text-amber-800 bg-white px-3 py-1 rounded-xl border border-amber-200 shadow-2xs">
+                {formatCountdown(timeLeft)}
+              </span>
+            </div>
 
+            {/* Thông tin khách hàng */}
             <div className="bg-white p-6 md:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6">
               <div className="flex justify-between items-center pb-4 border-b border-gray-100">
                 <div>
@@ -441,14 +472,138 @@ export default function BookingConfirmPage() {
                   size={18}
                 />
                 <p className="text-xs text-emerald-800 leading-relaxed font-medium">
-                  Phòng được đảm bảo giữ chỗ tức thì và liên kết trực tiếp với
-                  tài khoản của bạn.
+                  Phòng được đảm bảo giữ chỗ tức thì và thông tin được bảo mật
+                  tuyệt đối.
+                </p>
+              </div>
+            </div>
+
+            {/* 2 LỰA CHỌN THANH TOÁN */}
+            <div className="bg-white p-6 md:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+              <div>
+                <h3 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
+                  <CreditCard size={20} className="text-[#003580]" /> Lựa chọn
+                  thanh toán
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Chọn phương thức thanh toán phù hợp nhằm đảm bảo giữ phòng của
+                  bạn.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                {/* Lựa chọn 1: Thanh toán toàn bộ */}
+                <div
+                  onClick={() => setPaymentOption("FULL")}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    paymentOption === "FULL"
+                      ? "border-[#003580] bg-blue-50/40 shadow-xs"
+                      : "border-gray-200 hover:border-gray-300 bg-white"
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <span className="font-bold text-sm text-gray-900 block">
+                        Thanh toán toàn bộ (100%)
+                      </span>
+                      <p className="text-xs text-gray-500">
+                        Thanh toán trực tuyến trọn gói, làm thủ tục nhận phòng
+                        nhanh chóng không cần thanh toán thêm tại quầy.
+                      </p>
+                    </div>
+                    <div
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                        paymentOption === "FULL"
+                          ? "border-[#003580] bg-[#003580] text-white"
+                          : "border-gray-300 bg-white"
+                      }`}
+                    >
+                      {paymentOption === "FULL" && (
+                        <Check size={12} strokeWidth={3} />
+                      )}
+                    </div>
+                  </div>
+                  <div className="pt-4 font-black text-[#003580] text-base">
+                    {formatVND(totalPrice)}
+                  </div>
+                </div>
+
+                {/* Lựa chọn 2: Cọc trước 30% giữ chỗ */}
+                <div
+                  onClick={() => setPaymentOption("DEPOSIT_30")}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    paymentOption === "DEPOSIT_30"
+                      ? "border-emerald-600 bg-emerald-50/40 shadow-xs"
+                      : "border-gray-200 hover:border-gray-300 bg-white"
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm text-gray-900 block">
+                          Thanh toán tại quầy
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
+                          Cọc trước 30%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Chuyển khoản cọc 30% để chắc chắn giữ phòng (chống đơn
+                        ảo/trẻ em nghịch). 70% còn lại thanh toán tại quầy.
+                      </p>
+                    </div>
+                    <div
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                        paymentOption === "DEPOSIT_30"
+                          ? "border-emerald-600 bg-emerald-600 text-white"
+                          : "border-gray-300 bg-white"
+                      }`}
+                    >
+                      {paymentOption === "DEPOSIT_30" && (
+                        <Check size={12} strokeWidth={3} />
+                      )}
+                    </div>
+                  </div>
+                  <div className="pt-4">
+                    <span className="text-[11px] text-gray-500 block">
+                      Tiền cọc thanh toán ngay:
+                    </span>
+                    <span className="font-black text-emerald-700 text-base">
+                      {formatVND(depositAmount)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Giải thích chính sách */}
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                <Building2
+                  size={16}
+                  className="shrink-0 mt-0.5 text-amber-700"
+                />
+                <p className="leading-relaxed">
+                  {paymentOption === "DEPOSIT_30" ? (
+                    <>
+                      Chính sách cọc 30% (
+                      <strong>{formatVND(depositAmount)}</strong>) giúp hệ thống
+                      khóa phòng thực tế cho Quý khách. Số tiền còn lại{" "}
+                      <strong>{formatVND(remainingAmount)}</strong> sẽ được thu
+                      trực tiếp khi nhận phòng tại quầy lễ tân.
+                    </>
+                  ) : (
+                    <>
+                      Quý khách thanh toán 100% trọn gói (
+                      <strong>{formatVND(totalPrice)}</strong>). Khi đến khách
+                      sạn chỉ cần cung cấp mã đơn là có thể nhận chìa khóa phòng
+                      ngay.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* CỘT PHẢI: CHI TIẾT ĐƠN, LỊCH & MÃ GIẢM GIÁ */}
+          {/* CỘT PHẢI: CHI TIẾT ĐƠN & BẢNG TÍNH GIÁ */}
           <div className="lg:col-span-5 space-y-6">
             <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <div className="flex gap-4 pb-4 border-b border-gray-100">
@@ -487,7 +642,7 @@ export default function BookingConfirmPage() {
               </div>
             </div>
 
-            {/* BẢNG LỊCH */}
+            {/* BẢNG CHỌN NGÀY */}
             <div
               ref={calendarRef}
               className="relative bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-3"
@@ -569,116 +724,67 @@ export default function BookingConfirmPage() {
               )}
             </div>
 
-            {/* MÃ GIẢM GIÁ (POSTGRESQL BẢNG 17 & 18) */}
-            <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-3">
-              <label className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
-                <Ticket size={16} className="text-orange-500" />
-                Mã giảm giá / Ưu đãi
-              </label>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="VD: GOSTAY10, GIAM50K..."
-                  value={promoCode}
-                  onChange={(e) => {
-                    setPromoCode(e.target.value.toUpperCase());
-                    setPromoError("");
-                  }}
-                  disabled={Boolean(appliedPromo)}
-                  className="flex-1 h-10 px-3.5 border border-gray-300 rounded-xl text-xs font-mono font-bold uppercase tracking-wider outline-none focus:border-[#003580]"
-                />
-                <button
-                  type="button"
-                  onClick={handleApplyPromoCode}
-                  disabled={
-                    !promoCode.trim() || Boolean(appliedPromo) || promoLoading
-                  }
-                  className="h-10 px-4 bg-[#003580] hover:bg-blue-900 disabled:opacity-40 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
-                >
-                  {promoLoading ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : appliedPromo ? (
-                    "Đã dùng"
-                  ) : (
-                    "Áp dụng"
-                  )}
-                </button>
-              </div>
-
-              {promoError && (
-                <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
-                  <AlertCircle size={13} /> {promoError}
-                </p>
-              )}
-
-              {appliedPromo && (
-                <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={15} className="text-emerald-600" />
-                    <span>{promoSuccess}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAppliedPromo(null);
-                      setPromoCode("");
-                      setPromoSuccess("");
-                    }}
-                    className="text-[10px] text-rose-600 hover:underline"
-                  >
-                    Gỡ bỏ
-                  </button>
-                </div>
-              )}
-            </div>
-
             {/* BẢNG TÍNH GIÁ CHI TIẾT */}
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <h3 className="font-black text-gray-900 text-base border-b border-gray-100 pb-3">
-                Chi tiết giá
+                Chi tiết giá phòng
               </h3>
               <div className="space-y-2.5 text-xs">
                 <div className="flex justify-between text-gray-700">
+                  <span>Giá mỗi đêm:</span>
+                  <span>{formatVND(basePrice)}</span>
+                </div>
+
+                <div className="flex justify-between text-gray-700">
+                  <span>Số lượng:</span>
                   <span>
                     {quantity} phòng × {totalNights} đêm
                   </span>
-                  <span>{formatVND(subtotal)}</span>
                 </div>
 
-                {appliedPromo && (
-                  <div className="flex justify-between text-emerald-600 font-bold bg-emerald-50 p-2.5 rounded-xl">
-                    <span className="flex items-center gap-1">
-                      <Sparkles size={14} /> Mã giảm giá ({appliedPromo.code})
-                    </span>
-                    <span>- {formatVND(discountAmount)}</span>
+                <div className="flex justify-between text-gray-900 font-bold pt-2 border-t border-gray-100">
+                  <span>Tổng tiền phòng:</span>
+                  <span className="text-sm">{formatVND(totalPrice)}</span>
+                </div>
+
+                {paymentOption === "DEPOSIT_30" && (
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1.5 mt-2">
+                    <div className="flex justify-between text-emerald-700 font-black">
+                      <span>Tiền cọc giữ phòng (30%):</span>
+                      <span>{formatVND(depositAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600 font-medium">
+                      <span>Cần trả tại quầy lễ tân:</span>
+                      <span className="font-bold text-gray-800">
+                        {formatVND(remainingAmount)}
+                      </span>
+                    </div>
                   </div>
                 )}
-
-                <div className="flex justify-between text-gray-500 font-medium">
-                  <span>Thuế VAT & phí dịch vụ (8%)</span>
-                  <span>+ {formatVND(vatTaxAmount)}</span>
-                </div>
               </div>
 
               <div className="border-t border-gray-100 pt-4 flex justify-between items-center">
                 <div>
-                  <span className="text-base font-black text-gray-900 block">
-                    Tổng thanh toán
+                  <span className="text-sm font-black text-gray-900 block">
+                    {paymentOption === "DEPOSIT_30"
+                      ? "Tiền cọc thanh toán ngay"
+                      : "Tổng thanh toán"}
                   </span>
                   <span className="text-[10px] text-gray-400 italic">
-                    Đã gồm tất cả thuế & phí
+                    {paymentOption === "DEPOSIT_30"
+                      ? "Đặt cọc 30% để chắc chắn giữ chỗ"
+                      : "Thanh toán trọn gói 100%"}
                   </span>
                 </div>
                 <span className="text-2xl font-black text-[#ff6a00]">
-                  {formatVND(totalPrice)}
+                  {formatVND(amountToPayNow)}
                 </span>
               </div>
 
               <Button
                 type="submit"
                 isLoading={submitting}
-                className="w-full h-14 text-base font-black rounded-xl shadow-lg mt-2 bg-[#003580] hover:bg-blue-900 text-white"
+                className="w-full h-14 text-base font-black rounded-xl shadow-lg mt-2 bg-[#003580] hover:bg-blue-900 text-white cursor-pointer"
               >
                 Tiến hành thanh toán &rarr;
               </Button>

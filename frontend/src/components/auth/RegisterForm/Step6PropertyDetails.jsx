@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Star, ChevronDown, Search, Sparkles } from "lucide-react";
 
-const AGODA_TIME_SLOTS = [
+const TIME_SLOTS = [
   { label: "12:00 SA (00:00)", value: "00:00" },
   { label: "06:00 SA (06:00)", value: "06:00" },
   { label: "08:00 SA (08:00)", value: "08:00" },
@@ -15,11 +15,11 @@ const AGODA_TIME_SLOTS = [
   { label: "11:59 CH (23:59)", value: "23:59" },
 ];
 
-const AgodaTimePicker = ({ value, onChange, placeholder = "Chọn giờ" }) => {
+const TimePicker = ({ value, onChange, placeholder = "Chọn giờ" }) => {
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef(null);
 
-  const currentSlot = AGODA_TIME_SLOTS.find(
+  const currentSlot = TIME_SLOTS.find(
     (s) => s.value === value || s.label === value,
   );
   const displayLabel = currentSlot ? currentSlot.label : value || placeholder;
@@ -46,7 +46,7 @@ const AgodaTimePicker = ({ value, onChange, placeholder = "Chọn giờ" }) => {
 
       {isOpen && (
         <div className="absolute top-full mt-2 z-50 left-0 w-64 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 space-y-1 animate-fadeIn">
-          {AGODA_TIME_SLOTS.map((slot) => (
+          {TIME_SLOTS.map((slot) => (
             <div
               key={slot.value}
               onClick={() => {
@@ -123,7 +123,7 @@ export const Step6PropertyDetails = ({
           <label className="block text-xs font-black text-slate-800">
             Thời gian nhận phòng (Check-in)
           </label>
-          <AgodaTimePicker
+          <TimePicker
             value={data?.checkInFrom || "14:00"}
             onChange={(val) => onChange({ checkInFrom: val })}
           />
@@ -133,7 +133,7 @@ export const Step6PropertyDetails = ({
           <label className="block text-xs font-black text-slate-800">
             Thời gian trả phòng (Check-out)
           </label>
-          <AgodaTimePicker
+          <TimePicker
             value={data?.checkOutTo || "12:00"}
             onChange={(val) => onChange({ checkOutTo: val })}
           />

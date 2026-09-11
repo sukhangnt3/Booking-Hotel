@@ -39,16 +39,17 @@ const BACKEND_BASE_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000"
 ).replace(/\/api\/?$/, "");
 
+// Bản đồ ảnh riêng biệt cho từng thành phố
 const CITY_LANDMARK_IMAGES = {
   "Hồ Chí Minh":
     "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800",
-  "TP. Hồ Chí Minh":
-    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800",
+  "Khánh Hòa":
+    "https://images.unsplash.com/photo-1575986767340-5d17ae767ab0?w=800",
+  "Nha Trang":
+    "https://images.unsplash.com/photo-1575986767340-5d17ae767ab0?w=800",
   "Hà Nội":
     "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
   "Đà Nẵng": "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800",
-  "Nha Trang":
-    "https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?w=800",
   "Phú Quốc":
     "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
   "Đà Lạt":
@@ -58,7 +59,35 @@ const CITY_LANDMARK_IMAGES = {
 };
 
 const DEFAULT_LANDMARK =
-  "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800";
+  "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800";
+
+// Hàm nhận diện hình ảnh thông minh theo tên thành phố
+const getCityLandmarkImage = (cityName = "") => {
+  const norm = cityName
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .trim();
+
+  if (norm.includes("khanh hoa") || norm.includes("nha trang")) {
+    return CITY_LANDMARK_IMAGES["Khánh Hòa"];
+  }
+  if (
+    norm.includes("ho chi minh") ||
+    norm.includes("sai gon") ||
+    norm.includes("hcm")
+  ) {
+    return CITY_LANDMARK_IMAGES["Hồ Chí Minh"];
+  }
+  if (norm.includes("ha noi")) return CITY_LANDMARK_IMAGES["Hà Nội"];
+  if (norm.includes("da nang")) return CITY_LANDMARK_IMAGES["Đà Nẵng"];
+  if (norm.includes("phu quoc")) return CITY_LANDMARK_IMAGES["Phú Quốc"];
+  if (norm.includes("da lat")) return CITY_LANDMARK_IMAGES["Đà Lạt"];
+  if (norm.includes("vung tau")) return CITY_LANDMARK_IMAGES["Vũng Tàu"];
+
+  return CITY_LANDMARK_IMAGES[cityName] || DEFAULT_LANDMARK;
+};
 
 const parseImageUrl = (img) => {
   if (!img)
@@ -85,9 +114,10 @@ export default function HomePage() {
   const [favoriteHotelIds, setFavoriteHotelIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
-  // State vị trí trượt Carousel (chỉ hiển thị 4 cái)
+  // Giới hạn hiển thị 4 khách sạn cùng lúc trên màn hình lớn
   const [newestIndex, setNewestIndex] = useState(0);
   const VISIBLE_COUNT = 4;
+  const MAX_DISPLAY_STAYS = 10; // Giới hạn chỉ lấy tối đa 10 khách sạn mới nhất để trượt mượt mà
 
   const today = startOfToday();
   const [destination, setDestination] = useState("");
@@ -143,25 +173,32 @@ export default function HomePage() {
             stars: Number(h.star_rating || 3),
             rating: Number(h.average_rating || 9.0),
             review_count: Number(h.review_count || 0),
+            createdAt: h.created_at || h.createdAt || null,
           };
         });
 
-        // SẮP XẾP MỚI NHẤT LÊN ĐẦU
+        // 🌟 SẮP XẾP KHÁCH SẠN MỚI NHẤT LÊN ĐẦU (The newest first)
         formattedHotels.sort((a, b) => {
-          const dateA = new Date(a.created_at || a.createdAt || 0).getTime();
-          const dateB = new Date(b.created_at || b.createdAt || 0).getTime();
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           if (dateB !== dateA) return dateB - dateA;
-          return (Number(b.id) || 0) - (Number(a.id) || 0);
+
+          // Nếu ngày bằng nhau hoặc không có ngày, sắp xếp theo ID (nếu là số)
+          const numA = Number(a.id);
+          const numB = Number(b.id);
+          if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
+          return String(b.id).localeCompare(String(a.id));
         });
 
+        // Thống kê điểm đến thịnh hành & gán đúng ảnh
         const cityStatsMap = new Map();
         formattedHotels.forEach((h) => {
-          const cityName = h.city || "Hồ Chí Minh";
+          const cityName = h.city ? h.city.trim() : "Hồ Chí Minh";
           if (!cityStatsMap.has(cityName)) {
             cityStatsMap.set(cityName, {
               name: cityName,
               hotelCount: 0,
-              image: CITY_LANDMARK_IMAGES[cityName] || DEFAULT_LANDMARK,
+              image: getCityLandmarkImage(cityName),
             });
           }
           cityStatsMap.get(cityName).hotelCount += 1;
@@ -190,7 +227,8 @@ export default function HomePage() {
 
         if (!isMounted) return;
 
-        setUniqueStays(formattedHotels);
+        // Giới hạn chỉ giữ lại danh sách mới nhất vừa phải (10 chỗ nghỉ) để carousel mượt
+        setUniqueStays(formattedHotels.slice(0, MAX_DISPLAY_STAYS));
         setTrendingDestinations(validTrendingCities);
         setFavoriteHotelIds(favIdsSet);
       } catch (error) {
@@ -245,6 +283,7 @@ export default function HomePage() {
       ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
       : 1;
 
+  // 🌟 GIỚI HẠN VỊ TRÍ TRƯỢT CHUẨN XÁC: Tránh việc kéo lố bị trắng góc phải
   const maxNewestIndex = Math.max(0, uniqueStays.length - VISIBLE_COUNT);
 
   const handlePrevNewest = () => {

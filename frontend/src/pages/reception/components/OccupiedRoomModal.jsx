@@ -1,13 +1,12 @@
-// src/pages/reception/components/OccupiedRoomModal.jsx
 import React, { useState, useEffect } from "react";
 import {
   Calendar,
   Clock,
   CreditCard,
   QrCode,
-  Paperclip,
   AlertTriangle,
   ArrowRightLeft,
+  Building2,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 
@@ -23,6 +22,27 @@ export default function OccupiedRoomModal({
   const [hotelSettings, setHotelSettings] = useState(
     room.hotel_settings || null,
   );
+  // State lưu chi tiết booking được tra cứu trực tiếp từ Database
+  const [bookingDetail, setBookingDetail] = useState(room.booking || null);
+
+  // ─── TỰ ĐỘNG TRA CỨU CHI TIẾT ĐƠN ĐỂ LẤY CHÍNH XÁC SỐ TIỀN CỌC 30% ───
+  useEffect(() => {
+    const code =
+      room.booking?.code || room.booking?.booking_code || room.booking?.id;
+    if (!code) return;
+
+    apiClient
+      .get(`/bookings/code/${code}`)
+      .then((res) => {
+        const b = res?.data?.booking || res?.booking || res?.data || res;
+        if (b) {
+          setBookingDetail(b);
+        }
+      })
+      .catch((err) => {
+        console.warn("Không lấy được chi tiết đơn phòng:", err);
+      });
+  }, [room.booking?.code, room.booking?.booking_code, room.booking?.id]);
 
   useEffect(() => {
     if (hotelSettings || !room.hotel_id) return;
@@ -58,7 +78,9 @@ export default function OccupiedRoomModal({
   );
 
   const now = new Date();
-  const scheduledCheckout = new Date(room.booking?.checkout_date || now);
+  const scheduledCheckout = new Date(
+    bookingDetail?.checkout_date || room.booking?.checkout_date || now,
+  );
   const [defHour, defMin] = String(defaultCheckoutTime)
     .slice(0, 5)
     .split(":")
@@ -104,15 +126,42 @@ export default function OccupiedRoomModal({
   }
 
   const roomLegs =
-    Array.isArray(room.booking?.room_legs) && room.booking.room_legs.length > 0
-      ? room.booking.room_legs
+    Array.isArray(bookingDetail?.room_legs || room.booking?.room_legs) &&
+    (bookingDetail?.room_legs || room.booking?.room_legs).length > 0
+      ? bookingDetail?.room_legs || room.booking?.room_legs
       : null;
 
   const baseRoomPrice = Number(
-    room.booking?.total_price || room.daily_price || 0,
+    bookingDetail?.total_price ||
+      room.booking?.total_price ||
+      room.daily_price ||
+      0,
   );
   const totalBill = baseRoomPrice + overtimeFee;
-  const customerPaid = Number(room.booking?.customer_paid || 0);
+
+  // ─── TÍNH TOÁN TIỀN CỌC 30% CHUẨN XÁC, KHÔNG BỊ GÁN NHẦM 100% ───
+  const b = bookingDetail || room.booking;
+
+  const paidAmountVal = Number(
+    b?.deposit_amount ?? b?.paid_amount ?? b?.customer_paid ?? 0,
+  );
+
+  const isDeposit =
+    b?.payment_type === "DEPOSIT_30" ||
+    (paidAmountVal > 0 && paidAmountVal < baseRoomPrice) ||
+    Number(b?.remaining_amount) > 0;
+
+  let customerPaid = 0;
+  if (isDeposit) {
+    customerPaid =
+      paidAmountVal > 0 ? paidAmountVal : Math.round(baseRoomPrice * 0.3);
+  } else if (paidAmountVal >= baseRoomPrice) {
+    customerPaid = baseRoomPrice;
+  } else {
+    customerPaid = paidAmountVal;
+  }
+
+  // Tiền cần thu nốt tại quầy (70% tiền phòng + phụ thu quá giờ)
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
@@ -142,17 +191,36 @@ export default function OccupiedRoomModal({
     "0",
   )}:${String(now.getMinutes()).padStart(2, "0")}`;
 
+  const currentBookingCode =
+    bookingDetail?.booking_code ||
+    b?.code ||
+    b?.booking_code ||
+    room.booking?.code ||
+    "DP000010";
+
+  const currentCustomerName =
+    bookingDetail?.customer_name ||
+    b?.customer_name ||
+    room.booking?.customer_name ||
+    "Khách lẻ";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
       <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col">
         <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-200 bg-white shrink-0">
           <div className="flex items-center gap-3">
             <h3 className="font-extrabold text-base text-slate-900">
-              Thanh toán {room.booking?.code || "DP000010"} -{" "}
-              <span className="text-[#1b6a38]">
-                {room.booking?.customer_name || "Khách lẻ"}
-              </span>
+              Thanh toán {currentBookingCode} -{" "}
+              <span className="text-[#1b6a38]">{currentCustomerName}</span>
             </h3>
+
+            {/* NHÃN HIỂN THỊ RÕ RÀNG NẾU LÀ ĐƠN CỌC 30% */}
+            {isDeposit && (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold text-[11px] border border-amber-300 flex items-center gap-1">
+                <Building2 size={12} />
+                Đã cọc 30% online
+              </span>
+            )}
 
             <button
               type="button"
@@ -163,13 +231,6 @@ export default function OccupiedRoomModal({
             >
               <ArrowRightLeft size={13} className="text-amber-700" />
               <span>Đổi phòng</span>
-            </button>
-
-            <button
-              type="button"
-              className="px-2.5 py-1 rounded-md border border-[#1b6a38] text-[#1b6a38] font-semibold text-[11px] hover:bg-emerald-50 cursor-pointer shadow-2xs"
-            >
-              Tạo hoá đơn một phần
             </button>
           </div>
 
@@ -257,7 +318,7 @@ export default function OccupiedRoomModal({
                         </div>
                       </td>
                       <td className="py-3 px-3 text-center font-semibold text-slate-700">
-                        {room.booking?.stay_duration || "1 Ngày"}
+                        {b?.stay_duration || "1 Ngày"}
                       </td>
                       <td className="py-3 px-3 text-right font-medium text-slate-600">
                         {formatVND(room.daily_price || baseRoomPrice)}
@@ -293,30 +354,10 @@ export default function OccupiedRoomModal({
                 </tbody>
               </table>
             </div>
-
-            <div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer text-xs"
-              >
-                <Paperclip size={13} />
-                <span>Chọn file đính kèm</span>
-              </button>
-            </div>
           </div>
 
           <div className="lg:col-span-5 border-l border-slate-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
-              <select
-                value={paymentAccount}
-                onChange={(e) => setPaymentAccount(e.target.value)}
-                className="border border-slate-300 rounded-lg px-2 py-1 outline-none text-slate-700 bg-white cursor-pointer"
-              >
-                <option value="Quầy lễ tân">Quầy lễ tân</option>
-                <option value="Tài khoản công ty">Tài khoản công ty</option>
-                <option value="Chưa xác định">Chưa xác định</option>
-              </select>
-
               <div className="flex items-center gap-1.5 text-slate-600 font-semibold border border-slate-200 rounded-lg px-2 py-1 bg-slate-50">
                 <Calendar size={13} className="text-slate-400" />
                 <span>{currentDateStr}</span>
@@ -326,7 +367,7 @@ export default function OccupiedRoomModal({
 
             <div className="space-y-2 pt-1 border-t border-slate-100">
               <div className="flex justify-between items-center text-slate-700">
-                <span>Tiền phòng:</span>
+                <span>Tiền phòng (Tổng đơn):</span>
                 <span className="font-semibold text-slate-900">
                   {formatVND(baseRoomPrice)}
                 </span>
@@ -346,25 +387,41 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
+              {/* HIỂN THỊ ĐÚNG SỐ TIỀN CỌC 30% */}
               <div className="flex justify-between items-center text-slate-700">
-                <span>Khách đã trả trước:</span>
+                <span className="flex items-center gap-1">
+                  Khách đã cọc trước:
+                  {isDeposit && (
+                    <span className="text-[10px] text-emerald-800 font-bold bg-emerald-50 px-1 rounded border border-emerald-200">
+                      (Cọc 30% online)
+                    </span>
+                  )}
+                </span>
                 <span className="font-bold text-[#1b6a38]">
                   - {formatVND(customerPaid)}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                <span className="font-bold text-slate-800 text-xs">
-                  Còn cần trả
-                </span>
-                <span className="font-black text-base text-[#1b6a38]">
+              {/* CÒN CẦN THU TẠI QUẦY (ĐÚNG 70% CÒN LẠI) */}
+              <div className="flex justify-between items-center pt-2 border-t border-slate-200 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
+                <div>
+                  <span className="font-bold text-slate-900 text-xs block">
+                    Còn cần thu tại quầy:
+                  </span>
+                  <span className="text-[10px] text-amber-800 font-medium">
+                    {isDeposit
+                      ? "(Thu 70% còn lại của khách)"
+                      : "(Đã thanh toán đủ)"}
+                  </span>
+                </div>
+                <span className="font-black text-base text-rose-600">
                   {formatVND(remainingAmount)}
                 </span>
               </div>
 
               <div className="flex justify-between items-center pt-2">
                 <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                  Khách thanh toán (F8)
+                  Khách thanh toán
                   <CreditCard size={14} className="text-emerald-700" />
                 </span>
                 <input
@@ -384,7 +441,8 @@ export default function OccupiedRoomModal({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2 text-slate-700 font-semibold">
+            {/* CHỈ CÒN 2 LỰA CHỌN: TIỀN MẶT VÀ CHUYỂN KHOẢN (ĐÃ BỎ THẺ) */}
+            <div className="flex items-center justify-start gap-6 pt-2 text-slate-700 font-semibold">
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="radio"
@@ -394,17 +452,6 @@ export default function OccupiedRoomModal({
                   className="accent-[#1b6a38]"
                 />
                 <span>Tiền mặt</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="checkout_pay_method"
-                  checked={paymentMethod === "card"}
-                  onChange={() => setPaymentMethod("card")}
-                  className="accent-[#1b6a38]"
-                />
-                <span>Thẻ</span>
               </label>
 
               <label className="flex items-center gap-1.5 cursor-pointer">
@@ -445,7 +492,7 @@ export default function OccupiedRoomModal({
             <div className="pt-3 flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => onCheckOut(room.booking?.code)}
+                onClick={() => onCheckOut(currentBookingCode)}
                 className="flex-1 py-3 bg-[#1b6a38] hover:bg-[#14532d] text-white font-extrabold rounded-xl shadow-md cursor-pointer transition active:scale-95 text-center text-sm"
               >
                 Hoàn thành

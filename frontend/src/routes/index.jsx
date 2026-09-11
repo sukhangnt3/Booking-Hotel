@@ -22,7 +22,6 @@ import UserProfilePage from "@/pages/guest/UserProfilePage";
 import BookingConfirmPage from "@/pages/guest/BookingConfirmPage";
 import BookingSuccessPage from "@/pages/guest/BookingSuccessPage";
 import CheckoutPage from "@/pages/guest/CheckoutPage";
-import PromotionPage from "@/pages/guest/PromotionPage";
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterForm from "@/components/auth/RegisterForm";
 
@@ -55,7 +54,6 @@ const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: "hotels", element: <HotelListPage /> },
       { path: "hotel/:id", element: <HotelDetailPage /> },
-      { path: "promotions", element: <PromotionPage /> },
       { path: "booking", element: <BookingConfirmPage /> },
       { path: "booking-success", element: <BookingSuccessPage /> },
       { path: "checkout", element: <CheckoutPage /> },
