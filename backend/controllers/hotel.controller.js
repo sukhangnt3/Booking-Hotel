@@ -154,7 +154,7 @@ async function listHotels(req, res, next) {
           ? "min_price DESC, h.average_rating DESC NULLS LAST"
           : sortBy === "rating"
             ? "h.average_rating DESC NULLS LAST, min_price ASC"
-            : "h.average_rating DESC NULLS LAST, h.review_count DESC NULLS LAST, min_price ASC";
+            : "h.created_at DESC, h.average_rating DESC NULLS LAST, min_price ASC";
 
     const sql = `
       SELECT
@@ -174,6 +174,8 @@ async function listHotels(req, res, next) {
          h.checkin_time,
          h.checkout_time,
          h.property_type,
+         h.created_at,
+         h.updated_at,
          COALESCE(
            (
              SELECT img.path 
@@ -733,7 +735,6 @@ async function getMyHotels(req, res, next) {
 
     const activeOnly = req.query.active_only === "true";
 
-    // 🌟 QUAN TRỌNG: Cho phép lấy khách sạn nếu User là OWNER hoặc là LỄ TÂN (hotel_staff)
     let sql = `
       SELECT 
          h.*,
@@ -805,7 +806,7 @@ async function listTrendingDestinations(req, res, next) {
              WHERE h2.city = h.city 
              LIMIT 1
            ),
-           'https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800'
+           'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800'
          ) AS image
        FROM public.hotel h
        WHERE h.status = 'active'::public.hotel_status_enum AND h.city IS NOT NULL

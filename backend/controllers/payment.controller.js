@@ -1,54 +1,51 @@
-// backend/controllers/payment.controller.js
 require("dotenv").config();
-const crypto = require("crypto");
-const querystring = require("qs");
 const pool = require("../config/database");
 
-const VNPAY_TMN_CODE = process.env.VNPAY_TMN_CODE;
-const VNPAY_HASH_SECRET = process.env.VNPAY_HASH_SECRET;
-const VNPAY_URL =
-  process.env.VNPAY_URL || "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
-const VNPAY_RETURN_URL =
-  process.env.VNPAY_RETURN_URL ||
-  "http://localhost:5000/api/payments/vnpay-return";
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
-
-function sortObject(obj) {
-  let sorted = {};
-  let str = [];
-  let key;
-  for (key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      str.push(encodeURIComponent(key));
-    }
-  }
-  str.sort();
-  for (key = 0; key < str.length; key++) {
-    sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
-  }
-  return sorted;
-}
-
-function getVnpayCreateDate() {
-  const date = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const year = date.getFullYear();
-  const month = pad(date.getMonth() + 1);
-  const day = pad(date.getDate());
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
-  const seconds = pad(date.getSeconds());
-  return `${year}${month}${day}${hours}${minutes}${seconds}`;
-}
-
-// ─── 1. TẠO LIÊN KẾT THANH TOÁN VNPAY ───
-async function createVnpayUrl(req, res) {
+async function getValidEnumValue(client, enumTypeName, preferredValues) {
   try {
-    const { bookingCode, amount, orderInfo } = req.body || {};
+    const res = await client.query(
+      `SELECT e.enumlabel
+       FROM pg_enum e
+       JOIN pg_type t ON e.enumtypid = t.oid
+       WHERE t.typname = $1`,
+      [enumTypeName],
+    );
+    const validLabels = res.rows.map((r) => r.enumlabel);
+
+    for (const val of preferredValues) {
+      if (validLabels.includes(val)) return val;
+    }
+    const nonPending = validLabels.find(
+      (l) => !l.toLowerCase().includes("pending"),
+    );
+    return nonPending || validLabels[0] || preferredValues[0];
+  } catch (err) {
+    return preferredValues[0];
+  }
+}
+
+async function getTableColumns(client, tableName) {
+  try {
+    const res = await client.query(
+      `SELECT column_name 
+       FROM information_schema.columns 
+       WHERE table_schema = 'public' AND table_name = $1`,
+      [tableName],
+    );
+    return res.rows.map((r) => r.column_name);
+  } catch (err) {
+    return [];
+  }
+}
+
+async function createVietQrPayment(req, res) {
+  try {
+    const { bookingCode, amount, paymentType } = req.body || {};
     if (!bookingCode || !amount) {
-      return res
-        .status(400)
-        .json({ message: "bookingCode và amount là bắt buộc." });
+      return res.status(400).json({
+        success: false,
+        message: "bookingCode và amount là bắt buộc.",
+      });
     }
 
     const bookingResult = await pool.query(
@@ -59,156 +56,301 @@ async function createVnpayUrl(req, res) {
     );
     const booking = bookingResult.rows[0];
     if (!booking) {
-      return res.status(404).json({ message: "Không tìm thấy đơn đặt phòng." });
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đơn đặt phòng.",
+      });
     }
 
-    const finalAmount = Math.round(
-      Number(amount) || Number(booking.total_price),
+    const expectedAmount = Math.round(Number(amount));
+
+    const bankId = "MB";
+    const accountNumber = "0833404928";
+    const accountName = "SU TRACH KHANG";
+
+    const qrCodeUrl = `https://img.vietqr.io/image/${bankId}-${accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(accountName)}`;
+
+    const checkPayment = await pool.query(
+      `SELECT id FROM public.payment WHERE booking_id = $1 LIMIT 1`,
+      [booking.id],
     );
 
-    const rawIpAddr =
-      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-      req.socket?.remoteAddress ||
-      "127.0.0.1";
-    const ipAddr = rawIpAddr.includes(":") ? "127.0.0.1" : rawIpAddr;
+    let paymentId;
+    if (checkPayment.rows.length > 0) {
+      paymentId = checkPayment.rows[0].id;
+      await pool.query(
+        `UPDATE public.payment 
+         SET expected_amount = $1, qr_code = $2, qr_content = $3, updated_at = NOW()
+         WHERE id = $4`,
+        [expectedAmount, qrCodeUrl, booking.booking_code, paymentId],
+      );
+    } else {
+      const pendingStatus = await getValidEnumValue(
+        pool,
+        "payment_status_enum",
+        ["pending", "PENDING", "unpaid"],
+      );
 
-    const createDate = getVnpayCreateDate();
-    const txnRef = `${booking.booking_code}_${Date.now()}`;
-
-    let vnp_Params = {
-      vnp_Version: "2.1.0",
-      vnp_Command: "pay",
-      vnp_TmnCode: VNPAY_TMN_CODE,
-      vnp_Locale: "vn",
-      vnp_CurrCode: "VND",
-      vnp_TxnRef: txnRef,
-      vnp_OrderInfo: orderInfo || `Thanh toan don hang ${booking.booking_code}`,
-      vnp_OrderType: "other",
-      vnp_Amount: finalAmount * 100,
-      vnp_ReturnUrl: VNPAY_RETURN_URL,
-      vnp_IpAddr: ipAddr,
-      vnp_CreateDate: createDate,
-    };
-
-    vnp_Params = sortObject(vnp_Params);
-
-    const signData = querystring.stringify(vnp_Params, { encode: false });
-    const hmac = crypto.createHmac("sha512", VNPAY_HASH_SECRET);
-    const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
-    vnp_Params["vnp_SecureHash"] = signed;
-
-    const vnpayUrl = `${VNPAY_URL}?${querystring.stringify(vnp_Params, { encode: false })}`;
-
-    // Tạo bản ghi giao dịch chờ vào bảng 15: payment
-    await pool
-      .query(
+      const insertPayment = await pool.query(
         `INSERT INTO public.payment (
-        id, booking_id, payment_method, expected_amount, status, created_at, updated_at
-      ) VALUES (
-        gen_random_uuid(), $1, 'VNPay', $2, 'pending'::public.payment_status_enum, NOW(), NOW()
-      )`,
-        [booking.id, finalAmount],
-      )
-      .catch(() => {});
+          id, booking_id, payment_method, expected_amount, paid_amount, qr_code, qr_content, status, created_at, updated_at
+        ) VALUES (
+          gen_random_uuid(), $1, 'VietQR', $2, 0, $3, $4, $5::text::public.payment_status_enum, NOW(), NOW()
+        ) RETURNING id`,
+        [
+          booking.id,
+          expectedAmount,
+          qrCodeUrl,
+          booking.booking_code,
+          pendingStatus,
+        ],
+      );
+      paymentId = insertPayment.rows[0].id;
+    }
 
     return res.json({
       success: true,
-      vnpayUrl,
-      paymentUrl: vnpayUrl,
+      paymentId,
       bookingCode: booking.booking_code,
-      amount: finalAmount,
+      expectedAmount,
+      paymentType: paymentType || "FULL",
+      bankInfo: {
+        bankId,
+        bankName: "Ngân hàng TMCP Quân Đội (MBBank)",
+        accountNumber,
+        accountName,
+      },
+      qrCodeUrl,
+      qrContent: booking.booking_code,
     });
   } catch (error) {
-    console.error("❌ LỖI CREATE_VNPAY_URL:", error);
-    return res
-      .status(500)
-      .json({ message: "Lỗi Server", errorDetail: error.message });
+    console.error("❌ LỖI CREATE_VIETQR_PAYMENT:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi tạo thanh toán VietQR",
+      errorDetail: error.message,
+    });
   }
 }
 
-// ─── 2. NHẬN KẾT QUẢ VNPAY TRẢ VỀ (LƯU BẢNG 15 VÀ BẢNG 16: PAYMENT_TRANSACTION) ───
-async function vnpayReturn(req, res) {
+// ─── NÚT XÁC NHẬN: PHÂN ĐỊNH RÕ 100% VÀ 30% TRONG DATABASE ───
+async function confirmManualPayment(req, res) {
+  const client = await pool.connect();
   try {
-    let vnp_Params = { ...req.query };
-    const secureHash = vnp_Params["vnp_SecureHash"];
-
-    delete vnp_Params["vnp_SecureHash"];
-    delete vnp_Params["vnp_SecureHashType"];
-
-    vnp_Params = sortObject(vnp_Params);
-    const signData = querystring.stringify(vnp_Params, { encode: false });
-    const hmac = crypto.createHmac("sha512", VNPAY_HASH_SECRET);
-    const signed = hmac.update(Buffer.from(signData, "utf-8")).digest("hex");
-
-    const responseCode = vnp_Params["vnp_ResponseCode"];
-    const rawTxnRef = vnp_Params["vnp_TxnRef"] || "";
-    const bookingCode = rawTxnRef.split("_")[0];
-    const amount = Number(vnp_Params["vnp_Amount"] || 0) / 100;
-    const vnpayTransactionNo = vnp_Params["vnp_TransactionNo"] || rawTxnRef;
-
-    // A. THANH TOÁN THÀNH CÔNG (MÃ '00')
-    if (secureHash === signed && responseCode === "00" && bookingCode) {
-      // 1. Cập nhật bảng booking
-      await pool.query(
-        `UPDATE public.booking 
-         SET payment_status = 'paid'::public.booking_payment_status_enum, 
-             status = 'confirmed'::public.booking_status_enum, 
-             confirmed_at = NOW(), 
-             updated_at = NOW()
-         WHERE booking_code = $1`,
-        [bookingCode],
-      );
-
-      // 2. Cập nhật bảng 15: payment
-      const paymentRes = await pool
-        .query(
-          `UPDATE public.payment 
-         SET status = 'paid'::public.payment_status_enum, 
-             paid_amount = $1,
-             paid_at = NOW(),
-             updated_at = NOW()
-         WHERE booking_id = (SELECT id FROM public.booking WHERE booking_code = $2 LIMIT 1)
-         RETURNING id`,
-          [amount, bookingCode],
-        )
-        .catch(() => ({ rows: [] }));
-
-      const paymentId = paymentRes.rows[0]?.id;
-
-      // 3. ── GHI NHẬN VÀO BẢNG 16: PAYMENT_TRANSACTION ──
-      if (paymentId) {
-        await pool
-          .query(
-            `INSERT INTO public.payment_transaction (
-             id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
-           ) VALUES (
-             gen_random_uuid(), $1, $2, 'VNPay', $3, 'success', $4, NOW()
-           )`,
-            [
-              paymentId,
-              vnpayTransactionNo,
-              Math.round(amount),
-              JSON.stringify(vnp_Params),
-            ],
-          )
-          .catch((e) => console.warn("Lưu ý payment_transaction:", e.message));
-      }
-
-      return res.redirect(
-        `${FRONTEND_URL}/booking-success?success=true&code=${bookingCode}&amount=${amount}`,
-      );
+    const { bookingCode, amount, paymentType } = req.body || {};
+    if (!bookingCode) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Thiếu bookingCode." });
     }
 
-    // B. GIAO DỊCH THẤT BẠI HOẶC BỊ HỦY
-    return res.redirect(
-      `${FRONTEND_URL}/booking-success?success=false&code=${bookingCode}&amount=${amount}&message=cancelled`,
+    const bookingRes = await client.query(
+      `SELECT id, booking_code, total_price FROM public.booking WHERE booking_code = $1 LIMIT 1`,
+      [bookingCode],
     );
+    const booking = bookingRes.rows[0];
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn phòng." });
+    }
+
+    const totalPrice = Number(booking.total_price || 0);
+    const paidAmount = Math.round(Number(amount) || totalPrice);
+
+    // PHÂN BIỆT CHUẨN XÁC:
+    // Nếu thanh toán 100% (paidAmount >= totalPrice) -> payment_type = 'FULL', deposit_amount = 0, remaining_amount = 0
+    // Nếu cọc 30% (paidAmount < totalPrice) -> payment_type = 'DEPOSIT_30', deposit_amount = paidAmount, remaining_amount = totalPrice - paidAmount
+    const isActuallyDeposit =
+      paymentType === "DEPOSIT_30" && paidAmount < totalPrice;
+
+    const finalPaymentType = isActuallyDeposit ? "DEPOSIT_30" : "FULL";
+    const depositAmountVal = isActuallyDeposit ? paidAmount : 0;
+    const remainingAmountVal = isActuallyDeposit ? totalPrice - paidAmount : 0;
+
+    const validBookingPaymentStatus = await getValidEnumValue(
+      client,
+      "booking_payment_status_enum",
+      ["paid", "PAID", "completed", "COMPLETED", "success"],
+    );
+
+    const validPaymentStatus = await getValidEnumValue(
+      client,
+      "payment_status_enum",
+      ["completed", "COMPLETED", "success", "SUCCESS", "paid", "PAID"],
+    );
+
+    const validTxnStatus = await getValidEnumValue(
+      client,
+      "transaction_status_enum",
+      ["success", "SUCCESS", "completed", "COMPLETED"],
+    );
+
+    const bookingCols = await getTableColumns(client, "booking");
+
+    const setClauses = [];
+    const updateParams = [];
+    let paramIdx = 1;
+
+    if (bookingCols.includes("payment_status")) {
+      setClauses.push(
+        `payment_status = $${paramIdx}::text::public.booking_payment_status_enum`,
+      );
+      updateParams.push(validBookingPaymentStatus);
+      paramIdx++;
+    }
+
+    if (bookingCols.includes("status")) {
+      setClauses.push(`status = 'confirmed'::public.booking_status_enum`);
+    }
+
+    if (bookingCols.includes("customer_paid")) {
+      setClauses.push(`customer_paid = $${paramIdx}`);
+      updateParams.push(paidAmount);
+      paramIdx++;
+    }
+
+    if (bookingCols.includes("deposit_amount")) {
+      setClauses.push(`deposit_amount = $${paramIdx}`);
+      updateParams.push(depositAmountVal);
+      paramIdx++;
+    }
+
+    if (bookingCols.includes("remaining_amount")) {
+      setClauses.push(`remaining_amount = $${paramIdx}`);
+      updateParams.push(remainingAmountVal);
+      paramIdx++;
+    }
+
+    if (bookingCols.includes("payment_type")) {
+      setClauses.push(`payment_type = $${paramIdx}`);
+      updateParams.push(finalPaymentType);
+      paramIdx++;
+    }
+
+    if (bookingCols.includes("confirmed_at")) {
+      setClauses.push(`confirmed_at = NOW()`);
+    }
+
+    if (bookingCols.includes("updated_at")) {
+      setClauses.push(`updated_at = NOW()`);
+    }
+
+    await client.query("BEGIN");
+
+    if (setClauses.length > 0) {
+      updateParams.push(booking.id);
+      const updateBookingQuery = `
+        UPDATE public.booking 
+        SET ${setClauses.join(", ")}
+        WHERE id = $${paramIdx}
+      `;
+      await client.query(updateBookingQuery, updateParams);
+    }
+
+    const payRes = await client.query(
+      `UPDATE public.payment 
+       SET status = $1::text::public.payment_status_enum,
+           paid_amount = $2,
+           paid_at = NOW(),
+           updated_at = NOW()
+       WHERE booking_id = $3
+       RETURNING id`,
+      [validPaymentStatus, paidAmount, booking.id],
+    );
+
+    let paymentId = payRes.rows[0]?.id;
+    if (!paymentId) {
+      const newPay = await client.query(
+        `INSERT INTO public.payment (
+          id, booking_id, payment_method, expected_amount, paid_amount, status, paid_at, created_at, updated_at
+        ) VALUES (
+          gen_random_uuid(), $1, 'VietQR', $2, $2, $3::text::public.payment_status_enum, NOW(), NOW(), NOW()
+        ) RETURNING id`,
+        [booking.id, paidAmount, validPaymentStatus],
+      );
+      paymentId = newPay.rows[0].id;
+    }
+
+    const txnCode = `MB_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    await client.query(
+      `INSERT INTO public.payment_transaction (
+        id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
+      ) VALUES (
+        gen_random_uuid(), $1, $2, 'VietQR', $3, $4::text::public.transaction_status_enum, $5, NOW()
+      )`,
+      [
+        paymentId,
+        txnCode,
+        paidAmount,
+        validTxnStatus,
+        JSON.stringify({
+          bookingCode,
+          amount: paidAmount,
+          paymentType: finalPaymentType,
+          bank: "MBBank",
+          accountNumber: "0833404928",
+        }),
+      ],
+    );
+
+    await client.query("COMMIT");
+
+    return res.json({
+      success: true,
+      paid: true,
+      paidAmount,
+      remainingAmount: remainingAmountVal,
+      paymentType: finalPaymentType,
+      message: "Xác nhận thanh toán thành công!",
+    });
   } catch (error) {
-    console.error("❌ LỖI VNPAY_RETURN:", error);
-    return res.redirect(
-      `${FRONTEND_URL}/booking-success?success=false&message=error`,
-    );
+    await client.query("ROLLBACK");
+    console.error("❌ LỖI CONFIRM_MANUAL_PAYMENT:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
   }
 }
 
-module.exports = { createVnpayUrl, vnpayReturn };
+async function checkPaymentStatus(req, res) {
+  try {
+    const { bookingCode } = req.query;
+    if (!bookingCode) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Thiếu bookingCode." });
+    }
+
+    const result = await pool.query(
+      `SELECT p.status, p.paid_amount, b.payment_status
+       FROM public.payment p
+       JOIN public.booking b ON p.booking_id = b.id
+       WHERE b.booking_code = $1 LIMIT 1`,
+      [bookingCode],
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ success: true, paid: false });
+    }
+
+    const row = result.rows[0];
+    const isCompleted =
+      ["completed", "COMPLETED", "success", "SUCCESS", "paid", "PAID"].includes(
+        row.status,
+      ) || ["paid", "PAID", "completed"].includes(row.payment_status);
+
+    return res.json({
+      success: true,
+      paid: isCompleted,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+module.exports = {
+  createVietQrPayment,
+  confirmManualPayment,
+  checkPaymentStatus,
+};
