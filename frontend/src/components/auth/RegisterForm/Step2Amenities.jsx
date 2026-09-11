@@ -18,7 +18,6 @@ import {
   Info,
   Check,
   Palmtree,
-  ShieldAlert,
 } from "lucide-react";
 
 export const AMENITIES = [
@@ -41,12 +40,10 @@ export const AMENITIES = [
 ];
 
 export const Step2Amenities = ({ data = {}, onChange = () => {} }) => {
-  const selectedAmenities = data?.propertyAmenities || [
-    "wifi",
-    "parking",
-    "24h_front_desk",
-    "elevator",
-  ];
+  // 🌟 ĐỂ MẶC ĐỊNH LÀ MẢNG RỖNG: Không tự tích bất kỳ tiện nghi nào từ trước
+  const selectedAmenities = Array.isArray(data?.propertyAmenities)
+    ? data.propertyAmenities
+    : [];
 
   const toggleAmenity = (id) => {
     const exists = selectedAmenities.includes(id);
@@ -67,8 +64,8 @@ export const Step2Amenities = ({ data = {}, onChange = () => {} }) => {
           Cơ sở lưu trú của bạn có những tiện ích gì?
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Các tiện nghi này sẽ được đối soát tự động và hiển thị ở mục Tiện ích
-          trên trang chi tiết khách sạn.
+          Chọn các tiện nghi thực tế mà chỗ nghỉ của bạn đang cung cấp cho
+          khách.
         </p>
       </div>
 
@@ -109,9 +106,9 @@ export const Step2Amenities = ({ data = {}, onChange = () => {} }) => {
       <div className="p-4 bg-[#e8f2ff]/80 border border-blue-200 rounded-2xl flex items-start gap-3 text-xs text-[#003580] leading-relaxed">
         <Info size={18} className="text-[#006ce4] shrink-0 mt-0.5" />
         <p>
-          Chỗ nghỉ cung cấp đầy đủ thông tin tiện nghi chất lượng cao thường
-          nhận được nhiều lượt đặt phòng hơn 40%. Bạn có thể thay đổi hoặc thêm
-          tiện nghi bất kỳ lúc nào tại Trang quản trị.
+          Bạn có thể bấm để chọn hoặc bỏ chọn tiện ích tùy thích. Chỗ nghỉ có
+          thể bổ sung thêm tiện ích bất kỳ lúc nào sau khi mở bán tại Trang quản
+          trị.
         </p>
       </div>
     </div>

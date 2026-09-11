@@ -29,8 +29,9 @@ import { useAuthStore } from "@/stores/authStore";
 import { authService } from "@/services";
 import apiClient from "@/services/apiClient";
 
+// 🌟 DỮ LIỆU ĐÃ ĐƯỢC LÀM SẠCH 100% (KHÔNG CÒN DỮ LIỆU MẪU ĐIỀN SẴN)
 const initialFormData = {
-  // 1. Tài khoản đối tác & Vị trí (Bước 1)
+  // 1. Tài khoản đối tác & Vị trí (Bước 1 - Để trống hoàn toàn)
   isAccountCreated: false,
   ownerId: null,
   ownerName: "",
@@ -42,61 +43,29 @@ const initialFormData = {
   address: "",
   buildingInfo: "",
   residenceCountry: "Việt Nam",
-  city: "Hồ Chí Minh",
-  province: "Hồ Chí Minh",
-  district: "Quận 1",
-  zipCode: "700000",
+  city: "",
+  province: "",
+  district: "",
+  zipCode: "",
   latitude: 10.7769,
   longitude: 106.7009,
 
-  // 2. Tiện nghi khách sạn
-  propertyAmenities: [
-    "wifi",
-    "parking",
-    "24h_front_desk",
-    "elevator",
-    "air_conditioner",
-  ],
+  // 2. Tiện nghi khách sạn (Mảng rỗng - không tích sẵn)
+  propertyAmenities: [],
 
-  // 3. Hạng phòng & Giá bán (Chuẩn Booking.com)
-  rooms: [
-    {
-      id: "room-default-1",
-      category: "double",
-      name: "Phòng Deluxe Giường Đôi",
-      custom_name: "Deluxe Double Room",
-      smoking_policy: "non_smoking",
-      type: "Deluxe",
-      room_view: "city_view",
-      bed_type: "1 Giường đôi lớn (King/Queen Size)",
-      room_area: 28,
-      capacity: 2,
-      amount: 10,
-      roomNumbersText:
-        "P.101, P.102, P.103, P.104, P.105, P.106, P.107, P.108, P.109, P.110",
-      base_price: 650000,
-      description: "Phòng nghỉ hiện đại, tiện nghi thoáng mát.",
-      roomAmenities: [
-        "air_conditioner",
-        "tv_smart",
-        "wifi",
-        "hot_water",
-        "hair_dryer",
-        "toiletries",
-      ],
-    },
-  ],
+  // 3. Hạng phòng & Giá bán (Mảng rỗng - người dùng tự bấm thêm phòng thật)
+  rooms: [],
   hasBreakfast: "no",
 
-  // 4. Khuyến mại & Quyết toán
-  enableFirstBookingDiscount: true,
-  initialPromoPercent: 20,
+  // 4. Khuyến mại & Quyết toán (Để trống - không gán sẵn ngân hàng hay giảm giá)
+  enableFirstBookingDiscount: false,
+  initialPromoPercent: 0,
   payoutMethod: "bank_transfer",
-  bankName: "Vietcombank",
+  bankName: "",
   bankAccount: "",
   bankAccountHolder: "",
 
-  // 5. Hình ảnh
+  // 5. Hình ảnh (Mảng rỗng - tự tải ảnh thật)
   hotelMainImage: "",
   hotelImages: [],
 
@@ -108,11 +77,11 @@ const initialFormData = {
   checkOutTo: "12:00",
   cancellation_deadline_hours: 24,
 
-  // 7. Thông tin mở rộng của Host
+  // 7. Thông tin đối tác (Để trống)
   firstName: "",
   lastName: "",
   nationality: "Việt Nam",
-  dob: "1995-01-01",
+  dob: "",
   preferredLanguage: "Tiếng Việt",
 
   // 8. Pháp lý & Đăng tải
@@ -300,7 +269,6 @@ export const RegisterForm = () => {
       const password = formData.password;
 
       try {
-        // 🌟 CHỈ ĐĂNG KÝ VỚI ROLE CUSTOMER (KHÔNG CẤP QUYỀN OWNER NGAY TẠI ĐÂY)
         const regRes = await apiClient.post("/auth/register", {
           full_name: formData.ownerName.trim(),
           name: formData.ownerName.trim(),
@@ -375,7 +343,6 @@ export const RegisterForm = () => {
 
         if (isEmailDuplicate) {
           try {
-            // Đã có tài khoản thì đăng nhập để tiếp tục quy trình
             const loginRes = await apiClient.post("/auth/login", {
               email: email,
               password: password,
@@ -441,6 +408,7 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
+  // Nút bấm này dùng khi bạn muốn test nhanh toàn bộ 8 bước mà không cần gõ tay
   const handleAutoFillDemo = () => {
     setFormData((prev) => ({
       ...prev,
@@ -456,8 +424,33 @@ export const RegisterForm = () => {
       province: "Hồ Chí Minh",
       district: "Quận 1",
       zipCode: "700000",
-      latitude: 10.7769,
-      longitude: 106.7009,
+      propertyAmenities: [
+        "wifi",
+        "parking",
+        "24h_front_desk",
+        "elevator",
+        "air_conditioner",
+      ],
+      rooms: [
+        {
+          id: "room-demo-1",
+          category: "double",
+          name: "Phòng Deluxe Giường Đôi",
+          custom_name: "Deluxe Double Room",
+          smoking_policy: "non_smoking",
+          type: "Deluxe",
+          room_view: "city_view",
+          bed_type: "1 Giường đôi lớn (King/Queen Size)",
+          room_area: 28,
+          capacity: 2,
+          amount: 10,
+          roomNumbersText:
+            "P.101, P.102, P.103, P.104, P.105, P.106, P.107, P.108, P.109, P.110",
+          base_price: 650000,
+          description: "Phòng nghỉ hiện đại, tiện nghi thoáng mát.",
+          roomAmenities: [],
+        },
+      ],
       starRating: 5,
       description:
         "Tọa lạc ngay giữa trung tâm hoa lệ, GoStay Grand Luxury Hotel mang đến cho bạn trải nghiệm nghỉ dưỡng 5 sao đẳng cấp với tầm nhìn panorama hướng sông tuyệt đẹp, hồ bơi vô cực trên tầng thượng và hệ thống ẩm thực quốc tế đỉnh cao.",
@@ -465,6 +458,7 @@ export const RegisterForm = () => {
       checkInTo: "23:00",
       checkOutTo: "12:00",
       cancellation_deadline_hours: 24,
+      bankName: "Vietcombank",
       bankAccount: "0071001999888",
       bankAccountHolder: prev.ownerName?.toUpperCase() || "NGUYEN THANH LONG",
       taxCode: "0312345678",
@@ -597,7 +591,7 @@ export const RegisterForm = () => {
 
       const createdHotel = res.hotel || res.data?.hotel || res.data || res;
 
-      // 🌟 SAU KHI NỘP ĐƠN THÀNH CÔNG: ĐỒNG BỘ LẠI PROFILE MỚI (LÚC NÀY MỚI LÊN QUYỀN OWNER)
+      // 🌟 SAU KHI NỘP ĐƠN THÀNH CÔNG: ĐỒNG BỘ LẠI PROFILE MỚI
       try {
         if (authService?.getProfile) {
           const profileRes = await authService.getProfile();

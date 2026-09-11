@@ -131,16 +131,9 @@ export const Step3RoomsAndPricing = ({
       bed_type: "1 Giường đôi lớn (King/Queen Size)",
       room_area: 28,
       capacity: 2,
-      base_price: 650000,
+      base_price: 0,
       description: "Phòng nghỉ hiện đại, tiện nghi.",
-      roomAmenities: [
-        "air_conditioner",
-        "tv_smart",
-        "wifi",
-        "hot_water",
-        "hair_dryer",
-        "toiletries",
-      ],
+      roomAmenities: [],
     };
     onChange({ rooms: [...rooms, newRoom] });
   };
@@ -325,31 +318,6 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* ── 3. CHÍNH SÁCH VỀ HÚT THUỐC (KHỚP 100% ẢNH CHỤP) ── */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Chính sách về hút thuốc
-                </label>
-                <div className="relative">
-                  <select
-                    value={room.smoking_policy || "non_smoking"}
-                    onChange={(e) =>
-                      handleUpdateRoom(room.id, {
-                        smoking_policy: e.target.value,
-                      })
-                    }
-                    className="w-full h-11 px-3.5 text-xs sm:text-sm font-semibold bg-white rounded-xl border border-slate-300 appearance-none cursor-pointer outline-none focus:border-[#006ce4]"
-                  >
-                    <option value="non_smoking">Không hút thuốc</option>
-                    <option value="smoking_allowed">Được phép hút thuốc</option>
-                  </select>
-                  <ChevronDown
-                    size={18}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-                  />
-                </div>
-              </div>
-
               {/* ── 4. SỐ PHÒNG (LOẠI NÀY) (KHỚP 100% ẢNH CHỤP) ── */}
               <div className="w-full sm:w-1/3">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -380,12 +348,14 @@ export const Step3RoomsAndPricing = ({
                   </label>
                   <div className="flex items-center justify-between">
                     <input
-                      type="number"
-                      step="10000"
-                      value={room.base_price || 0}
+                      type="text"
+                      step=""
+                      value={Number(room.base_price || 0).toLocaleString(
+                        "vi-VN",
+                      )}
                       onChange={(e) =>
                         handleUpdateRoom(room.id, {
-                          base_price: Number(e.target.value),
+                          base_price: Number(e.target.value.replace(/\./g, "")),
                         })
                       }
                       className="w-full text-base font-black text-[#ff6a00] bg-transparent outline-none"
@@ -492,7 +462,7 @@ export const Step3RoomsAndPricing = ({
           onClick={handleAddRoom}
           className="px-6 h-11 border-2 border-[#003580] text-[#003580] hover:bg-blue-50 font-black text-xs rounded-xl flex items-center gap-2 cursor-pointer transition active:scale-95 shadow-xs"
         >
-          <Plus size={16} /> Thêm hạng phòng khác
+          <Plus size={16} /> Thêm hạng phòng
         </button>
       </div>
     </div>

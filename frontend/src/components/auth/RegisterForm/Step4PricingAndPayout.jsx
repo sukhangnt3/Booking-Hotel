@@ -1,13 +1,6 @@
 // src/components/auth/RegisterForm/Step4PricingAndPayout.jsx
-import React, { useState } from "react";
-import {
-  Lightbulb,
-  CheckCircle2,
-  AlertCircle,
-  Banknote,
-  QrCode,
-  Sparkles,
-} from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { CheckCircle2, AlertCircle, Banknote, Sparkles } from "lucide-react";
 
 export const VIETNAM_BANKS = [
   {
@@ -37,28 +30,25 @@ export const Step4PricingAndPayout = ({
   onChange = () => {},
   errors = {},
 }) => {
-  const [enableFirstBookingDiscount, setEnableFirstBookingDiscount] = useState(
-    data?.enableFirstBookingDiscount ?? true,
-  );
-
-  const [payoutMethod, setPayoutMethod] = useState(
-    data?.payoutMethod || "bank_transfer",
-  );
-
+  const payoutMethod = data?.payoutMethod || "bank_transfer";
   const [isVerifyingBank, setIsVerifyingBank] = useState(false);
   const [bankVerifyResult, setBankVerifyResult] = useState(null);
 
-  const handleTogglePromo = () => {
-    const nextVal = !enableFirstBookingDiscount;
-    setEnableFirstBookingDiscount(nextVal);
-    onChange({
-      enableFirstBookingDiscount: nextVal,
-      initialPromoPercent: nextVal ? 20 : 0,
-    });
-  };
+  // 🌟 TỰ ĐỘNG ĐỒNG BỘ: Nếu chưa có ngân hàng thì gán Vietcombank, tự lấy tên từ Bước 1
+  useEffect(() => {
+    const updates = {};
+    if (!data?.bankName) {
+      updates.bankName = "Vietcombank";
+    }
+    if (!data?.bankAccountHolder && data?.ownerName) {
+      updates.bankAccountHolder = data.ownerName.trim().toUpperCase();
+    }
+    if (Object.keys(updates).length > 0) {
+      onChange(updates);
+    }
+  }, []);
 
   const handleMethodChange = (method) => {
-    setPayoutMethod(method);
     onChange({ payoutMethod: method });
   };
 
@@ -106,6 +96,7 @@ export const Step4PricingAndPayout = ({
 
       {/* CÁC PHƯƠNG THỨC NHẬN TIỀN */}
       <div className="space-y-3">
+        {/* LỰA CHỌN 1: CHUYỂN KHOẢN NGÂN HÀNG */}
         <div
           onClick={() => handleMethodChange("bank_transfer")}
           className={`p-4 rounded-2xl border-2 transition cursor-pointer ${
@@ -141,6 +132,7 @@ export const Step4PricingAndPayout = ({
           {payoutMethod === "bank_transfer" && (
             <div className="mt-4 pt-4 border-t border-slate-200 space-y-3 animate-fadeIn">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* 1. NGÂN HÀNG */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
                     Ngân hàng thụ hưởng *
@@ -148,7 +140,11 @@ export const Step4PricingAndPayout = ({
                   <select
                     value={data?.bankName || "Vietcombank"}
                     onChange={(e) => onChange({ bankName: e.target.value })}
-                    className="w-full h-11 px-3 text-xs font-bold rounded-xl border border-slate-300 bg-white outline-none cursor-pointer focus:border-[#006ce4]"
+                    className={`w-full h-11 px-3 text-xs font-bold rounded-xl border ${
+                      errors?.bankName
+                        ? "border-rose-500 bg-rose-50/20"
+                        : "border-slate-300 focus:border-[#006ce4]"
+                    } bg-white outline-none cursor-pointer`}
                   >
                     {VIETNAM_BANKS.map((b) => (
                       <option key={b.code} value={b.name}>
@@ -156,8 +152,14 @@ export const Step4PricingAndPayout = ({
                       </option>
                     ))}
                   </select>
+                  {errors?.bankName && (
+                    <p className="text-xs text-rose-500 font-bold mt-1">
+                      {errors.bankName}
+                    </p>
+                  )}
                 </div>
 
+                {/* 2. SỐ TÀI KHOẢN */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
                     Số tài khoản ngân hàng *
@@ -184,6 +186,7 @@ export const Step4PricingAndPayout = ({
                 </div>
               </div>
 
+              {/* 3. TÊN CHỦ TÀI KHOẢN */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">
                   Tên chủ tài khoản (In hoa không dấu) *
@@ -204,36 +207,38 @@ export const Step4PricingAndPayout = ({
                       : "border-slate-300 focus:border-[#006ce4]"
                   } bg-white outline-none`}
                 />
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                {bankVerifyResult && (
-                  <div
-                    className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-1 w-full ${
-                      bankVerifyResult.success
-                        ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                        : "bg-rose-50 text-rose-800 border border-rose-200"
-                    }`}
-                  >
-                    {bankVerifyResult.success ? (
-                      <CheckCircle2
-                        size={15}
-                        className="text-emerald-600 shrink-0"
-                      />
-                    ) : (
-                      <AlertCircle
-                        size={15}
-                        className="text-rose-600 shrink-0"
-                      />
-                    )}
-                    <span className="truncate">{bankVerifyResult.message}</span>
-                  </div>
+                {errors?.bankAccountHolder && (
+                  <p className="text-xs text-rose-500 font-bold mt-1">
+                    {errors.bankAccountHolder}
+                  </p>
                 )}
               </div>
+
+              {/* KẾT QUẢ KIỂM TRA (NẾU CÓ) */}
+              {bankVerifyResult && (
+                <div
+                  className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 w-full ${
+                    bankVerifyResult.success
+                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                      : "bg-rose-50 text-rose-800 border border-rose-200"
+                  }`}
+                >
+                  {bankVerifyResult.success ? (
+                    <CheckCircle2
+                      size={15}
+                      className="text-emerald-600 shrink-0"
+                    />
+                  ) : (
+                    <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                  )}
+                  <span className="truncate">{bankVerifyResult.message}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
 
+        {/* LỰA CHỌN 2: THANH TOÁN TẠI KHÁCH SẠN */}
         <div
           onClick={() => handleMethodChange("pay_at_hotel")}
           className={`p-4 rounded-2xl border-2 transition cursor-pointer ${
