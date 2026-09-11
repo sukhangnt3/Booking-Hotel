@@ -26,6 +26,7 @@ import { AuditReportView } from "./AuditReportView.jsx";
 import SubmittedSuccessView from "./SubmittedSuccessView.jsx";
 
 import { useAuthStore } from "@/stores/authStore";
+import { authService } from "@/services";
 import apiClient from "@/services/apiClient";
 
 const initialFormData = {
@@ -273,7 +274,7 @@ export const RegisterForm = () => {
   };
 
   // ════════════════════════════════════════════════════════════════════════════
-  // 👉 NÚT TIẾP THEO: XỬ LÝ ĐĂNG KÝ HOẶC BỎ QUA NẾU ĐÃ TẠO TÀI KHOẢN RỒI
+  // 👉 NÚT TIẾP THEO: TẠO TÀI KHOẢN CUSTOMER (CHƯA CẤP OWNER Ở BƯỚC 1)
   // ════════════════════════════════════════════════════════════════════════════
   const handleNext = async () => {
     if (!validateCurrentStep()) return;
@@ -292,21 +293,21 @@ export const RegisterForm = () => {
       formData.isAccountCreated ||
       Boolean(formData.ownerId);
 
-    // NẾU ĐANG Ở BƯỚC 1 VÀ CHƯA CÓ TÀI KHOẢN -> MỚI GỌI API ĐĂNG KÝ
+    // NẾU ĐANG Ở BƯỚC 1 VÀ CHƯA CÓ TÀI KHOẢN -> ĐĂNG KÝ TÀI KHOẢN THÀNH VIÊN
     if (currentStep === 1 && !isAccountReady) {
       setLoading(true);
       const email = (formData.emailContact || "").trim().toLowerCase();
       const password = formData.password;
 
       try {
-        // 1. Thử gọi API tạo tài khoản mới
+        // 🌟 CHỈ ĐĂNG KÝ VỚI ROLE CUSTOMER (KHÔNG CẤP QUYỀN OWNER NGAY TẠI ĐÂY)
         const regRes = await apiClient.post("/auth/register", {
           full_name: formData.ownerName.trim(),
           name: formData.ownerName.trim(),
           email: email,
           phone: formData.phoneContact.trim(),
           password: password,
-          role: "HOTEL_OWNER",
+          role: "CUSTOMER",
         });
 
         let token =
@@ -314,7 +315,7 @@ export const RegisterForm = () => {
         let createdUser =
           regRes.data?.user || regRes.data?.data?.user || regRes.user;
 
-        // Nếu Backend không trả về token trong response register, tự động gọi login để lấy token
+        // Nếu API register không trả token, tự động login để lấy token xác thực
         if (!token) {
           try {
             const loginRes = await apiClient.post("/auth/login", {
@@ -344,7 +345,7 @@ export const RegisterForm = () => {
           if (setAuth) setAuth(token, createdUser);
         }
 
-        // 🌟 LƯU CỜ ĐÃ TẠO TÀI KHOẢN: Khi quay lại bước 1 sẽ không bị gọi lại đăng ký nữa
+        // 🌟 LƯU CỜ ĐÃ TẠO TÀI KHOẢN ĐỂ KHÔNG BỊ TRÙNG KHI QUAY LẠI
         setFormData((prev) => ({
           ...prev,
           isAccountCreated: true,
@@ -361,7 +362,7 @@ export const RegisterForm = () => {
           "";
         const lowerMsg = errorMsg.toLowerCase();
 
-        // Kiểm tra xem lỗi có phải do email đã tồn tại / đã được sử dụng hay không
+        // Kiểm tra xem lỗi có phải do email đã tồn tại hay không
         const isEmailDuplicate =
           lowerMsg.includes("sử dụng") ||
           lowerMsg.includes("tồn tại") ||
@@ -374,7 +375,7 @@ export const RegisterForm = () => {
 
         if (isEmailDuplicate) {
           try {
-            // Tự động đăng nhập bằng email & password đã điền
+            // Đã có tài khoản thì đăng nhập để tiếp tục quy trình
             const loginRes = await apiClient.post("/auth/login", {
               email: email,
               password: password,
@@ -419,7 +420,7 @@ export const RegisterForm = () => {
         setLoading(false);
       }
     } else {
-      // 🌟 ĐÃ CÓ TÀI KHOẢN (hoặc vừa quay lại từ Bước 2): BỎ QUA GỌI API ĐĂNG KÝ, CHUYỂN TIẾP NGAY
+      // Đã có tài khoản hoặc ở các bước tiếp theo -> Chuyển tiếp bình thường
       setCurrentStep((prev) => Math.min(prev + 1, 8));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -492,7 +493,7 @@ export const RegisterForm = () => {
   };
 
   // ════════════════════════════════════════════════════════════════════════════
-  // 👉 NỘP ĐƠN ĐĂNG TẢI KHÁCH SẠN (GẮN TOKEN TRỰC TIẾP TRÁNH TUYỆT ĐỐI LỖI 401)
+  // 👉 NỘP ĐƠN ĐĂNG TẢI KHÁCH SẠN (LÚC NÀY MỚI KÍCH HOẠT QUYỀN OWNER)
   // ════════════════════════════════════════════════════════════════════════════
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
@@ -587,6 +588,7 @@ export const RegisterForm = () => {
         images: allImages,
       };
 
+      // GỬI HỒ SƠ ĐĂNG TẢI KHÁCH SẠN
       const res = await apiClient.post("/hotels/register", payload, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -594,6 +596,24 @@ export const RegisterForm = () => {
       });
 
       const createdHotel = res.hotel || res.data?.hotel || res.data || res;
+
+      // 🌟 SAU KHI NỘP ĐƠN THÀNH CÔNG: ĐỒNG BỘ LẠI PROFILE MỚI (LÚC NÀY MỚI LÊN QUYỀN OWNER)
+      try {
+        if (authService?.getProfile) {
+          const profileRes = await authService.getProfile();
+          const updatedUser =
+            profileRes?.data?.user ||
+            profileRes?.data?.data?.user ||
+            profileRes?.data ||
+            profileRes?.user;
+
+          if (updatedUser && setAuth) {
+            setAuth(token, updatedUser);
+          }
+        }
+      } catch (profileErr) {
+        console.warn("Không thể tự động đồng bộ profile mới:", profileErr);
+      }
 
       setSubmittedApplication({
         applicationId:
