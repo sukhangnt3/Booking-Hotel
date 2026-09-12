@@ -4,7 +4,6 @@ const pool = require("../config/database");
 
 const SEPAY_API_KEY = process.env.SEPAY_API_KEY || "";
 
-// 🌟 BẢNG MÃ BIN NAPAS 6 CHỮ SỐ CHUẨN 100% CHO CÁC NGÂN HÀNG VIỆT NAM
 const NAPAS_BANK_BINS = {
   VCB: "970436",
   VIETCOMBANK: "970436",
@@ -29,15 +28,12 @@ const NAPAS_BANK_BINS = {
 };
 
 const DEFAULT_PLATFORM_BANK = {
-  bankId: "970422", // MBBank BIN
+  bankId: "970422",
   bankName: "Ngân hàng TMCP Quân Đội (MBBank)",
   accountNumber: "0833404928",
   accountName: "SU TRACH KHANG",
 };
 
-/**
- * 🌟 HÀM LẤY TÀI KHOẢN NGÂN HÀNG VÀ CHUẨN HÓA MÃ BIN NAPAS
- */
 async function getOwnerBankAccount(hotelId) {
   if (!hotelId) return DEFAULT_PLATFORM_BANK;
   try {
@@ -51,7 +47,6 @@ async function getOwnerBankAccount(hotelId) {
 
     if (res.rows.length > 0) {
       const row = res.rows[0];
-      // Xóa sạch toàn bộ khoảng trắng, dấu gạch ngang trong số tài khoản
       const cleanAcc = String(row.bank_account || "").replace(/\D/g, "");
 
       if (cleanAcc.length >= 6) {
@@ -112,7 +107,6 @@ async function createVietQrPayment(req, res) {
     );
     const bank = await getOwnerBankAccount(booking.hotel_id);
 
-    // Dùng trực tiếp mã BIN Napas và số tài khoản sạch để tạo link VietQR
     const qrCodeUrl = `https://img.vietqr.io/image/${bank.bankId}-${bank.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(bank.accountName)}`;
 
     const checkPayment = await pool.query(
@@ -165,7 +159,7 @@ async function createVietQrPayment(req, res) {
   }
 }
 
-// ─── 2. NÚT "KIỂM TRA NGAY": ĐỐI SOÁT SEPAY TRƯỚC KHI LƯU ───
+// ─── 2. NÚT "KIỂM TRA NGAY": GỌI TRỰC TIẾP SEPAY API ĐỐI SOÁT ───
 async function confirmManualPayment(req, res) {
   try {
     const { bookingCode, amount } = req.body || {};
@@ -193,6 +187,7 @@ async function confirmManualPayment(req, res) {
         .json({ success: false, message: "Không tìm thấy đơn phòng." });
     }
 
+    // Nếu đơn đã được duyệt paid trước đó rồi thì trả về thành công ngay
     if (
       String(booking.payment_status).toLowerCase() === "paid" &&
       String(booking.status).toLowerCase() === "confirmed"
@@ -205,9 +200,12 @@ async function confirmManualPayment(req, res) {
       });
     }
 
-    const expected = Number(
-      booking.expected_amount || booking.total_price || amount || 0,
-    );
+    // 🌟 SỐ TIỀN CẦN THANH TOÁN: ƯU TIÊN SỐ TIỀN CỌC / TIỀN GỬI LÊN TỪ CLIENT
+    const reqAmount = Number(amount || 0);
+    const pExpected = Number(booking.expected_amount || 0);
+    const total = Number(booking.total_price || 0);
+    const expected =
+      reqAmount > 0 ? reqAmount : pExpected > 0 ? pExpected : total;
 
     let isVerified = false;
     let actualPaid = expected;
@@ -215,8 +213,11 @@ async function confirmManualPayment(req, res) {
 
     if (SEPAY_API_KEY) {
       try {
+        console.log(
+          `🔍 Đang gọi SePay API kiểm tra đơn ${booking.booking_code} với số tiền cần: ${expected}đ...`,
+        );
         const sepayRes = await fetch(
-          "https://my.sepay.vn/userapi/transactions/list?limit=25",
+          "https://my.sepay.vn/userapi/transactions/list?limit=50",
           {
             method: "GET",
             headers: {
@@ -230,15 +231,21 @@ async function confirmManualPayment(req, res) {
           const sepayData = await sepayRes.json();
           const transactions = sepayData?.transactions || [];
 
+          // Tìm giao dịch chứa mã đơn BK... và chuyển đủ số tiền
           const matchedTx = transactions.find((tx) => {
             const content = String(
-              tx.transaction_content || tx.content || "",
+              tx.transaction_content || tx.content || tx.description || "",
             ).toUpperCase();
-            const amountIn = Number(tx.amount_in || tx.transferAmount || 0);
-            return (
-              content.includes(booking.booking_code.toUpperCase()) &&
-              amountIn >= expected
+            const amountIn = Number(
+              tx.amount_in || tx.transferAmount || tx.amount || 0,
             );
+
+            const isCodeMatch = content.includes(
+              booking.booking_code.toUpperCase(),
+            );
+            const isAmountMatch = amountIn >= expected * 0.95; // Chấp nhận nếu >= 95% để chống lệch tiền
+
+            return isCodeMatch && isAmountMatch;
           });
 
           if (matchedTx) {
@@ -247,11 +254,22 @@ async function confirmManualPayment(req, res) {
               matchedTx.amount_in || matchedTx.transferAmount || expected,
             );
             refNumber = matchedTx.reference_number || `SEPAY_${matchedTx.id}`;
+            console.log(
+              `✅ Khớp giao dịch SePay: Mã ${booking.booking_code}, Số tiền: ${actualPaid}`,
+            );
+          } else {
+            console.warn(
+              `⚠️ SePay trả về ${transactions.length} giao dịch gần nhất nhưng không khớp mã ${booking.booking_code}`,
+            );
           }
+        } else {
+          console.error("❌ SePay API trả về mã lỗi HTTP:", sepayRes.status);
         }
       } catch (apiErr) {
-        console.warn("⚠️ Lỗi gọi SePay API đối soát:", apiErr.message);
+        console.warn("⚠️ Lỗi kết nối SePay API:", apiErr.message);
       }
+    } else {
+      console.warn("⚠️ CHƯA CẤU HÌNH BIẾN SEPAY_API_KEY TRÊN RENDER!");
     }
 
     if (!isVerified) {
@@ -260,7 +278,7 @@ async function confirmManualPayment(req, res) {
         paid: false,
         status: "pending",
         message:
-          "Hệ thống SePay chưa ghi nhận biến động số dư cho đơn này. Vui lòng chờ 5-10 giây rồi bấm kiểm tra lại!",
+          "Hệ thống SePay chưa ghi nhận biến động số dư cho đơn này. Quý khách vui lòng chờ 5-10 giây rồi bấm kiểm tra lại!",
       });
     }
 
@@ -341,7 +359,7 @@ async function confirmManualPayment(req, res) {
   }
 }
 
-// ─── 3. CHECK STATUS CHO FRONTEND POLLING REAL-TIME ───
+// ─── 3. CHECK STATUS CHO FRONTEND POLLING REAL-TIME (MỖI 2.5 GIÂY) ───
 async function checkPaymentStatus(req, res) {
   try {
     const bookingCode =
@@ -392,12 +410,16 @@ async function checkPaymentStatus(req, res) {
   }
 }
 
-// ─── 4. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY ───
+// ─── 4. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY 24/7 ───
 async function handleBankWebhook(req, res) {
   try {
     const body = req.body || {};
     const transferAmount = Number(
-      body.transferAmount || body.amount || body.transfer_amount || 0,
+      body.transferAmount ||
+        body.amount ||
+        body.transfer_amount ||
+        body.amount_in ||
+        0,
     );
     const content = String(
       body.content || body.description || body.transaction_content || "",
@@ -408,6 +430,12 @@ async function handleBankWebhook(req, res) {
         body.id ||
         `TXN_${Date.now()}`,
     );
+
+    console.log("🔔 [SePay Webhook Triggered]:", {
+      content,
+      transferAmount,
+      transactionId,
+    });
 
     const match = content.match(/BK\d{7,10}/i);
     if (!match) {
@@ -443,11 +471,15 @@ async function handleBankWebhook(req, res) {
         .json({ success: true, message: "Đơn này đã được duyệt trước đó." });
     }
 
+    // Kiểm tra số tiền: chỉ cần >= 95% số tiền dự kiến trong payment
     const expected = Number(
       booking.expected_amount || booking.total_price || 0,
     );
 
-    if (transferAmount < expected) {
+    if (transferAmount < expected * 0.95) {
+      console.warn(
+        `Khách chuyển thiếu: Cần ${expected}đ, nhận được ${transferAmount}đ`,
+      );
       return res.status(200).json({
         success: false,
         message: `Số tiền chuyển (${transferAmount}) nhỏ hơn số tiền yêu cầu (${expected}).`,
@@ -507,6 +539,10 @@ async function handleBankWebhook(req, res) {
 
       await client.query("COMMIT");
       client.release();
+
+      console.log(
+        `✅ [SePay Webhook Thành Công]: Đã duyệt xong đơn ${bookingCode}!`,
+      );
 
       return res.status(200).json({
         success: true,
