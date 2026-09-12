@@ -2,7 +2,7 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tự động nhận diện thư viện mã hóa mật khẩu bcryptjs hoặc bcrypt
+// Tự động nhận diện thư viện mã hóa bcrypt
 let bcrypt;
 try {
   bcrypt = require("bcryptjs");
@@ -12,6 +12,14 @@ try {
   } catch {
     bcrypt = null;
   }
+}
+
+// Tự động nhận diện jsonwebtoken để sinh token đăng nhập tự động
+let jwt;
+try {
+  jwt = require("jsonwebtoken");
+} catch {
+  jwt = null;
 }
 
 const PUBLIC_HOTEL_STATUS = "h.status::text IN ('active', 'approved')";
@@ -779,7 +787,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TỰ ĐỘNG TẠO TÀI KHOẢN OWNER VÀO BẢNG USERS NẾU CHƯA CÓ) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TỰ ĐỘNG TẠO USER VÀ TRẢ VỀ TOKEN ĐĂNG NHẬP MỚI) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -798,33 +806,53 @@ async function registerHotel(req, res, next) {
     const ownerFullName = req.body?.ownerName || req.body?.name || "Chủ cơ sở";
     const userPhone = req.body?.phoneContact || req.body?.phone;
 
-    let validOwnerId = null;
+    // 🌟 1. TỰ ĐỘNG HỎI POSTGRES BẢNG VÀ CỘT MÀ hotel_owner_id_fkey ĐANG TRỎ TỚI
+    let refTable = "users";
+    let refCol = "id";
 
-    // 🌟 1. KIỂM TRA BẢNG VÀ CỘT USERS
+    try {
+      const fkRes = await client.query(`
+        SELECT ccu.table_name, ccu.column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+        WHERE tc.constraint_name = 'hotel_owner_id_fkey'
+        LIMIT 1
+      `);
+      if (fkRes.rows.length > 0) {
+        refTable = fkRes.rows[0].table_name;
+        refCol = fkRes.rows[0].column_name;
+      }
+    } catch (fkErr) {
+      console.warn("Dùng bảng tham chiếu mặc định 'users':", fkErr.message);
+    }
+
+    // 🌟 2. QUÉT CỘT THỰC TẾ TRONG BẢNG USERS
     const uColRes = await client.query(
-      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users'`,
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${refTable}'`,
     );
     const existingUserCols = uColRes.rows.map((r) =>
       r.column_name.toLowerCase(),
     );
 
-    // 🌟 2. NẾU CÓ EMAIL VÀ MẬT KHẨU TỪ BƯỚC 1: TẠO TÀI KHOẢN HOẶC CẬP NHẬT TÀI KHOẢN MỚI
+    let validOwnerId = null;
+
+    // 🌟 3. NẾU CÓ EMAIL: TÌM XEM ĐÃ CÓ TÀI KHOẢN CHƯA HOẶC TẠO TÀI KHOẢN MỚI
     if (userEmail) {
       const emailCheck = await client.query(
-        `SELECT id, email FROM public.users WHERE email ILIKE $1 LIMIT 1`,
+        `SELECT ${refCol} FROM public.${refTable} WHERE email ILIKE $1 LIMIT 1`,
         [String(userEmail).trim()],
       );
 
       if (emailCheck.rows.length > 0) {
-        validOwnerId = emailCheck.rows[0].id;
+        validOwnerId = emailCheck.rows[0][refCol];
       } else if (userPassword) {
-        // TẠO TÀI KHOẢN MỚI VÀO BẢNG USERS ĐỂ ĐĂNG NHẬP ĐƯỢC
         const newUserId = crypto.randomUUID();
         const hashedPassword = bcrypt
           ? await bcrypt.hash(userPassword, 10)
           : userPassword;
 
-        const uFields = ["id", "email"];
+        const uFields = [refCol, "email"];
         const uValues = [newUserId, String(userEmail).trim().toLowerCase()];
         const uPlaceholders = ["$1", "$2"];
 
@@ -866,45 +894,41 @@ async function registerHotel(req, res, next) {
         }
 
         const insertUserSql = `
-          INSERT INTO public.users (${uFields.join(", ")})
+          INSERT INTO public.${refTable} (${uFields.join(", ")})
           VALUES (${uPlaceholders.join(", ")})
-          RETURNING id;
+          RETURNING ${refCol};
         `;
 
         const newUserRes = await client.query(insertUserSql, uValues);
-        validOwnerId = newUserRes.rows[0].id;
-        console.log(
-          "✅ [registerHotel] Đã tạo thành công tài khoản mới cho Owner:",
-          userEmail,
-        );
+        validOwnerId = newUserRes.rows[0][refCol];
       }
     }
 
     // Nếu chưa có, tìm theo ID token
     if (!validOwnerId && rawOwnerId) {
       const checkId = await client.query(
-        `SELECT id FROM public.users WHERE id::text = $1::text LIMIT 1`,
+        `SELECT ${refCol} FROM public.${refTable} WHERE ${refCol}::text = $1::text LIMIT 1`,
         [rawOwnerId],
       );
       if (checkId.rows.length > 0) {
-        validOwnerId = checkId.rows[0].id;
+        validOwnerId = checkId.rows[0][refCol];
       }
     }
 
-    // Fallback: Lấy user đầu tiên trong bảng users
+    // Fallback: Lấy user hợp lệ đầu tiên trong database
     if (!validOwnerId) {
       const anyUser = await client.query(
-        `SELECT id FROM public.users ORDER BY created_at ASC LIMIT 1`,
+        `SELECT ${refCol} FROM public.${refTable} ORDER BY 1 ASC LIMIT 1`,
       );
       if (anyUser.rows.length > 0) {
-        validOwnerId = anyUser.rows[0].id;
+        validOwnerId = anyUser.rows[0][refCol];
       }
     }
 
     if (!validOwnerId) {
       return res.status(401).json({
         message:
-          "Không thể tạo hoặc xác thực tài khoản chủ cơ sở. Vui lòng thử lại.",
+          "Không tìm thấy hoặc không thể tạo tài khoản chủ cơ sở hợp lệ.",
       });
     }
 
@@ -973,6 +997,7 @@ async function registerHotel(req, res, next) {
     const newHotelId = crypto.randomUUID();
     const finalPropType = property_type || propertyType || "hotel";
 
+    // Quét các cột thực tế trong bảng hotel
     const colRes = await client.query(
       `SELECT column_name 
        FROM information_schema.columns 
@@ -1139,10 +1164,38 @@ async function registerHotel(req, res, next) {
 
     await client.query("COMMIT");
 
+    // 🌟 TỰ ĐỘNG TẠO TOKEN ĐĂNG NHẬP MỚI ĐỂ FRONTEND KHÔNG BỊ LỖI 401
+    let freshToken = null;
+    if (jwt) {
+      try {
+        const JWT_SECRET = process.env.JWT_SECRET || "jwt_secret_key_gostay";
+        freshToken = jwt.sign(
+          {
+            id: validOwnerId,
+            userId: validOwnerId,
+            email: userEmail,
+            role: "hotel_owner",
+          },
+          JWT_SECRET,
+          { expiresIn: "7d" },
+        );
+      } catch (jwtErr) {
+        console.warn("Lỗi tạo JWT:", jwtErr.message);
+      }
+    }
+
     return res.status(201).json({
       success: true,
       message: "Hồ sơ đăng ký đã được gửi thành công và đang chờ Admin duyệt.",
       hotel: newHotel,
+      token: freshToken,
+      accessToken: freshToken,
+      user: {
+        id: validOwnerId,
+        email: userEmail,
+        name: ownerFullName,
+        role: "hotel_owner",
+      },
     });
   } catch (error) {
     await client.query("ROLLBACK");
