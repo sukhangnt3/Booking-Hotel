@@ -271,7 +271,7 @@ export default function Header() {
             </button>
           )}
 
-          {/* NÚT ĐĂNG CHỖ NGHỈ - THIẾT KẾ ĐỒNG BỘ TINH TẾ */}
+          {/* NÚT ĐĂNG CHỖ NGHỈ TRÊN HEADER */}
           {!isAdmin && !isOwner && !isStaff && (
             <button
               onClick={() => navigate("/register-owner")}
@@ -389,20 +389,6 @@ export default function Header() {
                     >
                       <LayoutDashboard size={17} />
                       Kênh Chủ chỗ nghỉ
-                    </button>
-                  )}
-
-                  {/* ĐĂNG CHỖ NGHỈ TRONG MENU */}
-                  {!isAdmin && !isOwner && !isStaff && (
-                    <button
-                      onClick={() => {
-                        setIsMenuOpen(false);
-                        navigate("/register-owner");
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-xs sm:text-sm hover:bg-gray-50 text-gray-700 flex items-center gap-3 transition font-medium cursor-pointer"
-                    >
-                      <Building size={17} className="text-gray-400" />
-                      Đăng chỗ nghỉ của Quý vị
                     </button>
                   )}
 

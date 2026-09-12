@@ -1,3 +1,4 @@
+// src/pages/guest/BookingConfirmPage.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -72,7 +73,6 @@ export default function BookingConfirmPage() {
   // 'FULL' (100%) hoặc 'DEPOSIT_30' (Cọc trước 30%)
   const [paymentOption, setPaymentOption] = useState("FULL");
 
-  // Form khách hàng
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -80,7 +80,7 @@ export default function BookingConfirmPage() {
     specialRequest: "",
   });
 
-  // ─── ĐỒNG BỘ MỐC 15 PHÚT GIỮ PHÒNG XUYÊN SUỐT CÁC BƯỚC ───
+  // ĐỒNG BỘ MỐC 15 PHÚT GIỮ PHÒNG XUYÊN SUỐT CÁC BƯỚC
   const getSessionExpiresAt = () => {
     const storageKey = `booking_session_lock_${hotelId || "temp"}`;
     let savedExpireTime = sessionStorage.getItem(storageKey);
@@ -100,7 +100,7 @@ export default function BookingConfirmPage() {
     if (timeLeft <= 0) {
       alert("⚠️ Thời gian giữ phòng 15 phút đã hết! Vui lòng chọn lại phòng.");
       sessionStorage.removeItem(`booking_session_lock_${hotelId || "temp"}`);
-      navigate(`/hotel/${hotelId}`);
+      navigate(`/hotels`);
       return;
     }
 
@@ -114,7 +114,7 @@ export default function BookingConfirmPage() {
           alert(
             "⚠️ Thời gian giữ phòng 15 phút đã hết! Vui lòng chọn lại phòng.",
           );
-          navigate(`/hotel/${hotelId}`);
+          navigate(`/hotels`);
           return 0;
         }
         return prev - 1;
@@ -147,7 +147,7 @@ export default function BookingConfirmPage() {
       setLoading(true);
       try {
         const res = await hotelService.getById(hotelId);
-        const data = res?.data || res;
+        const data = res?.data?.hotel || res?.data?.data || res?.data || res;
         setHotel(data);
         const selectedRoom =
           data.rooms?.find((r) => String(r.id) === String(roomId)) ||
@@ -193,11 +193,9 @@ export default function BookingConfirmPage() {
       ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
       : 1;
 
-  // GIÁ PHÒNG THỰC TẾ (KHÔNG CỘNG VAT & KHÔNG VOUCHER)
   const basePrice = Number(room?.sell_price || room?.base_price || 500000);
   const totalPrice = basePrice * totalNights * quantity;
 
-  // Tiền đặt cọc 30% và phần còn lại
   const depositAmount = Math.round(totalPrice * 0.3);
   const remainingAmount = totalPrice - depositAmount;
   const amountToPayNow =
@@ -320,7 +318,7 @@ export default function BookingConfirmPage() {
       payment_type: paymentOption,
       deposit_amount: paymentOption === "DEPOSIT_30" ? depositAmount : 0,
       remaining_amount: paymentOption === "DEPOSIT_30" ? remainingAmount : 0,
-      amount_to_pay: amountToPayNow,
+      expected_amount: amountToPayNow,
     };
 
     try {
@@ -329,12 +327,10 @@ export default function BookingConfirmPage() {
       const code = data?.booking_code || data?.code || data?.id;
 
       if (code) {
-        // Lấy mốc thời gian hết hạn hiện tại để chuyển sang CheckoutPage
         const currentExpireTime =
           sessionStorage.getItem(`booking_session_lock_${hotelId || "temp"}`) ||
           (Date.now() + timeLeft * 1000).toString();
 
-        // Lưu mốc hết hạn cho mã đơn này để CheckoutPage đọc tiếp
         localStorage.setItem(`lock_expires_${code}`, currentExpireTime);
 
         navigate(
@@ -379,9 +375,8 @@ export default function BookingConfirmPage() {
           onSubmit={handleSubmit}
           className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-6"
         >
-          {/* CỘT TRÁI: THÔNG TIN KHÁCH HÀNG & 2 LỰA CHỌN THANH TOÁN */}
+          {/* CỘT TRÁI */}
           <div className="lg:col-span-7 space-y-6">
-            {/* ĐỒNG HỒ ĐẾM NGƯỢC 15 PHÚT GIỮ CHỖ */}
             <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 flex items-center justify-between text-amber-900 shadow-xs">
               <div className="flex items-center gap-2.5">
                 <Clock size={18} className="animate-pulse text-amber-700" />
@@ -492,7 +487,6 @@ export default function BookingConfirmPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                {/* Lựa chọn 1: Thanh toán toàn bộ */}
                 <div
                   onClick={() => setPaymentOption("FULL")}
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
@@ -528,7 +522,6 @@ export default function BookingConfirmPage() {
                   </div>
                 </div>
 
-                {/* Lựa chọn 2: Cọc trước 30% giữ chỗ */}
                 <div
                   onClick={() => setPaymentOption("DEPOSIT_30")}
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
@@ -549,7 +542,7 @@ export default function BookingConfirmPage() {
                       </div>
                       <p className="text-xs text-gray-500">
                         Chuyển khoản cọc 30% để chắc chắn giữ phòng (chống đơn
-                        ảo/trẻ em nghịch). 70% còn lại thanh toán tại quầy.
+                        ảo). 70% còn lại thanh toán tại quầy khi nhận phòng.
                       </p>
                     </div>
                     <div
@@ -575,7 +568,6 @@ export default function BookingConfirmPage() {
                 </div>
               </div>
 
-              {/* Giải thích chính sách */}
               <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
                 <Building2
                   size={16}
@@ -603,7 +595,7 @@ export default function BookingConfirmPage() {
             </div>
           </div>
 
-          {/* CỘT PHẢI: CHI TIẾT ĐƠN & BẢNG TÍNH GIÁ */}
+          {/* CỘT PHẢI */}
           <div className="lg:col-span-5 space-y-6">
             <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <div className="flex gap-4 pb-4 border-b border-gray-100">

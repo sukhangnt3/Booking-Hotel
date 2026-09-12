@@ -425,22 +425,31 @@ export default function HotelDetailPage() {
     return dbImages[roomIdx + 1] || dbImages[0];
   };
 
+  // Tổng số lượng đánh giá thực tế
   const totalReviewsCount =
     reviews.length > 0 ? reviews.length : Number(hotel?.review_count || 0);
 
-  let averageScore = 9.3;
+  // Tính điểm trung bình chuẩn xác: mặc định là 0 nếu chưa ai đánh giá
+  let averageScore = 0;
   if (reviews.length > 0) {
     const sum = reviews.reduce((acc, r) => {
-      const pt = Number(r.point || r.rating || 10);
+      const pt = Number(r.point || r.rating || 0);
       return acc + pt;
     }, 0);
     averageScore = sum / reviews.length;
-  } else if (hotel?.average_rating) {
+  } else if (hotel?.average_rating && Number(hotel.average_rating) > 0) {
     averageScore = Number(hotel.average_rating);
   }
-  averageScore = Math.min(10, Math.max(1, averageScore));
+
+  // Nếu không có đánh giá nào (totalReviewsCount === 0), giữ tuyệt đối là 0
+  if (totalReviewsCount === 0) {
+    averageScore = 0;
+  } else {
+    averageScore = Math.min(10, Math.max(0, averageScore));
+  }
 
   const getRatingLabel = (score) => {
+    if (totalReviewsCount === 0 || score === 0) return "Chưa có đánh giá";
     if (score >= 9.0) return "Tuyệt vời";
     if (score >= 8.0) return "Rất tốt";
     if (score >= 7.0) return "Hài lòng";
@@ -726,11 +735,23 @@ export default function HotelDetailPage() {
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col justify-between overflow-hidden">
               <div className="space-y-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="bg-[#2e7d32] text-white font-black text-sm px-2.5 py-1 rounded-md shadow-xs">
+                  <div
+                    className={`font-black text-sm px-2.5 py-1 rounded-md shadow-xs ${
+                      totalReviewsCount > 0
+                        ? "bg-[#2e7d32] text-white"
+                        : "bg-slate-200 text-slate-700"
+                    }`}
+                  >
                     {averageScore.toFixed(1)}
                   </div>
                   <div>
-                    <span className="font-black text-[#2e7d32] text-sm block leading-tight">
+                    <span
+                      className={`font-black text-sm block leading-tight ${
+                        totalReviewsCount > 0
+                          ? "text-[#2e7d32]"
+                          : "text-slate-700"
+                      }`}
+                    >
                       {getRatingLabel(averageScore)}
                     </span>
                     <span className="text-[11px] text-slate-500">
@@ -742,7 +763,9 @@ export default function HotelDetailPage() {
                 <p className="text-xs text-slate-700 line-clamp-3 leading-relaxed pt-1">
                   {reviews[0]?.description
                     ? `"${reviews[0].description}"`
-                    : "Khách lưu trú đánh giá cao chất lượng phòng và dịch vụ của chỗ nghỉ."}
+                    : totalReviewsCount > 0
+                      ? "Khách lưu trú đánh giá cao chất lượng phòng và dịch vụ của chỗ nghỉ."
+                      : "Chỗ nghỉ này hiện chưa có đánh giá nào từ du khách."}
                 </p>
               </div>
 
@@ -1031,7 +1054,7 @@ export default function HotelDetailPage() {
                           <span>Giá tốt nhất trên hệ thống GoStay</span>
                         </div>
 
-                        {/* 👉 HIỂN THỊ TIỆN NGHI PHÒNG TỪ DATABASE */}
+                        {/* HIỂN THỊ TIỆN NGHI PHÒNG TỪ DATABASE */}
                         {roomAmenities.length > 0 && (
                           <div className="pt-1">
                             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
@@ -1223,7 +1246,7 @@ export default function HotelDetailPage() {
           </div>
         </section>
 
-        {/* 👉 CHỖ NGHỈ NỔI BẬT & MỚI NHẤT (HIỂN THỊ 4 CÁI, MỚI LÊN ĐẦU, BẤM MŨI TÊN ĐỂ LƯỚT) */}
+        {/* CHỖ NGHỈ NỔI BẬT & MỚI NHẤT */}
         <NewestHotelsSlider excludeHotelId={hotel.id} />
 
         {/* KHU VỰC ĐÁNH GIÁ */}

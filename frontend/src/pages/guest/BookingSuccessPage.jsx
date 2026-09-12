@@ -1,3 +1,4 @@
+// src/pages/guest/BookingSuccessPage.jsx
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -85,7 +86,6 @@ export default function BookingSuccessPage() {
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24 pt-10">
       <main className="max-w-2xl mx-auto px-4">
         <div className="bg-white rounded-3xl p-8 sm:p-12 shadow-xl border border-slate-200 text-center space-y-6 animate-in zoom-in-95">
-          {/* Icon thành công */}
           <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto border border-emerald-100 shadow-md">
             <CheckCircle2 size={44} strokeWidth={2.5} />
           </div>
@@ -103,7 +103,6 @@ export default function BookingSuccessPage() {
             </p>
           </div>
 
-          {/* Hộp chi tiết đơn đặt phòng */}
           <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-left text-xs space-y-2.5">
             <div className="flex justify-between items-center pb-2 border-b border-slate-200">
               <span className="text-slate-500 font-bold uppercase text-[10px]">
@@ -147,7 +146,6 @@ export default function BookingSuccessPage() {
               </strong>
             </div>
 
-            {/* Nhắc nhở nếu khách chọn cọc 30% */}
             {isDeposit && (
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex justify-between items-center mt-2">
                 <div>
@@ -182,7 +180,6 @@ export default function BookingSuccessPage() {
             </p>
           </div>
 
-          {/* Nút điều hướng */}
           <div className="pt-2 max-w-sm mx-auto space-y-3">
             <button
               type="button"

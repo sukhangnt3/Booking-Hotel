@@ -59,7 +59,7 @@ const HotelCard = ({
     }
   };
 
-  // 👈 TÍNH TOÁN GIÁ TIỀN THỰC TẾ (NẾU KHÔNG CÓ THÌ FALLBACK MỨC GIÁ HỢP LÝ)
+  // TÍNH TOÁN GIÁ TIỀN THỰC TẾ
   const rawPrice = Number(
     salePrice ||
       hotel?.salePrice ||
@@ -76,8 +76,36 @@ const HotelCard = ({
     }).format(price);
   };
 
-  const hotelRating = Number(rating || hotel?.average_rating || 8.8).toFixed(1);
-  const totalReviews = Number(reviewsCount || hotel?.review_count || 120);
+  // TÍNH TOÁN ĐÁNH GIÁ THỰC TẾ (KHÔNG DÙNG FALLBACK 8.8 VÀ 120)
+  const totalReviews = Number(
+    reviewsCount !== undefined && reviewsCount !== null
+      ? reviewsCount
+      : hotel?.review_count !== undefined && hotel?.review_count !== null
+        ? hotel.review_count
+        : 0,
+  );
+
+  const rawRating = Number(
+    rating !== undefined && rating !== null
+      ? rating
+      : hotel?.average_rating !== undefined && hotel?.average_rating !== null
+        ? hotel.average_rating
+        : 0,
+  );
+
+  const hotelRating =
+    totalReviews > 0 && !isNaN(rawRating) && rawRating > 0
+      ? Math.min(10, Math.max(0, rawRating)).toFixed(1)
+      : "0.0";
+
+  const getRatingLabel = (score) => {
+    if (totalReviews === 0 || Number(score) === 0) return "Chưa có đánh giá";
+    const num = Number(score);
+    if (num >= 9.0) return "Xuất sắc";
+    if (num >= 8.0) return "Rất tốt";
+    if (num >= 7.0) return "Hài lòng";
+    return "Được đánh giá tốt";
+  };
 
   return (
     <div
@@ -145,16 +173,19 @@ const HotelCard = ({
 
           {/* ĐÁNH GIÁ */}
           <div className="mt-4 flex items-center gap-2">
-            <div className="bg-[#003580] text-white text-xs font-black w-7 h-7 flex items-center justify-center rounded-lg shadow-sm">
+            <div
+              className={cn(
+                "text-xs font-black w-7 h-7 flex items-center justify-center rounded-lg shadow-sm shrink-0",
+                totalReviews > 0
+                  ? "bg-[#003580] text-white"
+                  : "bg-slate-200 text-slate-700",
+              )}
+            >
               {hotelRating}
             </div>
             <div className="flex flex-col">
               <span className="text-xs font-bold text-gray-900 leading-none">
-                {Number(hotelRating) >= 9
-                  ? "Xuất sắc"
-                  : Number(hotelRating) >= 8
-                    ? "Rất tốt"
-                    : "Hài lòng"}
+                {getRatingLabel(hotelRating)}
               </span>
               <span className="text-[10px] text-gray-400 mt-0.5">
                 {totalReviews} đánh giá
@@ -163,7 +194,7 @@ const HotelCard = ({
           </div>
         </div>
 
-        {/* 👈 GIÁ TIỀN RÕ RÀNG CHUẨN SÀN DU LỊCH */}
+        {/* GIÁ TIỀN RÕ RÀNG */}
         <div className="mt-4 pt-3 flex flex-col items-end border-t border-gray-100">
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
             Giá mỗi đêm từ
