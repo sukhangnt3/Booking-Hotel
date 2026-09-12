@@ -4,7 +4,7 @@ const pool = require("../config/database");
 
 const SEPAY_API_KEY = process.env.SEPAY_API_KEY || "";
 
-const PLATFORM_BANK = {
+const DEFAULT_PLATFORM_BANK = {
   bankId: process.env.PLATFORM_BANK_ID || "MB",
   bankName:
     process.env.PLATFORM_BANK_NAME || "Ngân hàng TMCP Quân Đội (MBBank)",
@@ -12,7 +12,75 @@ const PLATFORM_BANK = {
   accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
 };
 
-// ─── 1. TẠO MÃ THANH TOÁN VIETQR ───
+/**
+ * 🌟 HÀM TỰ ĐỘNG TÌM KIẾM TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
+ * Kiểm tra cả bảng hotel và bảng users (chủ sở hữu)
+ */
+async function getOwnerBankAccount(hotelId) {
+  if (!hotelId) return DEFAULT_PLATFORM_BANK;
+  try {
+    // 1. Kiểm tra các cột thực tế đang có trong bảng hotel
+    const colRes = await pool.query(
+      `SELECT column_name 
+       FROM information_schema.columns 
+       WHERE table_schema = 'public' AND table_name = 'hotel'`,
+    );
+    const hotelCols = colRes.rows.map((r) => r.column_name);
+
+    // 2. Xây dựng câu query động tránh lỗi column does not exist
+    const hasBankAcc = hotelCols.includes("bank_account");
+    const hasBankName = hotelCols.includes("bank_name");
+    const hasBankCode = hotelCols.includes("bank_code");
+    const hasBankHolder = hotelCols.includes("bank_account_holder");
+    const hasOwnerId =
+      hotelCols.includes("owner_id") || hotelCols.includes("user_id");
+
+    const selectParts = [];
+    if (hasBankAcc) selectParts.push("h.bank_account");
+    if (hasBankName) selectParts.push("h.bank_name");
+    if (hasBankCode) selectParts.push("h.bank_code");
+    if (hasBankHolder) selectParts.push("h.bank_account_holder");
+
+    let joinClause = "";
+    if (hasOwnerId) {
+      const ownerCol = hotelCols.includes("owner_id") ? "owner_id" : "user_id";
+      joinClause = `LEFT JOIN public.users u ON u.id = h.${ownerCol}`;
+      selectParts.push("u.name AS user_name");
+    }
+
+    if (selectParts.length > 0) {
+      const queryStr = `
+        SELECT h.id, h.name AS hotel_name, ${selectParts.join(", ")}
+        FROM public.hotel h
+        ${joinClause}
+        WHERE h.id = $1
+        LIMIT 1
+      `;
+      const res = await pool.query(queryStr, [hotelId]);
+      const row = res.rows[0];
+
+      if (row && (row.bank_account || row.bank_code)) {
+        return {
+          bankId: (row.bank_code || DEFAULT_PLATFORM_BANK.bankId).toUpperCase(),
+          bankName: row.bank_name || DEFAULT_PLATFORM_BANK.bankName,
+          accountNumber:
+            row.bank_account || DEFAULT_PLATFORM_BANK.accountNumber,
+          accountName: (
+            row.bank_account_holder ||
+            row.user_name ||
+            row.hotel_name ||
+            DEFAULT_PLATFORM_BANK.accountName
+          ).toUpperCase(),
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ Lỗi truy vấn ngân hàng của Owner:", err.message);
+  }
+  return DEFAULT_PLATFORM_BANK;
+}
+
+// ─── 1. TẠO MÃ THANH TOÁN VIETQR ĐỘNG THEO TÀI KHOẢN OWNER ───
 async function createVietQrPayment(req, res) {
   try {
     const { bookingCode, amount, paymentType } = req.body || {};
@@ -26,7 +94,7 @@ async function createVietQrPayment(req, res) {
     }
 
     const bookingResult = await pool.query(
-      `SELECT id, booking_code, total_price 
+      `SELECT id, booking_code, total_price, hotel_id 
        FROM public.booking
        WHERE (booking_code = $1 OR id::text = $1)
        LIMIT 1`,
@@ -42,8 +110,13 @@ async function createVietQrPayment(req, res) {
     }
 
     const expectedAmount = Math.round(Number(amount));
-    const qrCodeUrl = `https://img.vietqr.io/image/${PLATFORM_BANK.bankId}-${PLATFORM_BANK.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(PLATFORM_BANK.accountName)}`;
 
+    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN NÀY
+    const bank = await getOwnerBankAccount(booking.hotel_id);
+
+    const qrCodeUrl = `https://img.vietqr.io/image/${bank.bankId}-${bank.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(bank.accountName)}`;
+
+    // Cập nhật hoặc thêm vào bảng payment
     const checkPayment = await pool.query(
       `SELECT id FROM public.payment WHERE booking_id = $1 LIMIT 1`,
       [booking.id],
@@ -59,7 +132,6 @@ async function createVietQrPayment(req, res) {
         [expectedAmount, qrCodeUrl, booking.booking_code, paymentId],
       );
     } else {
-      // Đúng chuẩn: status là varchar(50) DEFAULT 'pending'
       const insertPayment = await pool.query(
         `INSERT INTO public.payment (
           id, booking_id, payment_method, expected_amount, paid_amount, 
@@ -79,7 +151,7 @@ async function createVietQrPayment(req, res) {
       bookingCode: booking.booking_code,
       expectedAmount,
       paymentType: paymentType || "FULL",
-      bankInfo: PLATFORM_BANK,
+      bankInfo: bank, // Trả tài khoản Owner về Frontend
       qrCodeUrl,
       qr_code: qrCodeUrl,
       qrContent: booking.booking_code,
@@ -107,7 +179,6 @@ async function confirmManualPayment(req, res) {
         .json({ success: false, message: "Thiếu mã đơn bookingCode." });
     }
 
-    // 1. Kiểm tra đơn đặt phòng trong Database ngoài transaction
     const bookingRes = await pool.query(
       `SELECT b.*, p.id AS payment_id, p.expected_amount
        FROM public.booking b
@@ -124,7 +195,6 @@ async function confirmManualPayment(req, res) {
         .json({ success: false, message: "Không tìm thấy đơn phòng." });
     }
 
-    // Nếu webhook SePay đã chạy trước đó và đã lưu paid thì báo thành công luôn
     if (
       String(booking.payment_status).toLowerCase() === "paid" &&
       String(booking.status).toLowerCase() === "confirmed"
@@ -141,7 +211,6 @@ async function confirmManualPayment(req, res) {
       booking.expected_amount || booking.total_price || amount || 0,
     );
 
-    // 2. CHỦ ĐỘNG GỌI API SEPAY ĐỂ QUÉT DANH SÁCH BIẾN ĐỘNG SỐ DƯ
     let isVerified = false;
     let actualPaid = expected;
     let refNumber = `MANUAL_${Date.now()}`;
@@ -163,7 +232,6 @@ async function confirmManualPayment(req, res) {
           const sepayData = await sepayRes.json();
           const transactions = sepayData?.transactions || [];
 
-          // Tìm giao dịch khớp mã đơn bookingCode và số tiền đủ
           const matchedTx = transactions.find((tx) => {
             const content = String(
               tx.transaction_content || tx.content || "",
@@ -188,7 +256,6 @@ async function confirmManualPayment(req, res) {
       }
     }
 
-    // 3. NẾU SEPAY CHƯA THẤY GIAO DỊCH KHỚP -> TUYỆT ĐỐI KHÔNG LƯU DB, KHÔNG DUYỆT
     if (!isVerified) {
       return res.status(200).json({
         success: false,
@@ -199,12 +266,10 @@ async function confirmManualPayment(req, res) {
       });
     }
 
-    // 4. SEPAY ĐÃ XÁC THỰC THÀNH CÔNG -> MỞ TRANSACTION VÀ LƯU DATABASE
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
 
-      // Cập nhật booking
       await client.query(
         `UPDATE public.booking 
          SET payment_status = 'paid',
@@ -215,7 +280,6 @@ async function confirmManualPayment(req, res) {
         [booking.id],
       );
 
-      // Cập nhật hoặc tạo payment
       let paymentId = booking.payment_id;
       if (paymentId) {
         await client.query(
@@ -239,7 +303,6 @@ async function confirmManualPayment(req, res) {
         paymentId = newPay.rows[0].id;
       }
 
-      // Thêm giao dịch vào payment_transaction
       await client.query(
         `INSERT INTO public.payment_transaction (
           id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
@@ -254,7 +317,6 @@ async function confirmManualPayment(req, res) {
         ],
       );
 
-      // Giải phóng temporary_locks
       await client.query(
         `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
         [booking.id],
@@ -349,13 +411,6 @@ async function handleBankWebhook(req, res) {
         `TXN_${Date.now()}`,
     );
 
-    console.log("🔔 [SePay Webhook Nhận Được]:", {
-      content,
-      transferAmount,
-      transactionId,
-    });
-
-    // Trích xuất mã đơn bookingCode (VD: BK12345678)
     const match = content.match(/BK\d{7,10}/i);
     if (!match) {
       return res.status(200).json({
@@ -366,7 +421,6 @@ async function handleBankWebhook(req, res) {
 
     const bookingCode = match[0].toUpperCase();
 
-    // Tìm đơn trong Database ngoài transaction
     const bookingRes = await pool.query(
       `SELECT b.id, b.booking_code, b.total_price, b.payment_status,
               p.id AS payment_id, p.expected_amount
@@ -385,7 +439,6 @@ async function handleBankWebhook(req, res) {
 
     const booking = bookingRes.rows[0];
 
-    // Nếu đã thanh toán rồi thì trả lời SePay thành công
     if (String(booking.payment_status).toLowerCase() === "paid") {
       return res
         .status(200)
@@ -396,18 +449,13 @@ async function handleBankWebhook(req, res) {
       booking.expected_amount || booking.total_price || 0,
     );
 
-    // Xác thực số tiền: Khách phải chuyển đủ hoặc thừa
     if (transferAmount < expected) {
-      console.warn(
-        `⚠️ Khách chuyển thiếu: Cần ${expected}đ, nhưng nhận được ${transferAmount}đ`,
-      );
       return res.status(200).json({
         success: false,
-        message: `Số tiền chuyển (${transferAmount}) nhỏ hơn số tiền yêu cầu (${expected}). Không thể duyệt tự động.`,
+        message: `Số tiền chuyển (${transferAmount}) nhỏ hơn số tiền yêu cầu (${expected}).`,
       });
     }
 
-    // ĐÚNG SỐ TIỀN -> MỞ TRANSACTION VÀ LƯU VÀO DATABASE
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -454,7 +502,6 @@ async function handleBankWebhook(req, res) {
         [paymentId, transactionId, transferAmount, JSON.stringify(body)],
       );
 
-      // Giải phóng phòng đang giữ
       await client.query(
         `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
         [booking.id],
@@ -462,10 +509,6 @@ async function handleBankWebhook(req, res) {
 
       await client.query("COMMIT");
       client.release();
-
-      console.log(
-        `✅ [SePay Webhook]: Đã duyệt thành công đơn ${bookingCode}!`,
-      );
 
       return res.status(200).json({
         success: true,
@@ -487,4 +530,5 @@ module.exports = {
   confirmManualPayment,
   checkPaymentStatus,
   handleBankWebhook,
+  getOwnerBankAccount,
 };

@@ -2,14 +2,80 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tài khoản sàn mặc định (Có kết nối SePay)
-const PLATFORM_BANK = {
+// Tài khoản dự phòng mặc định nếu khách sạn chưa điền thông tin ngân hàng
+const DEFAULT_PLATFORM_BANK = {
   bankId: process.env.PLATFORM_BANK_ID || "MB",
   bankName:
     process.env.PLATFORM_BANK_NAME || "Ngân hàng TMCP Quân Đội (MBBank)",
   accountNumber: process.env.PLATFORM_BANK_ACCOUNT || "0833404928",
   accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
 };
+
+// 🌟 HÀM TỰ ĐỘNG TÌM TÀI KHOẢN NGÂN HÀNG CỦA CHỦ KHÁCH SẠN (OWNER)
+async function getOwnerBankAccount(hotelId) {
+  if (!hotelId) return DEFAULT_PLATFORM_BANK;
+  try {
+    const colRes = await pool.query(
+      `SELECT column_name 
+       FROM information_schema.columns 
+       WHERE table_schema = 'public' AND table_name = 'hotel'`,
+    );
+    const hotelCols = colRes.rows.map((r) => r.column_name);
+
+    const hasBankAcc = hotelCols.includes("bank_account");
+    const hasBankName = hotelCols.includes("bank_name");
+    const hasBankCode = hotelCols.includes("bank_code");
+    const hasBankHolder = hotelCols.includes("bank_account_holder");
+    const hasOwnerId =
+      hotelCols.includes("owner_id") || hotelCols.includes("user_id");
+
+    const selectParts = [];
+    if (hasBankAcc) selectParts.push("h.bank_account");
+    if (hasBankName) selectParts.push("h.bank_name");
+    if (hasBankCode) selectParts.push("h.bank_code");
+    if (hasBankHolder) selectParts.push("h.bank_account_holder");
+
+    let joinClause = "";
+    if (hasOwnerId) {
+      const ownerCol = hotelCols.includes("owner_id") ? "owner_id" : "user_id";
+      joinClause = `LEFT JOIN public.users u ON u.id = h.${ownerCol}`;
+      selectParts.push("u.name AS user_name");
+    }
+
+    if (selectParts.length > 0) {
+      const queryStr = `
+        SELECT h.id, h.name AS hotel_name, ${selectParts.join(", ")}
+        FROM public.hotel h
+        ${joinClause}
+        WHERE h.id = $1
+        LIMIT 1
+      `;
+      const res = await pool.query(queryStr, [hotelId]);
+      const row = res.rows[0];
+
+      if (row && (row.bank_account || row.bank_code)) {
+        return {
+          bankId: (row.bank_code || DEFAULT_PLATFORM_BANK.bankId).toUpperCase(),
+          bankName: row.bank_name || DEFAULT_PLATFORM_BANK.bankName,
+          accountNumber:
+            row.bank_account || DEFAULT_PLATFORM_BANK.accountNumber,
+          accountName: (
+            row.bank_account_holder ||
+            row.user_name ||
+            row.hotel_name ||
+            DEFAULT_PLATFORM_BANK.accountName
+          ).toUpperCase(),
+        };
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "⚠️ Lỗi truy vấn ngân hàng Owner trong booking.controller:",
+      err.message,
+    );
+  }
+  return DEFAULT_PLATFORM_BANK;
+}
 
 // Hàm lấy tên cột hạn khóa phòng trong temporary_locks (tránh lỗi sai tên cột)
 let cachedExpireCol = null;
@@ -32,7 +98,7 @@ async function getLockExpireColumn() {
   return cachedExpireCol;
 }
 
-// Hàm dọn dẹp các lock đã hết hạn (DÙNG POOL ĐỘC LẬP, KHÔNG CHẠY TRONG TRANSACTION CLIENT)
+// Hàm dọn dẹp các lock đã hết hạn (DÙNG POOL ĐỘC LẬP NGOÀI TRANSACTION)
 async function cleanupExpiredLocks() {
   try {
     const col = await getLockExpireColumn();
@@ -272,8 +338,10 @@ async function createBooking(req, res, next) {
       ]);
     }
 
-    // TẠO LINK VIETQR (Theo tài khoản sàn SePay)
-    const qrUrl = `https://img.vietqr.io/image/${PLATFORM_BANK.bankId}-${PLATFORM_BANK.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(PLATFORM_BANK.accountName)}`;
+    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA CHỦ KHÁCH SẠN ĐỂ TẠO VIETQR
+    const ownerBank = await getOwnerBankAccount(hotel_id);
+
+    const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(ownerBank.accountName)}`;
 
     // TẠO BẢN GHI PAYMENT: ĐÚNG CHUẨN SCHEMA status LÀ varchar(50) DEFAULT 'pending'
     const paymentInsertSql = `
@@ -312,6 +380,7 @@ async function createBooking(req, res, next) {
       payment: payRes.rows[0],
       qr_code: qrUrl,
       qr_content: bookingCode,
+      bankInfo: ownerBank, // Gửi về cho frontend hiển thị
       lock_expires_in_seconds: 15 * 60,
     });
   } catch (error) {
@@ -322,7 +391,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. HÀM CONFIRM PAYMENT ───
+// ─── 2. HÀM CONFIRM PAYMENT (CHO BACKEND GỌI XÁC THỰC) ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -363,7 +432,7 @@ async function confirmPayment(req, res, next) {
         ? paidAmountReq
         : Number(booking.expected_amount || booking.total_price);
 
-    // Cập nhật booking (status và payment_status để 'confirmed' và 'paid')
+    // Cập nhật booking (status và payment_status thành 'confirmed' và 'paid')
     await client.query(
       `UPDATE public.booking
        SET payment_status = 'paid',
@@ -386,7 +455,8 @@ async function confirmPayment(req, res, next) {
         [actualPaid, paymentId],
       );
     } else {
-      const qrUrl = `https://img.vietqr.io/image/${PLATFORM_BANK.bankId}-${PLATFORM_BANK.accountNumber}-compact2.png?amount=${actualPaid}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(PLATFORM_BANK.accountName)}`;
+      const ownerBank = await getOwnerBankAccount(booking.hotel_id);
+      const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${actualPaid}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(ownerBank.accountName)}`;
       const newPay = await client.query(
         `INSERT INTO public.payment (
           id, booking_id, payment_method, expected_amount, paid_amount, 
@@ -485,6 +555,9 @@ async function getBookingByCode(req, res, next) {
     const dep = isDep ? (paidMoney > 0 ? paidMoney : expAmount) : total;
     const rem = isDep ? total - dep : 0;
 
+    // Lấy thông tin tài khoản của Owner để trả về cùng đơn
+    const ownerBank = await getOwnerBankAccount(row.hotel_id);
+
     const finalBooking = {
       ...row,
       payment_type: isDep ? "DEPOSIT_30" : "FULL",
@@ -496,6 +569,8 @@ async function getBookingByCode(req, res, next) {
       success: true,
       booking: finalBooking,
       data: finalBooking,
+      bankInfo: ownerBank,
+      bank_info: ownerBank,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -598,4 +673,5 @@ module.exports = {
   getBookingByCode,
   getMyBookings,
   cancelBooking,
+  getOwnerBankAccount,
 };
