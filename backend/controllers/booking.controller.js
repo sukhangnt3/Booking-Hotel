@@ -1,4 +1,3 @@
-// backend/controllers/booking.controller.js
 const crypto = require("crypto");
 const pool = require("../config/database");
 
@@ -26,15 +25,17 @@ const NAPAS_BANK_BINS = {
   AGRIBANK: "970405",
 };
 
-const DEFAULT_PLATFORM_BANK = {
+// 👑 TÀI KHOẢN TRUNG TÂM CỦA ADMIN / SÀN GOSTAY (TIỀN PHẢI VỀ ĐÂY ĐỂ ADMIN GIỮ HOA HỒNG)
+const PLATFORM_ADMIN_BANK = {
   bankId: "970422",
+  bankCode: "MB",
   bankName: "Ngân hàng TMCP Quân Đội (MBBank)",
   accountNumber: "0833404928",
   accountName: "SU TRACH KHANG",
 };
 
 async function getOwnerBankAccount(hotelId) {
-  if (!hotelId) return DEFAULT_PLATFORM_BANK;
+  if (!hotelId) return PLATFORM_ADMIN_BANK;
   try {
     const res = await pool.query(
       `SELECT bank_code, bank_name, bank_account, bank_account_holder, name
@@ -69,7 +70,7 @@ async function getOwnerBankAccount(hotelId) {
   } catch (err) {
     console.warn("⚠️ getOwnerBankAccount fallback:", err.message);
   }
-  return DEFAULT_PLATFORM_BANK;
+  return PLATFORM_ADMIN_BANK;
 }
 
 async function cleanupExpiredLocks() {
@@ -84,7 +85,7 @@ async function cleanupExpiredLocks() {
   }
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG & KHÓA PHÒNG REAL-TIME 15 PHÚT ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG & TỰ ĐỘNG CẮT HOA HỒNG CHO ADMIN ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -133,6 +134,27 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
+    // 🌟 1. LẤY TỶ LỆ HOA HỒNG (% COMMISSION) ĐÃ THIẾT LẬP CỦA KHÁCH SẠN NÀY
+    const hotelQueryRes = await client.query(
+      `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder 
+       FROM public.hotel 
+       WHERE id = $1 LIMIT 1`,
+      [hotel_id],
+    );
+
+    if (hotelQueryRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      client.release();
+      return res.status(404).json({
+        success: false,
+        message: "Khách sạn không tồn tại trên hệ thống.",
+      });
+    }
+
+    const hotelData = hotelQueryRes.rows[0];
+    const commissionRate = Number(hotelData.commission_rate ?? 18.0); // Mặc định 18% nếu chưa gán
+
+    // 🌟 2. KIỂM TRA PHÒNG TRỐNG VÀ XUNG ĐỘT PHÒNG
     if (room_id) {
       const roomStockRes = await client.query(
         `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
@@ -207,11 +229,17 @@ async function createBooking(req, res, next) {
       }
     }
 
+    // 🌟 3. TÍNH TOÁN DÒNG TIỀN HOA HỒNG (ADMIN ĂN HOA HỒNG TẠI ĐÂY)
     const newBookingId = crypto.randomUUID();
     const bookingCode = "BK" + Math.floor(10000000 + Math.random() * 90000000);
     const finalPrice = Math.round(Number(total_price || 650000));
     const discountVal = Math.round(Number(discount || 0));
     const subtotalVal = finalPrice + discountVal;
+
+    // Tiền hoa hồng Admin thu về: Ví dụ 1.000.000đ * 18% = 180.000đ
+    const adminCommission = Math.round((finalPrice * commissionRate) / 100);
+    // Tiền sàn sẽ quyết toán cho Owner sau này: 1.000.000đ - 180.000đ = 820.000đ
+    const hotelPayout = finalPrice - adminCommission;
 
     const isDeposit = payment_type === "DEPOSIT_30";
     const depAmount = isDeposit
@@ -220,6 +248,7 @@ async function createBooking(req, res, next) {
     const remAmount = isDeposit ? finalPrice - depAmount : 0;
     const amountToPayNow = Math.round(Number(expected_amount) || depAmount);
 
+    // 🌟 4. INSERT VÀO BẢNG BOOKING (LƯU CHUẨN XÁC hotel_payout THAY VÌ 0)
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -233,7 +262,7 @@ async function createBooking(req, res, next) {
         $9, $10, $11, $12,
         'pending', 'unpaid',
         $13, $14, 0,
-        $15, 0, NOW(), NOW()
+        $15, $16, NOW(), NOW()
       ) RETURNING *;
     `;
 
@@ -253,6 +282,7 @@ async function createBooking(req, res, next) {
       subtotalVal,
       discountVal,
       finalPrice,
+      hotelPayout, // 💰 GHI RÕ TIỀN SẼ TRẢ CHO OWNER VÀO ĐÂY
     ]);
 
     const newBooking = insertRes.rows[0];
@@ -281,7 +311,6 @@ async function createBooking(req, res, next) {
         req.sessionID ||
         `sess_${crypto.randomBytes(8).toString("hex")}`;
 
-      // 🌟 TỰ ĐỘNG KIỂM TRA CỘT CỦA TEMPORARY_LOCKS ĐỂ CHÈN ĐỦ KHÔNG BỊ LỖI NOT-NULL
       const tlColsRes = await client.query(
         `SELECT column_name 
          FROM information_schema.columns 
@@ -310,7 +339,6 @@ async function createBooking(req, res, next) {
         "NOW()",
       ];
 
-      // Luôn luôn cấp giá trị 15 phút cho lock_expires_at
       if (tlCols.includes("lock_expires_at")) {
         lockCols.push("lock_expires_at");
         selectCols.push("NOW() + INTERVAL '15 minutes'");
@@ -337,10 +365,10 @@ async function createBooking(req, res, next) {
       ]);
     }
 
-    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER VÀ CHUẨN HÓA MÃ BIN NAPAS
-    const ownerBank = await getOwnerBankAccount(hotel_id);
+    // 🌟 5. TẠO MÃ VIETQR VỀ TÀI KHOẢN ADMIN ĐỂ THU TIỀN VÀ GIỮ HOA HỒNG
+    const paymentBank = PLATFORM_ADMIN_BANK;
 
-    const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(ownerBank.accountName)}`;
+    const qrUrl = `https://img.vietqr.io/image/${paymentBank.bankId}-${paymentBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(paymentBank.accountName)}`;
 
     const paymentInsertSql = `
       INSERT INTO public.payment (
@@ -367,6 +395,9 @@ async function createBooking(req, res, next) {
       message: "Khởi tạo đơn đặt phòng và giữ chỗ 15 phút thành công!",
       booking: {
         ...newBooking,
+        commission_rate: commissionRate,
+        commission_amount: adminCommission, // Số tiền Admin hưởng
+        hotel_payout: hotelPayout, // Số tiền chuyển trả Owner sau này
         payment_type: payment_type,
         deposit_amount: depAmount,
         remaining_amount: remAmount,
@@ -378,7 +409,7 @@ async function createBooking(req, res, next) {
       payment: payRes.rows[0],
       qr_code: qrUrl,
       qr_content: bookingCode,
-      bankInfo: ownerBank,
+      bankInfo: paymentBank,
       lock_expires_in_seconds: 15 * 60,
     });
   } catch (error) {
@@ -389,7 +420,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. HÀM CONFIRM PAYMENT ───
+// ─── 2. HÀM CONFIRM PAYMENT (XÁC NHẬN TIỀN ĐÃ VÀO VÍ ADMIN) ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -452,8 +483,8 @@ async function confirmPayment(req, res, next) {
         [actualPaid, paymentId],
       );
     } else {
-      const ownerBank = await getOwnerBankAccount(booking.hotel_id);
-      const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${actualPaid}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(ownerBank.accountName)}`;
+      const paymentBank = PLATFORM_ADMIN_BANK;
+      const qrUrl = `https://img.vietqr.io/image/${paymentBank.bankId}-${paymentBank.accountNumber}-compact2.png?amount=${actualPaid}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(paymentBank.accountName)}`;
       const newPay = await client.query(
         `INSERT INTO public.payment (
           id, booking_id, payment_method, expected_amount, paid_amount, 
@@ -495,7 +526,8 @@ async function confirmPayment(req, res, next) {
 
     return res.json({
       success: true,
-      message: "✓ Xác nhận thanh toán thành công!",
+      message:
+        "✓ Xác nhận thanh toán thành công! Tiền đã ghi nhận vào tài khoản Admin.",
       bookingCode: booking.booking_code,
       paidAmount: actualPaid,
       status: "paid",
@@ -507,7 +539,7 @@ async function confirmPayment(req, res, next) {
   }
 }
 
-// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO CODE ───
+// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO MÃ (HIỂN THỊ CẢ HOA HỒNG & TIỀN OWNER) ───
 async function getBookingByCode(req, res, next) {
   try {
     const { code } = req.params;
@@ -517,6 +549,8 @@ async function getBookingByCode(req, res, next) {
          h.name AS hotel_name, 
          h.address AS hotel_address, 
          h.city AS hotel_city,
+         h.commission_rate,
+         (b.total_price - COALESCE(b.hotel_payout, 0)) AS commission_amount,
          COALESCE((SELECT br.room_name FROM public.booking_room br WHERE br.booking_id = b.id LIMIT 1), 'Phòng tiêu chuẩn') AS room_name,
          COALESCE(p.paid_amount, 0) AS paid_amount,
          COALESCE(p.expected_amount, b.total_price) AS expected_amount,
@@ -550,6 +584,7 @@ async function getBookingByCode(req, res, next) {
     const dep = isDep ? (paidMoney > 0 ? paidMoney : expAmount) : total;
     const rem = isDep ? total - dep : 0;
 
+    const paymentBank = PLATFORM_ADMIN_BANK;
     const ownerBank = await getOwnerBankAccount(row.hotel_id);
 
     const finalBooking = {
@@ -563,8 +598,8 @@ async function getBookingByCode(req, res, next) {
       success: true,
       booking: finalBooking,
       data: finalBooking,
-      bankInfo: ownerBank,
-      bank_info: ownerBank,
+      bankInfo: paymentBank, // Tài khoản nhận tiền (Admin)
+      ownerBankInfo: ownerBank, // Tài khoản để Admin chuyển khoản trả cho Owner sau này
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

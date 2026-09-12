@@ -1,7 +1,7 @@
 const pool = require("../config/database");
 const bcrypt = require("bcryptjs");
 
-// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ ───
+// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & DOANH THU TỪNG KHÁCH SẠN ───
 async function getStats(req, res, next) {
   try {
     const dbStart = Date.now();
@@ -16,9 +16,12 @@ async function getStats(req, res, next) {
     const range = (req.query.range || "today").toLowerCase(); // 'today' | '7days' | '30days'
 
     let trafficQuery = "";
+    let timeBookingFilter = "";
+
     if (range === "7days" || range === "30days") {
       const days = range === "7days" ? 7 : 30;
-      // 🟢 CHUẨN THỰC TẾ: Trả về cả `time` (ngắn gọn cho trục X) và `full_date` (chi tiết cho Tooltip)
+      timeBookingFilter = `AND b.created_at >= NOW() - INTERVAL '${days} days'`;
+
       trafficQuery = `
         WITH latest_date AS (
           SELECT COALESCE(DATE_TRUNC('day', MAX(created_at)), DATE_TRUNC('day', NOW())) AS end_day
@@ -45,7 +48,8 @@ async function getStats(req, res, next) {
         ORDER BY ds.slot ASC;
       `;
     } else {
-      // 🟢 'today' - Gom theo khung giờ 3 tiếng
+      timeBookingFilter = "AND b.created_at >= CURRENT_DATE";
+
       trafficQuery = `
         WITH latest_date AS (
           SELECT COALESCE(DATE_TRUNC('day', MAX(created_at)), DATE_TRUNC('day', NOW())) AS day_anchor
@@ -74,6 +78,61 @@ async function getStats(req, res, next) {
       `;
     }
 
+    // 🌟 TRUY VẤN CHI TIẾT DOANH THU TỪNG KHÁCH SẠN CỦA OWNER
+    const hotelRevenueQuery = `
+      SELECT 
+        h.id AS hotel_id,
+        h.name AS hotel_name,
+        h.city,
+        h.status AS hotel_status,
+        COALESCE(h.commission_rate, 18.0) AS commission_rate,
+        h.bank_name,
+        h.bank_account,
+        h.bank_account_holder,
+        h.bank_code,
+        u.id AS owner_id,
+        u.full_name AS owner_name,
+        u.email AS owner_email,
+        u.phone AS owner_phone,
+        COUNT(b.id)::int AS total_bookings,
+        COALESCE(SUM(b.total_price), 0)::bigint AS total_gmv,
+        COALESCE(
+          SUM(
+            CASE 
+              WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
+              ELSE ROUND(b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)
+            END
+          ), 
+          0
+        )::bigint AS admin_commission,
+        COALESCE(
+          SUM(
+            CASE 
+              WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
+              ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
+            END
+          ), 
+          0
+        )::bigint AS owner_payout,
+        COALESCE(
+          SUM(
+            CASE 
+              WHEN b.status = 'checked_out' THEN COALESCE(b.hotel_payout, ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0)))
+              ELSE 0 
+            END
+          ),
+          0
+        )::bigint AS ready_to_payout
+      FROM public.hotel h
+      LEFT JOIN public.users u ON u.id = h.owner_id
+      LEFT JOIN public.booking b 
+        ON b.hotel_id = h.id 
+       AND b.payment_status = 'paid'
+       AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+      GROUP BY h.id, u.id
+      ORDER BY total_gmv DESC, h.created_at DESC;
+    `;
+
     const [
       userCount,
       bookingCount,
@@ -81,27 +140,51 @@ async function getStats(req, res, next) {
       revenueResult,
       pendingHotelCount,
       trafficResult,
+      hotelRevenuesResult,
     ] = await Promise.all([
       pool.query(
         `SELECT COUNT(*)::int AS count FROM public.users WHERE activate = true`,
       ),
-      pool.query(`SELECT COUNT(*)::int AS count FROM public.booking`),
+      pool.query(
+        `SELECT COUNT(*)::int AS count 
+         FROM public.booking b 
+         WHERE b.status IN ('confirmed', 'checked_in', 'checked_out') ${timeBookingFilter}`,
+      ),
       pool.query(
         `SELECT COUNT(*)::int AS count FROM public.hotel WHERE status = 'active'`,
       ),
       pool.query(
         `SELECT 
            COALESCE(SUM(b.total_price), 0)::bigint AS gmv,
-           COALESCE(SUM(b.total_price * COALESCE(h.commission_rate, 18) / 100.0), 0)::bigint AS commission_revenue
+           COALESCE(
+             SUM(
+               CASE 
+                 WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
+                 ELSE (b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)
+               END
+             ), 
+             0
+           )::bigint AS commission_revenue,
+           COALESCE(
+             SUM(
+               CASE 
+                 WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
+                 ELSE (b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
+               END
+             ), 
+             0
+           )::bigint AS owner_payout
          FROM public.booking b
          JOIN public.hotel h ON h.id = b.hotel_id
-         WHERE b.status IN ('confirmed', 'checked_in', 'checked_out') 
-            OR b.payment_status = 'paid'`,
+         WHERE b.payment_status = 'paid'
+           AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+           ${timeBookingFilter}`,
       ),
       pool.query(
         `SELECT COUNT(*)::int AS count FROM public.hotel WHERE status = 'pending'`,
       ),
       pool.query(trafficQuery),
+      pool.query(hotelRevenueQuery),
     ]);
 
     const statsData = {
@@ -110,8 +193,10 @@ async function getStats(req, res, next) {
       totalHotels: hotelCount.rows[0]?.count || 0,
       totalGMV: Number(revenueResult.rows[0]?.gmv || 0),
       totalRevenue: Number(revenueResult.rows[0]?.commission_revenue || 0),
+      totalOwnerPayout: Number(revenueResult.rows[0]?.owner_payout || 0),
       pendingHotels: pendingHotelCount.rows[0]?.count || 0,
-      hourlyTraffic: trafficResult.rows,
+      hourlyTraffic: trafficResult.rows || [],
+      hotelRevenues: hotelRevenuesResult.rows || [], // 🌟 MẢNG CHI TIẾT DOANH THU TỪNG KHÁCH SẠN
       dbLatency: `${dbLatency}ms`,
       serverUptime: uptimeFormatted,
     };
@@ -332,7 +417,7 @@ async function toggleUserStatus(req, res, next) {
   }
 }
 
-// ─── 6. DUYỆT KHÁCH SẠN ───
+// ─── 6. DUYỆT & CẬP NHẬT TRẠNG THÁI KHÁCH SẠN ───
 async function listAdminHotels(req, res, next) {
   try {
     let status = (req.query.status || "").toString().trim();
@@ -413,7 +498,7 @@ async function updateHotelStatus(req, res, next) {
   }
 }
 
-// ─── 7. GIÁM SÁT ĐƠN ĐẶT PHÒNG TOÀN SÀN ───
+// ─── 7. GIÁM SÁT ĐƠN ĐẶT PHÒNG TOÀN SÀN & HOA HỒNG TỪNG ĐƠN ───
 async function listAllBookings(req, res, next) {
   try {
     const status = (req.query.status || "").toString().trim();
@@ -429,6 +514,15 @@ async function listAllBookings(req, res, next) {
       `SELECT
          b.*,
          h.name AS hotel_name,
+         h.commission_rate,
+         CASE 
+           WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
+           ELSE ROUND(b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)::bigint
+         END AS commission_amount,
+         CASE 
+           WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
+           ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))::bigint
+         END AS owner_amount,
          p.payment_method,
          p.paid_amount
        FROM public.booking b
@@ -447,6 +541,7 @@ async function listAllBookings(req, res, next) {
       total: result.rowCount,
     });
   } catch (error) {
+    console.error("❌ LỖI LIST_ALL_BOOKINGS:", error);
     return next(error);
   }
 }
