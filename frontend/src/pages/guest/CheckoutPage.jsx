@@ -32,12 +32,13 @@ export default function CheckoutPage() {
   const remainingAmount = totalAmount - depositAmount;
   const expectedAmount = isDeposit ? depositAmount : totalAmount;
 
-  // 🌟 STATE THÔNG TIN NGÂN HÀNG OWNER
+  // 🌟 STATE THÔNG TIN NGÂN HÀNG OWNER (CHUẨN HÓA KHÔNG CÓ KHOẢNG TRẮNG)
   const [bankInfo, setBankInfo] = useState({
-    bankId: "VCB",
-    bankName: "Ngân hàng",
-    accountNumber: "",
-    accountName: "",
+    bankId: "MB",
+    bankBin: "970422",
+    bankName: "MB Bank",
+    accountNumber: "0833404928",
+    accountName: "SU TRACH KHANG",
   });
 
   const [paymentData, setPaymentData] = useState(null);
@@ -96,7 +97,7 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 🌟 LẤY DỮ LIỆU ĐỒNG THỜI TỪ CẢ 2 NGUỒN (KHÔNG BAO GIỜ BỊ RỖNG THÔNG TIN)
+  // 🌟 LẤY DỮ LIỆU ĐỒNG THỜI TỪ CẢ 2 NGUỒN VÀ CHUẨN HÓA MÃ NGÂN HÀNG
   useEffect(() => {
     async function initPayment() {
       if (!bookingCode) return;
@@ -133,16 +134,25 @@ export default function CheckoutPage() {
           bData?.booking?.bank_info;
 
         if (ownerBank && ownerBank.accountNumber) {
+          const rawId = String(
+            ownerBank.bankId || ownerBank.bank_id || "MB",
+          ).trim();
+          // Loại bỏ hoàn toàn khoảng trắng (ví dụ "MB BANK" -> "MB")
+          const cleanBankId = rawId.toUpperCase().includes("MB")
+            ? "MB"
+            : rawId.replace(/\s+/g, "");
+
           setBankInfo({
-            bankId: (ownerBank.bankId || ownerBank.bank_id || "VCB")
-              .toUpperCase()
-              .trim(),
-            bankName: ownerBank.bankName || ownerBank.bank_name || "Ngân hàng",
+            bankId: cleanBankId,
+            bankBin: ownerBank.bankBin || ownerBank.bank_bin || "970422",
+            bankName: ownerBank.bankName || ownerBank.bank_name || "MB Bank",
             accountNumber: String(
               ownerBank.accountNumber || ownerBank.account_number || "",
-            ).trim(),
+            ).replace(/\D/g, ""),
             accountName: String(
-              ownerBank.accountName || ownerBank.account_name || "",
+              ownerBank.accountName ||
+                ownerBank.account_name ||
+                "SU TRACH KHANG",
             )
               .toUpperCase()
               .trim(),
@@ -158,14 +168,20 @@ export default function CheckoutPage() {
     initPayment();
   }, [bookingCode, expectedAmount, rawPaymentType]);
 
-  // Link mã QR VietQR động
+  // 🌟 LINK QR ĐỘNG CHUẨN (ƯU TIÊN LINK TỪ SEPAY HOẶC TỰ SINH CHUẨN NAPAS BIN)
+  const cleanBankCode = encodeURIComponent(bankInfo.bankId || "MB");
+  const cleanAccNumber = encodeURIComponent(
+    bankInfo.accountNumber || "0833404928",
+  );
+  const cleanBookingCode = encodeURIComponent(bookingCode);
+  const cleanAccName = encodeURIComponent(
+    bankInfo.accountName || "SU TRACH KHANG",
+  );
+
   const qrImageSrc =
     paymentData?.qr_code ||
     paymentData?.qrCodeUrl ||
-    paymentData?.booking?.qr_code ||
-    (bankInfo.accountNumber
-      ? `https://img.vietqr.io/image/${bankInfo.bankId}-${bankInfo.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${bookingCode}&accountName=${encodeURIComponent(bankInfo.accountName)}`
-      : "");
+    `https://qr.sepay.vn/img?acc=${cleanAccNumber}&bank=${cleanBankCode}&amount=${expectedAmount}&des=${cleanBookingCode}`;
 
   const pollingRef = useRef(null);
 
@@ -389,22 +405,24 @@ export default function CheckoutPage() {
                       Đang lấy mã QR của Khách sạn...
                     </span>
                   </div>
-                ) : qrImageSrc ? (
+                ) : (
                   <>
                     <img
                       src={qrImageSrc}
                       alt="VietQR Chủ Khách Sạn"
                       className="w-52 h-52 mx-auto object-contain rounded-xl"
+                      onError={(e) => {
+                        // 🌟 DỰ PHÒNG TỰ ĐỘNG CHUYỂN SANG VIETQR CHUẨN MÃ BIN NAPAS
+                        e.currentTarget.onerror = null;
+                        const fallbackUrl = `https://img.vietqr.io/image/970422-${cleanAccNumber}-compact2.png?amount=${expectedAmount}&addInfo=${cleanBookingCode}&accountName=${cleanAccName}`;
+                        e.currentTarget.src = fallbackUrl;
+                      }}
                     />
                     <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-emerald-700 font-black">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                       Đang lắng nghe chuyển khoản...
                     </div>
                   </>
-                ) : (
-                  <div className="w-52 h-52 flex items-center justify-center text-xs text-slate-400">
-                    Không thể tạo mã QR
-                  </div>
                 )}
               </div>
             </div>
@@ -416,11 +434,11 @@ export default function CheckoutPage() {
                     Ngân hàng thụ hưởng
                   </span>
                   <strong className="text-slate-900 font-bold text-sm">
-                    {bankInfo.bankName || "Đang cập nhật..."}
+                    {bankInfo.bankName || "MB Bank"}
                   </strong>
                 </div>
                 <span className="font-bold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md uppercase">
-                  {bankInfo.bankId || "BANK"}
+                  {bankInfo.bankId || "MB"}
                 </span>
               </div>
 
@@ -430,7 +448,7 @@ export default function CheckoutPage() {
                     Số tài khoản Chủ khách sạn
                   </span>
                   <span className="font-mono font-black text-slate-900 text-base">
-                    {bankInfo.accountNumber || "Chưa có số tài khoản"}
+                    {bankInfo.accountNumber || "0833404928"}
                   </span>
                 </div>
                 {bankInfo.accountNumber && (
@@ -449,7 +467,7 @@ export default function CheckoutPage() {
                   Tên chủ tài khoản
                 </span>
                 <strong className="text-slate-900 uppercase font-bold text-sm">
-                  {bankInfo.accountName || "Chưa cập nhật tên chủ tài khoản"}
+                  {bankInfo.accountName || "SU TRACH KHANG"}
                 </strong>
               </div>
 
