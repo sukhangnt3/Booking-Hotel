@@ -185,16 +185,21 @@ export default function CheckoutPage() {
 
   const pollingRef = useRef(null);
 
+  // 🌟 HÀM CHECK STATUS ĐÃ FIX LỖI BÓC TÁCH DỮ LIỆU (res?.data || res)
   const checkPaymentStatus = async (isManual = false) => {
     if (!bookingCode || isPaidSuccess) return;
     if (isManual) setIsManualChecking(true);
 
     try {
-      const res = await apiClient.get(`/payments/status/${bookingCode}`);
+      const rawRes = await apiClient.get(`/payments/status/${bookingCode}`);
+      // 🌟 Chuẩn hóa: hỗ trợ cả Axios trả về res trực tiếp lẫn res.data
+      const resData = rawRes?.data || rawRes;
+
       const isPaid =
-        res?.data?.paid === true ||
-        res?.data?.status === "paid" ||
-        res?.data?.payment?.status === "paid";
+        resData?.paid === true ||
+        resData?.status === "paid" ||
+        resData?.payment?.status === "paid" ||
+        resData?.booking_status === "confirmed";
 
       if (isPaid) {
         setIsPaidSuccess(true);
@@ -206,13 +211,19 @@ export default function CheckoutPage() {
           navigate(
             `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
           );
-        }, 1000);
+        }, 500);
       } else if (isManual) {
-        const manualRes = await apiClient.post("/payments/confirm-manual", {
+        const rawManual = await apiClient.post("/payments/confirm-manual", {
           bookingCode: bookingCode,
           amount: expectedAmount,
         });
-        if (manualRes?.data?.paid) {
+        const mData = rawManual?.data || rawManual;
+
+        if (
+          mData?.paid === true ||
+          mData?.status === "paid" ||
+          mData?.booking_status === "confirmed"
+        ) {
           setIsPaidSuccess(true);
           localStorage.removeItem(`lock_expires_${bookingCode}`);
           navigate(
@@ -220,7 +231,7 @@ export default function CheckoutPage() {
           );
         } else {
           alert(
-            manualRes?.data?.message ||
+            mData?.message ||
               "Hệ thống SePay chưa ghi nhận biến động số dư cho đơn này. Quý khách vui lòng chờ 5-10 giây!",
           );
         }
