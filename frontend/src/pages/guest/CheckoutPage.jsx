@@ -32,10 +32,9 @@ export default function CheckoutPage() {
   const remainingAmount = totalAmount - depositAmount;
   const expectedAmount = isDeposit ? depositAmount : totalAmount;
 
-  // 🌟 THÔNG TIN TÀI KHOẢN NGÂN HÀNG CỦA OWNER (STATE ĐỘNG)
   const [bankInfo, setBankInfo] = useState({
     bankId: "MB",
-    bankName: "MBBank",
+    bankName: "Đang tải thông tin ngân hàng...",
     accountNumber: "",
     accountName: "",
   });
@@ -49,7 +48,6 @@ export default function CheckoutPage() {
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // 1. ĐẾM NGƯỢC 15 PHÚT
   const getInitialTimeLeft = () => {
     if (!bookingCode) return 15 * 60;
     const storageKey = `lock_expires_${bookingCode}`;
@@ -97,7 +95,6 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 2. KHỞI TẠO VÀ LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER TỪ BACKEND
   useEffect(() => {
     async function initPayment() {
       if (!bookingCode) return;
@@ -117,7 +114,6 @@ export default function CheckoutPage() {
         const data = res?.data || res;
         setPaymentData(data);
 
-        // 🌟 CẬP NHẬT TÀI KHOẢN NGÂN HÀNG CỦA OWNER VÀO STATE
         const ownerBank = data?.bankInfo || data?.bank_info;
         if (ownerBank) {
           setBankInfo({
@@ -152,7 +148,6 @@ export default function CheckoutPage() {
       ? `https://img.vietqr.io/image/${bankInfo.bankId}-${bankInfo.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${bookingCode}&accountName=${encodeURIComponent(bankInfo.accountName)}`
       : "");
 
-  // 3. POLLING TỰ ĐỘNG XÁC NHẬN KHI SEPAY BÁO TIỀN VÀO
   const pollingRef = useRef(null);
 
   const checkPaymentStatus = async (isManual = false) => {
@@ -178,7 +173,6 @@ export default function CheckoutPage() {
           );
         }, 1000);
       } else if (isManual) {
-        // Nếu bấm kiểm tra thủ công, gọi sang endpoint kiểm tra trực tiếp với SePay
         const manualRes = await apiClient.post("/payments/confirm-manual", {
           bookingCode: bookingCode,
           amount: expectedAmount,
@@ -192,7 +186,7 @@ export default function CheckoutPage() {
         } else {
           alert(
             manualRes?.data?.message ||
-              "Hệ thống SePay chưa nhận được biến động số dư cho đơn này. Quý khách vui lòng chờ 5-10 giây!",
+              "Hệ thống SePay chưa ghi nhận biến động số dư cho đơn này. Quý khách vui lòng chờ 5-10 giây!",
           );
         }
       }
@@ -215,7 +209,6 @@ export default function CheckoutPage() {
     };
   }, [bookingCode, isPaidSuccess]);
 
-  // 4. BẤM QUAY LẠI HỦY GIỮ PHÒNG
   const handleGoBack = async () => {
     const confirmCancel = window.confirm(
       "⚠️ Nếu bạn quay lại bây giờ, phiên giữ phòng sẽ bị HỦY và phòng sẽ được mở lại cho khách khác đặt.\n\nBạn có chắc chắn muốn hủy đơn và quay lại không?",
@@ -267,7 +260,6 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24">
-      {/* Top Header */}
       <div className="bg-white border-b border-slate-200 py-4 shadow-xs">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <button
@@ -361,7 +353,6 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* KHUNG HIỂN THỊ VIETQR VÀ TÀI KHOẢN OWNER */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center pt-2">
             <div className="md:col-span-5 bg-slate-50 p-6 rounded-3xl border border-slate-200 text-center space-y-3">
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#003580]">
@@ -399,7 +390,6 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* CỘT PHẢI: HIỂN THỊ CHÍNH XÁC THÔNG TIN NGÂN HÀNG OWNER */}
             <div className="md:col-span-7 space-y-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center">
                 <div>

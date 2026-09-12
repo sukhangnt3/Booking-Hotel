@@ -30,19 +30,18 @@ export const Step4PricingAndPayout = ({
   onChange = () => {},
   errors = {},
 }) => {
-  const payoutMethod = data?.payoutMethod || "bank_transfer";
+  const payoutMethod = data.payoutMethod || "bank_transfer";
   const [isVerifyingBank, setIsVerifyingBank] = useState(false);
   const [bankVerifyResult, setBankVerifyResult] = useState(null);
 
-  // TỰ ĐỘNG ĐỒNG BỘ: Mặc định gán Vietcombank và lấy tên chủ tài khoản từ họ tên chủ khách sạn
   useEffect(() => {
     const updates = {};
-    if (!data?.bankCode) {
+    if (!data.bankCode) {
       updates.bankCode = "VCB";
       updates.bankName = "Vietcombank";
     }
-    if (!data?.bankAccountHolder && data?.ownerName) {
-      updates.bankAccountHolder = data.ownerName.trim().toUpperCase();
+    if (!data.bankAccountHolder && data.ownerName) {
+      updates.bankAccountHolder = String(data.ownerName).trim().toUpperCase();
     }
     if (Object.keys(updates).length > 0) {
       onChange(updates);
@@ -64,7 +63,7 @@ export const Step4PricingAndPayout = ({
   };
 
   const handleVerifyBank = async () => {
-    if (!data?.bankAccount || !data?.bankAccountHolder) {
+    if (!data.bankAccount || !data.bankAccountHolder) {
       setBankVerifyResult({
         success: false,
         message:
@@ -77,7 +76,10 @@ export const Step4PricingAndPayout = ({
       await new Promise((resolve) => setTimeout(resolve, 600));
       setBankVerifyResult({
         success: true,
-        message: `✓ Khớp dữ liệu: Chủ TK [${data.bankAccountHolder}] sẵn sàng nhận doanh thu phòng.`,
+        message:
+          "Khớp dữ liệu: Chủ tài khoản " +
+          data.bankAccountHolder +
+          " sẵn sàng nhận tiền.",
       });
     } catch {
       setBankVerifyResult({
@@ -93,8 +95,8 @@ export const Step4PricingAndPayout = ({
     <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
       <div>
         <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
-          <Sparkles size={14} className="text-[#006ce4]" /> Bước 4 / 8: Quyết
-          toán doanh thu & Khuyến mại
+          <Sparkles size={14} className="text-[#006ce4]" />
+          <span>Bước 4 / 8: Quyết toán doanh thu và Khuyến mại</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
           Tài khoản ngân hàng nhận tiền đặt phòng
@@ -105,16 +107,15 @@ export const Step4PricingAndPayout = ({
         </p>
       </div>
 
-      {/* CÁC PHƯƠNG THỨC NHẬN TIỀN */}
       <div className="space-y-3">
         {/* LỰA CHỌN 1: CHUYỂN KHOẢN NGÂN HÀNG */}
         <div
           onClick={() => handleMethodChange("bank_transfer")}
-          className={`p-4 rounded-2xl border-2 transition cursor-pointer ${
+          className={
             payoutMethod === "bank_transfer"
-              ? "border-[#006ce4] bg-[#e8f2ff]/30 shadow-sm"
-              : "border-slate-200 bg-white hover:border-slate-300"
-          }`}
+              ? "p-4 rounded-2xl border-2 transition cursor-pointer border-[#006ce4] bg-[#e8f2ff]/30 shadow-sm"
+              : "p-4 rounded-2xl border-2 transition cursor-pointer border-slate-200 bg-white hover:border-slate-300"
+          }
         >
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -142,19 +143,14 @@ export const Step4PricingAndPayout = ({
           {payoutMethod === "bank_transfer" && (
             <div className="mt-4 pt-4 border-t border-slate-200 space-y-3 animate-fadeIn">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* 1. NGÂN HÀNG */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
                     Ngân hàng thụ hưởng *
                   </label>
                   <select
-                    value={data?.bankCode || "VCB"}
+                    value={data.bankCode || "VCB"}
                     onChange={handleBankSelect}
-                    className={`w-full h-11 px-3 text-xs font-bold rounded-xl border ${
-                      errors?.bankName || errors?.bankCode
-                        ? "border-rose-500 bg-rose-50/20"
-                        : "border-slate-300 focus:border-[#006ce4]"
-                    } bg-white outline-none cursor-pointer`}
+                    className="w-full h-11 px-3 text-xs font-bold rounded-xl border border-slate-300 focus:border-[#006ce4] bg-white outline-none cursor-pointer"
                   >
                     {VIETNAM_BANKS.map((b) => (
                       <option key={b.code} value={b.code}>
@@ -162,28 +158,32 @@ export const Step4PricingAndPayout = ({
                       </option>
                     ))}
                   </select>
+                  {(errors.bankName || errors.bankCode) && (
+                    <p className="text-xs text-rose-500 font-bold mt-1">
+                      {errors.bankName || errors.bankCode}
+                    </p>
+                  )}
                 </div>
 
-                {/* 2. SỐ TÀI KHOẢN */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
                     Số tài khoản ngân hàng *
                   </label>
                   <input
                     type="text"
-                    value={data?.bankAccount || ""}
+                    value={data.bankAccount || ""}
                     onChange={(e) => {
                       onChange({ bankAccount: e.target.value.trim() });
                       setBankVerifyResult(null);
                     }}
                     placeholder="VD: 0071001234567"
-                    className={`w-full h-11 px-3 text-xs font-mono font-bold rounded-xl border ${
-                      errors?.bankAccount
-                        ? "border-rose-500 bg-rose-50/20"
-                        : "border-slate-300 focus:border-[#006ce4]"
-                    } bg-white outline-none`}
+                    className={
+                      errors.bankAccount
+                        ? "w-full h-11 px-3 text-xs font-mono font-bold rounded-xl border border-rose-500 bg-rose-50/20 outline-none"
+                        : "w-full h-11 px-3 text-xs font-mono font-bold rounded-xl border border-slate-300 focus:border-[#006ce4] bg-white outline-none"
+                    }
                   />
-                  {errors?.bankAccount && (
+                  {errors.bankAccount && (
                     <p className="text-xs text-rose-500 font-bold mt-1">
                       {errors.bankAccount}
                     </p>
@@ -191,14 +191,13 @@ export const Step4PricingAndPayout = ({
                 </div>
               </div>
 
-              {/* 3. TÊN CHỦ TÀI KHOẢN */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">
                   Tên chủ tài khoản (In hoa không dấu) *
                 </label>
                 <input
                   type="text"
-                  value={data?.bankAccountHolder || ""}
+                  value={data.bankAccountHolder || ""}
                   onChange={(e) => {
                     onChange({
                       bankAccountHolder: e.target.value.toUpperCase(),
@@ -206,13 +205,13 @@ export const Step4PricingAndPayout = ({
                     setBankVerifyResult(null);
                   }}
                   placeholder="VD: NGUYEN VAN AN"
-                  className={`w-full h-11 px-3 text-xs font-bold uppercase rounded-xl border ${
-                    errors?.bankAccountHolder
-                      ? "border-rose-500 bg-rose-50/20"
-                      : "border-slate-300 focus:border-[#006ce4]"
-                  } bg-white outline-none`}
+                  className={
+                    errors.bankAccountHolder
+                      ? "w-full h-11 px-3 text-xs font-bold uppercase rounded-xl border border-rose-500 bg-rose-50/20 outline-none"
+                      : "w-full h-11 px-3 text-xs font-bold uppercase rounded-xl border border-slate-300 focus:border-[#006ce4] bg-white outline-none"
+                  }
                 />
-                {errors?.bankAccountHolder && (
+                {errors.bankAccountHolder && (
                   <p className="text-xs text-rose-500 font-bold mt-1">
                     {errors.bankAccountHolder}
                   </p>
@@ -230,14 +229,13 @@ export const Step4PricingAndPayout = ({
                 </button>
               </div>
 
-              {/* KẾT QUẢ KIỂM TRA (NẾU CÓ) */}
               {bankVerifyResult && (
                 <div
-                  className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 w-full ${
+                  className={
                     bankVerifyResult.success
-                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                      : "bg-rose-50 text-rose-800 border border-rose-200"
-                  }`}
+                      ? "p-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 w-full bg-emerald-50 text-emerald-800 border border-emerald-200"
+                      : "p-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 w-full bg-rose-50 text-rose-800 border border-rose-200"
+                  }
                 >
                   {bankVerifyResult.success ? (
                     <CheckCircle2
@@ -257,11 +255,11 @@ export const Step4PricingAndPayout = ({
         {/* LỰA CHỌN 2: THANH TOÁN TẠI KHÁCH SẠN */}
         <div
           onClick={() => handleMethodChange("pay_at_hotel")}
-          className={`p-4 rounded-2xl border-2 transition cursor-pointer ${
+          className={
             payoutMethod === "pay_at_hotel"
-              ? "border-[#006ce4] bg-[#e8f2ff]/30 shadow-sm"
-              : "border-slate-200 bg-white hover:border-slate-300"
-          }`}
+              ? "p-4 rounded-2xl border-2 transition cursor-pointer border-[#006ce4] bg-[#e8f2ff]/30 shadow-sm"
+              : "p-4 rounded-2xl border-2 transition cursor-pointer border-slate-200 bg-white hover:border-slate-300"
+          }
         >
           <label className="flex items-center gap-3 cursor-pointer">
             <input
