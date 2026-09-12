@@ -117,6 +117,36 @@ async function getGoogleProfile(accessToken) {
 }
 
 // ======================================================
+// CHECK EMAIL EXISTS (KIỂM TRA TRÙNG EMAIL Ở BƯỚC 1)
+// ======================================================
+
+async function checkEmailExists(req, res, next) {
+  try {
+    const email = (req.query.email || "").toString().trim().toLowerCase();
+    if (!email) {
+      return res.json({ success: true, exists: false });
+    }
+
+    const result = await pool.query(
+      `SELECT id FROM public.users WHERE email = $1 LIMIT 1`,
+      [email],
+    );
+
+    return res.json({
+      success: true,
+      exists: result.rows.length > 0,
+    });
+  } catch (error) {
+    console.error("❌ LỖI CHECK_EMAIL_EXISTS:", error);
+    return res.status(500).json({
+      success: false,
+      exists: false,
+      message: error.message,
+    });
+  }
+}
+
+// ======================================================
 // GOOGLE LOGIN
 // ======================================================
 
@@ -325,7 +355,6 @@ async function profile(req, res, next) {
 
     const formatted = formatUser ? formatUser(user) : user;
 
-    // 🚀 BẢO HIỂM: Ép cứng avatar trả về trực tiếp từ kết quả SQL
     formatted.avatar = user.avatar;
 
     return res.json({
@@ -394,7 +423,6 @@ async function updateProfile(req, res, next) {
     const freshUser = await loadUserWithRoles(userId);
     const formatted = formatUser ? formatUser(freshUser) : freshUser;
 
-    // Ép cứng avatar trả về
     formatted.avatar = freshUser.avatar;
 
     return res.json({
@@ -448,12 +476,10 @@ async function uploadAvatar(req, res, next) {
     });
   } catch (error) {
     console.error("❌ LỖI UPLOAD AVATAR:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Không thể cập nhật ảnh đại diện.",
-      });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Không thể cập nhật ảnh đại diện.",
+    });
   }
 }
 
@@ -499,6 +525,7 @@ async function changePassword(req, res, next) {
 }
 
 module.exports = {
+  checkEmailExists,
   googleLogin,
   profile,
   login,

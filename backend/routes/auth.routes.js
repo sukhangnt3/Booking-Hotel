@@ -2,17 +2,47 @@
 const express = require("express");
 
 const {
-  profile,
+  checkEmailExists,
   googleLogin,
   login,
   register,
+  profile,
   updateProfile,
+  uploadAvatar,
   changePassword,
 } = require("../controllers/auth.controller");
 
 const { requireAuth } = require("../middleware/auth.middleware");
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /auth/check-email:
+ *   get:
+ *     summary: Kiểm tra email đã được đăng ký tài khoản hay chưa
+ *     tags: [Auth]
+ *     parameters:
+ *       - in: query
+ *         name: email
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Địa chỉ email cần kiểm tra trước khi chuyển bước
+ *     responses:
+ *       200:
+ *         description: Trả về kết quả email đã tồn tại hay chưa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 exists:
+ *                   type: boolean
+ */
+router.get("/check-email", checkEmailExists);
 
 /**
  * @swagger
