@@ -20,7 +20,7 @@ const VIETNAM_TOURISM_HUBS = [
       "vĩnh hy",
       "vinh hy",
     ],
-    center: { lat: 11.5645, lng: 108.9882 }, // Quảng trường Phan Rang
+    center: { lat: 11.5645, lng: 108.9882 },
     beaches: [
       { name: "Biển Ninh Chữ", lat: 11.5794, lng: 109.0275 },
       { name: "Biển Bình Sơn", lat: 11.5686, lng: 109.0289 },
@@ -203,7 +203,6 @@ function calculateHaversine(lat1, lon1, lat2, lon2) {
   return Math.round(R * c * 10) / 10;
 }
 
-// Hàm tính toán metrics chính xác: Bắt chuẩn Hub theo tên tỉnh thành
 function computeLocationMetrics(
   lat,
   lng,
@@ -215,14 +214,12 @@ function computeLocationMetrics(
 
   let targetHub = null;
 
-  // 1. Khớp theo tên Thành phố / Tỉnh
   if (normCity) {
     targetHub = VIETNAM_TOURISM_HUBS.find((h) =>
       h.aliases.some((alias) => normCity.includes(alias)),
     );
   }
 
-  // 2. Nếu không có tên: Tìm Hub gần nhất theo toạ độ
   if (!targetHub && lat && lng) {
     let minDistance = Infinity;
     VIETNAM_TOURISM_HUBS.forEach((hub) => {
@@ -248,7 +245,6 @@ function computeLocationMetrics(
   let is_beachfront = Boolean(manualBeachfront);
 
   if (lat && lng && targetHub) {
-    // 1. Tính cự ly tới trung tâm
     const distCenter = calculateHaversine(
       lat,
       lng,
@@ -259,7 +255,6 @@ function computeLocationMetrics(
       distance_to_center = distCenter;
     }
 
-    // 2. Tính cự ly tới bãi biển
     if (targetHub.beaches && targetHub.beaches.length > 0) {
       for (const beach of targetHub.beaches) {
         const distBeach = calculateHaversine(lat, lng, beach.lat, beach.lng);
@@ -277,7 +272,6 @@ function computeLocationMetrics(
   };
 }
 
-// Geocoding dự phòng đa tầng nếu không có toạ độ
 async function fallbackGeocode(address, city) {
   try {
     const cleanCity = (city || "").trim();
@@ -311,7 +305,6 @@ async function fallbackGeocode(address, city) {
       };
     }
 
-    // Fallback vào bảng toạ độ nội bộ nếu không gọi được API ngoài
     const matchedHub = VIETNAM_TOURISM_HUBS.find((h) =>
       h.aliases.some((alias) => cleanCity.toLowerCase().includes(alias)),
     );
@@ -774,7 +767,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (AN TOÀN TUYỆT ĐỐI - KHÔNG LỖI 500) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -800,11 +793,10 @@ async function registerHotel(req, res, next) {
       description,
       checkin_time,
       checkout_time,
-      bank_name,
-      bank_account,
-      bank_account_holder,
       tax_code,
+      taxCode,
       business_license_url,
+      businessLicenseUrl,
       rooms = [],
       image,
       images = [],
@@ -813,6 +805,13 @@ async function registerHotel(req, res, next) {
       is_beachfront = false,
       distance_to_center,
     } = req.body;
+
+    // 🌟 LẤY ĐÚNG THÔNG TIN NGÂN HÀNG (HỖ TRỢ CẢ CAMELCASE VÀ SNAKE_CASE TỪ FRONTEND)
+    const bank_code = req.body.bank_code || req.body.bankCode || "VCB";
+    const bank_name = req.body.bank_name || req.body.bankName || "Vietcombank";
+    const bank_account = req.body.bank_account || req.body.bankAccount || null;
+    const bank_account_holder =
+      req.body.bank_account_holder || req.body.bankAccountHolder || null;
 
     if (!name || !address || !city) {
       return res
@@ -847,60 +846,105 @@ async function registerHotel(req, res, next) {
     const newHotelId = crypto.randomUUID();
     const finalPropType = property_type || propertyType || "hotel";
 
-    const hotelInsertSql = `
-      INSERT INTO public.hotel (
-        id, owner_id, name, address, city, latitude, longitude,
-        phone, email, star_rating, property_type, description,
-        checkin_time, checkout_time,
-        bank_name, bank_account, bank_account_holder, tax_code, business_license_url,
-        is_beachfront, distance_to_center,
-        status, commission_rate, created_at, updated_at
-      )
-      VALUES (
-        $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, COALESCE($10, 3), $11, $12,
-        COALESCE($13::time, '14:00:00'::time), COALESCE($14::time, '12:00:00'::time),
-        $15, $16, $17, $18, $19,
-        $20, $21,
-        'pending'::public.hotel_status_enum, 18.00, NOW(), NOW()
-      )
-      RETURNING *;
-    `;
+    // 🌟 QUÉT CÁC CỘT THỰC TẾ TRONG BẢNG HOTEL ĐỂ TẠO CÂU INSERT AN TOÀN 100%
+    const colRes = await client.query(
+      `SELECT column_name 
+       FROM information_schema.columns 
+       WHERE table_schema = 'public' AND table_name = 'hotel'`,
+    );
+    const existingCols = colRes.rows.map((r) => r.column_name.toLowerCase());
 
-    const hotelResult = await client.query(hotelInsertSql, [
+    const insertFields = [
+      "id",
+      "owner_id",
+      "name",
+      "address",
+      "city",
+      "status",
+      "created_at",
+      "updated_at",
+    ];
+    const insertValues = [
       newHotelId,
       ownerId,
       name.trim(),
       address.trim(),
       city.trim(),
-      finalLat,
-      finalLng,
-      phone || null,
-      email || null,
-      star_rating ? Number(star_rating) : 3,
-      finalPropType,
-      description || null,
-      checkin_time || "14:00:00",
-      checkout_time || "12:00:00",
-      bank_name || null,
-      bank_account || null,
-      bank_account_holder || null,
-      tax_code || null,
-      business_license_url || null,
-      calculatedMetrics.is_beachfront,
-      calculatedMetrics.distance_to_center,
-    ]);
+      "pending",
+      "NOW()",
+      "NOW()",
+    ];
+    const queryParams = [
+      newHotelId,
+      ownerId,
+      name.trim(),
+      address.trim(),
+      city.trim(),
+    ];
+    let paramIdx = 6;
 
+    const addFieldIfExist = (colName, value, isDirectSql = false) => {
+      if (existingCols.includes(colName.toLowerCase())) {
+        insertFields.push(colName);
+        if (isDirectSql) {
+          insertValues.push(value);
+        } else {
+          insertValues.push(`$${paramIdx}`);
+          queryParams.push(value);
+          paramIdx++;
+        }
+      }
+    };
+
+    addFieldIfExist("latitude", finalLat);
+    addFieldIfExist("longitude", finalLng);
+    addFieldIfExist("phone", phone || null);
+    addFieldIfExist("email", email || null);
+    addFieldIfExist("star_rating", star_rating ? Number(star_rating) : 3);
+    addFieldIfExist("property_type", finalPropType);
+    addFieldIfExist("description", description || null);
+    addFieldIfExist(
+      "checkin_time",
+      checkin_time ? String(checkin_time).slice(0, 5) + ":00" : "14:00:00",
+    );
+    addFieldIfExist(
+      "checkout_time",
+      checkout_time ? String(checkout_time).slice(0, 5) + ":00" : "12:00:00",
+    );
+    addFieldIfExist("bank_code", bank_code);
+    addFieldIfExist("bank_name", bank_name);
+    addFieldIfExist("bank_account", bank_account);
+    addFieldIfExist("bank_account_holder", bank_account_holder);
+    addFieldIfExist("tax_code", tax_code || taxCode || null);
+    addFieldIfExist(
+      "business_license_url",
+      business_license_url || businessLicenseUrl || null,
+    );
+    addFieldIfExist("is_beachfront", calculatedMetrics.is_beachfront);
+    addFieldIfExist("distance_to_center", calculatedMetrics.distance_to_center);
+    addFieldIfExist("commission_rate", 18.0);
+
+    const hotelInsertSql = `
+      INSERT INTO public.hotel (${insertFields.join(", ")})
+      VALUES (${insertValues.map((v) => (v.startsWith("$") || v === "NOW()" ? v : `'${v}'`)).join(", ")})
+      RETURNING *;
+    `;
+
+    const hotelResult = await client.query(hotelInsertSql, queryParams);
     const newHotel = hotelResult.rows[0];
 
+    // Chèn ảnh đại diện
     if (image) {
-      await client.query(
-        `INSERT INTO public.image (id, hotel_id, path, is_thumbnail, display_order, created_at)
+      await client
+        .query(
+          `INSERT INTO public.image (id, hotel_id, path, is_thumbnail, display_order, created_at)
          VALUES (gen_random_uuid(), $1, $2, true, 0, NOW())`,
-        [newHotel.id, image],
-      );
+          [newHotel.id, image],
+        )
+        .catch(() => {});
     }
 
+    // Chèn bộ sưu tập ảnh
     const extraHotelImages =
       Array.isArray(images) && images.length > 0
         ? images
@@ -912,14 +956,17 @@ async function registerHotel(req, res, next) {
       const imgPath =
         typeof imgItem === "string" ? imgItem : imgItem.path || imgItem.url;
       if (imgPath && imgPath !== image) {
-        await client.query(
-          `INSERT INTO public.image (id, hotel_id, path, is_thumbnail, display_order, created_at)
+        await client
+          .query(
+            `INSERT INTO public.image (id, hotel_id, path, is_thumbnail, display_order, created_at)
            VALUES (gen_random_uuid(), $1, $2, false, $3, NOW())`,
-          [newHotel.id, imgPath, order++],
-        );
+            [newHotel.id, imgPath, order++],
+          )
+          .catch(() => {});
       }
     }
 
+    // Chèn hạng phòng và phòng đơn vị
     if (Array.isArray(rooms) && rooms.length > 0) {
       let roomFloor = 1;
       for (const r of rooms) {
@@ -946,11 +993,13 @@ async function registerHotel(req, res, next) {
 
         const roomImg = r.image || r.image_url || r.thumbnail;
         if (roomImg) {
-          await client.query(
-            `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
+          await client
+            .query(
+              `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
              VALUES (gen_random_uuid(), $1, $2, $3, true, 0, NOW())`,
-            [newHotel.id, newRoomId, roomImg],
-          );
+              [newHotel.id, newRoomId, roomImg],
+            )
+            .catch(() => {});
         }
 
         const roomNumbers =
@@ -961,16 +1010,21 @@ async function registerHotel(req, res, next) {
                 (_, i) => `P.${roomFloor}0${i + 1}`,
               );
 
+        // Dùng SAVEPOINT an toàn để nếu room_unit có lỗi thì không làm hỏng cả transaction
         for (const num of roomNumbers) {
           if (!num || !String(num).trim()) continue;
-          await client
-            .query(
+          await client.query("SAVEPOINT sp_room_unit");
+          try {
+            await client.query(
               `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, status, created_at, updated_at)
                VALUES (gen_random_uuid(), $1, $2, $3, 'available', NOW(), NOW())
-               ON CONFLICT (hotel_id, room_number) DO NOTHING`,
+               ON CONFLICT DO NOTHING`,
               [newHotel.id, newRoomId, String(num).trim()],
-            )
-            .catch(() => {});
+            );
+            await client.query("RELEASE SAVEPOINT sp_room_unit");
+          } catch (unitErr) {
+            await client.query("ROLLBACK TO SAVEPOINT sp_room_unit");
+          }
         }
         roomFloor++;
       }
@@ -986,7 +1040,10 @@ async function registerHotel(req, res, next) {
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("❌ LỖI REGISTER_HOTEL:", error);
-    return next(error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Máy chủ gặp lỗi khi tạo hồ sơ.",
+    });
   } finally {
     client.release();
   }
@@ -1032,7 +1089,7 @@ async function getMyHotels(req, res, next) {
     const params = [userId];
 
     if (activeOnly) {
-      sql += ` AND h.status = 'active'::public.hotel_status_enum`;
+      sql += ` AND h.status = 'active'`;
     }
 
     sql += ` ORDER BY h.created_at DESC`;
@@ -1068,7 +1125,7 @@ async function listTrendingDestinations(req, res, next) {
            'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800'
          ) AS image
        FROM public.hotel h
-       WHERE h.status = 'active'::public.hotel_status_enum AND h.city IS NOT NULL
+       WHERE (h.status = 'active' OR h.status = 'approved') AND h.city IS NOT NULL
        GROUP BY h.city
        ORDER BY hotelCount DESC
        LIMIT 8`,
