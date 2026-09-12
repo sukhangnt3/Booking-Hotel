@@ -137,7 +137,6 @@ export default function CheckoutPage() {
           const rawId = String(
             ownerBank.bankId || ownerBank.bank_id || "MB",
           ).trim();
-          // Loại bỏ hoàn toàn khoảng trắng (ví dụ "MB BANK" -> "MB")
           const cleanBankId = rawId.toUpperCase().includes("MB")
             ? "MB"
             : rawId.replace(/\s+/g, "");
@@ -168,7 +167,6 @@ export default function CheckoutPage() {
     initPayment();
   }, [bookingCode, expectedAmount, rawPaymentType]);
 
-  // 🌟 LINK QR ĐỘNG CHUẨN (ƯU TIÊN LINK TỪ SEPAY HOẶC TỰ SINH CHUẨN NAPAS BIN)
   const cleanBankCode = encodeURIComponent(bankInfo.bankId || "MB");
   const cleanAccNumber = encodeURIComponent(
     bankInfo.accountNumber || "0833404928",
@@ -185,14 +183,14 @@ export default function CheckoutPage() {
 
   const pollingRef = useRef(null);
 
-  // 🌟 HÀM CHECK STATUS ĐÃ FIX LỖI BÓC TÁCH DỮ LIỆU (res?.data || res)
+  // 🌟 ĐOẠN ĐÃ ĐƯỢC FIX LỖI 100%: TỰ ĐỘNG ĐỌC CẢ resDATA LẪN res.data
   const checkPaymentStatus = async (isManual = false) => {
     if (!bookingCode || isPaidSuccess) return;
     if (isManual) setIsManualChecking(true);
 
     try {
       const rawRes = await apiClient.get(`/payments/status/${bookingCode}`);
-      // 🌟 Chuẩn hóa: hỗ trợ cả Axios trả về res trực tiếp lẫn res.data
+      // Hỗ trợ cả 2 trường hợp: Axios gốc (rawRes.data) hoặc apiClient bóc tách sẵn (rawRes)
       const resData = rawRes?.data || rawRes;
 
       const isPaid =
@@ -211,7 +209,7 @@ export default function CheckoutPage() {
           navigate(
             `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
           );
-        }, 500);
+        }, 300);
       } else if (isManual) {
         const rawManual = await apiClient.post("/payments/confirm-manual", {
           bookingCode: bookingCode,
@@ -423,7 +421,6 @@ export default function CheckoutPage() {
                       alt="VietQR Chủ Khách Sạn"
                       className="w-52 h-52 mx-auto object-contain rounded-xl"
                       onError={(e) => {
-                        // 🌟 DỰ PHÒNG TỰ ĐỘNG CHUYỂN SANG VIETQR CHUẨN MÃ BIN NAPAS
                         e.currentTarget.onerror = null;
                         const fallbackUrl = `https://img.vietqr.io/image/970422-${cleanAccNumber}-compact2.png?amount=${expectedAmount}&addInfo=${cleanBookingCode}&accountName=${cleanAccName}`;
                         e.currentTarget.src = fallbackUrl;
