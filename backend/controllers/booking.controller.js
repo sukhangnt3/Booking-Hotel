@@ -71,7 +71,7 @@ async function createBooking(req, res, next) {
     // Dọn dẹp các lock đã hết hạn
     await cleanupExpiredLocks(client);
 
-    // KIỂM TRA TỒN KHO THEO TỪNG NGÀY TRONG KHOẢNG CHECKIN -> CHECKOUT
+    // KIỂM TRA TỒN KHO THEO TỪNG NGÀY TRONG KHOẢNG CHECKIN -> CHECKOUT (DÙNG CTE CHUẨN POSTGRESQL)
     if (room_id) {
       const roomStockRes = await client.query(
         `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
@@ -93,35 +93,36 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = roomData.total_stock;
 
-      // Quét từng ngày: tổng phòng đã đặt + tổng phòng đang lock < 15 phút
+      // DÙNG CTE: Tách bạch danh sách ngày, số lượng đang lock và số lượng đã book
       const conflictCheckSql = `
-        SELECT 
-          d::date AS check_day,
-          COALESCE(SUM(l.quantity), 0)::int AS locked_count,
-          COALESCE((
-            SELECT SUM(br.quantity)::int
-            FROM public.booking_room br
-            JOIN public.booking b ON b.id = br.booking_id
-            WHERE br.room_id = $1
-              AND b.status IN ('confirmed', 'checked_in')
-              AND b.checkin_date <= d::date
-              AND b.checkout_date > d::date
-          ), 0)::int AS booked_count
-        FROM generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval) d
-        LEFT JOIN public.temporary_locks l 
-          ON l.room_id = $1 
-         AND l.lock_date = d::date 
-         AND l.lock_expires_at > NOW()
-        GROUP BY d::date
-        HAVING (COALESCE(SUM(l.quantity), 0) + COALESCE((
-            SELECT SUM(br.quantity)::int
-            FROM public.booking_room br
-            JOIN public.booking b ON b.id = br.booking_id
-            WHERE br.room_id = $1
-              AND b.status IN ('confirmed', 'checked_in')
-              AND b.checkin_date <= d::date
-              AND b.checkout_date > d::date
-          ), 0) + $4) > $5
+        WITH days AS (
+          SELECT generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval)::date AS day
+        ),
+        daily_locks AS (
+          SELECT lock_date, COALESCE(SUM(quantity), 0)::int AS locked_qty
+          FROM public.temporary_locks
+          WHERE room_id = $1 AND lock_expires_at > NOW()
+          GROUP BY lock_date
+        ),
+        daily_bookings AS (
+          SELECT days.day, COALESCE(SUM(br.quantity), 0)::int AS booked_qty
+          FROM days
+          JOIN public.booking b 
+            ON b.checkin_date <= days.day 
+           AND b.checkout_date > days.day
+           AND b.status IN ('confirmed', 'checked_in')
+          JOIN public.booking_room br 
+            ON br.booking_id = b.id 
+           AND br.room_id = $1
+          GROUP BY days.day
+        )
+        SELECT days.day,
+               COALESCE(l.locked_qty, 0) AS locked_count,
+               COALESCE(b.booked_qty, 0) AS booked_count
+        FROM days
+        LEFT JOIN daily_locks l ON l.lock_date = days.day
+        LEFT JOIN daily_bookings b ON b.day = days.day
+        WHERE (COALESCE(l.locked_qty, 0) + COALESCE(b.booked_qty, 0) + $4) > $5
         LIMIT 1;
       `;
 
