@@ -1325,7 +1325,15 @@ async function updateHotel(req, res, next) {
       checkout_time,
       is_beachfront,
       distance_to_center,
+      tax_code,
     } = req.body;
+
+    // 🌟 LẤY THÔNG TIN TÀI KHOẢN NGÂN HÀNG CẬP NHẬT
+    const bank_code = req.body.bank_code || req.body.bankCode || null;
+    const bank_name = req.body.bank_name || req.body.bankName || null;
+    const bank_account = req.body.bank_account || req.body.bankAccount || null;
+    const bank_account_holder =
+      req.body.bank_account_holder || req.body.bankAccountHolder || null;
 
     await client.query("BEGIN");
 
@@ -1360,8 +1368,13 @@ async function updateHotel(req, res, next) {
         longitude = COALESCE($12, longitude),
         is_beachfront = COALESCE($13, is_beachfront),
         distance_to_center = COALESCE($14, distance_to_center),
+        bank_code = COALESCE($15, bank_code),
+        bank_name = COALESCE($16, bank_name),
+        bank_account = COALESCE($17, bank_account),
+        bank_account_holder = COALESCE($18, bank_account_holder),
+        tax_code = COALESCE($19, tax_code),
         updated_at = NOW()
-      WHERE id::text = $15
+      WHERE id::text = $20
       RETURNING *;
     `;
 
@@ -1388,6 +1401,11 @@ async function updateHotel(req, res, next) {
         : distance_to_center !== undefined
           ? Number(distance_to_center)
           : null,
+      bank_code,
+      bank_name,
+      bank_account,
+      bank_account_holder,
+      tax_code || null,
       hotelId,
     ]);
 
@@ -1400,6 +1418,7 @@ async function updateHotel(req, res, next) {
     });
   } catch (error) {
     await client.query("ROLLBACK");
+    console.error("❌ LỖI UPDATE_HOTEL:", error);
     return next(error);
   } finally {
     client.release();
