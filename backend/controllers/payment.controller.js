@@ -4,21 +4,43 @@ const pool = require("../config/database");
 
 const SEPAY_API_KEY = process.env.SEPAY_API_KEY || "";
 
+// 🌟 BẢNG MÃ BIN NAPAS 6 CHỮ SỐ CHUẨN 100% CHO CÁC NGÂN HÀNG VIỆT NAM
+const NAPAS_BANK_BINS = {
+  VCB: "970436",
+  VIETCOMBANK: "970436",
+  MB: "970422",
+  MBB: "970422",
+  MBBANK: "970422",
+  TCB: "970407",
+  TECHCOMBANK: "970407",
+  ICB: "970415",
+  CTG: "970415",
+  VIETINBANK: "970415",
+  BIDV: "970418",
+  ACB: "970416",
+  VPB: "970432",
+  VPBANK: "970432",
+  TPB: "970423",
+  TPBANK: "970423",
+  STB: "970403",
+  SACOMBANK: "970403",
+  VBA: "970405",
+  AGRIBANK: "970405",
+};
+
 const DEFAULT_PLATFORM_BANK = {
-  bankId: process.env.PLATFORM_BANK_ID || "MB",
-  bankName:
-    process.env.PLATFORM_BANK_NAME || "Ngân hàng TMCP Quân Đội (MBBank)",
-  accountNumber: process.env.PLATFORM_BANK_ACCOUNT || "0833404928",
-  accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
+  bankId: "970422", // MBBank BIN
+  bankName: "Ngân hàng TMCP Quân Đội (MBBank)",
+  accountNumber: "0833404928",
+  accountName: "SU TRACH KHANG",
 };
 
 /**
- * 🌟 HÀM LẤY TÀI KHOẢN NGÂN HÀNG CỦA OWNER TỪ BẢNG HOTEL
+ * 🌟 HÀM LẤY TÀI KHOẢN NGÂN HÀNG VÀ CHUẨN HÓA MÃ BIN NAPAS
  */
 async function getOwnerBankAccount(hotelId) {
   if (!hotelId) return DEFAULT_PLATFORM_BANK;
   try {
-    // 1. Truy vấn trực tiếp từ bảng hotel
     const res = await pool.query(
       `SELECT bank_code, bank_name, bank_account, bank_account_holder, name
        FROM public.hotel
@@ -29,13 +51,19 @@ async function getOwnerBankAccount(hotelId) {
 
     if (res.rows.length > 0) {
       const row = res.rows[0];
-      if (row.bank_account && String(row.bank_account).trim() !== "") {
+      // Xóa sạch toàn bộ khoảng trắng, dấu gạch ngang trong số tài khoản
+      const cleanAcc = String(row.bank_account || "").replace(/\D/g, "");
+
+      if (cleanAcc.length >= 6) {
+        const rawCode = String(row.bank_code || row.bank_name || "VCB")
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "");
+        const binCode = NAPAS_BANK_BINS[rawCode] || rawCode || "970436";
+
         return {
-          bankId: String(row.bank_code || "VCB")
-            .toUpperCase()
-            .trim(),
-          bankName: row.bank_name || "Vietcombank",
-          accountNumber: String(row.bank_account).trim(),
+          bankId: binCode,
+          bankName: row.bank_name || "Ngân hàng",
+          accountNumber: cleanAcc,
           accountName: String(
             row.bank_account_holder || row.name || "CHỦ KHÁCH SẠN",
           )
@@ -43,37 +71,6 @@ async function getOwnerBankAccount(hotelId) {
             .trim(),
         };
       }
-    }
-
-    // 2. Nếu bảng hotel chưa có số tài khoản thì fallback sang bảng users
-    try {
-      const userRes = await pool.query(
-        `SELECT u.bank_code, u.bank_name, u.bank_account, u.bank_account_holder, u.name
-         FROM public.hotel h
-         JOIN public.users u ON (u.id = h.owner_id OR u.id = h.user_id)
-         WHERE h.id::text = $1::text
-         LIMIT 1`,
-        [hotelId],
-      );
-      if (userRes.rows.length > 0) {
-        const uRow = userRes.rows[0];
-        if (uRow.bank_account && String(uRow.bank_account).trim() !== "") {
-          return {
-            bankId: String(uRow.bank_code || "VCB")
-              .toUpperCase()
-              .trim(),
-            bankName: uRow.bank_name || "Vietcombank",
-            accountNumber: String(uRow.bank_account).trim(),
-            accountName: String(
-              uRow.bank_account_holder || uRow.name || "CHỦ KHÁCH SẠN",
-            )
-              .toUpperCase()
-              .trim(),
-          };
-        }
-      }
-    } catch (uErr) {
-      // Bỏ qua nếu không join được users
     }
   } catch (err) {
     console.warn("⚠️ getOwnerBankAccount fallback:", err.message);
@@ -94,7 +91,6 @@ async function createVietQrPayment(req, res) {
       });
     }
 
-    // Dùng ILIKE để không phân biệt hoa thường
     const bookingResult = await pool.query(
       `SELECT id, booking_code, total_price, hotel_id 
        FROM public.booking
@@ -114,13 +110,11 @@ async function createVietQrPayment(req, res) {
     const expectedAmount = Math.round(
       Number(amount || booking.total_price || 0),
     );
-
-    // LẤY TÀI KHOẢN NGÂN HÀNG CỦA OWNER
     const bank = await getOwnerBankAccount(booking.hotel_id);
 
+    // Dùng trực tiếp mã BIN Napas và số tài khoản sạch để tạo link VietQR
     const qrCodeUrl = `https://img.vietqr.io/image/${bank.bankId}-${bank.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(bank.accountName)}`;
 
-    // Cập nhật hoặc thêm bản ghi payment
     const checkPayment = await pool.query(
       `SELECT id FROM public.payment WHERE booking_id = $1 LIMIT 1`,
       [booking.id],
@@ -171,7 +165,7 @@ async function createVietQrPayment(req, res) {
   }
 }
 
-// ─── 2. NÚT "KIỂM TRA NGAY": GỌI API SEPAY XÁC THỰC THỰC TẾ TRƯỚC KHI LƯU ───
+// ─── 2. NÚT "KIỂM TRA NGAY": ĐỐI SOÁT SEPAY TRƯỚC KHI LƯU ───
 async function confirmManualPayment(req, res) {
   try {
     const { bookingCode, amount } = req.body || {};
@@ -398,7 +392,7 @@ async function checkPaymentStatus(req, res) {
   }
 }
 
-// ─── 4. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY 24/7 ───
+// ─── 4. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY ───
 async function handleBankWebhook(req, res) {
   try {
     const body = req.body || {};

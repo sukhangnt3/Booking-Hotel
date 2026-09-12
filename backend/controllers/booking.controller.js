@@ -2,16 +2,36 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tài khoản sàn mặc định (dự phòng)
-const DEFAULT_PLATFORM_BANK = {
-  bankId: process.env.PLATFORM_BANK_ID || "MB",
-  bankName:
-    process.env.PLATFORM_BANK_NAME || "Ngân hàng TMCP Quân Đội (MBBank)",
-  accountNumber: process.env.PLATFORM_BANK_ACCOUNT || "0833404928",
-  accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
+const NAPAS_BANK_BINS = {
+  VCB: "970436",
+  VIETCOMBANK: "970436",
+  MB: "970422",
+  MBB: "970422",
+  MBBANK: "970422",
+  TCB: "970407",
+  TECHCOMBANK: "970407",
+  ICB: "970415",
+  CTG: "970415",
+  VIETINBANK: "970415",
+  BIDV: "970418",
+  ACB: "970416",
+  VPB: "970432",
+  VPBANK: "970432",
+  TPB: "970423",
+  TPBANK: "970423",
+  STB: "970403",
+  SACOMBANK: "970403",
+  VBA: "970405",
+  AGRIBANK: "970405",
 };
 
-// 🌟 HÀM LẤY TÀI KHOẢN NGÂN HÀNG CỦA OWNER TRỰC TIẾP TỪ BẢNG HOTEL
+const DEFAULT_PLATFORM_BANK = {
+  bankId: "970422",
+  bankName: "Ngân hàng TMCP Quân Đội (MBBank)",
+  accountNumber: "0833404928",
+  accountName: "SU TRACH KHANG",
+};
+
 async function getOwnerBankAccount(hotelId) {
   if (!hotelId) return DEFAULT_PLATFORM_BANK;
   try {
@@ -25,13 +45,18 @@ async function getOwnerBankAccount(hotelId) {
 
     if (res.rows.length > 0) {
       const row = res.rows[0];
-      if (row.bank_account && String(row.bank_account).trim() !== "") {
+      const cleanAcc = String(row.bank_account || "").replace(/\D/g, "");
+
+      if (cleanAcc.length >= 6) {
+        const rawCode = String(row.bank_code || row.bank_name || "VCB")
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "");
+        const binCode = NAPAS_BANK_BINS[rawCode] || rawCode || "970436";
+
         return {
-          bankId: String(row.bank_code || "VCB")
-            .toUpperCase()
-            .trim(),
-          bankName: row.bank_name || "Vietcombank",
-          accountNumber: String(row.bank_account).trim(),
+          bankId: binCode,
+          bankName: row.bank_name || "Ngân hàng",
+          accountNumber: cleanAcc,
           accountName: String(
             row.bank_account_holder || row.name || "CHỦ KHÁCH SẠN",
           )
@@ -46,13 +71,11 @@ async function getOwnerBankAccount(hotelId) {
   return DEFAULT_PLATFORM_BANK;
 }
 
-// Hàm dọn dẹp các lock đã hết hạn
 async function cleanupExpiredLocks() {
   try {
     await pool.query(
       `DELETE FROM public.temporary_locks 
-       WHERE (lock_expires_at IS NOT NULL AND lock_expires_at < NOW())
-          OR (expires_at IS NOT NULL AND expires_at < NOW())`,
+       WHERE lock_expires_at < NOW() OR (expires_at IS NOT NULL AND expires_at < NOW())`,
     );
   } catch (e) {
     // Bỏ qua nếu bảng chưa có cột
@@ -108,7 +131,6 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
-    // KIỂM TRA PHÒNG CÒN TRỐNG KHÔNG
     if (room_id) {
       const roomStockRes = await client.query(
         `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
@@ -137,10 +159,7 @@ async function createBooking(req, res, next) {
         daily_locks AS (
           SELECT lock_date, COALESCE(SUM(quantity), 0)::int AS locked_qty
           FROM public.temporary_locks
-          WHERE room_id = $1 AND (
-            (lock_expires_at IS NOT NULL AND lock_expires_at > NOW())
-            OR (expires_at IS NOT NULL AND expires_at > NOW())
-          )
+          WHERE room_id = $1 AND (lock_expires_at > NOW() OR (expires_at IS NOT NULL AND expires_at > NOW()))
           GROUP BY lock_date
         ),
         daily_bookings AS (
@@ -233,7 +252,6 @@ async function createBooking(req, res, next) {
 
     const newBooking = insertRes.rows[0];
 
-    // LƯU BẢNG BOOKING_ROOM VÀ KHÓA PHÒNG 15 PHÚT
     if (room_id) {
       const roomRes = await client.query(
         `SELECT name, base_price AS room_price FROM public.room WHERE id = $1 LIMIT 1`,
@@ -257,48 +275,20 @@ async function createBooking(req, res, next) {
         req.sessionID ||
         `sess_${crypto.randomBytes(8).toString("hex")}`;
 
-      // Kiểm tra danh sách cột thực tế của temporary_locks
-      const tlColsRes = await client.query(
-        `SELECT column_name 
-         FROM information_schema.columns 
-         WHERE table_schema = 'public' AND table_name = 'temporary_locks'`,
-      );
-      const tlCols = tlColsRes.rows.map((r) => r.column_name.toLowerCase());
-
-      // 🌟 TỰ ĐỘNG THÊM CỘT lock_expires_at VÀ expires_at ĐỂ KHÔNG BỊ LỖI NOT-NULL
-      const lockCols = [
-        "id",
-        "room_id",
-        "user_id",
-        "session_id",
-        "lock_date",
-        "quantity",
-        "booking_id",
-        "created_at",
-      ];
-      const selectCols = [
-        "gen_random_uuid()",
-        "$1",
-        "$2",
-        "$3",
-        "d::date",
-        "$4",
-        "$5",
-        "NOW()",
-      ];
-
-      if (tlCols.includes("lock_expires_at")) {
-        lockCols.push("lock_expires_at");
-        selectCols.push("NOW() + INTERVAL '15 minutes'");
-      }
-      if (tlCols.includes("expires_at")) {
-        lockCols.push("expires_at");
-        selectCols.push("NOW() + INTERVAL '15 minutes'");
-      }
-
       const insertLockSql = `
-        INSERT INTO public.temporary_locks (${lockCols.join(", ")})
-        SELECT ${selectCols.join(", ")}
+        INSERT INTO public.temporary_locks (
+          id, room_id, user_id, session_id, lock_date, quantity, 
+          booking_id, created_at
+        )
+        SELECT 
+          gen_random_uuid(),
+          $1, 
+          $2, 
+          $3, 
+          d::date, 
+          $4, 
+          $5, 
+          NOW()
         FROM generate_series($6::date, ($7::date - interval '1 day')::date, '1 day'::interval) d;
       `;
 
