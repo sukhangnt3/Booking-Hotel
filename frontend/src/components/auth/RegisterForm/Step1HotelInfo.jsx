@@ -42,6 +42,8 @@ const VIETNAM_TOURISM_HUBS = [
       { name: "Biển Bình Sơn", lat: 11.5686, lng: 109.0289 },
       { name: "Biển Cà Ná", lat: 11.3183, lng: 108.8683 },
       { name: "Vịnh Vĩnh Hy", lat: 11.7161, lng: 109.1932 },
+      { name: "Bãi biển Mũi Dinh", lat: 11.4883, lng: 109.0261 },
+      { name: "Bãi biển Thái An", lat: 11.6667, lng: 109.1667 },
     ],
   },
   {
@@ -66,29 +68,56 @@ const VIETNAM_TOURISM_HUBS = [
     beaches: [
       { name: "Bãi Sau", lat: 10.3374, lng: 107.0863 },
       { name: "Bãi Trước", lat: 10.3444, lng: 107.0694 },
+      { name: "Bãi Dâu", lat: 10.3688, lng: 107.0592 },
+      { name: "Bãi Dứa", lat: 10.3294, lng: 107.0711 },
       { name: "Biển Long Hải", lat: 10.3705, lng: 107.2372 },
       { name: "Biển Phước Hải", lat: 10.4358, lng: 107.2831 },
       { name: "Biển Hồ Tràm", lat: 10.4889, lng: 107.3452 },
+      { name: "Biển Hồ Cốc", lat: 10.5113, lng: 107.4526 },
+      { name: "Bãi biển Bình Châu", lat: 10.5401, lng: 107.5255 },
+      { name: "Bãi Đầm Trầu (Côn Đảo)", lat: 8.7301, lng: 106.6318 },
+      { name: "Bãi An Hải (Côn Đảo)", lat: 8.6792, lng: 106.6083 },
     ],
   },
   {
     name: "Nha Trang (Khánh Hòa)",
-    aliases: ["nha trang", "khánh hòa", "khanh hoa", "cam ranh", "vân phong"],
+    aliases: [
+      "nha trang",
+      "khánh hòa",
+      "khanh hoa",
+      "cam ranh",
+      "vân phong",
+      "ninh hòa",
+    ],
     center: { lat: 12.2388, lng: 109.1967 },
     beaches: [
       { name: "Biển Trần Phú", lat: 12.24, lng: 109.197 },
+      { name: "Biển Hòn Chồng", lat: 12.2725, lng: 109.2045 },
       { name: "Bãi Dài Cam Ranh", lat: 12.0416, lng: 109.1833 },
       { name: "Bãi biển Dốc Lết", lat: 12.5539, lng: 109.2317 },
+      { name: "Biển Đại Lãnh", lat: 12.8364, lng: 109.3625 },
+      { name: "Biển Bãi Trũ (Vinpearl)", lat: 12.2189, lng: 109.2458 },
     ],
   },
   {
     name: "Đà Nẵng",
-    aliases: ["đà nẵng", "da nang", "sơn trà", "ngũ hành sơn"],
+    aliases: [
+      "đà nẵng",
+      "da nang",
+      "sơn trà",
+      "ngũ hành sơn",
+      "liên chiểu",
+      "thanh khê",
+    ],
     center: { lat: 16.061, lng: 108.223 },
     beaches: [
       { name: "Biển Mỹ Khê", lat: 16.0597, lng: 108.2435 },
       { name: "Biển Non Nước", lat: 16.0125, lng: 108.2612 },
       { name: "Biển Phạm Văn Đồng", lat: 16.0715, lng: 108.246 },
+      { name: "Biển Bắc Mỹ An", lat: 16.0456, lng: 108.2472 },
+      { name: "Biển Xuân Thiều", lat: 16.0968, lng: 108.1565 },
+      { name: "Bãi Rạng Bán đảo Sơn Trà", lat: 16.1152, lng: 108.2778 },
+      { name: "Biển Nam Ô", lat: 16.1264, lng: 108.1256 },
     ],
   },
   {
@@ -107,6 +136,10 @@ const VIETNAM_TOURISM_HUBS = [
       { name: "Bãi Sao", lat: 10.0528, lng: 104.0325 },
       { name: "Bãi Trường", lat: 10.1583, lng: 103.9611 },
       { name: "Bãi Khem", lat: 10.035, lng: 104.034 },
+      { name: "Bãi Ông Lang", lat: 10.2678, lng: 103.9142 },
+      { name: "Bãi Gành Dầu", lat: 10.3667, lng: 103.85 },
+      { name: "Bãi Cửa Cạn", lat: 10.3012, lng: 103.8961 },
+      { name: "Bãi biển Mũi Nai (Hà Tiên)", lat: 10.3867, lng: 104.4444 },
     ],
   },
   {
@@ -119,12 +152,17 @@ const VIETNAM_TOURISM_HUBS = [
       "bình thuận",
       "binh thuan",
       "la gi",
+      "hàm thuận nam",
     ],
     center: { lat: 10.9272, lng: 108.1022 },
     beaches: [
       { name: "Biển Đồi Dương", lat: 10.9238, lng: 108.113 },
       { name: "Biển Mũi Né", lat: 10.9388, lng: 108.2917 },
+      { name: "Bãi Rạng Mũi Né", lat: 10.9525, lng: 108.2144 },
+      { name: "Biển Hòn Rơm", lat: 10.9419, lng: 108.3189 },
       { name: "Biển Kê Gà", lat: 10.7028, lng: 107.9942 },
+      { name: "Biển Tiến Thành", lat: 10.8411, lng: 108.0378 },
+      { name: "Bãi biển Cam Bình (La Gi)", lat: 10.6653, lng: 107.7475 },
     ],
   },
   {
@@ -142,6 +180,9 @@ const VIETNAM_TOURISM_HUBS = [
       { name: "Bãi biển Xuân Diệu", lat: 13.771, lng: 109.2312 },
       { name: "Bãi Kỳ Co", lat: 13.8833, lng: 109.3 },
       { name: "Bãi tắm Hoàng Hậu", lat: 13.7486, lng: 109.2272 },
+      { name: "Biển Quy Hòa", lat: 13.7197, lng: 109.2158 },
+      { name: "Bãi biển Trung Lương", lat: 13.9689, lng: 109.2483 },
+      { name: "Bãi biển Eo Gió", lat: 13.8967, lng: 109.2994 },
     ],
   },
   {
@@ -151,6 +192,9 @@ const VIETNAM_TOURISM_HUBS = [
     beaches: [
       { name: "Bãi biển Tuy Hòa", lat: 13.095, lng: 109.325 },
       { name: "Bãi Xép", lat: 13.2083, lng: 109.2944 },
+      { name: "Bãi Môn (Mũi Điện)", lat: 12.8944, lng: 109.4583 },
+      { name: "Vịnh Vũng Rô", lat: 12.8683, lng: 109.4128 },
+      { name: "Bãi biển Long Thủy", lat: 13.1583, lng: 109.3139 },
     ],
   },
   {
@@ -165,24 +209,40 @@ const VIETNAM_TOURISM_HUBS = [
       "cô tô",
     ],
     center: { lat: 20.95, lng: 107.0733 },
-    beaches: [{ name: "Bãi tắm Bãi Cháy", lat: 20.9472, lng: 107.0505 }],
+    beaches: [
+      { name: "Bãi tắm Bãi Cháy", lat: 20.9472, lng: 107.0505 },
+      { name: "Bãi tắm Tuần Châu", lat: 20.9324, lng: 106.9931 },
+      { name: "Bãi tắm Hòn Gai", lat: 20.9417, lng: 107.0917 },
+      { name: "Bãi biển Quan Lạn", lat: 20.8911, lng: 107.5317 },
+      { name: "Bãi biển Hồng Vàn (Cô Tô)", lat: 21.0028, lng: 107.7806 },
+    ],
   },
   {
     name: "Huế (Thừa Thiên Huế)",
-    aliases: ["huế", "hue", "thừa thiên huế", "thua thien hue", "lăng cô"],
+    aliases: [
+      "huế",
+      "hue",
+      "thừa thiên huế",
+      "thua thien hue",
+      "lăng cô",
+      "thuận an",
+    ],
     center: { lat: 16.4637, lng: 107.5909 },
     beaches: [
       { name: "Biển Thuận An", lat: 16.5583, lng: 107.6417 },
       { name: "Biển Lăng Cô", lat: 16.2333, lng: 108.0167 },
+      { name: "Biển Cảnh Dương", lat: 16.3267, lng: 107.9867 },
     ],
   },
   {
     name: "Hội An (Quảng Nam)",
-    aliases: ["hội an", "hoi an", "quảng nam", "quang nam"],
+    aliases: ["hội an", "hoi an", "quảng nam", "quang nam", "điện bàn"],
     center: { lat: 15.8801, lng: 108.338 },
     beaches: [
       { name: "Biển An Bàng", lat: 15.9037, lng: 108.3683 },
       { name: "Biển Cửa Đại", lat: 15.8872, lng: 108.3756 },
+      { name: "Biển Hà My", lat: 15.9275, lng: 108.3494 },
+      { name: "Bãi biển Tam Thanh", lat: 15.6028, lng: 108.5722 },
     ],
   },
   {
@@ -193,9 +253,16 @@ const VIETNAM_TOURISM_HUBS = [
   },
   {
     name: "Hồ Chí Minh",
-    aliases: ["hồ chí minh", "ho chi minh", "sài gòn", "sai gon", "hcm"],
+    aliases: [
+      "hồ chí minh",
+      "ho chi minh",
+      "sài gòn",
+      "sai gon",
+      "hcm",
+      "cần giờ",
+    ],
     center: { lat: 10.7769, lng: 106.7009 },
-    beaches: [],
+    beaches: [{ name: "Bãi biển Cần Giờ (30/4)", lat: 10.3958, lng: 106.9458 }],
   },
   {
     name: "Hà Nội",
@@ -204,6 +271,11 @@ const VIETNAM_TOURISM_HUBS = [
     beaches: [],
   },
 ];
+
+// Danh sách phẳng toàn bộ bãi biển cả nước để quét tìm bãi biển gần nhất
+const ALL_VIETNAM_BEACHES = VIETNAM_TOURISM_HUBS.flatMap((hub) =>
+  (hub.beaches || []).map((b) => ({ ...b, hubName: hub.name })),
+);
 
 function calculateHaversine(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -232,6 +304,7 @@ export const Step1HotelInfo = ({
 
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [nearestHubName, setNearestHubName] = useState("");
+  const [nearestBeachInfo, setNearestBeachInfo] = useState("");
 
   const isAccountReady =
     isAuthenticated ||
@@ -245,21 +318,20 @@ export const Step1HotelInfo = ({
   const currentLat = Number(data?.latitude) || 10.7769;
   const currentLng = Number(data?.longitude) || 106.7009;
 
-  // 🌟 TÍNH TOÁN KHOẢNG CÁCH CHUẨN XÁC
+  // 🌟 TÍNH TOÁN KHOẢNG CÁCH CHUẨN XÁC & BÃI BIỂN TOÀN DIỆN
   const calculateMetrics = useCallback(
-    (lat, lng, explicitCity) => {
+    (lat, lng, explicitCity, extraContext = "") => {
       const normCity = (explicitCity || data?.city || "").toLowerCase().trim();
 
+      // 1. Tìm Hub trung tâm
       let targetHub = null;
-
-      // 1. Ưu tiên số 1: Khớp theo tên Thành phố / Tỉnh mà người dùng nhập
       if (normCity) {
         targetHub = VIETNAM_TOURISM_HUBS.find((h) =>
           h.aliases.some((alias) => normCity.includes(alias)),
         );
       }
 
-      // 2. Nếu không khớp tên: Tự động tìm Hub có khoảng cách địa lý gần vị trí ghim nhất!
+      // Tự động tìm Hub gần nhất nếu không khớp tên
       if (!targetHub) {
         let minDistance = Infinity;
         VIETNAM_TOURISM_HUBS.forEach((hub) => {
@@ -289,17 +361,42 @@ export const Step1HotelInfo = ({
         targetHub.center.lng,
       );
 
-      // Kiểm tra cự ly bãi biển
-      let isBeach = false;
-      if (targetHub.beaches && targetHub.beaches.length > 0) {
-        for (const beach of targetHub.beaches) {
-          const distBeach = calculateHaversine(lat, lng, beach.lat, beach.lng);
-          if (distBeach <= 1.2) {
-            // Dưới 1.2km là khu vực giáp biển
-            isBeach = true;
-            break;
-          }
+      // 2. KIỂM TRA BÃI BIỂN TOÀN DIỆN (QUÉT TRÊN TOÀN QUỐC)
+      let minBeachDist = Infinity;
+      let closestBeachName = "";
+
+      ALL_VIETNAM_BEACHES.forEach((beach) => {
+        const d = calculateHaversine(lat, lng, beach.lat, beach.lng);
+        if (d < minBeachDist) {
+          minBeachDist = d;
+          closestBeachName = beach.name;
         }
+      });
+
+      // Nhận diện theo từ khóa địa lý từ OpenStreetMap (đường ven biển, bãi tắm, resort sát biển)
+      const coastalKeywords = [
+        "bãi tắm",
+        "bãi biển",
+        "bờ biển",
+        "ven biển",
+        "resort",
+        "biển",
+        "coast",
+        "beach",
+        "vịnh",
+      ];
+      const isContextSeaside = coastalKeywords.some((kw) =>
+        (extraContext || "").toLowerCase().includes(kw),
+      );
+
+      // Sát biển nếu khoảng cách <= 2.5km đến điểm bãi tắm gần nhất HOẶC có từ khóa biển và khoảng cách <= 4.5km
+      const isBeach =
+        minBeachDist <= 2.5 || (isContextSeaside && minBeachDist <= 4.5);
+
+      if (isBeach && closestBeachName) {
+        setNearestBeachInfo(`Cách ${closestBeachName} ~${minBeachDist}km`);
+      } else {
+        setNearestBeachInfo("");
       }
 
       return {
@@ -309,6 +406,12 @@ export const Step1HotelInfo = ({
     },
     [data?.city],
   );
+
+  // Lưu calculateMetrics vào Ref để tránh lỗi Stale Closure trong Leaflet Event
+  const calculateMetricsRef = useRef(calculateMetrics);
+  useEffect(() => {
+    calculateMetricsRef.current = calculateMetrics;
+  }, [calculateMetrics]);
 
   // 🌟 REVERSE GEOCODE: KÉO GHIM TRÊN MAP -> TỰ ĐỘNG ĐIỀN ĐỊA CHỈ & THÀNH PHỐ
   const handleReverseGeocode = async (lat, lng) => {
@@ -320,40 +423,52 @@ export const Step1HotelInfo = ({
       );
       const resData = await res.json();
 
+      let detectedCity = "";
+      let detectedAddress = "";
+      let rawDisplayName = resData?.display_name || "";
+
       if (resData && resData.address) {
         const addr = resData.address;
-        const detectedCity =
+        detectedCity =
           addr.city || addr.province || addr.state || addr.county || "";
 
-        const roadName = addr.road || addr.suburb || addr.neighbourhood || "";
+        const roadName =
+          addr.road || addr.suburb || addr.neighbourhood || addr.quarter || "";
         const houseNum = addr.house_number ? `${addr.house_number} ` : "";
-        const detectedAddress = roadName
+        detectedAddress = roadName
           ? `${houseNum}${roadName}`
           : resData.display_name.split(",")[0];
-
-        const cleanCity = detectedCity
-          .replace("Thành phố ", "")
-          .replace("Tỉnh ", "")
-          .trim();
-        const metrics = calculateMetrics(lat, lng, cleanCity);
-
-        onChange({
-          latitude: lat,
-          longitude: lng,
-          city: cleanCity || data?.city,
-          address: detectedAddress.trim() || data?.address,
-          distance_to_center: metrics.distance_to_center,
-          is_beachfront: metrics.is_beachfront,
-        });
-        return;
       }
+
+      const cleanCity = detectedCity
+        .replace("Thành phố ", "")
+        .replace("Tỉnh ", "")
+        .trim();
+
+      const metrics = calculateMetricsRef.current(
+        lat,
+        lng,
+        cleanCity,
+        rawDisplayName,
+      );
+
+      onChange({
+        latitude: lat,
+        longitude: lng,
+        city: cleanCity || data?.city || "",
+        province: cleanCity || data?.city || "",
+        address: detectedAddress.trim() || data?.address || "",
+        distance_to_center: metrics.distance_to_center,
+        is_beachfront: metrics.is_beachfront,
+      });
+      return;
     } catch (err) {
       console.warn("Lỗi đọc địa chỉ từ toạ độ:", err.message);
     } finally {
       setIsGeocoding(false);
     }
 
-    const fallbackMetrics = calculateMetrics(lat, lng, data?.city);
+    const fallbackMetrics = calculateMetricsRef.current(lat, lng, data?.city);
     onChange({
       latitude: lat,
       longitude: lng,
@@ -361,6 +476,12 @@ export const Step1HotelInfo = ({
       is_beachfront: fallbackMetrics.is_beachfront,
     });
   };
+
+  // Lưu handleReverseGeocode vào ref
+  const handleReverseGeocodeRef = useRef(handleReverseGeocode);
+  useEffect(() => {
+    handleReverseGeocodeRef.current = handleReverseGeocode;
+  });
 
   // 🌟 TÌM KIẾM ĐA TẦNG (MULTI-TIER GEOCODING): KHÔNG BAO GIỜ BỊ ĐỨNG IM
   const geocodeAddressToMap = useCallback(
@@ -385,7 +506,7 @@ export const Step1HotelInfo = ({
           results = await res.json();
         }
 
-        // TẦNG 2: Nếu không thấy (hoặc tên đường sai/lạ) -> Tự động tìm riêng Thành phố / Tỉnh
+        // TẦNG 2: Nếu không thấy -> Tự động tìm riêng Thành phố / Tỉnh
         if ((!results || results.length === 0) && cleanCity) {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cleanCity + ", Việt Nam")}&format=json&limit=1`,
@@ -419,7 +540,12 @@ export const Step1HotelInfo = ({
           });
           markerRef.current.setLatLng([lat, lng]);
 
-          const metrics = calculateMetrics(lat, lng, cleanCity);
+          const metrics = calculateMetricsRef.current(
+            lat,
+            lng,
+            cleanCity,
+            `${cleanAddress} ${cleanCity}`,
+          );
           onChange({
             latitude: lat,
             longitude: lng,
@@ -433,7 +559,7 @@ export const Step1HotelInfo = ({
         setIsGeocoding(false);
       }
     },
-    [calculateMetrics, onChange],
+    [onChange],
   );
 
   // Debounce: Sau khi ngừng gõ 800ms -> Tự động bay bản đồ
@@ -503,11 +629,12 @@ export const Step1HotelInfo = ({
         icon: pinIcon,
       }).addTo(map);
 
+      // Gọi qua Ref để tránh giữ state cũ của component
       marker.on("dragend", (e) => {
         const position = e.target.getLatLng();
         const lat = Math.round(position.lat * 100000) / 100000;
         const lng = Math.round(position.lng * 100000) / 100000;
-        handleReverseGeocode(lat, lng);
+        handleReverseGeocodeRef.current(lat, lng);
       });
 
       map.on("click", (e) => {
@@ -515,13 +642,13 @@ export const Step1HotelInfo = ({
         const roundedLat = Math.round(lat * 100000) / 100000;
         const roundedLng = Math.round(lng * 100000) / 100000;
         marker.setLatLng([roundedLat, roundedLng]);
-        handleReverseGeocode(roundedLat, roundedLng);
+        handleReverseGeocodeRef.current(roundedLat, roundedLng);
       });
 
       mapInstanceRef.current = map;
       markerRef.current = marker;
 
-      const initialMetrics = calculateMetrics(
+      const initialMetrics = calculateMetricsRef.current(
         currentLat,
         currentLng,
         data?.city,
@@ -897,8 +1024,10 @@ export const Step1HotelInfo = ({
 
           <div className="flex items-center gap-3">
             <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white shadow-xs ${
-                data?.is_beachfront ? "bg-cyan-600" : "bg-slate-300"
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white shadow-xs transition-colors duration-300 ${
+                data?.is_beachfront
+                  ? "bg-cyan-600 shadow-cyan-100"
+                  : "bg-slate-300"
               }`}
             >
               <Waves size={18} />
@@ -907,15 +1036,22 @@ export const Step1HotelInfo = ({
               <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider block">
                 Phân loại Vị trí Biển
               </span>
-              <span
-                className={`text-sm font-extrabold ${
-                  data?.is_beachfront ? "text-cyan-700" : "text-slate-500"
-                }`}
-              >
-                {data?.is_beachfront
-                  ? "✓ Chỗ nghỉ Sát biển / Giáp biển (< 1.2 km)"
-                  : "Không nằm sát biển"}
-              </span>
+              <div className="flex flex-col">
+                <span
+                  className={`text-sm font-extrabold transition-colors ${
+                    data?.is_beachfront ? "text-cyan-700" : "text-slate-500"
+                  }`}
+                >
+                  {data?.is_beachfront
+                    ? "✓ Chỗ nghỉ Sát biển / Giáp biển"
+                    : "Không nằm sát biển"}
+                </span>
+                {nearestBeachInfo && (
+                  <span className="text-[11px] text-cyan-600 font-semibold">
+                    {nearestBeachInfo}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
