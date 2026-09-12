@@ -1,12 +1,33 @@
+// backend/controllers/booking.controller.js
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG ───
+const BANK_CONFIG = {
+  bankId: "MB",
+  bankName: "Ngân hàng TMCP Quân Đội (MBBank)",
+  accountNumber: "0833404928",
+  accountName: "SU TRACH KHANG",
+};
+
+// Hàm tự động xóa các lock đã quá hạn 15 phút
+async function cleanupExpiredLocks(client) {
+  try {
+    await client.query(`
+      DELETE FROM public.temporary_locks 
+      WHERE lock_expires_at < NOW() OR (expires_at IS NOT NULL AND expires_at < NOW())
+    `);
+  } catch (e) {
+    console.warn("Dọn dẹp lock hết hạn:", e.message);
+  }
+}
+
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG & KHÓA PHÒNG REAL-TIME 15 PHÚT ───
 async function createBooking(req, res, next) {
   const client = await pool.connect();
   try {
     const userId =
       req.user?.id || req.user?.userId || req.auth?.sub || req.auth?.id || null;
+
     const {
       hotel_id,
       room_id,
@@ -16,6 +37,7 @@ async function createBooking(req, res, next) {
       checkout_date,
       total_price,
       adults = 2,
+      quantity = 1,
       customer_name,
       guest_phone,
       guest_email,
@@ -27,6 +49,7 @@ async function createBooking(req, res, next) {
     } = req.body;
 
     if (!hotel_id || !checkin_date || !checkout_date) {
+      client.release();
       return res.status(400).json({
         success: false,
         message: "Thiếu thông tin khách sạn hoặc ngày lưu trú.",
@@ -34,43 +57,99 @@ async function createBooking(req, res, next) {
     }
 
     if (new Date(checkout_date) <= new Date(checkin_date)) {
+      client.release();
       return res.status(400).json({
         success: false,
         message: "Ngày trả phòng phải sau ngày nhận phòng.",
       });
     }
 
-    // Kiểm tra phòng trống
-    const roomCountRes = await client.query(
-      `SELECT COALESCE(SUM(amount), 0)::int AS total_rooms FROM public.room WHERE hotel_id = $1 AND is_active = true`,
-      [hotel_id],
-    );
-    const totalRooms = Number(roomCountRes.rows[0]?.total_rooms || 0);
-
-    const bookedRes = await client.query(
-      `SELECT COUNT(*)::int AS booked_count FROM public.booking
-       WHERE hotel_id = $1 AND status IN ('confirmed', 'checked_in', 'pending')
-         AND (checkin_date < $3::date AND checkout_date > $2::date)`,
-      [hotel_id, checkin_date, checkout_date],
-    );
-    const currentBooked = Number(bookedRes.rows[0]?.booked_count || 0);
-
-    if (totalRooms > 0 && currentBooked >= totalRooms) {
-      return res.status(400).json({
-        success: false,
-        message: `Khách sạn đã KÍN PHÒNG (${currentBooked}/${totalRooms}). Quý khách vui lòng chọn ngày khác!`,
-      });
-    }
+    const bookingQty = Math.max(1, Number(quantity) || 1);
 
     await client.query("BEGIN");
 
+    // Dọn dẹp các lock đã hết hạn
+    await cleanupExpiredLocks(client);
+
+    // KIỂM TRA TỒN KHO THEO TỪNG NGÀY TRONG KHOẢNG CHECKIN -> CHECKOUT
+    if (room_id) {
+      const roomStockRes = await client.query(
+        `SELECT id, name, base_price, sell_price, COALESCE(amount, 1)::int AS total_stock 
+         FROM public.room 
+         WHERE id = $1 AND is_active = true 
+         FOR UPDATE`,
+        [room_id],
+      );
+
+      if (roomStockRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        client.release();
+        return res.status(404).json({
+          success: false,
+          message: "Hạng phòng không tồn tại hoặc đã ngừng kinh doanh.",
+        });
+      }
+
+      const roomData = roomStockRes.rows[0];
+      const maxStock = roomData.total_stock;
+
+      // Quét từng ngày: tổng phòng đã đặt + tổng phòng đang lock < 15 phút
+      const conflictCheckSql = `
+        SELECT 
+          d::date AS check_day,
+          COALESCE(SUM(l.quantity), 0)::int AS locked_count,
+          COALESCE((
+            SELECT SUM(br.quantity)::int
+            FROM public.booking_room br
+            JOIN public.booking b ON b.id = br.booking_id
+            WHERE br.room_id = $1
+              AND b.status IN ('confirmed', 'checked_in')
+              AND b.checkin_date <= d::date
+              AND b.checkout_date > d::date
+          ), 0)::int AS booked_count
+        FROM generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval) d
+        LEFT JOIN public.temporary_locks l 
+          ON l.room_id = $1 
+         AND l.lock_date = d::date 
+         AND l.lock_expires_at > NOW()
+        GROUP BY d::date
+        HAVING (COALESCE(SUM(l.quantity), 0) + COALESCE((
+            SELECT SUM(br.quantity)::int
+            FROM public.booking_room br
+            JOIN public.booking b ON b.id = br.booking_id
+            WHERE br.room_id = $1
+              AND b.status IN ('confirmed', 'checked_in')
+              AND b.checkin_date <= d::date
+              AND b.checkout_date > d::date
+          ), 0) + $4) > $5
+        LIMIT 1;
+      `;
+
+      const conflictRes = await client.query(conflictCheckSql, [
+        room_id,
+        checkin_date,
+        checkout_date,
+        bookingQty,
+        maxStock,
+      ]);
+
+      if (conflictRes.rows.length > 0) {
+        await client.query("ROLLBACK");
+        client.release();
+        return res.status(400).json({
+          success: false,
+          message: `Rất tiếc! Hạng phòng "${roomData.name}" đã hết chỗ hoặc có khách khác đang giữ phòng trong khoảng thời gian này. Quý khách vui lòng chọn ngày khác!`,
+        });
+      }
+    }
+
+    // TÍNH TOÁN TIỀN PHÒNG & TIỀN CỌC 30%
     const newBookingId = crypto.randomUUID();
     const bookingCode = "BK" + Math.floor(10000000 + Math.random() * 90000000);
     const finalPrice = Math.round(Number(total_price || 650000));
     const discountVal = Math.round(Number(discount || 0));
     const subtotalVal = finalPrice + discountVal;
 
-    // TÍNH ĐÚNG SỐ TIỀN CỌC 30% VÀ 70% CÒN LẠI
     const isDeposit = payment_type === "DEPOSIT_30";
     const depAmount = isDeposit
       ? Math.round(Number(deposit_amount) || finalPrice * 0.3)
@@ -78,7 +157,8 @@ async function createBooking(req, res, next) {
     const remAmount = isDeposit ? finalPrice - depAmount : 0;
     const amountToPayNow = Math.round(Number(expected_amount) || depAmount);
 
-    const insertSql = `
+    // TẠO BOOKING (TRẠNG THÁI PENDING)
+    const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
         checkin_date, checkout_date, adult_total, children_total,
@@ -89,13 +169,13 @@ async function createBooking(req, res, next) {
         $1, $2, $3, $4, $5,
         $6::date, $7::date, $8, 0,
         $9, $10, $11, $12,
-        'confirmed'::public.booking_status_enum, 'unpaid'::public.booking_payment_status_enum,
+        'pending'::public.booking_status_enum, 'unpaid'::public.booking_payment_status_enum,
         $13, $14, 0,
         $15, 0, NOW(), NOW()
       ) RETURNING *;
     `;
 
-    const insertRes = await client.query(insertSql, [
+    const insertRes = await client.query(insertBookingSql, [
       newBookingId,
       bookingCode,
       userId,
@@ -115,42 +195,87 @@ async function createBooking(req, res, next) {
 
     const newBooking = insertRes.rows[0];
 
-    // Lưu chi tiết booking_room
+    // LƯU CHI TIẾT PHÒNG BOOKING_ROOM
     if (room_id) {
       const roomRes = await client.query(
-        `SELECT name, base_price FROM public.room WHERE id = $1 LIMIT 1`,
+        `SELECT name, COALESCE(sell_price, base_price) AS room_price FROM public.room WHERE id = $1 LIMIT 1`,
         [room_id],
       );
 
       const roomName = roomRes.rows[0]?.name || "Phòng tiêu chuẩn";
-      const roomPrice = Number(roomRes.rows[0]?.base_price || finalPrice);
+      const roomPrice = Number(roomRes.rows[0]?.room_price || finalPrice);
 
       await client.query(
         `INSERT INTO public.booking_room (
           id, booking_id, room_id, room_name, book_date, quantity, price, created_at
         ) VALUES (
-          gen_random_uuid(), $1, $2, $3, $4::date, 1, $5, NOW()
+          gen_random_uuid(), $1, $2, $3, $4::date, $5, $6, NOW()
         ) ON CONFLICT DO NOTHING`,
-        [newBooking.id, room_id, roomName, checkin_date, roomPrice],
+        [newBooking.id, room_id, roomName, checkin_date, bookingQty, roomPrice],
       );
+
+      // KHÓA PHÒNG THỜI GIAN THỰC VÀO TEMPORARY_LOCKS TRONG 15 PHÚT
+      const sessionId =
+        req.headers["x-session-id"] ||
+        req.sessionID ||
+        `sess_${crypto.randomBytes(8).toString("hex")}`;
+
+      const insertLockSql = `
+        INSERT INTO public.temporary_locks (
+          id, room_id, user_id, session_id, lock_date, quantity, 
+          lock_expires_at, booking_id, created_at, expires_at
+        )
+        SELECT 
+          gen_random_uuid(),
+          $1, 
+          $2, 
+          $3, 
+          d::date, 
+          $4, 
+          NOW() + INTERVAL '15 minutes', 
+          $5, 
+          NOW(), 
+          NOW() + INTERVAL '15 minutes'
+        FROM generate_series($6::date, ($7::date - interval '1 day')::date, '1 day'::interval) d;
+      `;
+
+      await client.query(insertLockSql, [
+        room_id,
+        userId,
+        sessionId,
+        bookingQty,
+        newBooking.id,
+        checkin_date,
+        checkout_date,
+      ]);
     }
 
-    // ─── LƯU SỐ TIỀN CỌC VÀO BẢNG 16: PAYMENT VỚI expected_amount = 30% ───
-    await client.query(
-      `INSERT INTO public.payment (
-        id, booking_id, payment_method, expected_amount, paid_amount, status, created_at, updated_at
+    // TẠO BẢN GHI PAYMENT KÈM LINK ẢNH VIETQR ĐỘNG
+    const qrUrl = `https://img.vietqr.io/image/${BANK_CONFIG.bankId}-${BANK_CONFIG.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(BANK_CONFIG.accountName)}`;
+
+    const paymentInsertSql = `
+      INSERT INTO public.payment (
+        id, booking_id, payment_method, expected_amount, paid_amount, 
+        qr_code, qr_content, status, created_at, updated_at
       ) VALUES (
-        gen_random_uuid(), $1, 'VietQR', $2, 0, 'pending'::public.payment_status_enum, NOW(), NOW()
-      ) ON CONFLICT DO NOTHING`,
-      [newBooking.id, amountToPayNow],
-    );
+        gen_random_uuid(), $1, 'VietQR', $2, 0, 
+        $3, $4, 'pending'::public.payment_status_enum, NOW(), NOW()
+      ) RETURNING *;
+    `;
+
+    const payRes = await client.query(paymentInsertSql, [
+      newBooking.id,
+      amountToPayNow,
+      qrUrl,
+      bookingCode,
+    ]);
 
     await client.query("COMMIT");
     client.release();
 
     return res.status(201).json({
       success: true,
-      message: "Khởi tạo đơn đặt phòng thành công!",
+      message: "Khởi tạo đơn đặt phòng và giữ chỗ 15 phút thành công!",
       booking: {
         ...newBooking,
         payment_type: payment_type,
@@ -161,6 +286,10 @@ async function createBooking(req, res, next) {
       deposit_amount: depAmount,
       remaining_amount: remAmount,
       payment_type: payment_type,
+      payment: payRes.rows[0],
+      qr_code: qrUrl,
+      qr_content: bookingCode,
+      lock_expires_in_seconds: 15 * 60,
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -170,7 +299,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. XÁC NHẬN THANH TOÁN ───
+// ─── 2. HÀM CONFIRM PAYMENT (ĐỂ SERVER.JS GỌI KHÔNG BỊ CRASH) ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -183,6 +312,7 @@ async function confirmPayment(req, res, next) {
     const paidAmountReq = Number(req.body.paid_amount || req.body.amount || 0);
 
     if (!booking_code) {
+      client.release();
       return res.status(400).json({ message: "Thiếu mã đơn đặt phòng." });
     }
 
@@ -193,13 +323,15 @@ async function confirmPayment(req, res, next) {
        FROM public.booking b
        LEFT JOIN public.payment p ON p.booking_id = b.id
        WHERE b.booking_code ILIKE $1 OR b.id::text = $2
-       LIMIT 1`,
+       LIMIT 1
+       FOR UPDATE`,
       [`%${booking_code}%`, booking_code],
     );
 
     const booking = bookingRes.rows[0];
     if (!booking) {
       await client.query("ROLLBACK");
+      client.release();
       return res.status(404).json({ message: "Không tìm thấy đơn đặt phòng." });
     }
 
@@ -208,18 +340,16 @@ async function confirmPayment(req, res, next) {
         ? paidAmountReq
         : Number(booking.expected_amount || booking.total_price);
 
-    // Cập nhật bảng booking
     await client.query(
       `UPDATE public.booking
        SET payment_status = 'paid'::public.booking_payment_status_enum,
-           status = CASE WHEN status::text = 'pending' THEN 'confirmed'::public.booking_status_enum ELSE status END,
+           status = 'confirmed'::public.booking_status_enum,
            confirmed_at = COALESCE(confirmed_at, NOW()),
            updated_at = NOW()
        WHERE id = $1`,
       [booking.id],
     );
 
-    // Cập nhật bảng 16: payment
     let paymentId = booking.payment_id;
     if (paymentId) {
       await client.query(
@@ -232,18 +362,20 @@ async function confirmPayment(req, res, next) {
         [actualPaid, paymentId],
       );
     } else {
+      const qrUrl = `https://img.vietqr.io/image/${BANK_CONFIG.bankId}-${BANK_CONFIG.accountNumber}-compact2.png?amount=${actualPaid}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(BANK_CONFIG.accountName)}`;
       const newPay = await client.query(
         `INSERT INTO public.payment (
-          id, booking_id, payment_method, expected_amount, paid_amount, status, paid_at, created_at, updated_at
+          id, booking_id, payment_method, expected_amount, paid_amount, 
+          qr_code, qr_content, status, paid_at, created_at, updated_at
         ) VALUES (
-          gen_random_uuid(), $1, 'VietQR', $2, $2, 'paid'::public.payment_status_enum, NOW(), NOW(), NOW()
+          gen_random_uuid(), $1, 'VietQR', $2, $2, 
+          $3, $4, 'paid'::public.payment_status_enum, NOW(), NOW(), NOW()
         ) RETURNING id`,
-        [booking.id, actualPaid],
+        [booking.id, actualPaid, qrUrl, booking.booking_code],
       );
       paymentId = newPay.rows[0].id;
     }
 
-    // Ghi vào bảng 17: payment_transaction
     await client.query(
       `INSERT INTO public.payment_transaction (
         id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
@@ -252,32 +384,40 @@ async function confirmPayment(req, res, next) {
       )`,
       [
         paymentId,
-        `TXN_${Date.now()}`,
+        req.body.transaction_id || `TXN_${Date.now()}`,
         actualPaid,
         JSON.stringify({
           bookingCode: booking.booking_code,
           amount: actualPaid,
+          confirmed_by: "system_or_manual",
         }),
       ],
     );
 
+    // Giải phóng temporary_locks
+    await client.query(
+      `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
+      [booking.id],
+    );
+
     await client.query("COMMIT");
+    client.release();
 
     return res.json({
       success: true,
       message: "✓ Xác nhận thanh toán thành công!",
       bookingCode: booking.booking_code,
       paidAmount: actualPaid,
+      status: "paid",
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    return res.status(500).json({ success: false, message: error.message });
-  } finally {
     client.release();
+    return res.status(500).json({ success: false, message: error.message });
   }
 }
 
-// ─── 3. TRA CỨU ĐƠN BẰNG CODE ───
+// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO CODE ───
 async function getBookingByCode(req, res, next) {
   try {
     const { code } = req.params;
@@ -291,7 +431,9 @@ async function getBookingByCode(req, res, next) {
          COALESCE(p.paid_amount, 0) AS paid_amount,
          COALESCE(p.expected_amount, b.total_price) AS expected_amount,
          p.status AS payment_status_record,
-         p.payment_method
+         p.payment_method,
+         p.qr_code,
+         p.qr_content
        FROM public.booking b
        JOIN public.hotel h ON h.id = b.hotel_id
        LEFT JOIN public.payment p ON p.booking_id = b.id
@@ -311,7 +453,6 @@ async function getBookingByCode(req, res, next) {
     const expAmount = Number(row.expected_amount || 0);
     const paidMoney = Number(row.paid_amount || 0);
 
-    // Phân biệt chính xác cọc 30% dựa trên expected_amount hoặc paid_amount
     const isDep =
       (expAmount > 0 && expAmount < total) ||
       (paidMoney > 0 && paidMoney < total);
@@ -336,7 +477,7 @@ async function getBookingByCode(req, res, next) {
   }
 }
 
-// ─── 4. LỊCH SỬ ĐẶT PHÒNG CỦA TÔI ───
+// ─── 4. LỊCH SỬ ĐẶT PHÒNG CỦA NGƯỜI DÙNG ───
 async function getMyBookings(req, res, next) {
   try {
     const userId =
@@ -403,14 +544,17 @@ async function getMyBookings(req, res, next) {
   }
 }
 
-// ─── 5. HỦY ĐƠN ───
+// ─── 5. HỦY ĐƠN & GIẢI PHÓNG KHÓA PHÒNG ───
 async function cancelBooking(req, res, next) {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
     const userId =
       req.user?.id || req.user?.userId || req.auth?.sub || req.auth?.id;
 
-    const result = await pool.query(
+    await client.query("BEGIN");
+
+    const result = await client.query(
       `UPDATE public.booking
        SET status = 'cancelled'::public.booking_status_enum,
            cancelled_at = NOW(),
@@ -422,17 +566,32 @@ async function cancelBooking(req, res, next) {
     );
 
     if (result.rows.length === 0) {
+      await client.query("ROLLBACK");
+      client.release();
       return res
         .status(404)
         .json({ message: "Không tìm thấy đơn hoặc không có quyền hủy." });
     }
 
+    const cancelledBooking = result.rows[0];
+
+    // Xóa khóa phòng tạm thời nếu đơn đang giữ chỗ
+    await client.query(
+      `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
+      [cancelledBooking.id],
+    );
+
+    await client.query("COMMIT");
+    client.release();
+
     return res.json({
       success: true,
       message: "Đã hủy đơn đặt phòng thành công!",
-      booking: result.rows[0],
+      booking: cancelledBooking,
     });
   } catch (error) {
+    await client.query("ROLLBACK");
+    client.release();
     return res.status(500).json({ success: false, message: error.message });
   }
 }
