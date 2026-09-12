@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Building2,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 
@@ -32,7 +33,7 @@ export default function CheckoutPage() {
   const remainingAmount = totalAmount - depositAmount;
   const expectedAmount = isDeposit ? depositAmount : totalAmount;
 
-  // 🌟 STATE THÔNG TIN NGÂN HÀNG OWNER (CHUẨN HÓA KHÔNG CÓ KHOẢNG TRẮNG)
+  // 🌟 THÔNG TIN TÀI KHOẢN NGÂN HÀNG OWNER
   const [bankInfo, setBankInfo] = useState({
     bankId: "MB",
     bankBin: "970422",
@@ -45,7 +46,6 @@ export default function CheckoutPage() {
   const [loadingPayment, setLoadingPayment] = useState(true);
   const [isPaidSuccess, setIsPaidSuccess] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
-  const [isManualChecking, setIsManualChecking] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
@@ -97,7 +97,7 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 🌟 LẤY DỮ LIỆU ĐỒNG THỜI TỪ CẢ 2 NGUỒN VÀ CHUẨN HÓA MÃ NGÂN HÀNG
+  // 🌟 TẢI THÔNG TIN VÀ CHUẨN HÓA MÃ NGÂN HÀNG
   useEffect(() => {
     async function initPayment() {
       if (!bookingCode) return;
@@ -183,21 +183,36 @@ export default function CheckoutPage() {
 
   const pollingRef = useRef(null);
 
-  // 🌟 ĐOẠN ĐÃ ĐƯỢC FIX LỖI 100%: TỰ ĐỘNG ĐỌC CẢ resDATA LẪN res.data
-  const checkPaymentStatus = async (isManual = false) => {
+  // 🌟 CƠ CHẾ TỰ ĐỘNG BẮT TRẠNG THÁI VÀ CHUYỂN TRANG 100%
+  const checkPaymentStatus = async () => {
     if (!bookingCode || isPaidSuccess) return;
-    if (isManual) setIsManualChecking(true);
 
     try {
       const rawRes = await apiClient.get(`/payments/status/${bookingCode}`);
-      // Hỗ trợ cả 2 trường hợp: Axios gốc (rawRes.data) hoặc apiClient bóc tách sẵn (rawRes)
+      // Chuẩn hóa dữ liệu tương thích cả Axios gốc lẫn Axios interceptor
       const resData = rawRes?.data || rawRes;
 
+      const pStatus = String(
+        resData?.status ||
+          resData?.pay_status ||
+          resData?.payment?.status ||
+          "",
+      )
+        .trim()
+        .toLowerCase();
+      const bStatus = String(
+        resData?.booking_status || resData?.payment_status || "",
+      )
+        .trim()
+        .toLowerCase();
+
+      // Đã thanh toán thành công nếu 1 trong các cờ báo paid, success hoặc confirmed
       const isPaid =
         resData?.paid === true ||
-        resData?.status === "paid" ||
-        resData?.payment?.status === "paid" ||
-        resData?.booking_status === "confirmed";
+        pStatus === "paid" ||
+        pStatus === "success" ||
+        bStatus === "confirmed" ||
+        bStatus === "paid";
 
       if (isPaid) {
         setIsPaidSuccess(true);
@@ -205,48 +220,29 @@ export default function CheckoutPage() {
 
         localStorage.removeItem(`lock_expires_${bookingCode}`);
 
+        // TỰ ĐỘNG CHUYỂN TRANG ĐẶT PHÒNG THÀNH CÔNG
         setTimeout(() => {
           navigate(
             `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
           );
-        }, 300);
-      } else if (isManual) {
-        const rawManual = await apiClient.post("/payments/confirm-manual", {
-          bookingCode: bookingCode,
-          amount: expectedAmount,
-        });
-        const mData = rawManual?.data || rawManual;
-
-        if (
-          mData?.paid === true ||
-          mData?.status === "paid" ||
-          mData?.booking_status === "confirmed"
-        ) {
-          setIsPaidSuccess(true);
-          localStorage.removeItem(`lock_expires_${bookingCode}`);
-          navigate(
-            `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
-          );
-        } else {
-          alert(
-            mData?.message ||
-              "Hệ thống SePay chưa ghi nhận biến động số dư cho đơn này. Quý khách vui lòng chờ 5-10 giây!",
-          );
-        }
+        }, 600);
       }
     } catch (err) {
-      console.error("Lỗi polling status:", err);
-    } finally {
-      if (isManual) setIsManualChecking(false);
+      console.error("Lỗi tự động kiểm tra trạng thái thanh toán:", err);
     }
   };
 
+  // 🌟 AUTO-POLLING: TỰ ĐỘNG QUÉT MỖI 2 GIÂY
   useEffect(() => {
     if (!bookingCode || isPaidSuccess) return;
 
+    // Quét ngay lập tức khi mở trang
+    checkPaymentStatus();
+
+    // Tiếp tục quét định kỳ mỗi 2 giây
     pollingRef.current = setInterval(() => {
-      checkPaymentStatus(false);
-    }, 2500);
+      checkPaymentStatus();
+    }, 2000);
 
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
@@ -304,6 +300,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24">
+      {/* THANH ĐIỀU HƯỚNG TRÊN CÙNG */}
       <div className="bg-white border-b border-slate-200 py-4 shadow-xs">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <button
@@ -337,6 +334,7 @@ export default function CheckoutPage() {
       </div>
 
       <main className="max-w-4xl mx-auto px-4 pt-8 space-y-6">
+        {/* BANNER KHI NHẬN TIỀN THÀNH CÔNG */}
         {isPaidSuccess && (
           <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl flex items-center justify-between animate-bounce">
             <div className="flex items-center gap-3">
@@ -398,6 +396,7 @@ export default function CheckoutPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center pt-2">
+            {/* CỘT TRÁI: MÃ QR ĐỘNG */}
             <div className="md:col-span-5 bg-slate-50 p-6 rounded-3xl border border-slate-200 text-center space-y-3">
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#003580]">
                 <Sparkles size={14} /> Quét mã để thanh toán tự động
@@ -428,13 +427,14 @@ export default function CheckoutPage() {
                     />
                     <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-emerald-700 font-black">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      Đang lắng nghe chuyển khoản...
+                      Đang tự động lắng nghe chuyển khoản...
                     </div>
                   </>
                 )}
               </div>
             </div>
 
+            {/* CỘT PHẢI: CHI TIẾT TÀI KHOẢN VÀ THÔNG TIN CHUYỂN KHOẢN */}
             <div className="md:col-span-7 space-y-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center">
                 <div>
@@ -527,29 +527,19 @@ export default function CheckoutPage() {
             </span>
           </div>
 
-          <div className="pt-2 max-w-sm mx-auto space-y-2">
-            <button
-              type="button"
-              onClick={() => checkPaymentStatus(true)}
-              disabled={isManualChecking}
-              className="w-full py-3.5 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-2xl shadow-lg transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {isManualChecking ? (
-                <>
-                  <Loader2 className="animate-spin" size={18} /> Đang kiểm tra
-                  giao dịch...
-                </>
-              ) : (
-                <>
-                  <Check size={18} strokeWidth={2.5} /> Tôi đã chuyển khoản -
-                  Kiểm tra ngay
-                </>
-              )}
-            </button>
-            <p className="text-[11px] text-center text-slate-400">
-              ⚡ Hệ thống tự động kiểm tra mỗi 2.5 giây, bạn không cần làm gì
-              sau khi chuyển.
-            </p>
+          {/* KHUNG TRẠNG THÁI TỰ ĐỘNG (HOÀN TOÀN TỰ ĐỘNG, KHÔNG CẦN BẤM NÚT) */}
+          <div className="pt-2 max-w-md mx-auto">
+            <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl text-center space-y-1.5 shadow-xs">
+              <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#003580]">
+                <RefreshCw size={14} className="animate-spin text-[#003580]" />
+                <span>Hệ thống đang tự động kiểm tra giao dịch...</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Sau khi chuyển khoản từ App Ngân hàng, màn hình sẽ{" "}
+                <strong>tự động chuyển sang trang Hoàn tất</strong> trong vài
+                giây. Bạn không cần thao tác thêm.
+              </p>
+            </div>
           </div>
         </div>
       </main>
