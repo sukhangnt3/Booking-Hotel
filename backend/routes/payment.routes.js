@@ -1,13 +1,12 @@
-// backend/routes/payment.routes.js
 const express = require("express");
 const router = express.Router();
 
-// Tự động nhận diện cả 2 kiểu đặt tên file: payment.controller.js hoặc paymentController.js
+// Tự động nhận diện cả 2 kiểu đặt tên file controller
 let paymentController;
 try {
-  paymentController = require("../controllers/payment.controller");
-} catch (e) {
   paymentController = require("../controllers/paymentController");
+} catch (e) {
+  paymentController = require("../controllers/payment.controller");
 }
 
 const {
@@ -17,19 +16,36 @@ const {
   handleBankWebhook,
 } = paymentController;
 
-// 1. Tạo thông tin VietQR động theo tài khoản ngân hàng của Owner khách sạn
+// ─── 0. KIỂM TRA TRẠNG THÁI WEBHOOK (Dành cho trình duyệt GET) ───
+// Giúp bạn mở link trên trình duyệt không bị lỗi "Không tìm thấy API"
+router.get("/webhook", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message:
+      "✓ Cổng Webhook SePay đang hoạt động bình thường (Sẵn sàng nhận POST từ SePay)!",
+    server_time: new Date().toISOString(),
+  });
+});
+router.get("/sepay-webhook", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message: "✓ Cổng Webhook SePay đang hoạt động bình thường!",
+  });
+});
+
+// ─── 1. TẠO THÔNG TIN MÃ QR THANH TOÁN ───
 router.post("/create-qr", createVietQrPayment);
 router.post("/vietqr-init", createVietQrPayment);
 
-// 2. Nút "Tôi đã chuyển khoản - Kiểm tra ngay" (Đối soát SePay thực tế trước khi lưu)
+// ─── 2. NÚT "TÔI ĐÃ CHUYỂN KHOẢN - KIỂM TRA NGAY" (Đối soát trực tiếp SePay API) ───
 router.post("/confirm-manual", confirmManualPayment);
 
-// 3. Kiểm tra trạng thái thanh toán theo thời gian thực (Polling mỗi 2.5 giây)
+// ─── 3. CHECK TRẠNG THÁI CHO FRONTEND AUTO-POLLING (Mỗi 2.5 giây) ───
 router.get("/status/:bookingCode", checkPaymentStatus);
 router.get("/status", checkPaymentStatus);
 router.get("/check-status", checkPaymentStatus);
 
-// 4. Webhook ngân hàng tự động nhận từ SePay (Cấu hình trên my.sepay.vn)
+// ─── 4. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY (POST 24/7) ───
 router.post("/webhook", handleBankWebhook);
 router.post("/sepay-webhook", handleBankWebhook);
 

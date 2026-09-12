@@ -11,6 +11,9 @@ const pool = require("./config/database");
 const apiRoutes = require("./routes");
 const swaggerSpec = require("./swagger");
 
+// 🌟 IMPORT ROUTE THANH TOÁN (SEPAY / VIETQR)
+const paymentRoutes = require("./routes/payment.routes");
+
 const bookingController = require("./controllers/booking.controller");
 const reviewController = require("./controllers/review.controller");
 
@@ -26,16 +29,17 @@ const app = express();
 const PORT = Number(process.env.PORT || 5000);
 
 // ============================================================
-// CORS
+// CORS (ĐÃ BỔ SUNG ĐÚNG DOMAIN VERCEL CỦA BẠN)
 // ============================================================
 
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
+  "https://booking-hotel-fawn.vercel.app", // 🌟 DOMAIN VERCEL MỚI CỦA BẠN
   "https://booking-hotel-lkip.vercel.app",
 ];
 
-// Cho phép thêm FRONTEND_URL từ Render Environment
+// Cho phép thêm FRONTEND_URL từ Render Environment nếu có
 if (process.env.FRONTEND_URL) {
   process.env.FRONTEND_URL.split(",")
     .map((origin) => origin.trim())
@@ -52,8 +56,7 @@ console.log("CORS allowed origins:", allowedOrigins);
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Request không có Origin
-      // Ví dụ: Postman, server-to-server
+      // Request không có Origin (Postman, SePay server-to-server webhook)
       if (!origin) {
         return callback(null, true);
       }
@@ -69,15 +72,10 @@ app.use(
       }
 
       console.warn("CORS blocked:", origin);
-
-      // Không throw Error để tránh làm API crash
       return callback(null, false);
     },
-
     credentials: true,
-
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-
     allowedHeaders: [
       "Origin",
       "X-Requested-With",
@@ -110,11 +108,8 @@ app.use(
 // ============================================================
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
-
 app.use("/uploads", express.static(path.resolve("uploads")));
-
 app.use("/uploads", express.static(path.resolve("backend/uploads")));
 
 // ============================================================
@@ -151,38 +146,33 @@ app.use((req, res, next) => {
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ============================================================
-// PAYMENT
+// PAYMENT (SEPAY WEBHOOK & VIETQR ROUTES)
 // ============================================================
 
+// 🌟 GẮN TRỰC TIẾP TOÀN BỘ ROUTE THANH TOÁN VÀO ĐÂY
+app.use("/api/payments", paymentRoutes);
+
+// Endpoint xác nhận đơn cũ
 app.post("/api/bookings/confirm-payment", bookingController.confirmPayment);
 
 // ============================================================
 // REVIEW ROUTES
 // ============================================================
 
-// GET reviews
 app.get("/api/hotels/:id/reviews", reviewController.listHotelReviews);
-
 app.get("/api/hotels/:hotelId/reviews", reviewController.listHotelReviews);
-
 app.get("/api/reviews/hotel/:hotelId", reviewController.listHotelReviews);
-
 app.get("/api/reviews/:hotelId", reviewController.listHotelReviews);
 
-// POST review
 app.post("/api/hotels/:id/reviews", requireAuth, reviewController.createReview);
-
 app.post(
   "/api/hotels/:hotelId/reviews",
   requireAuth,
   reviewController.createReview,
 );
-
 app.post("/api/reviews", requireAuth, reviewController.createReview);
 
-// Reply review
 app.patch("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
-
 app.post("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
 
 // ============================================================
@@ -196,7 +186,6 @@ app.use("/api", apiRoutes);
 // ============================================================
 
 app.use(notFoundHandler);
-
 app.use(errorHandler);
 
 // ============================================================
@@ -205,17 +194,13 @@ app.use(errorHandler);
 
 async function initDatabaseTables() {
   try {
-    // pgcrypto
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`)
       .catch(() => {});
-
-    // unaccent
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "unaccent";`)
       .catch(() => {});
 
-    // property_type
     await pool
       .query(
         `
@@ -227,7 +212,6 @@ async function initDatabaseTables() {
       )
       .catch(() => {});
 
-    // Review point 1-10
     await pool
       .query(
         `
@@ -241,7 +225,6 @@ async function initDatabaseTables() {
       )
       .catch(() => {});
 
-    // Request logs
     await pool
       .query(
         `
@@ -259,29 +242,17 @@ async function initDatabaseTables() {
       )
       .catch(() => {});
 
-    // Chatbot logs
     await pool
       .query(
         `
         CREATE TABLE IF NOT EXISTS public.chatbot_log (
-          id UUID PRIMARY KEY
-            DEFAULT gen_random_uuid(),
-
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID,
-
-          session_id VARCHAR(255)
-            NOT NULL,
-
-          role VARCHAR(20)
-            NOT NULL,
-
-          message TEXT
-            NOT NULL,
-
+          session_id VARCHAR(255) NOT NULL,
+          role VARCHAR(20) NOT NULL,
+          message TEXT NOT NULL,
           extracted_filter JSONB,
-
-          created_at TIMESTAMP
-            NOT NULL DEFAULT NOW()
+          created_at TIMESTAMP NOT NULL DEFAULT NOW()
         );
         `,
       )
@@ -299,23 +270,17 @@ async function initDatabaseTables() {
 
 async function startServer() {
   try {
-    // Test database
     await pool.query("SELECT 1");
-
-    // Initialize tables
     await initDatabaseTables();
 
-    // Start server
     app.listen(PORT, () => {
       console.log(`Server chạy tại http://localhost:${PORT}`);
-
       console.log(
         `Đã kết nối PostgreSQL: ${process.env.DB_NAME || "hotel_booking"}`,
       );
     });
   } catch (error) {
     console.error("Không thể kết nối PostgreSQL:", error.message);
-
     process.exit(1);
   }
 }
