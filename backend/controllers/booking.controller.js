@@ -74,7 +74,7 @@ async function createBooking(req, res, next) {
     // KIỂM TRA TỒN KHO THEO TỪNG NGÀY TRONG KHOẢNG CHECKIN -> CHECKOUT
     if (room_id) {
       const roomStockRes = await client.query(
-        `SELECT id, name, base_price, sell_price, COALESCE(amount, 1)::int AS total_stock 
+        `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
          FROM public.room 
          WHERE id = $1 AND is_active = true 
          FOR UPDATE`,
@@ -195,10 +195,10 @@ async function createBooking(req, res, next) {
 
     const newBooking = insertRes.rows[0];
 
-    // LƯU CHI TIẾT PHÒNG BOOKING_ROOM
+    // LƯU CHI TIẾT PHÒNG BOOKING_ROOM (CHỈ DÙNG base_price)
     if (room_id) {
       const roomRes = await client.query(
-        `SELECT name, COALESCE(sell_price, base_price) AS room_price FROM public.room WHERE id = $1 LIMIT 1`,
+        `SELECT name, base_price AS room_price FROM public.room WHERE id = $1 LIMIT 1`,
         [room_id],
       );
 
@@ -299,7 +299,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. HÀM CONFIRM PAYMENT (ĐỂ SERVER.JS GỌI KHÔNG BỊ CRASH) ───
+// ─── 2. HÀM CONFIRM PAYMENT (CHO SERVER.JS VÀ ROUTE GỌI) ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
