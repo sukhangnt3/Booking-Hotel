@@ -4,13 +4,333 @@ const pool = require("../config/database");
 
 const PUBLIC_HOTEL_STATUS = "h.status::text IN ('active', 'approved')";
 
+// ─── DANH MỤC TRUNG TÂM DU LỊCH & BÃI TẮM ĐẦY ĐỦ CÁC TỈNH THÀNH VIỆT NAM ───
+const VIETNAM_TOURISM_HUBS = [
+  {
+    name: "Ninh Thuận (Phan Rang)",
+    aliases: [
+      "ninh thuận",
+      "ninh thuan",
+      "phan rang",
+      "tháp chàm",
+      "ninh chữ",
+      "ninh chu",
+      "cà ná",
+      "ca na",
+      "vĩnh hy",
+      "vinh hy",
+    ],
+    center: { lat: 11.5645, lng: 108.9882 }, // Quảng trường Phan Rang
+    beaches: [
+      { name: "Biển Ninh Chữ", lat: 11.5794, lng: 109.0275 },
+      { name: "Biển Bình Sơn", lat: 11.5686, lng: 109.0289 },
+      { name: "Biển Cà Ná", lat: 11.3183, lng: 108.8683 },
+      { name: "Vịnh Vĩnh Hy", lat: 11.7161, lng: 109.1932 },
+    ],
+  },
+  {
+    name: "Bà Rịa - Vũng Tàu",
+    aliases: [
+      "vũng tàu",
+      "vung tau",
+      "bà rịa",
+      "ba ria",
+      "đất đỏ",
+      "dat do",
+      "long hải",
+      "long hai",
+      "xuyên mộc",
+      "hồ tràm",
+      "phước hải",
+      "phuoc hai",
+      "côn đảo",
+      "con dao",
+    ],
+    center: { lat: 10.3459, lng: 107.0725 },
+    beaches: [
+      { name: "Bãi Sau", lat: 10.3374, lng: 107.0863 },
+      { name: "Bãi Trước", lat: 10.3444, lng: 107.0694 },
+      { name: "Biển Long Hải", lat: 10.3705, lng: 107.2372 },
+      { name: "Biển Phước Hải", lat: 10.4358, lng: 107.2831 },
+      { name: "Biển Hồ Tràm", lat: 10.4889, lng: 107.3452 },
+    ],
+  },
+  {
+    name: "Nha Trang (Khánh Hòa)",
+    aliases: ["nha trang", "khánh hòa", "khanh hoa", "cam ranh", "vân phong"],
+    center: { lat: 12.2388, lng: 109.1967 },
+    beaches: [
+      { name: "Biển Trần Phú", lat: 12.24, lng: 109.197 },
+      { name: "Bãi Dài Cam Ranh", lat: 12.0416, lng: 109.1833 },
+      { name: "Bãi biển Dốc Lết", lat: 12.5539, lng: 109.2317 },
+    ],
+  },
+  {
+    name: "Đà Nẵng",
+    aliases: ["đà nẵng", "da nang", "sơn trà", "ngũ hành sơn"],
+    center: { lat: 16.061, lng: 108.223 },
+    beaches: [
+      { name: "Biển Mỹ Khê", lat: 16.0597, lng: 108.2435 },
+      { name: "Biển Non Nước", lat: 16.0125, lng: 108.2612 },
+      { name: "Biển Phạm Văn Đồng", lat: 16.0715, lng: 108.246 },
+    ],
+  },
+  {
+    name: "Phú Quốc (Kiên Giang)",
+    aliases: [
+      "phú quốc",
+      "phu quoc",
+      "kiên giang",
+      "kien giang",
+      "rạch giá",
+      "hà tiên",
+    ],
+    center: { lat: 10.2167, lng: 103.9667 },
+    beaches: [
+      { name: "Bờ biển Dinh Cậu", lat: 10.208, lng: 103.958 },
+      { name: "Bãi Sao", lat: 10.0528, lng: 104.0325 },
+      { name: "Bãi Trường", lat: 10.1583, lng: 103.9611 },
+      { name: "Bãi Khem", lat: 10.035, lng: 104.034 },
+    ],
+  },
+  {
+    name: "Phan Thiết (Bình Thuận)",
+    aliases: [
+      "phan thiết",
+      "phan thiet",
+      "mũi né",
+      "mui ne",
+      "bình thuận",
+      "binh thuan",
+      "la gi",
+    ],
+    center: { lat: 10.9272, lng: 108.1022 },
+    beaches: [
+      { name: "Biển Đồi Dương", lat: 10.9238, lng: 108.113 },
+      { name: "Biển Mũi Né", lat: 10.9388, lng: 108.2917 },
+      { name: "Biển Kê Gà", lat: 10.7028, lng: 107.9942 },
+    ],
+  },
+  {
+    name: "Quy Nhơn (Bình Định)",
+    aliases: [
+      "quy nhơn",
+      "quy nhon",
+      "bình định",
+      "binh dinh",
+      "kỳ co",
+      "eo gió",
+    ],
+    center: { lat: 13.782, lng: 109.2194 },
+    beaches: [
+      { name: "Bãi biển Xuân Diệu", lat: 13.771, lng: 109.2312 },
+      { name: "Bãi Kỳ Co", lat: 13.8833, lng: 109.3 },
+      { name: "Bãi tắm Hoàng Hậu", lat: 13.7486, lng: 109.2272 },
+    ],
+  },
+  {
+    name: "Phú Yên (Tuy Hòa)",
+    aliases: ["phú yên", "phu yen", "tuy hòa", "tuy hoa", "sông cầu"],
+    center: { lat: 13.0882, lng: 109.3147 },
+    beaches: [
+      { name: "Bãi biển Tuy Hòa", lat: 13.095, lng: 109.325 },
+      { name: "Bãi Xép", lat: 13.2083, lng: 109.2944 },
+    ],
+  },
+  {
+    name: "Hạ Long (Quảng Ninh)",
+    aliases: [
+      "hạ long",
+      "ha long",
+      "quảng ninh",
+      "quang ninh",
+      "bãi cháy",
+      "vân đồn",
+      "cô tô",
+    ],
+    center: { lat: 20.95, lng: 107.0733 },
+    beaches: [{ name: "Bãi tắm Bãi Cháy", lat: 20.9472, lng: 107.0505 }],
+  },
+  {
+    name: "Huế (Thừa Thiên Huế)",
+    aliases: ["huế", "hue", "thừa thiên huế", "thua thien hue", "lăng cô"],
+    center: { lat: 16.4637, lng: 107.5909 },
+    beaches: [
+      { name: "Biển Thuận An", lat: 16.5583, lng: 107.6417 },
+      { name: "Biển Lăng Cô", lat: 16.2333, lng: 108.0167 },
+    ],
+  },
+  {
+    name: "Hội An (Quảng Nam)",
+    aliases: ["hội an", "hoi an", "quảng nam", "quang nam"],
+    center: { lat: 15.8801, lng: 108.338 },
+    beaches: [
+      { name: "Biển An Bàng", lat: 15.9037, lng: 108.3683 },
+      { name: "Biển Cửa Đại", lat: 15.8872, lng: 108.3756 },
+    ],
+  },
+  {
+    name: "Đà Lạt (Lâm Đồng)",
+    aliases: ["đà lạt", "da lat", "lâm đồng", "lam dong", "bảo lộc"],
+    center: { lat: 11.9404, lng: 108.4377 },
+    beaches: [],
+  },
+  {
+    name: "Hồ Chí Minh",
+    aliases: ["hồ chí minh", "ho chi minh", "sài gòn", "sai gon", "hcm"],
+    center: { lat: 10.7769, lng: 106.7009 },
+    beaches: [],
+  },
+  {
+    name: "Hà Nội",
+    aliases: ["hà nội", "ha noi"],
+    center: { lat: 21.0285, lng: 105.8542 },
+    beaches: [],
+  },
+];
+
+function calculateHaversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
+
+// Hàm tính toán metrics chính xác: Bắt chuẩn Hub theo tên tỉnh thành
+function computeLocationMetrics(
+  lat,
+  lng,
+  cityName,
+  manualBeachfront = false,
+  manualDistance = null,
+) {
+  const normCity = (cityName || "").toLowerCase().trim();
+
+  let targetHub = null;
+
+  // 1. Khớp theo tên Thành phố / Tỉnh
+  if (normCity) {
+    targetHub = VIETNAM_TOURISM_HUBS.find((h) =>
+      h.aliases.some((alias) => normCity.includes(alias)),
+    );
+  }
+
+  // 2. Nếu không có tên: Tìm Hub gần nhất theo toạ độ
+  if (!targetHub && lat && lng) {
+    let minDistance = Infinity;
+    VIETNAM_TOURISM_HUBS.forEach((hub) => {
+      const d = calculateHaversine(lat, lng, hub.center.lat, hub.center.lng);
+      if (d < minDistance) {
+        minDistance = d;
+        targetHub = hub;
+      }
+    });
+  }
+
+  if (!targetHub) {
+    targetHub = VIETNAM_TOURISM_HUBS[0];
+  }
+
+  let distance_to_center =
+    manualDistance !== null &&
+    manualDistance !== undefined &&
+    Number(manualDistance) > 0
+      ? Number(manualDistance)
+      : 1.2;
+
+  let is_beachfront = Boolean(manualBeachfront);
+
+  if (lat && lng && targetHub) {
+    // 1. Tính cự ly tới trung tâm
+    const distCenter = calculateHaversine(
+      lat,
+      lng,
+      targetHub.center.lat,
+      targetHub.center.lng,
+    );
+    if (distCenter >= 0) {
+      distance_to_center = distCenter;
+    }
+
+    // 2. Tính cự ly tới bãi biển
+    if (targetHub.beaches && targetHub.beaches.length > 0) {
+      for (const beach of targetHub.beaches) {
+        const distBeach = calculateHaversine(lat, lng, beach.lat, beach.lng);
+        if (distBeach <= 1.2) {
+          is_beachfront = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    distance_to_center: distance_to_center > 0 ? distance_to_center : 1.2,
+    is_beachfront: is_beachfront,
+  };
+}
+
+// Geocoding dự phòng đa tầng nếu không có toạ độ
+async function fallbackGeocode(address, city) {
+  try {
+    const cleanCity = (city || "").trim();
+    const cleanAddress = (address || "").trim();
+
+    let results = [];
+    if (cleanAddress && cleanCity) {
+      const query = encodeURIComponent(
+        `${cleanAddress}, ${cleanCity}, Việt Nam`,
+      );
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
+        { headers: { "User-Agent": "GoStayApp/1.0" } },
+      );
+      results = await res.json();
+    }
+
+    if ((!results || results.length === 0) && cleanCity) {
+      const query = encodeURIComponent(`${cleanCity}, Việt Nam`);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
+        { headers: { "User-Agent": "GoStayApp/1.0" } },
+      );
+      results = await res.json();
+    }
+
+    if (results && results.length > 0) {
+      return {
+        lat: parseFloat(results[0].lat),
+        lng: parseFloat(results[0].lon),
+      };
+    }
+
+    // Fallback vào bảng toạ độ nội bộ nếu không gọi được API ngoài
+    const matchedHub = VIETNAM_TOURISM_HUBS.find((h) =>
+      h.aliases.some((alias) => cleanCity.toLowerCase().includes(alias)),
+    );
+    if (matchedHub) {
+      return { lat: matchedHub.center.lat, lng: matchedHub.center.lng };
+    }
+  } catch (err) {
+    console.warn("Geocoding dự phòng lỗi:", err.message);
+  }
+  return null;
+}
+
 function parseSearchDate(value) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
-// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (CHỈ LẤY CƠ SỞ ACTIVE) ───
+// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI ───
 async function listHotels(req, res, next) {
   try {
     const destination = (
@@ -54,7 +374,6 @@ async function listHotels(req, res, next) {
       .replace(/đ/g, "d")
       .trim();
 
-    // Tự động nhận diện Khánh Hòa <-> Nha Trang
     let destinationVariants = [];
     if (
       normalizedDestination.includes("khanh hoa") ||
@@ -122,26 +441,25 @@ async function listHotels(req, res, next) {
                 ($${checkOutParam}::date - INTERVAL '1 day')::date,
                 INTERVAL '1 day'
               ) AS stay(night_date)
-              LEFT JOIN public.room_inventory ri
-                ON ri.room_id = ar.id AND ri.inventory_date = stay.night_date
-              WHERE COALESCE(ri.status::text, 'active') <> 'active'
-                OR GREATEST(0, COALESCE(ri.available_count, ar.amount)
-                  - COALESCE((
+              WHERE (
+                ar.amount
+                - COALESCE((
                     SELECT SUM(br.quantity)::int
                     FROM public.booking_room br
                     JOIN public.booking b ON b.id = br.booking_id
                     WHERE br.room_id = ar.id
-                      AND b.status::text IN ('confirmed', 'checked_in', 'pending')
-                      AND b.checkin_date < $${checkOutParam}::date
-                      AND b.checkout_date > $${checkInParam}::date
+                      AND b.status::text IN ('confirmed', 'checked_in')
+                      AND b.checkin_date <= stay.night_date
+                      AND b.checkout_date > stay.night_date
                   ), 0)
-                  - COALESCE((
+                - COALESCE((
                     SELECT SUM(tl.quantity)::int
                     FROM public.temporary_locks tl
                     WHERE tl.room_id = ar.id
                       AND tl.lock_date = stay.night_date
-                      AND tl.expires_at > NOW()
-                  ), 0)) < $${roomsParam}
+                      AND tl.lock_expires_at > NOW()
+                  ), 0)
+              ) < $${roomsParam}
             )
         )`;
     }
@@ -176,6 +494,8 @@ async function listHotels(req, res, next) {
          h.property_type,
          h.created_at,
          h.updated_at,
+         COALESCE(h.is_beachfront, false) AS is_beachfront,
+         COALESCE(h.distance_to_center, 1.2) AS distance_to_center,
          COALESCE(
            (
              SELECT img.path 
@@ -208,7 +528,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (LẤY TẤT CẢ ẢNH VÀ PHÒNG) ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID ───
 async function getHotelById(req, res, next) {
   try {
     const hotelId = String(req.params.id || "").trim();
@@ -218,7 +538,12 @@ async function getHotelById(req, res, next) {
     }
 
     const hotelRes = await pool.query(
-      `SELECT * FROM public.hotel WHERE id::text = $1 LIMIT 1`,
+      `SELECT h.*,
+         COALESCE(h.is_beachfront, false) AS is_beachfront,
+         COALESCE(h.distance_to_center, 1.2) AS distance_to_center
+       FROM public.hotel h 
+       WHERE h.id::text = $1 
+       LIMIT 1`,
       [hotelId],
     );
 
@@ -293,7 +618,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THỜI GIAN THỰC ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
@@ -324,31 +649,29 @@ async function listHotelRoomAvailability(req, res, next) {
         SELECT 
           r.id AS room_id,
           sn.night_date,
-          COALESCE(ri.sell_price, r.base_price) AS night_price,
-          COALESCE(ri.status, 'active') AS day_status,
+          r.base_price AS night_price,
+          'active' AS day_status,
           GREATEST(
             0,
-            COALESCE(ri.available_count, r.amount) 
+            r.amount
             - COALESCE((
                 SELECT SUM(br.quantity)::int
                 FROM public.booking_room br
                 JOIN public.booking b ON b.id = br.booking_id
                 WHERE br.room_id = r.id 
                   AND br.book_date = sn.night_date
-                  AND b.status IN ('confirmed', 'checked_in', 'pending')
+                  AND b.status IN ('confirmed', 'checked_in')
               ), 0)
             - COALESCE((
                 SELECT SUM(tl.quantity)::int
                 FROM public.temporary_locks tl
                 WHERE tl.room_id = r.id 
                   AND tl.lock_date = sn.night_date
-                  AND tl.expires_at > NOW()
+                  AND tl.lock_expires_at > NOW()
               ), 0)
           ) AS available_in_night
         FROM public.room r
         CROSS JOIN StayNights sn
-        LEFT JOIN public.room_inventory ri 
-          ON ri.room_id = r.id AND ri.inventory_date = sn.night_date
         WHERE r.hotel_id::text = $1 AND r.is_active = true
       )
       SELECT 
@@ -360,6 +683,7 @@ async function listHotelRoomAvailability(req, res, next) {
         r.amount AS total_rooms,
         r.bed_type,
         r.room_area,
+        r.room_view,
         r.type,
         r.description,
         MIN(nrs.available_in_night)::int AS remaining_rooms,
@@ -367,7 +691,6 @@ async function listHotelRoomAvailability(req, res, next) {
         ROUND(AVG(nrs.night_price))::int AS avg_price_per_night,
         CASE 
           WHEN MIN(nrs.available_in_night) <= 0 THEN false
-          WHEN BOOL_OR(nrs.day_status = 'closed') THEN false
           ELSE true
         END AS is_available,
         COALESCE(
@@ -404,7 +727,7 @@ async function listHotelRoomAvailability(req, res, next) {
   }
 }
 
-// ─── 4. GỢI Ý ĐIỂM ĐẾN & TÊN KHÁCH SẠN ───
+// ─── 4. GỢI Ý ĐIỂM ĐẾN ───
 async function listDestinationSuggestions(req, res, next) {
   const keyword = (req.query.q || req.query.keyword || "").trim();
 
@@ -487,6 +810,8 @@ async function registerHotel(req, res, next) {
       images = [],
       gallery = [],
       amenities = [],
+      is_beachfront = false,
+      distance_to_center,
     } = req.body;
 
     if (!name || !address || !city) {
@@ -497,6 +822,28 @@ async function registerHotel(req, res, next) {
 
     await client.query("BEGIN");
 
+    let finalLat = latitude ? Number(latitude) : null;
+    let finalLng = longitude ? Number(longitude) : null;
+
+    if (!finalLat || !finalLng) {
+      const geo = await fallbackGeocode(address.trim(), city.trim());
+      if (geo) {
+        finalLat = geo.lat;
+        finalLng = geo.lng;
+      } else {
+        finalLat = 10.7769;
+        finalLng = 106.7009;
+      }
+    }
+
+    const calculatedMetrics = computeLocationMetrics(
+      finalLat,
+      finalLng,
+      city.trim(),
+      is_beachfront,
+      distance_to_center,
+    );
+
     const newHotelId = crypto.randomUUID();
     const finalPropType = property_type || propertyType || "hotel";
 
@@ -506,6 +853,7 @@ async function registerHotel(req, res, next) {
         phone, email, star_rating, property_type, description,
         checkin_time, checkout_time,
         bank_name, bank_account, bank_account_holder, tax_code, business_license_url,
+        is_beachfront, distance_to_center,
         status, commission_rate, created_at, updated_at
       )
       VALUES (
@@ -513,6 +861,7 @@ async function registerHotel(req, res, next) {
         $8, $9, COALESCE($10, 3), $11, $12,
         COALESCE($13::time, '14:00:00'::time), COALESCE($14::time, '12:00:00'::time),
         $15, $16, $17, $18, $19,
+        $20, $21,
         'pending'::public.hotel_status_enum, 18.00, NOW(), NOW()
       )
       RETURNING *;
@@ -524,8 +873,8 @@ async function registerHotel(req, res, next) {
       name.trim(),
       address.trim(),
       city.trim(),
-      latitude ? Number(latitude) : 10.7769,
-      longitude ? Number(longitude) : 106.7009,
+      finalLat,
+      finalLng,
       phone || null,
       email || null,
       star_rating ? Number(star_rating) : 3,
@@ -538,6 +887,8 @@ async function registerHotel(req, res, next) {
       bank_account_holder || null,
       tax_code || null,
       business_license_url || null,
+      calculatedMetrics.is_beachfront,
+      calculatedMetrics.distance_to_center,
     ]);
 
     const newHotel = hotelResult.rows[0];
@@ -585,7 +936,7 @@ async function registerHotel(req, res, next) {
             newHotel.id,
             r.roomName || r.name || "Phòng Tiêu Chuẩn",
             Number(r.maxAdults || r.capacity || 2),
-            Number(r.weekdayPrice || r.base_price || r.sell_price || 500000),
+            Number(r.weekdayPrice || r.base_price || 500000),
             totalAmount,
             r.type || "Deluxe",
             r.bedType || r.bed_type || "1 Giường đôi lớn (King Size)",
@@ -600,22 +951,6 @@ async function registerHotel(req, res, next) {
              VALUES (gen_random_uuid(), $1, $2, $3, true, 0, NOW())`,
             [newHotel.id, newRoomId, roomImg],
           );
-        }
-
-        if (Array.isArray(r.images) && r.images.length > 0) {
-          for (let rIdx = 0; rIdx < r.images.length; rIdx++) {
-            const rPath =
-              typeof r.images[rIdx] === "string"
-                ? r.images[rIdx]
-                : r.images[rIdx].url || r.images[rIdx].path;
-            if (rPath && rPath !== roomImg) {
-              await client.query(
-                `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
-                 VALUES (gen_random_uuid(), $1, $2, $3, false, $4, NOW())`,
-                [newHotel.id, newRoomId, rPath, rIdx + 1],
-              );
-            }
-          }
         }
 
         const roomNumbers =
@@ -638,74 +973,8 @@ async function registerHotel(req, res, next) {
             .catch(() => {});
         }
         roomFloor++;
-
-        if (Array.isArray(r.amenities)) {
-          for (const amName of r.amenities) {
-            if (!amName || !String(amName).trim()) continue;
-            let amRes = await client.query(
-              `SELECT id FROM public.amenity WHERE name ILIKE $1 LIMIT 1`,
-              [amName.trim()],
-            );
-            let amId = amRes.rows[0]?.id;
-            if (!amId) {
-              const newAm = await client.query(
-                `INSERT INTO public.amenity (id, name, created_at) VALUES (gen_random_uuid(), $1, NOW()) RETURNING id`,
-                [amName.trim()],
-              );
-              amId = newAm.rows[0]?.id;
-            }
-            if (amId) {
-              await client.query(
-                `INSERT INTO public.room_amenity (room_id, amenity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-                [newRoomId, amId],
-              );
-            }
-          }
-        }
       }
     }
-
-    if (Array.isArray(amenities) && amenities.length > 0) {
-      for (const amName of amenities) {
-        if (!amName || !String(amName).trim()) continue;
-        let amRes = await client.query(
-          `SELECT id FROM public.amenity WHERE name ILIKE $1 LIMIT 1`,
-          [amName.trim()],
-        );
-        let amId = amRes.rows[0]?.id;
-        if (!amId) {
-          const newAm = await client.query(
-            `INSERT INTO public.amenity (id, name, created_at) VALUES (gen_random_uuid(), $1, NOW()) RETURNING id`,
-            [amName.trim()],
-          );
-          amId = newAm.rows[0]?.id;
-        }
-        if (amId) {
-          await client.query(
-            `INSERT INTO public.hotel_amenity (hotel_id, amenity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-            [newHotel.id, amId],
-          );
-        }
-      }
-    }
-
-    const roleCheck = await client.query(
-      `SELECT id FROM public.roles WHERE UPPER(name) = 'HOTEL_OWNER'`,
-    );
-    let ownerRoleId = roleCheck.rows[0]?.id;
-    if (!ownerRoleId) {
-      const insRole = await client.query(
-        `INSERT INTO public.roles (id, name) VALUES (gen_random_uuid(), 'HOTEL_OWNER') RETURNING id`,
-      );
-      ownerRoleId = insRole.rows[0]?.id;
-    }
-
-    await client.query(
-      `INSERT INTO public.user_roles (user_id, role_id)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id, role_id) DO NOTHING`,
-      [ownerId, ownerRoleId],
-    );
 
     await client.query("COMMIT");
 
@@ -723,7 +992,7 @@ async function registerHotel(req, res, next) {
   }
 }
 
-// ─── 6. LẤY DANH SÁCH KHÁCH SẠN CỦA OWNER HOẶC LỄ TÂN ĐƯỢC GÁN ───
+// ─── 6. LẤY DANH SÁCH KHÁCH SẠN CỦA OWNER HOẶC LỄ TÂN ───
 async function getMyHotels(req, res, next) {
   try {
     const userId = req.user?.id || req.auth?.sub || req.auth?.id;
@@ -752,16 +1021,7 @@ async function getMyHotels(req, res, next) {
            SELECT COUNT(*)::int 
            FROM public.room r 
            WHERE r.hotel_id = h.id
-         ) AS room_count,
-         COALESCE(
-           (
-             SELECT json_agg(a.name) 
-             FROM public.hotel_amenity ha
-             JOIN public.amenity a ON a.id = ha.amenity_id
-             WHERE ha.hotel_id = h.id
-           ),
-           '[]'::json
-         ) AS amenities
+         ) AS room_count
        FROM public.hotel h
        WHERE (
          h.owner_id = $1 
@@ -790,7 +1050,6 @@ async function getMyHotels(req, res, next) {
   }
 }
 
-// ─── 7. DANH SÁCH ĐIỂM ĐẾN THỊNH HÀNH ───
 async function listTrendingDestinations(req, res, next) {
   try {
     const result = await pool.query(
@@ -824,73 +1083,48 @@ async function listTrendingDestinations(req, res, next) {
   }
 }
 
-// ─── 8. CẬP NHẬT THÔNG TIN KHÁCH SẠN (OWNER / ADMIN) ───
 async function updateHotel(req, res, next) {
   const client = await pool.connect();
   try {
     const hotelId = String(req.params.id || "").trim();
     const ownerId = req.user?.id || req.auth?.sub || req.auth?.id;
 
-    if (!hotelId) {
-      return res.status(400).json({ message: "Thiếu ID khách sạn." });
-    }
-
-    if (!ownerId) {
-      return res
-        .status(401)
-        .json({ message: "Vui lòng đăng nhập để cập nhật khách sạn." });
-    }
-
-    const checkHotel = await client.query(
-      `SELECT id, owner_id FROM public.hotel WHERE id::text = $1 LIMIT 1`,
-      [hotelId],
-    );
-
-    if (checkHotel.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy khách sạn trong hệ thống." });
+    if (!hotelId || !ownerId) {
+      return res.status(400).json({ message: "Thiếu thông tin cập nhật." });
     }
 
     const {
       name,
       address,
       city,
+      latitude,
+      longitude,
       phone,
       email,
       star_rating,
       property_type,
-      propertyType,
       description,
       checkin_time,
       checkout_time,
-      overnight_checkin_time,
-      overnight_checkout_time,
-      hourly_grace_minutes,
-      daily_grace_hours,
-      bank_name,
-      bank_account,
-      bank_account_holder,
-      tax_code,
-      image,
-      amenities,
+      is_beachfront,
+      distance_to_center,
     } = req.body;
 
     await client.query("BEGIN");
 
-    const finalPropType = property_type || propertyType || "hotel";
-    const checkInVal = checkin_time
-      ? String(checkin_time).slice(0, 5) + ":00"
-      : null;
-    const checkOutVal = checkout_time
-      ? String(checkout_time).slice(0, 5) + ":00"
-      : null;
-    const overnightInVal = overnight_checkin_time
-      ? String(overnight_checkin_time).slice(0, 5) + ":00"
-      : null;
-    const overnightOutVal = overnight_checkout_time
-      ? String(overnight_checkout_time).slice(0, 5) + ":00"
-      : null;
+    let finalLat = latitude ? Number(latitude) : null;
+    let finalLng = longitude ? Number(longitude) : null;
+    let computedMetrics = null;
+
+    if (finalLat && finalLng) {
+      computedMetrics = computeLocationMetrics(
+        finalLat,
+        finalLng,
+        city || "",
+        is_beachfront,
+        distance_to_center,
+      );
+    }
 
     const updateSql = `
       UPDATE public.hotel
@@ -905,16 +1139,12 @@ async function updateHotel(req, res, next) {
         description = COALESCE($8, description),
         checkin_time = COALESCE($9::time, checkin_time),
         checkout_time = COALESCE($10::time, checkout_time),
-        bank_name = COALESCE($11, bank_name),
-        bank_account = COALESCE($12, bank_account),
-        bank_account_holder = COALESCE($13, bank_account_holder),
-        tax_code = COALESCE($14, tax_code),
-        overnight_checkin_time = COALESCE($15::time, overnight_checkin_time),
-        overnight_checkout_time = COALESCE($16::time, overnight_checkout_time),
-        hourly_grace_minutes = COALESCE($17, hourly_grace_minutes),
-        daily_grace_hours = COALESCE($18, daily_grace_hours),
+        latitude = COALESCE($11, latitude),
+        longitude = COALESCE($12, longitude),
+        is_beachfront = COALESCE($13, is_beachfront),
+        distance_to_center = COALESCE($14, distance_to_center),
         updated_at = NOW()
-      WHERE id::text = $19
+      WHERE id::text = $15
       RETURNING *;
     `;
 
@@ -925,86 +1155,34 @@ async function updateHotel(req, res, next) {
       phone ? phone.trim() : null,
       email ? email.trim() : null,
       star_rating ? Number(star_rating) : null,
-      finalPropType,
+      property_type || "hotel",
       description !== undefined ? description : null,
-      checkInVal,
-      checkOutVal,
-      bank_name || null,
-      bank_account || null,
-      bank_account_holder || null,
-      tax_code || null,
-      overnightInVal,
-      overnightOutVal,
-      hourly_grace_minutes ? Number(hourly_grace_minutes) : null,
-      daily_grace_hours ? Number(daily_grace_hours) : null,
+      checkin_time ? String(checkin_time).slice(0, 5) + ":00" : null,
+      checkout_time ? String(checkout_time).slice(0, 5) + ":00" : null,
+      finalLat,
+      finalLng,
+      computedMetrics
+        ? computedMetrics.is_beachfront
+        : is_beachfront !== undefined
+          ? Boolean(is_beachfront)
+          : null,
+      computedMetrics
+        ? computedMetrics.distance_to_center
+        : distance_to_center !== undefined
+          ? Number(distance_to_center)
+          : null,
       hotelId,
     ]);
-
-    const updatedHotel = updatedHotelRes.rows[0];
-
-    if (image && String(image).trim()) {
-      const imgPath = String(image).trim();
-      const existingThumb = await client.query(
-        `SELECT id FROM public.image WHERE hotel_id = $1 AND is_thumbnail = true LIMIT 1`,
-        [hotelId],
-      );
-      if (existingThumb.rows.length > 0) {
-        await client.query(`UPDATE public.image SET path = $1 WHERE id = $2`, [
-          imgPath,
-          existingThumb.rows[0].id,
-        ]);
-      } else {
-        await client.query(
-          `INSERT INTO public.image (id, hotel_id, path, is_thumbnail, display_order, created_at)
-           VALUES (gen_random_uuid(), $1, $2, true, 0, NOW())`,
-          [hotelId, imgPath],
-        );
-      }
-    }
-
-    if (Array.isArray(amenities)) {
-      await client.query(
-        `DELETE FROM public.hotel_amenity WHERE hotel_id = $1`,
-        [hotelId],
-      );
-
-      for (const amName of amenities) {
-        if (!amName || !String(amName).trim()) continue;
-        const cleanAmName = String(amName).trim();
-
-        let amRes = await client.query(
-          `SELECT id FROM public.amenity WHERE name ILIKE $1 LIMIT 1`,
-          [cleanAmName],
-        );
-        let amId = amRes.rows[0]?.id;
-
-        if (!amId) {
-          const newAm = await client.query(
-            `INSERT INTO public.amenity (id, name, created_at) VALUES (gen_random_uuid(), $1, NOW()) RETURNING id`,
-            [cleanAmName],
-          );
-          amId = newAm.rows[0]?.id;
-        }
-
-        if (amId) {
-          await client.query(
-            `INSERT INTO public.hotel_amenity (hotel_id, amenity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-            [hotelId, amId],
-          );
-        }
-      }
-    }
 
     await client.query("COMMIT");
 
     return res.json({
       success: true,
-      message: "Cập nhật thông tin khách sạn thành công.",
-      hotel: updatedHotel,
+      message: "Cập nhật thành công.",
+      hotel: updatedHotelRes.rows[0],
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("❌ LỖI UPDATE_HOTEL:", error);
     return next(error);
   } finally {
     client.release();
