@@ -2,6 +2,18 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
+// Tự động nhận diện thư viện mã hóa mật khẩu bcryptjs hoặc bcrypt
+let bcrypt;
+try {
+  bcrypt = require("bcryptjs");
+} catch {
+  try {
+    bcrypt = require("bcrypt");
+  } catch {
+    bcrypt = null;
+  }
+}
+
 const PUBLIC_HOTEL_STATUS = "h.status::text IN ('active', 'approved')";
 
 // ─── DANH MỤC TRUNG TÂM DU LỊCH & BÃI TẮM ĐẦY ĐỦ CÁC TỈNH THÀNH VIỆT NAM ───
@@ -767,7 +779,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TỰ ĐỘNG ĐỐI SOÁT BẢNG KHÓA NGOẠI CHUẨN XÁC) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TỰ ĐỘNG TẠO TÀI KHOẢN OWNER VÀO BẢNG USERS NẾU CHƯA CÓ) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -777,65 +789,122 @@ async function registerHotel(req, res, next) {
       req.auth?.sub ||
       req.auth?.id ||
       req.body?.owner_id;
-    const userEmail = req.user?.email || req.auth?.email || req.body?.email;
+    const userEmail =
+      req.body?.emailContact ||
+      req.body?.email ||
+      req.user?.email ||
+      req.auth?.email;
+    const userPassword = req.body?.password;
+    const ownerFullName = req.body?.ownerName || req.body?.name || "Chủ cơ sở";
+    const userPhone = req.body?.phoneContact || req.body?.phone;
 
-    // 🌟 1. TỰ ĐỘNG HỎI POSTGRES BẢNG VÀ CỘT MÀ hotel_owner_id_fkey ĐANG TRỎ TỚI
-    let refTable = "users";
-    let refCol = "id";
-
-    try {
-      const fkRes = await client.query(`
-        SELECT ccu.table_name, ccu.column_name
-        FROM information_schema.table_constraints AS tc
-        JOIN information_schema.constraint_column_usage AS ccu
-          ON ccu.constraint_name = tc.constraint_name
-        WHERE tc.constraint_name = 'hotel_owner_id_fkey'
-        LIMIT 1
-      `);
-      if (fkRes.rows.length > 0) {
-        refTable = fkRes.rows[0].table_name;
-        refCol = fkRes.rows[0].column_name;
-      }
-    } catch (fkErr) {
-      console.warn("Dùng bảng tham chiếu mặc định 'users':", fkErr.message);
-    }
-
-    // 🌟 2. TÌM ID NGƯỜI DÙNG THỰC TẾ TRONG BẢNG THAM CHIẾU (KHÔNG BAO GIỜ VI PHẠM KHÓA NGOẠI)
     let validOwnerId = null;
 
-    if (rawOwnerId) {
-      const check = await client.query(
-        `SELECT ${refCol} FROM public.${refTable} WHERE ${refCol}::text = $1::text LIMIT 1`,
-        [rawOwnerId],
-      );
-      if (check.rows.length > 0) {
-        validOwnerId = check.rows[0][refCol];
-      }
-    }
+    // 🌟 1. KIỂM TRA BẢNG VÀ CỘT USERS
+    const uColRes = await client.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users'`,
+    );
+    const existingUserCols = uColRes.rows.map((r) =>
+      r.column_name.toLowerCase(),
+    );
 
-    if (!validOwnerId && userEmail) {
-      const checkEmail = await client.query(
-        `SELECT ${refCol} FROM public.${refTable} WHERE email ILIKE $1 LIMIT 1`,
+    // 🌟 2. NẾU CÓ EMAIL VÀ MẬT KHẨU TỪ BƯỚC 1: TẠO TÀI KHOẢN HOẶC CẬP NHẬT TÀI KHOẢN MỚI
+    if (userEmail) {
+      const emailCheck = await client.query(
+        `SELECT id, email FROM public.users WHERE email ILIKE $1 LIMIT 1`,
         [String(userEmail).trim()],
       );
-      if (checkEmail.rows.length > 0) {
-        validOwnerId = checkEmail.rows[0][refCol];
+
+      if (emailCheck.rows.length > 0) {
+        validOwnerId = emailCheck.rows[0].id;
+      } else if (userPassword) {
+        // TẠO TÀI KHOẢN MỚI VÀO BẢNG USERS ĐỂ ĐĂNG NHẬP ĐƯỢC
+        const newUserId = crypto.randomUUID();
+        const hashedPassword = bcrypt
+          ? await bcrypt.hash(userPassword, 10)
+          : userPassword;
+
+        const uFields = ["id", "email"];
+        const uValues = [newUserId, String(userEmail).trim().toLowerCase()];
+        const uPlaceholders = ["$1", "$2"];
+
+        if (existingUserCols.includes("password")) {
+          uFields.push("password");
+          uValues.push(hashedPassword);
+          uPlaceholders.push(`$${uValues.length}`);
+        }
+
+        if (existingUserCols.includes("full_name")) {
+          uFields.push("full_name");
+          uValues.push(ownerFullName);
+          uPlaceholders.push(`$${uValues.length}`);
+        } else if (existingUserCols.includes("name")) {
+          uFields.push("name");
+          uValues.push(ownerFullName);
+          uPlaceholders.push(`$${uValues.length}`);
+        }
+
+        if (existingUserCols.includes("phone") && userPhone) {
+          uFields.push("phone");
+          uValues.push(userPhone);
+          uPlaceholders.push(`$${uValues.length}`);
+        }
+
+        if (existingUserCols.includes("role")) {
+          uFields.push("role");
+          uValues.push("hotel_owner");
+          uPlaceholders.push(`$${uValues.length}`);
+        }
+
+        if (existingUserCols.includes("created_at")) {
+          uFields.push("created_at");
+          uPlaceholders.push("NOW()");
+        }
+        if (existingUserCols.includes("updated_at")) {
+          uFields.push("updated_at");
+          uPlaceholders.push("NOW()");
+        }
+
+        const insertUserSql = `
+          INSERT INTO public.users (${uFields.join(", ")})
+          VALUES (${uPlaceholders.join(", ")})
+          RETURNING id;
+        `;
+
+        const newUserRes = await client.query(insertUserSql, uValues);
+        validOwnerId = newUserRes.rows[0].id;
+        console.log(
+          "✅ [registerHotel] Đã tạo thành công tài khoản mới cho Owner:",
+          userEmail,
+        );
       }
     }
 
-    // Nếu ID từ token cũ không tồn tại trên database hiện tại, lấy tài khoản hợp lệ đầu tiên
+    // Nếu chưa có, tìm theo ID token
+    if (!validOwnerId && rawOwnerId) {
+      const checkId = await client.query(
+        `SELECT id FROM public.users WHERE id::text = $1::text LIMIT 1`,
+        [rawOwnerId],
+      );
+      if (checkId.rows.length > 0) {
+        validOwnerId = checkId.rows[0].id;
+      }
+    }
+
+    // Fallback: Lấy user đầu tiên trong bảng users
     if (!validOwnerId) {
       const anyUser = await client.query(
-        `SELECT ${refCol} FROM public.${refTable} ORDER BY 1 ASC LIMIT 1`,
+        `SELECT id FROM public.users ORDER BY created_at ASC LIMIT 1`,
       );
       if (anyUser.rows.length > 0) {
-        validOwnerId = anyUser.rows[0][refCol];
+        validOwnerId = anyUser.rows[0].id;
       }
     }
 
     if (!validOwnerId) {
       return res.status(401).json({
-        message: "Không tìm thấy tài khoản người dùng hợp lệ trong hệ thống.",
+        message:
+          "Không thể tạo hoặc xác thực tài khoản chủ cơ sở. Vui lòng thử lại.",
       });
     }
 
@@ -904,7 +973,6 @@ async function registerHotel(req, res, next) {
     const newHotelId = crypto.randomUUID();
     const finalPropType = property_type || propertyType || "hotel";
 
-    // Quét danh sách cột thực tế đang có trong bảng hotel
     const colRes = await client.query(
       `SELECT column_name 
        FROM information_schema.columns 
@@ -928,7 +996,6 @@ async function registerHotel(req, res, next) {
       }
     };
 
-    // Đánh số tham số $1, $2, $3... tuần tự chuẩn 100%
     addField("id", newHotelId);
     addField("owner_id", validOwnerId);
     addField("name", name.trim());
@@ -939,8 +1006,8 @@ async function registerHotel(req, res, next) {
     addField("updated_at", null, "NOW()");
     addField("latitude", finalLat);
     addField("longitude", finalLng);
-    addField("phone", phone || null);
-    addField("email", email || null);
+    addField("phone", phone || userPhone || null);
+    addField("email", email || userEmail || null);
     addField("star_rating", star_rating ? Number(star_rating) : 3);
     addField("property_type", finalPropType);
     addField("description", description || null);
