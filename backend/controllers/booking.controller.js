@@ -1,146 +1,17 @@
 // backend/controllers/booking.controller.js
 const crypto = require("crypto");
 const pool = require("../config/database");
+const { getOwnerBankAccount } = require("./paymentController");
 
-const DEFAULT_PLATFORM_BANK = {
-  bankId: process.env.PLATFORM_BANK_ID || "MB",
-  bankName:
-    process.env.PLATFORM_BANK_NAME || "Ngân hàng TMCP Quân Đội (MBBank)",
-  accountNumber: process.env.PLATFORM_BANK_ACCOUNT || "0833404928",
-  accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
-};
-
-// 🌟 HÀM TỰ ĐỘNG TÌM TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
-async function getOwnerBankAccount(hotelId) {
-  if (!hotelId) return DEFAULT_PLATFORM_BANK;
-  try {
-    const [hColsRes, uColsRes] = await Promise.all([
-      pool.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'hotel'`,
-      ),
-      pool.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users'`,
-      ),
-    ]);
-
-    const hCols = hColsRes.rows.map((r) => r.column_name.toLowerCase());
-    const uCols = uColsRes.rows.map((r) => r.column_name.toLowerCase());
-
-    let ownerJoin = "";
-    if (hCols.includes("owner_id")) ownerJoin = "h.owner_id = u.id";
-    else if (hCols.includes("user_id")) ownerJoin = "h.user_id = u.id";
-    else if (hCols.includes("created_by")) ownerJoin = "h.created_by = u.id";
-
-    const findCol = (cols, candidates) =>
-      candidates.find((c) => cols.includes(c));
-
-    const hAcc = findCol(hCols, [
-      "bank_account",
-      "bank_number",
-      "account_number",
-      "bank_no",
-    ]);
-    const hName = findCol(hCols, ["bank_name", "bank"]);
-    const hCode = findCol(hCols, ["bank_code", "bank_id"]);
-    const hHolder = findCol(hCols, [
-      "bank_account_holder",
-      "account_name",
-      "bank_holder",
-      "account_holder",
-    ]);
-
-    const uAcc = findCol(uCols, [
-      "bank_account",
-      "bank_number",
-      "account_number",
-      "bank_no",
-    ]);
-    const uName = findCol(uCols, ["bank_name", "bank"]);
-    const uCode = findCol(uCols, ["bank_code", "bank_id"]);
-    const uHolder = findCol(uCols, [
-      "bank_account_holder",
-      "account_name",
-      "bank_holder",
-      "account_holder",
-      "full_name",
-      "name",
-    ]);
-
-    const selectFields = ["h.id AS hotel_id", "h.name AS hotel_name"];
-    if (hAcc) selectFields.push(`h.${hAcc} AS h_account`);
-    if (hName) selectFields.push(`h.${hName} AS h_bank_name`);
-    if (hCode) selectFields.push(`h.${hCode} AS h_bank_code`);
-    if (hHolder) selectFields.push(`h.${hHolder} AS h_holder`);
-
-    if (ownerJoin) {
-      if (uAcc) selectFields.push(`u.${uAcc} AS u_account`);
-      if (uName) selectFields.push(`u.${uName} AS u_bank_name`);
-      if (uCode) selectFields.push(`u.${uCode} AS u_bank_code`);
-      if (uHolder) selectFields.push(`u.${uHolder} AS u_holder`);
-    }
-
-    const sql = `
-      SELECT ${selectFields.join(", ")}
-      FROM public.hotel h
-      ${ownerJoin ? `LEFT JOIN public.users u ON ${ownerJoin}` : ""}
-      WHERE h.id = $1
-      LIMIT 1
-    `;
-
-    const res = await pool.query(sql, [hotelId]);
-    if (res.rows.length > 0) {
-      const row = res.rows[0];
-      const acc = row.h_account || row.u_account;
-      const code = row.h_bank_code || row.u_bank_code;
-      const name = row.h_bank_name || row.u_bank_name;
-      const holder = row.h_holder || row.u_holder || row.hotel_name;
-
-      if (acc && String(acc).trim() !== "") {
-        return {
-          bankId: (code || "MB").toUpperCase().trim(),
-          bankName: name || "Ngân hàng",
-          accountNumber: String(acc).trim(),
-          accountName: String(holder || "CHU KHACH SAN")
-            .toUpperCase()
-            .trim(),
-        };
-      }
-    }
-  } catch (err) {
-    console.error(
-      "❌ Lỗi getOwnerBankAccount trong booking.controller:",
-      err.message,
-    );
-  }
-  return DEFAULT_PLATFORM_BANK;
-}
-
-let cachedExpireCol = null;
-async function getLockExpireColumn() {
-  if (cachedExpireCol) return cachedExpireCol;
-  try {
-    const res = await pool.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_schema = 'public' AND table_name = 'temporary_locks' 
-        AND column_name IN ('lock_expires_at', 'expires_at')
-    `);
-    const cols = res.rows.map((r) => r.column_name);
-    if (cols.includes("lock_expires_at")) cachedExpireCol = "lock_expires_at";
-    else if (cols.includes("expires_at")) cachedExpireCol = "expires_at";
-    else cachedExpireCol = "created_at";
-  } catch (err) {
-    cachedExpireCol = "lock_expires_at";
-  }
-  return cachedExpireCol;
-}
-
+// Hàm dọn dẹp các lock đã hết hạn
 async function cleanupExpiredLocks() {
   try {
-    const col = await getLockExpireColumn();
-    await pool.query(`DELETE FROM public.temporary_locks WHERE ${col} < NOW()`);
+    await pool.query(
+      `DELETE FROM public.temporary_locks 
+       WHERE lock_expires_at < NOW() OR (expires_at IS NOT NULL AND expires_at < NOW())`,
+    );
   } catch (e) {
-    console.warn("⚠️ Dọn dẹp lock hết hạn:", e.message);
+    // Không làm gián đoạn nếu bảng chưa có cột
   }
 }
 
@@ -213,7 +84,6 @@ async function createBooking(req, res, next) {
 
       const roomData = roomStockRes.rows[0];
       const maxStock = roomData.total_stock;
-      const expireCol = await getLockExpireColumn();
 
       const conflictCheckSql = `
         WITH days AS (
@@ -222,7 +92,7 @@ async function createBooking(req, res, next) {
         daily_locks AS (
           SELECT lock_date, COALESCE(SUM(quantity), 0)::int AS locked_qty
           FROM public.temporary_locks
-          WHERE room_id = $1 AND ${expireCol} > NOW()
+          WHERE room_id = $1 AND (lock_expires_at > NOW() OR (expires_at IS NOT NULL AND expires_at > NOW()))
           GROUP BY lock_date
         ),
         daily_bookings AS (
@@ -338,12 +208,10 @@ async function createBooking(req, res, next) {
         req.sessionID ||
         `sess_${crypto.randomBytes(8).toString("hex")}`;
 
-      const expireCol = await getLockExpireColumn();
-
       const insertLockSql = `
         INSERT INTO public.temporary_locks (
           id, room_id, user_id, session_id, lock_date, quantity, 
-          ${expireCol}, booking_id, created_at
+          booking_id, created_at
         )
         SELECT 
           gen_random_uuid(),
@@ -352,7 +220,6 @@ async function createBooking(req, res, next) {
           $3, 
           d::date, 
           $4, 
-          NOW() + INTERVAL '15 minutes', 
           $5, 
           NOW()
         FROM generate_series($6::date, ($7::date - interval '1 day')::date, '1 day'::interval) d;
@@ -369,7 +236,7 @@ async function createBooking(req, res, next) {
       ]);
     }
 
-    // LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
+    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
     const ownerBank = await getOwnerBankAccount(hotel_id);
 
     const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(ownerBank.accountName)}`;
@@ -582,6 +449,7 @@ async function getBookingByCode(req, res, next) {
     const dep = isDep ? (paidMoney > 0 ? paidMoney : expAmount) : total;
     const rem = isDep ? total - dep : 0;
 
+    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER
     const ownerBank = await getOwnerBankAccount(row.hotel_id);
 
     const finalBooking = {
@@ -698,5 +566,4 @@ module.exports = {
   getBookingByCode,
   getMyBookings,
   cancelBooking,
-  getOwnerBankAccount,
 };

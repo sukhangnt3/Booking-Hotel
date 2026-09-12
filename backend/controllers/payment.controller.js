@@ -12,127 +12,93 @@ const DEFAULT_PLATFORM_BANK = {
   accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
 };
 
+/**
+ * 🌟 HÀM LẤY TÀI KHOẢN NGÂN HÀNG CỦA OWNER TỪ BẢNG HOTEL
+ */
 async function getOwnerBankAccount(hotelId) {
   if (!hotelId) return DEFAULT_PLATFORM_BANK;
   try {
-    const [hColsRes, uColsRes] = await Promise.all([
-      pool.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'hotel'`,
-      ),
-      pool.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users'`,
-      ),
-    ]);
+    // 1. Truy vấn trực tiếp từ bảng hotel
+    const res = await pool.query(
+      `SELECT bank_code, bank_name, bank_account, bank_account_holder, name
+       FROM public.hotel
+       WHERE id::text = $1::text
+       LIMIT 1`,
+      [hotelId],
+    );
 
-    const hCols = hColsRes.rows.map((r) => r.column_name.toLowerCase());
-    const uCols = uColsRes.rows.map((r) => r.column_name.toLowerCase());
-
-    let ownerJoin = "";
-    if (hCols.includes("owner_id")) ownerJoin = "h.owner_id = u.id";
-    else if (hCols.includes("user_id")) ownerJoin = "h.user_id = u.id";
-    else if (hCols.includes("created_by")) ownerJoin = "h.created_by = u.id";
-
-    const findCol = (cols, candidates) =>
-      candidates.find((c) => cols.includes(c));
-
-    const hAcc = findCol(hCols, [
-      "bank_account",
-      "bank_number",
-      "account_number",
-      "bank_no",
-    ]);
-    const hName = findCol(hCols, ["bank_name", "bank"]);
-    const hCode = findCol(hCols, ["bank_code", "bank_id"]);
-    const hHolder = findCol(hCols, [
-      "bank_account_holder",
-      "account_name",
-      "bank_holder",
-      "account_holder",
-    ]);
-
-    const uAcc = findCol(uCols, [
-      "bank_account",
-      "bank_number",
-      "account_number",
-      "bank_no",
-    ]);
-    const uName = findCol(uCols, ["bank_name", "bank"]);
-    const uCode = findCol(uCols, ["bank_code", "bank_id"]);
-    const uHolder = findCol(uCols, [
-      "bank_account_holder",
-      "account_name",
-      "bank_holder",
-      "account_holder",
-      "full_name",
-      "name",
-    ]);
-
-    const selectFields = ["h.id AS hotel_id", "h.name AS hotel_name"];
-    if (hAcc) selectFields.push(`h.${hAcc} AS h_account`);
-    if (hName) selectFields.push(`h.${hName} AS h_bank_name`);
-    if (hCode) selectFields.push(`h.${hCode} AS h_bank_code`);
-    if (hHolder) selectFields.push(`h.${hHolder} AS h_holder`);
-
-    if (ownerJoin) {
-      if (uAcc) selectFields.push(`u.${uAcc} AS u_account`);
-      if (uName) selectFields.push(`u.${uName} AS u_bank_name`);
-      if (uCode) selectFields.push(`u.${uCode} AS u_bank_code`);
-      if (uHolder) selectFields.push(`u.${uHolder} AS u_holder`);
-    }
-
-    const sql = `
-      SELECT ${selectFields.join(", ")}
-      FROM public.hotel h
-      ${ownerJoin ? `LEFT JOIN public.users u ON ${ownerJoin}` : ""}
-      WHERE h.id = $1
-      LIMIT 1
-    `;
-
-    const res = await pool.query(sql, [hotelId]);
     if (res.rows.length > 0) {
       const row = res.rows[0];
-      const acc = row.h_account || row.u_account;
-      const code = row.h_bank_code || row.u_bank_code;
-      const name = row.h_bank_name || row.u_bank_name;
-      const holder = row.h_holder || row.u_holder || row.hotel_name;
-
-      if (acc && String(acc).trim() !== "") {
+      if (row.bank_account && String(row.bank_account).trim() !== "") {
         return {
-          bankId: (code || "MB").toUpperCase().trim(),
-          bankName: name || "Ngân hàng",
-          accountNumber: String(acc).trim(),
-          accountName: String(holder || "CHU KHACH SAN")
+          bankId: String(row.bank_code || "VCB")
+            .toUpperCase()
+            .trim(),
+          bankName: row.bank_name || "Vietcombank",
+          accountNumber: String(row.bank_account).trim(),
+          accountName: String(
+            row.bank_account_holder || row.name || "CHỦ KHÁCH SẠN",
+          )
             .toUpperCase()
             .trim(),
         };
       }
     }
+
+    // 2. Nếu bảng hotel chưa có số tài khoản thì fallback sang bảng users
+    try {
+      const userRes = await pool.query(
+        `SELECT u.bank_code, u.bank_name, u.bank_account, u.bank_account_holder, u.name
+         FROM public.hotel h
+         JOIN public.users u ON (u.id = h.owner_id OR u.id = h.user_id)
+         WHERE h.id::text = $1::text
+         LIMIT 1`,
+        [hotelId],
+      );
+      if (userRes.rows.length > 0) {
+        const uRow = userRes.rows[0];
+        if (uRow.bank_account && String(uRow.bank_account).trim() !== "") {
+          return {
+            bankId: String(uRow.bank_code || "VCB")
+              .toUpperCase()
+              .trim(),
+            bankName: uRow.bank_name || "Vietcombank",
+            accountNumber: String(uRow.bank_account).trim(),
+            accountName: String(
+              uRow.bank_account_holder || uRow.name || "CHỦ KHÁCH SẠN",
+            )
+              .toUpperCase()
+              .trim(),
+          };
+        }
+      }
+    } catch (uErr) {
+      // Bỏ qua nếu không join được users
+    }
   } catch (err) {
-    console.error(
-      "❌ Lỗi getOwnerBankAccount trong paymentController:",
-      err.message,
-    );
+    console.warn("⚠️ getOwnerBankAccount fallback:", err.message);
   }
   return DEFAULT_PLATFORM_BANK;
 }
 
-// ─── 1. TẠO MÃ THANH TOÁN VIETQR ĐỘNG THEO TÀI KHOẢN OWNER ───
+// ─── 1. TẠO MÃ THANH TOÁN VIETQR ───
 async function createVietQrPayment(req, res) {
   try {
     const { bookingCode, amount, paymentType } = req.body || {};
-    const code = bookingCode || req.body.booking_code;
+    const code = String(bookingCode || req.body.booking_code || "").trim();
 
-    if (!code || !amount) {
+    if (!code) {
       return res.status(400).json({
         success: false,
-        message: "bookingCode và amount là bắt buộc.",
+        message: "bookingCode là bắt buộc.",
       });
     }
 
+    // Dùng ILIKE để không phân biệt hoa thường
     const bookingResult = await pool.query(
       `SELECT id, booking_code, total_price, hotel_id 
        FROM public.booking
-       WHERE (booking_code = $1 OR id::text = $1)
+       WHERE booking_code ILIKE $1 OR id::text = $1
        LIMIT 1`,
       [code],
     );
@@ -145,11 +111,16 @@ async function createVietQrPayment(req, res) {
       });
     }
 
-    const expectedAmount = Math.round(Number(amount));
+    const expectedAmount = Math.round(
+      Number(amount || booking.total_price || 0),
+    );
+
+    // LẤY TÀI KHOẢN NGÂN HÀNG CỦA OWNER
     const bank = await getOwnerBankAccount(booking.hotel_id);
 
     const qrCodeUrl = `https://img.vietqr.io/image/${bank.bankId}-${bank.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(bank.accountName)}`;
 
+    // Cập nhật hoặc thêm bản ghi payment
     const checkPayment = await pool.query(
       `SELECT id FROM public.payment WHERE booking_id = $1 LIMIT 1`,
       [booking.id],
@@ -204,7 +175,7 @@ async function createVietQrPayment(req, res) {
 async function confirmManualPayment(req, res) {
   try {
     const { bookingCode, amount } = req.body || {};
-    const code = bookingCode || req.body.booking_code;
+    const code = String(bookingCode || req.body.booking_code || "").trim();
 
     if (!code) {
       return res
@@ -376,7 +347,7 @@ async function confirmManualPayment(req, res) {
   }
 }
 
-// ─── 3. CHECK STATUS CHO FRONTEND POLLING REAL-TIME (MỖI 2.5 GIÂY) ───
+// ─── 3. CHECK STATUS CHO FRONTEND POLLING REAL-TIME ───
 async function checkPaymentStatus(req, res) {
   try {
     const bookingCode =
