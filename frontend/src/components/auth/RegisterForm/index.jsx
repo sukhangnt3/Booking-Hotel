@@ -12,7 +12,6 @@ import {
   Loader2,
 } from "lucide-react";
 
-// Import đủ 8 bước chuẩn OTA
 import { Step1HotelInfo } from "./Step1HotelInfo.jsx";
 import { Step2Amenities } from "./Step2Amenities.jsx";
 import { Step3RoomsAndPricing } from "./Step3RoomsAndPricing.jsx";
@@ -29,9 +28,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { authService } from "@/services";
 import apiClient from "@/services/apiClient";
 
-// 🌟 DỮ LIỆU ĐÃ ĐƯỢC LÀM SẠCH 100% (KHÔNG CÒN DỮ LIỆU MẪU ĐIỀN SẴN)
 const initialFormData = {
-  // 1. Tài khoản đối tác & Vị trí (Bước 1 - Để trống hoàn toàn)
   isAccountCreated: false,
   ownerId: null,
   ownerName: "",
@@ -49,15 +46,13 @@ const initialFormData = {
   zipCode: "",
   latitude: 10.7769,
   longitude: 106.7009,
+  is_beachfront: false,
+  distance_to_center: 1.2,
 
-  // 2. Tiện nghi khách sạn (Mảng rỗng - không tích sẵn)
   propertyAmenities: [],
-
-  // 3. Hạng phòng & Giá bán (Mảng rỗng - người dùng tự bấm thêm phòng thật)
   rooms: [],
   hasBreakfast: "no",
 
-  // 4. Khuyến mại & Quyết toán (Để trống - không gán sẵn ngân hàng hay giảm giá)
   enableFirstBookingDiscount: false,
   initialPromoPercent: 0,
   payoutMethod: "bank_transfer",
@@ -65,11 +60,9 @@ const initialFormData = {
   bankAccount: "",
   bankAccountHolder: "",
 
-  // 5. Hình ảnh (Mảng rỗng - tự tải ảnh thật)
   hotelMainImage: "",
   hotelImages: [],
 
-  // 6. Quy định & Sao
   starRating: 3,
   description: "",
   checkInFrom: "14:00",
@@ -77,14 +70,12 @@ const initialFormData = {
   checkOutTo: "12:00",
   cancellation_deadline_hours: 24,
 
-  // 7. Thông tin đối tác (Để trống)
   firstName: "",
   lastName: "",
   nationality: "Việt Nam",
   dob: "",
   preferredLanguage: "Tiếng Việt",
 
-  // 8. Pháp lý & Đăng tải
   taxCode: "",
   businessLicenseUrl: "",
   commissionRate: 18.0,
@@ -117,7 +108,6 @@ export const RegisterForm = () => {
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [submittedApplication, setSubmittedApplication] = useState(null);
 
-  // ĐỒNG BỘ NẾU ĐÃ CÓ TÀI KHOẢN ĐĂNG NHẬP SẴN
   useEffect(() => {
     if (user && user.email) {
       setFormData((prev) => ({
@@ -142,7 +132,6 @@ export const RegisterForm = () => {
     });
   };
 
-  // VALIDATE TỪNG BƯỚC
   const validateCurrentStep = () => {
     const err = {};
 
@@ -157,7 +146,6 @@ export const RegisterForm = () => {
           existingToken !== "undefined" &&
           existingToken !== "null");
 
-      // Chỉ kiểm tra thông tin tài khoản nếu CHƯA có tài khoản
       if (!isAlreadyReady) {
         if (!formData.ownerName?.trim()) {
           err.ownerName = "Vui lòng nhập họ và tên chủ cơ sở!";
@@ -173,7 +161,6 @@ export const RegisterForm = () => {
         }
       }
 
-      // Kiểm tra thông tin chỗ nghỉ
       if (!formData.hotelName?.trim()) {
         err.hotelName = "Vui lòng nhập tên cơ sở lưu trú!";
       }
@@ -242,9 +229,6 @@ export const RegisterForm = () => {
     return true;
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 👉 NÚT TIẾP THEO: TẠO TÀI KHOẢN CUSTOMER (CHƯA CẤP OWNER Ở BƯỚC 1)
-  // ════════════════════════════════════════════════════════════════════════════
   const handleNext = async () => {
     if (!validateCurrentStep()) return;
 
@@ -255,14 +239,12 @@ export const RegisterForm = () => {
       existingToken !== "undefined" &&
       existingToken !== "null";
 
-    // Kiểm tra tài khoản đã hoàn tất chưa
     const isAccountReady =
       isAuthenticated ||
       hasValidToken ||
       formData.isAccountCreated ||
       Boolean(formData.ownerId);
 
-    // NẾU ĐANG Ở BƯỚC 1 VÀ CHƯA CÓ TÀI KHOẢN -> ĐĂNG KÝ TÀI KHOẢN THÀNH VIÊN
     if (currentStep === 1 && !isAccountReady) {
       setLoading(true);
       const email = (formData.emailContact || "").trim().toLowerCase();
@@ -283,7 +265,6 @@ export const RegisterForm = () => {
         let createdUser =
           regRes.data?.user || regRes.data?.data?.user || regRes.user;
 
-        // Nếu API register không trả token, tự động login để lấy token xác thực
         if (!token) {
           try {
             const loginRes = await apiClient.post("/auth/login", {
@@ -313,7 +294,6 @@ export const RegisterForm = () => {
           if (setAuth) setAuth(token, createdUser);
         }
 
-        // 🌟 LƯU CỜ ĐÃ TẠO TÀI KHOẢN ĐỂ KHÔNG BỊ TRÙNG KHI QUAY LẠI
         setFormData((prev) => ({
           ...prev,
           isAccountCreated: true,
@@ -330,7 +310,6 @@ export const RegisterForm = () => {
           "";
         const lowerMsg = errorMsg.toLowerCase();
 
-        // Kiểm tra xem lỗi có phải do email đã tồn tại hay không
         const isEmailDuplicate =
           lowerMsg.includes("sử dụng") ||
           lowerMsg.includes("tồn tại") ||
@@ -387,7 +366,6 @@ export const RegisterForm = () => {
         setLoading(false);
       }
     } else {
-      // Đã có tài khoản hoặc ở các bước tiếp theo -> Chuyển tiếp bình thường
       setCurrentStep((prev) => Math.min(prev + 1, 8));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -408,7 +386,6 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
-  // Nút bấm này dùng khi bạn muốn test nhanh toàn bộ 8 bước mà không cần gõ tay
   const handleAutoFillDemo = () => {
     setFormData((prev) => ({
       ...prev,
@@ -418,42 +395,51 @@ export const RegisterForm = () => {
       password: prev.password || "123456",
       hotelName: "GoStay Grand Luxury Hotel & Resort",
       propertyType: "hotel",
-      address: "123 Đường Hai Bà Trưng, Phường Bến Nghé",
-      buildingInfo: "Tòa A, Khu Phố Cổ",
-      city: "Hồ Chí Minh",
-      province: "Hồ Chí Minh",
-      district: "Quận 1",
-      zipCode: "700000",
+      address: "123 Đường Thùy Vân, Phường Thắng Tam",
+      buildingInfo: "Tòa A, Khu Bãi Sau",
+      city: "Vũng Tàu",
+      province: "Bà Rịa - Vũng Tàu",
+      district: "Vũng Tàu",
+      zipCode: "78000",
+      is_beachfront: true,
+      distance_to_center: 0.8,
       propertyAmenities: [
         "wifi",
         "parking",
         "24h_front_desk",
         "elevator",
         "air_conditioner",
+        "private_beach",
       ],
       rooms: [
         {
           id: "room-demo-1",
           category: "double",
-          name: "Phòng Deluxe Giường Đôi",
-          custom_name: "Deluxe Double Room",
+          name: "Phòng Deluxe Giường Đôi Hướng Biển",
+          custom_name: "Deluxe Ocean View Double",
           smoking_policy: "non_smoking",
           type: "Deluxe",
-          room_view: "city_view",
+          room_view: "sea_view",
           bed_type: "1 Giường đôi lớn (King/Queen Size)",
-          room_area: 28,
+          room_area: 32,
           capacity: 2,
           amount: 10,
           roomNumbersText:
             "P.101, P.102, P.103, P.104, P.105, P.106, P.107, P.108, P.109, P.110",
-          base_price: 650000,
-          description: "Phòng nghỉ hiện đại, tiện nghi thoáng mát.",
-          roomAmenities: [],
+          base_price: 850000,
+          description: "Phòng nghỉ view biển tuyệt đẹp, ban công thoáng đãng.",
+          roomAmenities: [
+            "air_conditioner",
+            "tv_smart",
+            "wifi",
+            "hot_water",
+            "balcony",
+          ],
         },
       ],
       starRating: 5,
       description:
-        "Tọa lạc ngay giữa trung tâm hoa lệ, GoStay Grand Luxury Hotel mang đến cho bạn trải nghiệm nghỉ dưỡng 5 sao đẳng cấp với tầm nhìn panorama hướng sông tuyệt đẹp, hồ bơi vô cực trên tầng thượng và hệ thống ẩm thực quốc tế đỉnh cao.",
+        "Tọa lạc ngay mặt tiền biển Bãi Sau Vũng Tàu, GoStay Grand Luxury Hotel mang đến cho bạn trải nghiệm nghỉ dưỡng 5 sao đẳng cấp với tầm nhìn trực diện biển, hồ bơi vô cực và ẩm thực hải sản tươi ngon.",
       checkInFrom: "14:00",
       checkInTo: "23:00",
       checkOutTo: "12:00",
@@ -479,16 +465,13 @@ export const RegisterForm = () => {
         {
           id: "demo-3",
           url: "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
-          title: "Phòng ngủ Deluxe City View",
+          title: "Phòng ngủ Deluxe Ocean View",
         },
       ],
     }));
     setIsAuditOpen(false);
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // 👉 NỘP ĐƠN ĐĂNG TẢI KHÁCH SẠN (LÚC NÀY MỚI KÍCH HOẠT QUYỀN OWNER)
-  // ════════════════════════════════════════════════════════════════════════════
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
@@ -556,9 +539,11 @@ export const RegisterForm = () => {
         name: formData.hotelName || "Cơ sở lưu trú",
         property_type: formData.propertyType || "hotel",
         address: formData.address,
-        city: formData.city || formData.province || "Hồ Chí Minh",
+        city: formData.city || formData.province || "Vũng Tàu",
         latitude: Number(formData.latitude || 10.7769),
         longitude: Number(formData.longitude || 106.7009),
+        is_beachfront: Boolean(formData.is_beachfront),
+        distance_to_center: Number(formData.distance_to_center || 1.2),
         phone: formData.phoneContact || user?.phone || "0900000000",
         email: formData.emailContact || user?.email || "hotel@contact.com",
         star_rating: Number(formData.starRating || 3),
@@ -582,7 +567,6 @@ export const RegisterForm = () => {
         images: allImages,
       };
 
-      // GỬI HỒ SƠ ĐĂNG TẢI KHÁCH SẠN
       const res = await apiClient.post("/hotels/register", payload, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -591,7 +575,6 @@ export const RegisterForm = () => {
 
       const createdHotel = res.hotel || res.data?.hotel || res.data || res;
 
-      // 🌟 SAU KHI NỘP ĐƠN THÀNH CÔNG: ĐỒNG BỘ LẠI PROFILE MỚI
       try {
         if (authService?.getProfile) {
           const profileRes = await authService.getProfile();
@@ -641,7 +624,6 @@ export const RegisterForm = () => {
 
   return (
     <div className="min-h-screen bg-[#f5f7fa] font-sans text-slate-800 pb-20">
-      {/* ── TOP HEADER ĐỒNG BỘ ── */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 sm:px-12 py-3 shadow-xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -680,9 +662,7 @@ export const RegisterForm = () => {
         </div>
       </header>
 
-      {/* ── KHUNG GIAO DIỆN CHÍNH (CỘT TRÁI STEPPER + NỘI DUNG PHẢI) ── */}
       <div className="max-w-7xl mx-auto pt-8 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-        {/* ── CỘT MENU BÊN TRÁI: STEPPER 8 BƯỚC ── */}
         <div className="hidden md:block md:col-span-4 lg:col-span-3 sticky top-20 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <div className="text-xs font-black text-[#003580] uppercase tracking-wider pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
             <span>Tiến trình hồ sơ</span>
@@ -733,7 +713,6 @@ export const RegisterForm = () => {
           </div>
         </div>
 
-        {/* ── CỘT NỘI DUNG BÊN PHẢI (HIỂN THỊ TỪNG BƯỚC) ── */}
         <div className="md:col-span-8 lg:col-span-9 bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
           {currentStep === 1 && (
             <Step1HotelInfo
@@ -788,7 +767,6 @@ export const RegisterForm = () => {
             />
           )}
 
-          {/* ── THANH ĐIỀU HƯỚNG DƯỚI CÙNG ── */}
           <div className="flex items-center justify-between pt-8 mt-10 border-t border-slate-100 gap-3">
             <button
               type="button"
@@ -847,7 +825,6 @@ export const RegisterForm = () => {
         </div>
       </div>
 
-      {/* MODAL XEM LẠI TOÀN BỘ HỒ SƠ */}
       <ReviewModal
         data={formData}
         isOpen={isReviewOpen}
@@ -856,7 +833,6 @@ export const RegisterForm = () => {
         loading={loading}
       />
 
-      {/* MODAL KIỂM ĐỊNH AUDIT REPORT */}
       {isAuditOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <AuditReportView

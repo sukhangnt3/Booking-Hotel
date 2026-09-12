@@ -1,5 +1,6 @@
+// src/components/hotel/HotelCard.jsx
 import React, { useState, useEffect } from "react";
-import { Heart, MapPin } from "lucide-react";
+import { Heart, MapPin, Waves, Navigation } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import hotelService from "@/services/hotelService";
 import { Badge, StarRating } from "../ui";
@@ -26,12 +27,10 @@ const HotelCard = ({
   const [isFavorite, setIsFavorite] = useState(false);
   const [loadingFav, setLoadingFav] = useState(false);
 
-  // Khởi tạo trạng thái yêu thích
   useEffect(() => {
     setIsFavorite(isFavoriteInitial || hotel?.is_favorite || false);
   }, [isFavoriteInitial, hotel]);
 
-  // Xử lý Yêu thích
   const handleFavoriteClick = async (e) => {
     e.stopPropagation();
     if (loadingFav) return;
@@ -59,7 +58,6 @@ const HotelCard = ({
     }
   };
 
-  // TÍNH TOÁN GIÁ TIỀN THỰC TẾ
   const rawPrice = Number(
     salePrice ||
       hotel?.salePrice ||
@@ -76,7 +74,6 @@ const HotelCard = ({
     }).format(price);
   };
 
-  // TÍNH TOÁN ĐÁNH GIÁ THỰC TẾ (KHÔNG DÙNG FALLBACK 8.8 VÀ 120)
   const totalReviews = Number(
     reviewsCount !== undefined && reviewsCount !== null
       ? reviewsCount
@@ -107,10 +104,14 @@ const HotelCard = ({
     return "Được đánh giá tốt";
   };
 
+  // Lấy thông tin giáp biển và khoảng cách trung tâm từ API trả về
+  const isBeachfront = Boolean(hotel?.is_beachfront);
+  const distanceToCenter = hotel?.distance_to_center;
+
   return (
     <div
       onClick={onClick}
-      className="group bg-white rounded-3xl border border-gray-200/80 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full relative cursor-pointer"
+      className="group bg-white rounded-3xl border border-gray-200/80 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col h-full relative cursor-pointer select-none"
     >
       {/* NÚT TRÁI TIM YÊU THÍCH */}
       <button
@@ -155,7 +156,7 @@ const HotelCard = ({
         <div>
           <div className="flex justify-between items-start mb-1.5">
             <span className="text-[10px] font-black text-[#006ce4] uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded-md">
-              {type || hotel?.type || "Khách sạn"}
+              {type || hotel?.property_type || "Khách sạn"}
             </span>
             {stars > 0 && <StarRating rating={stars} size={12} />}
           </div>
@@ -164,15 +165,38 @@ const HotelCard = ({
             {title || hotel?.name}
           </h3>
 
-          <div className="flex items-center gap-1 text-gray-500 mt-1.5">
-            <MapPin size={13} className="text-[#006ce4] shrink-0" />
-            <p className="text-xs font-medium line-clamp-1">
-              {location || hotel?.address || "Việt Nam"}
-            </p>
+          {/* VỊ TRÍ & KHOẢNG CÁCH TRUNG TÂM */}
+          <div className="flex items-center gap-1.5 text-gray-500 mt-1.5 text-xs font-medium flex-wrap">
+            <div className="flex items-center gap-1">
+              <MapPin size={13} className="text-[#006ce4] shrink-0" />
+              <p className="line-clamp-1">
+                {location || hotel?.city || hotel?.address || "Việt Nam"}
+              </p>
+            </div>
+            {distanceToCenter !== undefined && distanceToCenter !== null && (
+              <>
+                <span>•</span>
+                <span className="text-slate-600 font-semibold flex items-center gap-1">
+                  <Navigation size={11} className="text-amber-600" /> Cách trung
+                  tâm {distanceToCenter}km
+                </span>
+              </>
+            )}
           </div>
 
+          {/* HUY HIỆU GIÁP BIỂN CHUẨN BOOKING.COM */}
+          {isBeachfront && (
+            <div className="mt-2.5 inline-flex items-center gap-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-[11px] font-bold px-2 py-0.5 rounded-md shadow-2xs">
+              <Waves
+                size={13}
+                className="text-cyan-600 shrink-0 stroke-[2.5]"
+              />
+              <span>Giáp biển</span>
+            </div>
+          )}
+
           {/* ĐÁNH GIÁ */}
-          <div className="mt-4 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-2">
             <div
               className={cn(
                 "text-xs font-black w-7 h-7 flex items-center justify-center rounded-lg shadow-sm shrink-0",
@@ -194,7 +218,7 @@ const HotelCard = ({
           </div>
         </div>
 
-        {/* GIÁ TIỀN RÕ RÀNG */}
+        {/* GIÁ TIỀN */}
         <div className="mt-4 pt-3 flex flex-col items-end border-t border-gray-100">
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
             Giá mỗi đêm từ

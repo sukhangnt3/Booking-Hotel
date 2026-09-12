@@ -1,7 +1,15 @@
 // src/pages/guest/HotelListPage.jsx
 import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { MapPin, Heart, CalendarDays, Users, ArrowUpDown } from "lucide-react";
+import {
+  MapPin,
+  Heart,
+  CalendarDays,
+  Users,
+  ArrowUpDown,
+  Waves,
+  Navigation,
+} from "lucide-react";
 
 import { Button, StarRating } from "@/components/ui";
 import { LoadingSpinner, EmptyState, Breadcrumb } from "@/components/common";
@@ -100,6 +108,8 @@ export default function HotelListPage() {
             stars: Number(h.star_rating || 3),
             rating: Number(h.average_rating || 9.0),
             review_count: Number(h.review_count || 0),
+            is_beachfront: Boolean(h.is_beachfront),
+            distance_to_center: h.distance_to_center,
           };
         });
 
@@ -427,15 +437,46 @@ export default function HotelListPage() {
                               <StarRating rating={hotel.stars} size={12} />
                             )}
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
-                            <MapPin
-                              size={13}
-                              className="text-[#006ce4] shrink-0"
-                            />
-                            <span className="line-clamp-1">
-                              {hotel.location}
-                            </span>
+
+                          {/* VỊ TRÍ & KHOẢNG CÁCH TRUNG TÂM */}
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1 flex-wrap">
+                            <div className="flex items-center gap-1">
+                              <MapPin
+                                size={13}
+                                className="text-[#006ce4] shrink-0"
+                              />
+                              <span className="line-clamp-1">
+                                {hotel.location}
+                              </span>
+                            </div>
+                            {hotel.distance_to_center !== undefined &&
+                              hotel.distance_to_center !== null && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-slate-600 font-semibold flex items-center gap-1">
+                                    <Navigation
+                                      size={11}
+                                      className="text-amber-600"
+                                    />{" "}
+                                    Cách trung tâm {hotel.distance_to_center}km
+                                  </span>
+                                </>
+                              )}
                           </div>
+
+                          {/* HUY HIỆU GIÁP BIỂN CHUẨN BOOKING.COM */}
+                          {hotel.is_beachfront && (
+                            <div className="pt-1">
+                              <span className="inline-flex items-center gap-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-[11px] font-bold px-2 py-0.5 rounded-md shadow-2xs">
+                                <Waves
+                                  size={13}
+                                  className="text-cyan-600 shrink-0 stroke-[2.5]"
+                                />
+                                Giáp biển
+                              </span>
+                            </div>
+                          )}
+
                           <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed pt-1">
                             {hotel.description ||
                               "Chỗ nghỉ sở hữu không gian thoáng đãng, tiện nghi hiện đại và dịch vụ chu đáo."}
