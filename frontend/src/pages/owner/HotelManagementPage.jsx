@@ -29,14 +29,14 @@ const VIETNAM_BANKS = [
     name: "Vietcombank",
     fullName: "Ngân hàng Ngoại thương Việt Nam",
   },
-  { code: "MB", name: "MB Bank", fullName: "Ngân hàng Quân đội" },
+  { code: "MB", name: "MBBank", fullName: "Ngân hàng Quân đội" },
   {
     code: "TCB",
     name: "Techcombank",
     fullName: "Ngân hàng Kỹ thương Việt Nam",
   },
   {
-    code: "CTG",
+    code: "ICB",
     name: "VietinBank",
     fullName: "Ngân hàng Công Thương Việt Nam",
   },
@@ -63,7 +63,6 @@ const HOTEL_AMENITIES_OPTIONS = [
   { id: "tv_smart", label: "Smart TV màn hình phẳng" },
 ];
 
-// Chuẩn hóa chuỗi xóa dấu tiếng Việt và ký tự đặc biệt
 const normalizeAmenityText = (text) => {
   if (!text) return "";
   return String(text)
@@ -112,6 +111,7 @@ export default function HotelManagementPage() {
     checkin_time: "14:00",
     checkout_time: "12:00",
     cancellation_deadline_hours: 24,
+    bank_code: "VCB",
     bank_name: "Vietcombank",
     bank_account: "",
     bank_account_holder: "",
@@ -145,7 +145,6 @@ export default function HotelManagementPage() {
     fetchMyHotels();
   }, [fetchMyHotels]);
 
-  // Kiểm tra tiện ích đã được chọn hay chưa
   const isAmenityChecked = (item, currentAmenities = []) => {
     if (!Array.isArray(currentAmenities) || currentAmenities.length === 0)
       return false;
@@ -196,6 +195,7 @@ export default function HotelManagementPage() {
       cancellation_deadline_hours: Number(
         hotel.cancellation_deadline_hours ?? 24,
       ),
+      bank_code: hotel.bank_code || "VCB",
       bank_name: hotel.bank_name || "Vietcombank",
       bank_account: hotel.bank_account || "",
       bank_account_holder: hotel.bank_account_holder || "",
@@ -206,7 +206,6 @@ export default function HotelManagementPage() {
     });
   };
 
-  // Mở form sửa và lấy dữ liệu tươi mới nhất từ Database
   const handleOpenEdit = async (hotel) => {
     setEditingHotel(hotel);
     const initialAmenities = Array.isArray(hotel.amenities)
@@ -217,9 +216,14 @@ export default function HotelManagementPage() {
     try {
       const res = await apiClient.get(`/hotels/${hotel.id}?_t=${Date.now()}`);
       const freshHotel = res?.data?.hotel || res?.data?.data || res?.data;
-      if (freshHotel && Array.isArray(freshHotel.amenities)) {
+      if (freshHotel) {
         setHotelForm((prev) => ({
           ...prev,
+          bank_code: freshHotel.bank_code || prev.bank_code,
+          bank_name: freshHotel.bank_name || prev.bank_name,
+          bank_account: freshHotel.bank_account || prev.bank_account,
+          bank_account_holder:
+            freshHotel.bank_account_holder || prev.bank_account_holder,
           description: freshHotel.description || prev.description,
           checkin_time: freshHotel.checkin_time
             ? String(freshHotel.checkin_time).slice(0, 5)
@@ -227,7 +231,9 @@ export default function HotelManagementPage() {
           checkout_time: freshHotel.checkout_time
             ? String(freshHotel.checkout_time).slice(0, 5)
             : prev.checkout_time,
-          amenities: freshHotel.amenities,
+          amenities: Array.isArray(freshHotel.amenities)
+            ? freshHotel.amenities
+            : prev.amenities,
         }));
       }
     } catch (err) {
@@ -235,7 +241,7 @@ export default function HotelManagementPage() {
     }
   };
 
-  // Lưu thông tin khách sạn
+  // 🌟 LƯU THAY ĐỔI KHÁCH SẠN VÀ TÀI KHOẢN NGÂN HÀNG OWNER
   const handleUpdateHotel = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -270,9 +276,16 @@ export default function HotelManagementPage() {
           hotelForm.cancellation_deadline_hours,
         ),
 
-        bank_name: hotelForm.bank_name,
+        // 🌟 GỬI ĐẦY ĐỦ CẢ BANK_CODE, BANK_NAME, SỐ TK VÀ TÊN CHỦ TK
+        bank_code: hotelForm.bank_code || "VCB",
+        bankCode: hotelForm.bank_code || "VCB",
+        bank_name: hotelForm.bank_name || "Vietcombank",
+        bankName: hotelForm.bank_name || "Vietcombank",
         bank_account: hotelForm.bank_account.trim(),
+        bankAccount: hotelForm.bank_account.trim(),
         bank_account_holder: hotelForm.bank_account_holder.trim().toUpperCase(),
+        bankAccountHolder: hotelForm.bank_account_holder.trim().toUpperCase(),
+
         tax_code: hotelForm.tax_code.trim(),
         description: hotelForm.description,
         image: hotelForm.image.trim(),
@@ -289,6 +302,10 @@ export default function HotelManagementPage() {
             ? {
                 ...h,
                 ...updatedData,
+                bank_code: payload.bank_code,
+                bank_name: payload.bank_name,
+                bank_account: payload.bank_account,
+                bank_account_holder: payload.bank_account_holder,
                 description: payload.description,
                 checkin_time: payload.checkin_time,
                 checkout_time: payload.checkout_time,
@@ -298,7 +315,9 @@ export default function HotelManagementPage() {
         ),
       );
 
-      alert("✓ Cập nhật thông tin khách sạn thành công!");
+      alert(
+        "✓ Cập nhật thông tin khách sạn và tài khoản nhận tiền thành công!",
+      );
       setEditingHotel(null);
       fetchMyHotels();
     } catch (err) {
@@ -756,7 +775,7 @@ export default function HotelManagementPage() {
                 </div>
               </div>
 
-              {/* KHỐI 4: QUYẾT TOÁN & TÀI KHOẢN NGÂN HÀNG */}
+              {/* KHỐI 4: QUYẾT TOÁN & TÀI KHOẢN NGÂN HÀNG (CẬP NHẬT CHUẨN CẢ BANK_CODE) */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                 <span className="font-bold text-slate-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
                   <CreditCard size={14} className="text-emerald-600" /> 4. Tài
@@ -766,43 +785,49 @@ export default function HotelManagementPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block font-bold text-slate-600 mb-1">
-                      Ngân hàng
+                      Ngân hàng thụ hưởng *
                     </label>
                     <select
-                      value={hotelForm.bank_name}
-                      onChange={(e) =>
+                      value={hotelForm.bank_code || "VCB"}
+                      onChange={(e) => {
+                        const selectedCode = e.target.value;
+                        const b = VIETNAM_BANKS.find(
+                          (item) => item.code === selectedCode,
+                        );
                         setHotelForm({
                           ...hotelForm,
-                          bank_name: e.target.value,
-                        })
-                      }
+                          bank_code: selectedCode,
+                          bank_name: b ? b.name : selectedCode,
+                        });
+                      }}
                       className="w-full h-10 px-2.5 border rounded-xl font-semibold bg-white cursor-pointer outline-none focus:border-blue-600"
                     >
                       {VIETNAM_BANKS.map((b) => (
-                        <option key={b.code} value={b.name}>
-                          {b.name}
+                        <option key={b.code} value={b.code}>
+                          {b.name} ({b.code})
                         </option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className="block font-bold text-slate-600 mb-1">
-                      Số tài khoản
+                      Số tài khoản *
                     </label>
                     <input
                       value={hotelForm.bank_account}
                       onChange={(e) =>
                         setHotelForm({
                           ...hotelForm,
-                          bank_account: e.target.value,
+                          bank_account: e.target.value.trim(),
                         })
                       }
+                      placeholder="Nhập số tài khoản..."
                       className="w-full h-10 px-3 border rounded-xl font-mono text-blue-900 font-bold bg-white outline-none focus:border-blue-600"
                     />
                   </div>
                   <div>
                     <label className="block font-bold text-slate-600 mb-1">
-                      Chủ tài khoản
+                      Tên chủ tài khoản *
                     </label>
                     <input
                       value={hotelForm.bank_account_holder}
@@ -812,6 +837,7 @@ export default function HotelManagementPage() {
                           bank_account_holder: e.target.value.toUpperCase(),
                         })
                       }
+                      placeholder="VD: NGUYEN VAN A"
                       className="w-full h-10 px-3 border rounded-xl font-bold uppercase bg-white outline-none focus:border-blue-600"
                     />
                   </div>
