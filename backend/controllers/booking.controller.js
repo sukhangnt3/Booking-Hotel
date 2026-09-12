@@ -2,7 +2,7 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tài khoản sàn mặc định (nếu khách sạn chưa điền số tài khoản)
+// Tài khoản sàn mặc định (dự phòng)
 const DEFAULT_PLATFORM_BANK = {
   bankId: process.env.PLATFORM_BANK_ID || "MB",
   bankName:
@@ -51,7 +51,8 @@ async function cleanupExpiredLocks() {
   try {
     await pool.query(
       `DELETE FROM public.temporary_locks 
-       WHERE lock_expires_at < NOW() OR (expires_at IS NOT NULL AND expires_at < NOW())`,
+       WHERE (lock_expires_at IS NOT NULL AND lock_expires_at < NOW())
+          OR (expires_at IS NOT NULL AND expires_at < NOW())`,
     );
   } catch (e) {
     // Bỏ qua nếu bảng chưa có cột
@@ -107,6 +108,7 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
+    // KIỂM TRA PHÒNG CÒN TRỐNG KHÔNG
     if (room_id) {
       const roomStockRes = await client.query(
         `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
@@ -135,7 +137,10 @@ async function createBooking(req, res, next) {
         daily_locks AS (
           SELECT lock_date, COALESCE(SUM(quantity), 0)::int AS locked_qty
           FROM public.temporary_locks
-          WHERE room_id = $1 AND (lock_expires_at > NOW() OR (expires_at IS NOT NULL AND expires_at > NOW()))
+          WHERE room_id = $1 AND (
+            (lock_expires_at IS NOT NULL AND lock_expires_at > NOW())
+            OR (expires_at IS NOT NULL AND expires_at > NOW())
+          )
           GROUP BY lock_date
         ),
         daily_bookings AS (
@@ -228,6 +233,7 @@ async function createBooking(req, res, next) {
 
     const newBooking = insertRes.rows[0];
 
+    // LƯU BẢNG BOOKING_ROOM VÀ KHÓA PHÒNG 15 PHÚT
     if (room_id) {
       const roomRes = await client.query(
         `SELECT name, base_price AS room_price FROM public.room WHERE id = $1 LIMIT 1`,
@@ -251,20 +257,48 @@ async function createBooking(req, res, next) {
         req.sessionID ||
         `sess_${crypto.randomBytes(8).toString("hex")}`;
 
+      // Kiểm tra danh sách cột thực tế của temporary_locks
+      const tlColsRes = await client.query(
+        `SELECT column_name 
+         FROM information_schema.columns 
+         WHERE table_schema = 'public' AND table_name = 'temporary_locks'`,
+      );
+      const tlCols = tlColsRes.rows.map((r) => r.column_name.toLowerCase());
+
+      // 🌟 TỰ ĐỘNG THÊM CỘT lock_expires_at VÀ expires_at ĐỂ KHÔNG BỊ LỖI NOT-NULL
+      const lockCols = [
+        "id",
+        "room_id",
+        "user_id",
+        "session_id",
+        "lock_date",
+        "quantity",
+        "booking_id",
+        "created_at",
+      ];
+      const selectCols = [
+        "gen_random_uuid()",
+        "$1",
+        "$2",
+        "$3",
+        "d::date",
+        "$4",
+        "$5",
+        "NOW()",
+      ];
+
+      if (tlCols.includes("lock_expires_at")) {
+        lockCols.push("lock_expires_at");
+        selectCols.push("NOW() + INTERVAL '15 minutes'");
+      }
+      if (tlCols.includes("expires_at")) {
+        lockCols.push("expires_at");
+        selectCols.push("NOW() + INTERVAL '15 minutes'");
+      }
+
       const insertLockSql = `
-        INSERT INTO public.temporary_locks (
-          id, room_id, user_id, session_id, lock_date, quantity, 
-          booking_id, created_at
-        )
-        SELECT 
-          gen_random_uuid(),
-          $1, 
-          $2, 
-          $3, 
-          d::date, 
-          $4, 
-          $5, 
-          NOW()
+        INSERT INTO public.temporary_locks (${lockCols.join(", ")})
+        SELECT ${selectCols.join(", ")}
         FROM generate_series($6::date, ($7::date - interval '1 day')::date, '1 day'::interval) d;
       `;
 
@@ -279,7 +313,7 @@ async function createBooking(req, res, next) {
       ]);
     }
 
-    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN ĐỂ TẠO VIETQR
+    // LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
     const ownerBank = await getOwnerBankAccount(hotel_id);
 
     const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(ownerBank.accountName)}`;
@@ -492,7 +526,6 @@ async function getBookingByCode(req, res, next) {
     const dep = isDep ? (paidMoney > 0 ? paidMoney : expAmount) : total;
     const rem = isDep ? total - dep : 0;
 
-    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER
     const ownerBank = await getOwnerBankAccount(row.hotel_id);
 
     const finalBooking = {
