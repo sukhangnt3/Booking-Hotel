@@ -2,7 +2,11 @@
 require("dotenv").config();
 const pool = require("../config/database");
 
-const BANK_CONFIG = {
+// Cấu hình SePay API Key (Lấy từ https://my.sepay.vn)
+const SEPAY_API_KEY = process.env.SEPAY_API_KEY || "";
+
+// Tài khoản dự phòng mặc định của sàn
+const DEFAULT_BANK_CONFIG = {
   bankId: "MB",
   bankName: "Ngân hàng TMCP Quân Đội (MBBank)",
   accountNumber: "0833404928",
@@ -46,7 +50,151 @@ async function getTableColumns(client, tableName) {
   }
 }
 
-// ─── 1. TẠO MÃ THANH TOÁN VIETQR ĐỘNG (LƯU VÀO PAYMENT) ───
+// ─── HÀM CẬP NHẬT DATABASE KHI XÁC THỰC THÀNH CÔNG TỪ SEPAY ───
+async function applyPaidSuccessToDatabase(
+  client,
+  booking,
+  paidAmount,
+  gateway,
+  transactionId,
+  rawData,
+) {
+  const totalPrice = Number(booking.total_price || 0);
+  const expected = Number(booking.expected_amount || totalPrice);
+
+  const isDeposit = expected < totalPrice;
+  const finalPaymentType = isDeposit ? "DEPOSIT_30" : "FULL";
+  const depositAmountVal = isDeposit ? paidAmount : 0;
+  const remainingAmountVal = isDeposit ? totalPrice - paidAmount : 0;
+
+  const validBookingPaymentStatus = await getValidEnumValue(
+    client,
+    "booking_payment_status_enum",
+    ["paid", "PAID", "completed", "COMPLETED", "success"],
+  );
+
+  const validPaymentStatus = await getValidEnumValue(
+    client,
+    "payment_status_enum",
+    ["completed", "COMPLETED", "success", "SUCCESS", "paid", "PAID"],
+  );
+
+  const validTxnStatus = await getValidEnumValue(
+    client,
+    "transaction_status_enum",
+    ["success", "SUCCESS", "completed", "COMPLETED"],
+  );
+
+  const bookingCols = await getTableColumns(client, "booking");
+  const setClauses = [];
+  const updateParams = [];
+  let paramIdx = 1;
+
+  if (bookingCols.includes("payment_status")) {
+    setClauses.push(
+      `payment_status = $${paramIdx}::text::public.booking_payment_status_enum`,
+    );
+    updateParams.push(validBookingPaymentStatus);
+    paramIdx++;
+  }
+
+  if (bookingCols.includes("status")) {
+    setClauses.push(`status = 'confirmed'::public.booking_status_enum`);
+  }
+
+  if (bookingCols.includes("customer_paid")) {
+    setClauses.push(`customer_paid = $${paramIdx}`);
+    updateParams.push(paidAmount);
+    paramIdx++;
+  }
+
+  if (bookingCols.includes("deposit_amount")) {
+    setClauses.push(`deposit_amount = $${paramIdx}`);
+    updateParams.push(depositAmountVal);
+    paramIdx++;
+  }
+
+  if (bookingCols.includes("remaining_amount")) {
+    setClauses.push(`remaining_amount = $${paramIdx}`);
+    updateParams.push(remainingAmountVal);
+    paramIdx++;
+  }
+
+  if (bookingCols.includes("payment_type")) {
+    setClauses.push(`payment_type = $${paramIdx}`);
+    updateParams.push(finalPaymentType);
+    paramIdx++;
+  }
+
+  if (bookingCols.includes("confirmed_at")) {
+    setClauses.push(`confirmed_at = NOW()`);
+  }
+
+  if (bookingCols.includes("updated_at")) {
+    setClauses.push(`updated_at = NOW()`);
+  }
+
+  if (setClauses.length > 0) {
+    updateParams.push(booking.id);
+    const updateBookingQuery = `
+      UPDATE public.booking 
+      SET ${setClauses.join(", ")}
+      WHERE id = $${paramIdx}
+    `;
+    await client.query(updateBookingQuery, updateParams);
+  }
+
+  let paymentId = booking.payment_id;
+  if (paymentId) {
+    await client.query(
+      `UPDATE public.payment 
+       SET status = $1::text::public.payment_status_enum,
+           paid_amount = $2,
+           paid_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $3`,
+      [validPaymentStatus, paidAmount, paymentId],
+    );
+  } else {
+    const newPay = await client.query(
+      `INSERT INTO public.payment (
+        id, booking_id, payment_method, expected_amount, paid_amount, status, paid_at, created_at, updated_at
+      ) VALUES (
+        gen_random_uuid(), $1, 'VietQR', $2, $3, $4::text::public.payment_status_enum, NOW(), NOW(), NOW()
+      ) RETURNING id`,
+      [booking.id, expected, paidAmount, validPaymentStatus],
+    );
+    paymentId = newPay.rows[0].id;
+  }
+
+  await client.query(
+    `INSERT INTO public.payment_transaction (
+      id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
+    ) VALUES (
+      gen_random_uuid(), $1, $2, $3, $4, $5::text::public.transaction_status_enum, $6, NOW()
+    )`,
+    [
+      paymentId,
+      transactionId,
+      gateway || "SePay_VietQR",
+      paidAmount,
+      validTxnStatus,
+      JSON.stringify(rawData),
+    ],
+  );
+
+  // Giải phóng khóa phòng tạm thời
+  try {
+    await client.query(
+      `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
+      [booking.id],
+    );
+  } catch (lockErr) {
+    console.warn("Giải phóng temporary_locks:", lockErr.message);
+  }
+}
+
+// ─── 1. TẠO MÃ THANH TOÁN VIETQR ĐỘNG THEO NGÂN HÀNG CỦA OWNER ───
 async function createVietQrPayment(req, res) {
   try {
     const { bookingCode, amount, paymentType } = req.body || {};
@@ -59,12 +207,21 @@ async function createVietQrPayment(req, res) {
       });
     }
 
+    // Truy vấn thông tin đơn phòng cùng tài khoản ngân hàng của Owner khách sạn này
     const bookingResult = await pool.query(
-      `SELECT id, booking_code, total_price FROM public.booking
-       WHERE (booking_code = $1 OR id::text = $1)
+      `SELECT b.id, b.booking_code, b.total_price, b.hotel_id,
+              COALESCE(h.bank_code, u.bank_code, 'MB') AS bank_id,
+              COALESCE(h.bank_name, u.bank_name, 'MBBank') AS bank_name,
+              COALESCE(h.bank_account, u.bank_account, '0833404928') AS account_number,
+              COALESCE(h.bank_account_holder, u.bank_account_holder, 'SU TRACH KHANG') AS account_name
+       FROM public.booking b
+       JOIN public.hotel h ON h.id = b.hotel_id
+       LEFT JOIN public.users u ON u.id = h.owner_id
+       WHERE (b.booking_code = $1 OR b.id::text = $1)
        LIMIT 1`,
       [code],
     );
+
     const booking = bookingResult.rows[0];
     if (!booking) {
       return res.status(404).json({
@@ -75,7 +232,17 @@ async function createVietQrPayment(req, res) {
 
     const expectedAmount = Math.round(Number(amount));
 
-    const qrCodeUrl = `https://img.vietqr.io/image/${BANK_CONFIG.bankId}-${BANK_CONFIG.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(BANK_CONFIG.accountName)}`;
+    const activeBank = {
+      bankId: (booking.bank_id || DEFAULT_BANK_CONFIG.bankId).toUpperCase(),
+      bankName: booking.bank_name || DEFAULT_BANK_CONFIG.bankName,
+      accountNumber:
+        booking.account_number || DEFAULT_BANK_CONFIG.accountNumber,
+      accountName: (
+        booking.account_name || DEFAULT_BANK_CONFIG.accountName
+      ).toUpperCase(),
+    };
+
+    const qrCodeUrl = `https://img.vietqr.io/image/${activeBank.bankId}-${activeBank.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(activeBank.accountName)}`;
 
     const checkPayment = await pool.query(
       `SELECT id FROM public.payment WHERE booking_id = $1 LIMIT 1`,
@@ -121,7 +288,7 @@ async function createVietQrPayment(req, res) {
       bookingCode: booking.booking_code,
       expectedAmount,
       paymentType: paymentType || "FULL",
-      bankInfo: BANK_CONFIG,
+      bankInfo: activeBank,
       qrCodeUrl,
       qr_code: qrCodeUrl,
       qrContent: booking.booking_code,
@@ -137,11 +304,11 @@ async function createVietQrPayment(req, res) {
   }
 }
 
-// ─── 2. NÚT XÁC NHẬN THỦ CÔNG: CẬP NHẬT PAYMENT, PAYMENT_TRANSACTION & XÓA TEMPORARY_LOCKS ───
+// ─── 2. NÚT "KIỂM TRA NGAY": GỌI API SEPAY ĐỐI SOÁT BIẾN ĐỘNG SỐ DƯ THỰC TẾ TRƯỚC KHI LƯU ───
 async function confirmManualPayment(req, res) {
   const client = await pool.connect();
   try {
-    const { bookingCode, amount, paymentType } = req.body || {};
+    const { bookingCode, amount } = req.body || {};
     const code = bookingCode || req.body.booking_code;
 
     if (!code) {
@@ -151,10 +318,17 @@ async function confirmManualPayment(req, res) {
         .json({ success: false, message: "Thiếu mã đơn bookingCode." });
     }
 
+    // 1. Kiểm tra đơn hàng trong Database
     const bookingRes = await client.query(
-      `SELECT id, booking_code, total_price FROM public.booking WHERE booking_code = $1 LIMIT 1`,
+      `SELECT b.*, p.id AS payment_id, p.expected_amount, p.status AS payment_status_record
+       FROM public.booking b
+       LEFT JOIN public.payment p ON p.booking_id = b.id
+       WHERE b.booking_code ILIKE $1 OR b.id::text = $1
+       LIMIT 1
+       FOR UPDATE`,
       [code],
     );
+
     const booking = bookingRes.rows[0];
     if (!booking) {
       client.release();
@@ -163,153 +337,96 @@ async function confirmManualPayment(req, res) {
         .json({ success: false, message: "Không tìm thấy đơn phòng." });
     }
 
-    const totalPrice = Number(booking.total_price || 0);
-    const paidAmount = Math.round(Number(amount) || totalPrice);
+    // Nếu webhook đã xử lý xong và đã lưu paid thì trả về thành công ngay
+    if (
+      ["paid", "PAID", "completed"].includes(
+        String(booking.payment_status || ""),
+      ) &&
+      ["confirmed", "CONFIRMED"].includes(String(booking.status || ""))
+    ) {
+      client.release();
+      return res.json({
+        success: true,
+        paid: true,
+        status: "paid",
+        message: "Giao dịch đã được SePay xác thực thành công!",
+      });
+    }
 
-    const isActuallyDeposit =
-      paymentType === "DEPOSIT_30" && paidAmount < totalPrice;
-
-    const finalPaymentType = isActuallyDeposit ? "DEPOSIT_30" : "FULL";
-    const depositAmountVal = isActuallyDeposit ? paidAmount : 0;
-    const remainingAmountVal = isActuallyDeposit ? totalPrice - paidAmount : 0;
-
-    const validBookingPaymentStatus = await getValidEnumValue(
-      client,
-      "booking_payment_status_enum",
-      ["paid", "PAID", "completed", "COMPLETED", "success"],
+    const expected = Number(
+      booking.expected_amount || booking.total_price || amount || 0,
     );
 
-    const validPaymentStatus = await getValidEnumValue(
-      client,
-      "payment_status_enum",
-      ["completed", "COMPLETED", "success", "SUCCESS", "paid", "PAID"],
-    );
+    // 2. NẾU CÓ SEPAY API KEY -> CHỦ ĐỘNG GỌI SEPAY API KIỂM TRA LỊCH SỬ GIAO DỊCH
+    let sepayVerified = false;
+    let actualPaidAmount = 0;
+    let transactionRef = "";
 
-    const validTxnStatus = await getValidEnumValue(
-      client,
-      "transaction_status_enum",
-      ["success", "SUCCESS", "completed", "COMPLETED"],
-    );
+    if (SEPAY_API_KEY) {
+      try {
+        const sepayRes = await fetch(
+          "https://my.sepay.vn/userapi/transactions/list?limit=25",
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Apikey ${SEPAY_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
 
-    const bookingCols = await getTableColumns(client, "booking");
+        if (sepayRes.ok) {
+          const sepayData = await sepayRes.json();
+          const transactions = sepayData?.transactions || [];
 
-    const setClauses = [];
-    const updateParams = [];
-    let paramIdx = 1;
+          // Tìm giao dịch khớp mã đơn bookingCode và số tiền đủ
+          const matchedTx = transactions.find((tx) => {
+            const content = String(
+              tx.transaction_content || tx.content || "",
+            ).toUpperCase();
+            const amountIn = Number(tx.amount_in || tx.transferAmount || 0);
+            return (
+              content.includes(booking.booking_code.toUpperCase()) &&
+              amountIn >= expected
+            );
+          });
 
-    if (bookingCols.includes("payment_status")) {
-      setClauses.push(
-        `payment_status = $${paramIdx}::text::public.booking_payment_status_enum`,
-      );
-      updateParams.push(validBookingPaymentStatus);
-      paramIdx++;
+          if (matchedTx) {
+            sepayVerified = true;
+            actualPaidAmount = Number(
+              matchedTx.amount_in || matchedTx.transferAmount || expected,
+            );
+            transactionRef =
+              matchedTx.reference_number || `SEPAY_${matchedTx.id}`;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("⚠️ Lỗi gọi SePay API đối soát:", apiErr.message);
+      }
     }
 
-    if (bookingCols.includes("status")) {
-      setClauses.push(`status = 'confirmed'::public.booking_status_enum`);
+    // 3. NẾU SEPAY CHƯA THẤY GIAO DỊCH KHỚP -> TUYỆT ĐỐI KHÔNG LƯU DATABASE, KHÔNG CHO QUA TRANG
+    if (!sepayVerified) {
+      client.release();
+      return res.status(200).json({
+        success: false,
+        paid: false,
+        status: "pending",
+        message:
+          "Hệ thống SePay chưa nhận được biến động số dư cho đơn này hoặc chưa đủ tiền. Vui lòng chờ 5-10 giây rồi thử lại!",
+      });
     }
 
-    if (bookingCols.includes("customer_paid")) {
-      setClauses.push(`customer_paid = $${paramIdx}`);
-      updateParams.push(paidAmount);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("deposit_amount")) {
-      setClauses.push(`deposit_amount = $${paramIdx}`);
-      updateParams.push(depositAmountVal);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("remaining_amount")) {
-      setClauses.push(`remaining_amount = $${paramIdx}`);
-      updateParams.push(remainingAmountVal);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("payment_type")) {
-      setClauses.push(`payment_type = $${paramIdx}`);
-      updateParams.push(finalPaymentType);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("confirmed_at")) {
-      setClauses.push(`confirmed_at = NOW()`);
-    }
-
-    if (bookingCols.includes("updated_at")) {
-      setClauses.push(`updated_at = NOW()`);
-    }
-
+    // 4. SEPAY ĐÃ XÁC THỰC CHÍNH XÁC -> LƯU DATABASE CHÍNH THỨC
     await client.query("BEGIN");
-
-    if (setClauses.length > 0) {
-      updateParams.push(booking.id);
-      const updateBookingQuery = `
-        UPDATE public.booking 
-        SET ${setClauses.join(", ")}
-        WHERE id = $${paramIdx}
-      `;
-      await client.query(updateBookingQuery, updateParams);
-    }
-
-    const payRes = await client.query(
-      `UPDATE public.payment 
-       SET status = $1::text::public.payment_status_enum,
-           paid_amount = $2,
-           paid_at = NOW(),
-           updated_at = NOW()
-       WHERE booking_id = $3
-       RETURNING id`,
-      [validPaymentStatus, paidAmount, booking.id],
+    await applyPaidSuccessToDatabase(
+      client,
+      booking,
+      actualPaidAmount,
+      "SePay_API_Verified",
+      transactionRef,
+      { verifiedBy: "SePay_Live_Check", bookingCode: booking.booking_code },
     );
-
-    let paymentId = payRes.rows[0]?.id;
-    if (!paymentId) {
-      const newPay = await client.query(
-        `INSERT INTO public.payment (
-          id, booking_id, payment_method, expected_amount, paid_amount, status, paid_at, created_at, updated_at
-        ) VALUES (
-          gen_random_uuid(), $1, 'VietQR', $2, $2, $3::text::public.payment_status_enum, NOW(), NOW(), NOW()
-        ) RETURNING id`,
-        [booking.id, paidAmount, validPaymentStatus],
-      );
-      paymentId = newPay.rows[0].id;
-    }
-
-    const txnCode = `MB_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-    await client.query(
-      `INSERT INTO public.payment_transaction (
-        id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
-      ) VALUES (
-        gen_random_uuid(), $1, $2, 'VietQR', $3, $4::text::public.transaction_status_enum, $5, NOW()
-      )`,
-      [
-        paymentId,
-        txnCode,
-        paidAmount,
-        validTxnStatus,
-        JSON.stringify({
-          bookingCode: booking.booking_code,
-          amount: paidAmount,
-          paymentType: finalPaymentType,
-          bank: BANK_CONFIG.bankName,
-          accountNumber: BANK_CONFIG.accountNumber,
-          source: "manual_confirm",
-        }),
-      ],
-    );
-
-    // GIẢI PHÓNG KHÓA TẠM THỜI
-    try {
-      await client.query(
-        `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
-        [booking.id],
-      );
-    } catch (lockErr) {
-      console.warn("Giải phóng temporary_locks:", lockErr.message);
-    }
-
     await client.query("COMMIT");
     client.release();
 
@@ -317,10 +434,8 @@ async function confirmManualPayment(req, res) {
       success: true,
       paid: true,
       status: "paid",
-      paidAmount,
-      remainingAmount: remainingAmountVal,
-      paymentType: finalPaymentType,
-      message: "Xác nhận thanh toán thành công!",
+      paidAmount: actualPaidAmount,
+      message: "SePay đã xác thực giao dịch thành công!",
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -330,7 +445,7 @@ async function confirmManualPayment(req, res) {
   }
 }
 
-// ─── 3. CHECK STATUS CHO FRONTEND POLLING REAL-TIME ───
+// ─── 3. CHECK STATUS CHO FRONTEND POLLING REAL-TIME (MỖI 2.5 GIÂY) ───
 async function checkPaymentStatus(req, res) {
   try {
     const bookingCode =
@@ -384,14 +499,12 @@ async function checkPaymentStatus(req, res) {
   }
 }
 
-// ─── 4. WEBHOOK TIẾP NHẬN BIẾN ĐỘNG SỐ DƯ TỰ ĐỘNG TỪ NGÂN HÀNG (SEPAY / CASSO / MBBANK) ───
+// ─── 4. WEBHOOK TIẾP NHẬN BIẾN ĐỘNG SỐ DƯ TỰ ĐỘNG TỪ SEPAY ───
 async function handleBankWebhook(req, res) {
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-
     const body = req.body || {};
-    const gateway = body.gateway || body.bank_brand_name || "MBBank";
+    const gateway = body.gateway || body.bank_brand_name || "SePay";
     const transferAmount = Number(
       body.transferAmount || body.amount || body.transfer_amount || 0,
     );
@@ -399,12 +512,22 @@ async function handleBankWebhook(req, res) {
       body.content || body.description || body.transaction_content || "",
     );
     const transactionId = String(
-      body.referenceCode || body.id || `TXN_${Date.now()}`,
+      body.referenceCode ||
+        body.reference_number ||
+        body.id ||
+        `TXN_${Date.now()}`,
     );
 
-    const match = content.match(/(BK\d{8}|GST\d{6,8})/i);
+    console.log("🔔 [SePay Webhook Triggered]:", {
+      content,
+      transferAmount,
+      gateway,
+      transactionId,
+    });
+
+    // Trích xuất mã đơn bookingCode (VD: BK12345678)
+    const match = content.match(/(BK\d{7,10}|GST\d{6,8})/i);
     if (!match) {
-      await client.query("ROLLBACK");
       client.release();
       return res.status(200).json({
         success: true,
@@ -413,6 +536,8 @@ async function handleBankWebhook(req, res) {
     }
 
     const bookingCode = match[0].toUpperCase();
+
+    await client.query("BEGIN");
 
     const bookingRes = await client.query(
       `SELECT b.id, b.booking_code, b.total_price, 
@@ -435,6 +560,7 @@ async function handleBankWebhook(req, res) {
 
     const booking = bookingRes.rows[0];
 
+    // Đã thanh toán trước đó
     if (
       ["paid", "PAID", "completed", "COMPLETED"].includes(
         String(booking.payment_status || ""),
@@ -451,147 +577,35 @@ async function handleBankWebhook(req, res) {
     const totalPrice = Number(booking.total_price || 0);
     const expected = Number(booking.expected_amount || totalPrice);
 
+    // Kiểm tra đúng và đủ số tiền
     if (transferAmount < expected) {
       await client.query("ROLLBACK");
       client.release();
+      console.warn(
+        `⚠️ Khách chuyển thiếu tiền đơn ${bookingCode}: Cần ${expected}đ, nhận ${transferAmount}đ`,
+      );
       return res.status(200).json({
         success: false,
-        message: `Số tiền chuyển (${transferAmount}) nhỏ hơn số tiền dự kiến (${expected}). Cần xử lý thủ công.`,
+        message: `Số tiền chuyển (${transferAmount}) nhỏ hơn số tiền dự kiến (${expected}). Chưa thể duyệt.`,
       });
     }
 
-    const isDeposit = expected < totalPrice;
-    const finalPaymentType = isDeposit ? "DEPOSIT_30" : "FULL";
-    const depositAmountVal = isDeposit ? transferAmount : 0;
-    const remainingAmountVal = isDeposit ? totalPrice - transferAmount : 0;
-
-    const validBookingPaymentStatus = await getValidEnumValue(
+    // ĐÚNG SỐ TIỀN -> LƯU DATABASE
+    await applyPaidSuccessToDatabase(
       client,
-      "booking_payment_status_enum",
-      ["paid", "PAID", "completed", "COMPLETED", "success"],
+      booking,
+      transferAmount,
+      gateway,
+      transactionId,
+      body,
     );
-
-    const validPaymentStatus = await getValidEnumValue(
-      client,
-      "payment_status_enum",
-      ["completed", "COMPLETED", "success", "SUCCESS", "paid", "PAID"],
-    );
-
-    const validTxnStatus = await getValidEnumValue(
-      client,
-      "transaction_status_enum",
-      ["success", "SUCCESS", "completed", "COMPLETED"],
-    );
-
-    const bookingCols = await getTableColumns(client, "booking");
-    const setClauses = [];
-    const updateParams = [];
-    let paramIdx = 1;
-
-    if (bookingCols.includes("payment_status")) {
-      setClauses.push(
-        `payment_status = $${paramIdx}::text::public.booking_payment_status_enum`,
-      );
-      updateParams.push(validBookingPaymentStatus);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("status")) {
-      setClauses.push(`status = 'confirmed'::public.booking_status_enum`);
-    }
-
-    if (bookingCols.includes("customer_paid")) {
-      setClauses.push(`customer_paid = $${paramIdx}`);
-      updateParams.push(transferAmount);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("deposit_amount")) {
-      setClauses.push(`deposit_amount = $${paramIdx}`);
-      updateParams.push(depositAmountVal);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("remaining_amount")) {
-      setClauses.push(`remaining_amount = $${paramIdx}`);
-      updateParams.push(remainingAmountVal);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("payment_type")) {
-      setClauses.push(`payment_type = $${paramIdx}`);
-      updateParams.push(finalPaymentType);
-      paramIdx++;
-    }
-
-    if (bookingCols.includes("confirmed_at")) {
-      setClauses.push(`confirmed_at = NOW()`);
-    }
-
-    if (bookingCols.includes("updated_at")) {
-      setClauses.push(`updated_at = NOW()`);
-    }
-
-    if (setClauses.length > 0) {
-      updateParams.push(booking.id);
-      const updateBookingQuery = `
-        UPDATE public.booking 
-        SET ${setClauses.join(", ")}
-        WHERE id = $${paramIdx}
-      `;
-      await client.query(updateBookingQuery, updateParams);
-    }
-
-    let paymentId = booking.payment_id;
-    if (paymentId) {
-      await client.query(
-        `UPDATE public.payment 
-         SET status = $1::text::public.payment_status_enum,
-             paid_amount = $2,
-             paid_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $3`,
-        [validPaymentStatus, transferAmount, paymentId],
-      );
-    } else {
-      const newPay = await client.query(
-        `INSERT INTO public.payment (
-          id, booking_id, payment_method, expected_amount, paid_amount, status, paid_at, created_at, updated_at
-        ) VALUES (
-          gen_random_uuid(), $1, 'VietQR', $2, $3, $4::text::public.payment_status_enum, NOW(), NOW(), NOW()
-        ) RETURNING id`,
-        [booking.id, expected, transferAmount, validPaymentStatus],
-      );
-      paymentId = newPay.rows[0].id;
-    }
-
-    await client.query(
-      `INSERT INTO public.payment_transaction (
-        id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
-      ) VALUES (
-        gen_random_uuid(), $1, $2, $3, $4, $5::text::public.transaction_status_enum, $6, NOW()
-      )`,
-      [
-        paymentId,
-        transactionId,
-        gateway,
-        transferAmount,
-        validTxnStatus,
-        JSON.stringify(body),
-      ],
-    );
-
-    try {
-      await client.query(
-        `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
-        [booking.id],
-      );
-    } catch (lockErr) {
-      console.warn("Giải phóng temporary_locks:", lockErr.message);
-    }
 
     await client.query("COMMIT");
     client.release();
+
+    console.log(
+      `✅ [SePay Xác Thực Thành Công]: Đơn ${bookingCode} đã lưu Database PAID!`,
+    );
 
     return res.status(200).json({
       success: true,
@@ -602,7 +616,7 @@ async function handleBankWebhook(req, res) {
   } catch (error) {
     await client.query("ROLLBACK");
     client.release();
-    console.error("❌ LỖI WEBHOOK:", error);
+    console.error("❌ LỖI WEBHOOK SEPAY:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 }
