@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Ticket,
   Home,
-  Clock,
   ShieldCheck,
   Mail,
   Loader2,
@@ -163,10 +162,10 @@ export default function BookingSuccessPage() {
             )}
 
             <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-              <span className="text-slate-500">Trạng thái chỗ nghỉ:</span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                <Clock size={12} className="animate-pulse" /> Đã lưu vào hệ
-                thống & Giữ phòng thành công
+              <span className="text-slate-500">Trạng thái đơn phòng:</span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <CheckCircle2 size={12} className="text-emerald-600" /> Đã xác
+                nhận & Giữ phòng chính thức
               </span>
             </div>
           </div>

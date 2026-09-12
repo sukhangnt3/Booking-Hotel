@@ -8,14 +8,14 @@ export const VIETNAM_BANKS = [
     name: "Vietcombank",
     fullName: "Ngân hàng Ngoại thương Việt Nam",
   },
-  { code: "MB", name: "MB Bank", fullName: "Ngân hàng Quân đội" },
+  { code: "MB", name: "MBBank", fullName: "Ngân hàng Quân đội" },
   {
     code: "TCB",
     name: "Techcombank",
     fullName: "Ngân hàng Kỹ thương Việt Nam",
   },
   {
-    code: "CTG",
+    code: "ICB",
     name: "VietinBank",
     fullName: "Ngân hàng Công Thương Việt Nam",
   },
@@ -34,10 +34,11 @@ export const Step4PricingAndPayout = ({
   const [isVerifyingBank, setIsVerifyingBank] = useState(false);
   const [bankVerifyResult, setBankVerifyResult] = useState(null);
 
-  // 🌟 TỰ ĐỘNG ĐỒNG BỘ: Nếu chưa có ngân hàng thì gán Vietcombank, tự lấy tên từ Bước 1
+  // TỰ ĐỘNG ĐỒNG BỘ: Mặc định gán Vietcombank và lấy tên chủ tài khoản từ họ tên chủ khách sạn
   useEffect(() => {
     const updates = {};
-    if (!data?.bankName) {
+    if (!data?.bankCode) {
+      updates.bankCode = "VCB";
       updates.bankName = "Vietcombank";
     }
     if (!data?.bankAccountHolder && data?.ownerName) {
@@ -50,6 +51,16 @@ export const Step4PricingAndPayout = ({
 
   const handleMethodChange = (method) => {
     onChange({ payoutMethod: method });
+  };
+
+  const handleBankSelect = (e) => {
+    const selectedCode = e.target.value;
+    const foundBank = VIETNAM_BANKS.find((b) => b.code === selectedCode);
+    onChange({
+      bankCode: selectedCode,
+      bankName: foundBank ? foundBank.name : selectedCode,
+    });
+    setBankVerifyResult(null);
   };
 
   const handleVerifyBank = async () => {
@@ -66,7 +77,7 @@ export const Step4PricingAndPayout = ({
       await new Promise((resolve) => setTimeout(resolve, 600));
       setBankVerifyResult({
         success: true,
-        message: `✓ Khớp dữ liệu Napas: Chủ TK [${data.bankAccountHolder}] sẵn sàng nhận doanh thu.`,
+        message: `✓ Khớp dữ liệu: Chủ TK [${data.bankAccountHolder}] sẵn sàng nhận doanh thu phòng.`,
       });
     } catch {
       setBankVerifyResult({
@@ -86,11 +97,11 @@ export const Step4PricingAndPayout = ({
           toán doanh thu & Khuyến mại
         </div>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-          Phương thức nhận tiền doanh thu
+          Tài khoản ngân hàng nhận tiền đặt phòng
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          GoStay sẽ tự động đối soát và chuyển doanh thu đặt phòng vào tài khoản
-          thụ hưởng theo chu kỳ hàng tuần.
+          Khách đặt phòng quét mã VietQR sẽ chuyển tiền trực tiếp đến số tài
+          khoản này.
         </p>
       </div>
 
@@ -116,15 +127,14 @@ export const Step4PricingAndPayout = ({
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black text-slate-900">
-                  Chuyển khoản ngân hàng trực tiếp (VietQR)
+                  Chuyển khoản ngân hàng trực tiếp qua VietQR
                 </span>
                 <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
-                  Tự động & Phổ biến nhất
+                  Nhận tiền tự động
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Tiền thanh toán của khách sẽ được giải ngân thẳng vào số tài
-                khoản ngân hàng của bạn.
+                Mã QR thanh toán của khách sẽ tạo tự động theo ngân hàng này.
               </p>
             </div>
           </label>
@@ -138,25 +148,20 @@ export const Step4PricingAndPayout = ({
                     Ngân hàng thụ hưởng *
                   </label>
                   <select
-                    value={data?.bankName || "Vietcombank"}
-                    onChange={(e) => onChange({ bankName: e.target.value })}
+                    value={data?.bankCode || "VCB"}
+                    onChange={handleBankSelect}
                     className={`w-full h-11 px-3 text-xs font-bold rounded-xl border ${
-                      errors?.bankName
+                      errors?.bankName || errors?.bankCode
                         ? "border-rose-500 bg-rose-50/20"
                         : "border-slate-300 focus:border-[#006ce4]"
                     } bg-white outline-none cursor-pointer`}
                   >
                     {VIETNAM_BANKS.map((b) => (
-                      <option key={b.code} value={b.name}>
-                        {b.name} - {b.fullName}
+                      <option key={b.code} value={b.code}>
+                        {b.name} ({b.code}) - {b.fullName}
                       </option>
                     ))}
                   </select>
-                  {errors?.bankName && (
-                    <p className="text-xs text-rose-500 font-bold mt-1">
-                      {errors.bankName}
-                    </p>
-                  )}
                 </div>
 
                 {/* 2. SỐ TÀI KHOẢN */}
@@ -168,7 +173,7 @@ export const Step4PricingAndPayout = ({
                     type="text"
                     value={data?.bankAccount || ""}
                     onChange={(e) => {
-                      onChange({ bankAccount: e.target.value });
+                      onChange({ bankAccount: e.target.value.trim() });
                       setBankVerifyResult(null);
                     }}
                     placeholder="VD: 0071001234567"
@@ -212,6 +217,17 @@ export const Step4PricingAndPayout = ({
                     {errors.bankAccountHolder}
                   </p>
                 )}
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={handleVerifyBank}
+                  disabled={isVerifyingBank}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer transition disabled:opacity-50"
+                >
+                  {isVerifyingBank ? "Đang xác thực..." : "Kiểm tra tài khoản"}
+                </button>
               </div>
 
               {/* KẾT QUẢ KIỂM TRA (NẾU CÓ) */}
@@ -263,8 +279,7 @@ export const Step4PricingAndPayout = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Khách thanh toán khi check-in. Đối tác sẽ nộp phí hoa hồng định
-                kỳ vào cuối tháng.
+                Khách thanh toán khi check-in tại quầy.
               </p>
             </div>
           </label>
