@@ -32,9 +32,10 @@ export default function CheckoutPage() {
   const remainingAmount = totalAmount - depositAmount;
   const expectedAmount = isDeposit ? depositAmount : totalAmount;
 
+  // 🌟 STATE THÔNG TIN NGÂN HÀNG OWNER
   const [bankInfo, setBankInfo] = useState({
-    bankId: "MB",
-    bankName: "Đang tải thông tin ngân hàng...",
+    bankId: "VCB",
+    bankName: "Ngân hàng",
     accountNumber: "",
     accountName: "",
   });
@@ -95,44 +96,60 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // 🌟 LẤY DỮ LIỆU ĐỒNG THỜI TỪ CẢ 2 NGUỒN (KHÔNG BAO GIỜ BỊ RỖNG THÔNG TIN)
   useEffect(() => {
     async function initPayment() {
       if (!bookingCode) return;
       try {
         setLoadingPayment(true);
 
-        const res = await apiClient.post("/payments/create-qr", {
-          booking_code: bookingCode,
-          bookingCode: bookingCode,
-          payment_method: "VietQR",
-          expected_amount: expectedAmount,
-          amount: expectedAmount,
-          payment_type: rawPaymentType,
-          paymentType: rawPaymentType,
-        });
+        const [bookingRes, qrRes] = await Promise.allSettled([
+          apiClient.get(`/bookings/code/${bookingCode}`),
+          apiClient.post("/payments/create-qr", {
+            booking_code: bookingCode,
+            bookingCode: bookingCode,
+            amount: expectedAmount,
+            payment_type: rawPaymentType,
+          }),
+        ]);
 
-        const data = res?.data || res;
-        setPaymentData(data);
+        const bData =
+          bookingRes.status === "fulfilled"
+            ? bookingRes.value?.data || bookingRes.value
+            : null;
+        const qData =
+          qrRes.status === "fulfilled"
+            ? qrRes.value?.data || qrRes.value
+            : null;
 
-        const ownerBank = data?.bankInfo || data?.bank_info;
-        if (ownerBank) {
+        const combinedData = qData || bData;
+        setPaymentData(combinedData);
+
+        const ownerBank =
+          qData?.bankInfo ||
+          qData?.bank_info ||
+          bData?.bankInfo ||
+          bData?.bank_info ||
+          bData?.booking?.bank_info;
+
+        if (ownerBank && ownerBank.accountNumber) {
           setBankInfo({
-            bankId: ownerBank.bankId || ownerBank.bank_id || "MB",
+            bankId: (ownerBank.bankId || ownerBank.bank_id || "VCB")
+              .toUpperCase()
+              .trim(),
             bankName: ownerBank.bankName || ownerBank.bank_name || "Ngân hàng",
-            accountNumber:
-              ownerBank.accountNumber ||
-              ownerBank.account_number ||
-              ownerBank.bankAccount ||
-              "",
-            accountName:
-              ownerBank.accountName ||
-              ownerBank.account_name ||
-              ownerBank.bankAccountHolder ||
-              "",
+            accountNumber: String(
+              ownerBank.accountNumber || ownerBank.account_number || "",
+            ).trim(),
+            accountName: String(
+              ownerBank.accountName || ownerBank.account_name || "",
+            )
+              .toUpperCase()
+              .trim(),
           });
         }
       } catch (err) {
-        console.warn("Lỗi tải thông tin thanh toán:", err);
+        console.error("Lỗi tải thông tin thanh toán:", err);
       } finally {
         setLoadingPayment(false);
       }
@@ -141,9 +158,11 @@ export default function CheckoutPage() {
     initPayment();
   }, [bookingCode, expectedAmount, rawPaymentType]);
 
+  // Link mã QR VietQR động
   const qrImageSrc =
     paymentData?.qr_code ||
     paymentData?.qrCodeUrl ||
+    paymentData?.booking?.qr_code ||
     (bankInfo.accountNumber
       ? `https://img.vietqr.io/image/${bankInfo.bankId}-${bankInfo.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${bookingCode}&accountName=${encodeURIComponent(bankInfo.accountName)}`
       : "");
@@ -367,7 +386,7 @@ export default function CheckoutPage() {
                       size={28}
                     />
                     <span className="text-[11px] text-slate-400 font-bold">
-                      Đang lấy thông tin ngân hàng của Khách sạn...
+                      Đang lấy mã QR của Khách sạn...
                     </span>
                   </div>
                 ) : qrImageSrc ? (
