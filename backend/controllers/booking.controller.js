@@ -1,7 +1,50 @@
 // backend/controllers/booking.controller.js
 const crypto = require("crypto");
 const pool = require("../config/database");
-const { getOwnerBankAccount } = require("./paymentController");
+
+// Tài khoản sàn mặc định (nếu khách sạn chưa điền số tài khoản)
+const DEFAULT_PLATFORM_BANK = {
+  bankId: process.env.PLATFORM_BANK_ID || "MB",
+  bankName:
+    process.env.PLATFORM_BANK_NAME || "Ngân hàng TMCP Quân Đội (MBBank)",
+  accountNumber: process.env.PLATFORM_BANK_ACCOUNT || "0833404928",
+  accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
+};
+
+// 🌟 HÀM LẤY TÀI KHOẢN NGÂN HÀNG CỦA OWNER TRỰC TIẾP TỪ BẢNG HOTEL
+async function getOwnerBankAccount(hotelId) {
+  if (!hotelId) return DEFAULT_PLATFORM_BANK;
+  try {
+    const res = await pool.query(
+      `SELECT bank_code, bank_name, bank_account, bank_account_holder, name
+       FROM public.hotel
+       WHERE id::text = $1::text
+       LIMIT 1`,
+      [hotelId],
+    );
+
+    if (res.rows.length > 0) {
+      const row = res.rows[0];
+      if (row.bank_account && String(row.bank_account).trim() !== "") {
+        return {
+          bankId: String(row.bank_code || "VCB")
+            .toUpperCase()
+            .trim(),
+          bankName: row.bank_name || "Vietcombank",
+          accountNumber: String(row.bank_account).trim(),
+          accountName: String(
+            row.bank_account_holder || row.name || "CHỦ KHÁCH SẠN",
+          )
+            .toUpperCase()
+            .trim(),
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("⚠️ getOwnerBankAccount fallback:", err.message);
+  }
+  return DEFAULT_PLATFORM_BANK;
+}
 
 // Hàm dọn dẹp các lock đã hết hạn
 async function cleanupExpiredLocks() {
@@ -11,7 +54,7 @@ async function cleanupExpiredLocks() {
        WHERE lock_expires_at < NOW() OR (expires_at IS NOT NULL AND expires_at < NOW())`,
     );
   } catch (e) {
-    // Không làm gián đoạn nếu bảng chưa có cột
+    // Bỏ qua nếu bảng chưa có cột
   }
 }
 
@@ -236,7 +279,7 @@ async function createBooking(req, res, next) {
       ]);
     }
 
-    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
+    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN ĐỂ TẠO VIETQR
     const ownerBank = await getOwnerBankAccount(hotel_id);
 
     const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(ownerBank.accountName)}`;

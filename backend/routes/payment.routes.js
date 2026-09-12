@@ -2,18 +2,26 @@
 const express = require("express");
 const router = express.Router();
 
+// Tự động nhận diện cả 2 kiểu đặt tên file: payment.controller.js hoặc paymentController.js
+let paymentController;
+try {
+  paymentController = require("../controllers/payment.controller");
+} catch (e) {
+  paymentController = require("../controllers/paymentController");
+}
+
 const {
   createVietQrPayment,
   confirmManualPayment,
   checkPaymentStatus,
   handleBankWebhook,
-} = require("../controllers/paymentController");
+} = paymentController;
 
 // 1. Tạo thông tin VietQR động theo tài khoản ngân hàng của Owner khách sạn
 router.post("/create-qr", createVietQrPayment);
 router.post("/vietqr-init", createVietQrPayment);
 
-// 2. Nút "Tôi đã chuyển khoản - Kiểm tra ngay" (Gọi API SePay xác thực thực tế trước khi lưu)
+// 2. Nút "Tôi đã chuyển khoản - Kiểm tra ngay" (Đối soát SePay thực tế trước khi lưu)
 router.post("/confirm-manual", confirmManualPayment);
 
 // 3. Kiểm tra trạng thái thanh toán theo thời gian thực (Polling mỗi 2.5 giây)
