@@ -6,7 +6,6 @@ import {
   ChevronRight,
   ChevronLeft,
   Eye,
-  ShieldCheck,
   Building2,
   HelpCircle,
   Loader2,
@@ -21,7 +20,6 @@ import { Step6PropertyDetails } from "./Step6PropertyDetails.jsx";
 import { Step7HostProfile } from "./Step7HostProfile.jsx";
 import { Step8Publish } from "./Step8Publish.jsx";
 import { ReviewModal } from "./ReviewModal.jsx";
-import { AuditReportView } from "./AuditReportView.jsx";
 import SubmittedSuccessView from "./SubmittedSuccessView.jsx";
 
 import { useAuthStore } from "@/stores/authStore";
@@ -106,7 +104,6 @@ export const RegisterForm = () => {
   const [loading, setLoading] = useState(false);
 
   const [isReviewOpen, setIsReviewOpen] = useState(false);
-  const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [submittedApplication, setSubmittedApplication] = useState(null);
 
   useEffect(() => {
@@ -139,7 +136,6 @@ export const RegisterForm = () => {
     const err = {};
 
     if (currentStep === 1) {
-      // Chỉ xem tài khoản đã sẵn sàng nếu người dùng thực sự đã đăng nhập với user hợp lệ
       const isAlreadyReady = isAuthenticated && Boolean(user?.id);
 
       if (!isAlreadyReady) {
@@ -151,6 +147,10 @@ export const RegisterForm = () => {
         }
         if (!formData.emailContact?.trim()) {
           err.emailContact = "Vui lòng nhập email đăng nhập!";
+        } else if (
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.emailContact.trim())
+        ) {
+          err.emailContact = "Định dạng email không hợp lệ!";
         }
         if (!formData.password || formData.password.length < 6) {
           err.password = "Mật khẩu tối thiểu 6 ký tự!";
@@ -213,7 +213,7 @@ export const RegisterForm = () => {
     if (currentStep === 8) {
       if (!formData.acceptedTerms) {
         err.acceptedTerms =
-          "Quý đối tác cần đọc và chấp nhận Quy chế hoạt động để kích hoạt mở bán!";
+          "Quý đối tác cần đọc và chấp nhận Quy chế hoạt động cùng biểu phí hoa hồng để kích hoạt mở bán!";
       }
     }
 
@@ -225,135 +225,38 @@ export const RegisterForm = () => {
     return true;
   };
 
+  // 🌟 BƯỚC 1: CHỈ CHECK TRÙNG EMAIL QUA API (KHÔNG TẠO USER VỘI ĐỂ TRÁNH RÁC DATABASE)
   const handleNext = async () => {
     if (!validateCurrentStep()) return;
 
-    // Chỉ coi tài khoản đã sẵn sàng nếu user đã đăng nhập thực tế
     const isAccountReady = isAuthenticated && Boolean(user?.id);
 
-    // 🌟 NẾU CHƯA CÓ TÀI KHOẢN: TẠO NGAY VÀO BẢNG USERS Ở BƯỚC 1
     if (currentStep === 1 && !isAccountReady) {
       setLoading(true);
       const email = (formData.emailContact || "").trim().toLowerCase();
-      const password = formData.password;
 
       try {
-        const regRes = await apiClient.post("/auth/register", {
-          full_name: formData.ownerName.trim(),
-          name: formData.ownerName.trim(),
-          email: email,
-          phone: formData.phoneContact.trim(),
-          password: password,
-          role: "hotel_owner",
-        });
+        const checkRes = await apiClient
+          .get(`/auth/check-email?email=${encodeURIComponent(email)}`)
+          .catch(() => null);
 
-        let token =
-          regRes.data?.token ||
-          regRes.data?.data?.token ||
-          regRes.token ||
-          regRes.data?.accessToken;
-        let createdUser =
-          regRes.data?.user || regRes.data?.data?.user || regRes.user;
-
-        if (!token) {
-          try {
-            const loginRes = await apiClient.post("/auth/login", {
-              email: email,
-              password: password,
-            });
-            token =
-              loginRes.data?.token ||
-              loginRes.data?.data?.token ||
-              loginRes.token ||
-              loginRes.data?.accessToken;
-            createdUser =
-              loginRes.data?.user ||
-              loginRes.data?.data?.user ||
-              loginRes.user ||
-              createdUser;
-          } catch (autoLoginErr) {
-            console.warn(
-              "Không thể tự động đăng nhập sau đăng ký:",
-              autoLoginErr,
-            );
-          }
+        if (checkRes?.data?.exists || checkRes?.exists) {
+          setErrors((prev) => ({
+            ...prev,
+            emailContact:
+              "⚠️ Email này đã có tài khoản trên hệ thống! Vui lòng sử dụng email khác hoặc đăng nhập.",
+          }));
+          setLoading(false);
+          return;
         }
 
-        if (token) {
-          localStorage.setItem("token", token);
-          localStorage.setItem("access_token", token);
-          if (setAuth) setAuth(token, createdUser);
-        }
-
-        setFormData((prev) => ({
-          ...prev,
-          isAccountCreated: true,
-          ownerId: createdUser?.id || prev.ownerId,
-        }));
-
+        // Email hợp lệ -> Chỉ chuyển bước 2, KHÔNG TẠO USER RÁC ở đây
         setCurrentStep(2);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
-        const errorMsg =
-          err.response?.data?.message ||
-          err.response?.data?.error ||
-          err.message ||
-          "";
-        const lowerMsg = errorMsg.toLowerCase();
-
-        const isEmailDuplicate =
-          lowerMsg.includes("sử dụng") ||
-          lowerMsg.includes("tồn tại") ||
-          lowerMsg.includes("already") ||
-          lowerMsg.includes("duplicate") ||
-          lowerMsg.includes("đăng ký") ||
-          err.response?.status === 409 ||
-          err.response?.status === 400 ||
-          err.response?.status === 422;
-
-        if (isEmailDuplicate) {
-          try {
-            const loginRes = await apiClient.post("/auth/login", {
-              email: email,
-              password: password,
-            });
-
-            const loginToken =
-              loginRes.data?.token ||
-              loginRes.data?.data?.token ||
-              loginRes.token ||
-              loginRes.data?.accessToken;
-            const loginUser =
-              loginRes.data?.user || loginRes.data?.data?.user || loginRes.user;
-
-            if (loginToken) {
-              localStorage.setItem("token", loginToken);
-              localStorage.setItem("access_token", loginToken);
-              if (setAuth) setAuth(loginToken, loginUser);
-
-              setFormData((prev) => ({
-                ...prev,
-                isAccountCreated: true,
-                ownerId: loginUser?.id || prev.ownerId,
-                ownerName: loginUser?.full_name || prev.ownerName,
-              }));
-
-              setCurrentStep(2);
-              window.scrollTo({ top: 0, behavior: "smooth" });
-              return;
-            }
-          } catch (loginErr) {
-            setErrors((prev) => ({
-              ...prev,
-              password:
-                "Email này đã có tài khoản trên hệ thống. Vui lòng nhập đúng mật khẩu để tiếp tục!",
-            }));
-            return;
-          }
-        } else {
-          alert(`Đăng ký tài khoản thất bại: ${errorMsg}`);
-          return;
-        }
+        console.warn("Bỏ qua kiểm tra email offline:", err);
+        setCurrentStep(2);
+        window.scrollTo({ top: 0, behavior: "smooth" });
       } finally {
         setLoading(false);
       }
@@ -378,116 +281,70 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
-  const handleAutoFillDemo = () => {
-    setFormData((prev) => ({
-      ...prev,
-      ownerName: prev.ownerName || "Nguyễn Thành Long",
-      phoneContact: prev.phoneContact || "0901234567",
-      emailContact: prev.emailContact || "partner.demo@gostay.vn",
-      password: prev.password || "123456",
-      hotelName: "GoStay Grand Luxury Hotel & Resort",
-      propertyType: "hotel",
-      address: "123 Đường Thùy Vân, Phường Thắng Tam",
-      buildingInfo: "Tòa A, Khu Bãi Sau",
-      city: "Vũng Tàu",
-      province: "Bà Rịa - Vũng Tàu",
-      district: "Vũng Tàu",
-      zipCode: "78000",
-      is_beachfront: true,
-      distance_to_center: 0.8,
-      propertyAmenities: [
-        "wifi",
-        "parking",
-        "24h_front_desk",
-        "elevator",
-        "air_conditioner",
-        "private_beach",
-      ],
-      rooms: [
-        {
-          id: "room-demo-1",
-          category: "double",
-          name: "Phòng Deluxe Giường Đôi Hướng Biển",
-          custom_name: "Deluxe Ocean View Double",
-          smoking_policy: "non_smoking",
-          type: "Deluxe",
-          room_view: "sea_view",
-          bed_type: "1 Giường đôi lớn (King/Queen Size)",
-          room_area: 32,
-          capacity: 2,
-          amount: 10,
-          roomNumbersText:
-            "P.101, P.102, P.103, P.104, P.105, P.106, P.107, P.108, P.109, P.110",
-          base_price: 850000,
-          description: "Phòng nghỉ view biển tuyệt đẹp, ban công thoáng đãng.",
-          roomAmenities: [
-            "air_conditioner",
-            "tv_smart",
-            "wifi",
-            "hot_water",
-            "balcony",
-          ],
-        },
-      ],
-      starRating: 5,
-      description:
-        "Tọa lạc ngay mặt tiền biển Bãi Sau Vũng Tàu, GoStay Grand Luxury Hotel mang đến cho bạn trải nghiệm nghỉ dưỡng 5 sao đẳng cấp với tầm nhìn trực diện biển, hồ bơi vô cực và ẩm thực hải sản tươi ngon.",
-      checkInFrom: "14:00",
-      checkInTo: "23:00",
-      checkOutTo: "12:00",
-      cancellation_deadline_hours: 24,
-      bankCode: "VCB",
-      bankName: "Vietcombank",
-      bankAccount: "0071001999888",
-      bankAccountHolder: prev.ownerName?.toUpperCase() || "NGUYEN THANH LONG",
-      taxCode: "0312345678",
-      acceptedTerms: true,
-      hotelMainImage:
-        "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
-      hotelImages: [
-        {
-          id: "demo-1",
-          url: "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
-          title: "Mặt tiền khách sạn",
-        },
-        {
-          id: "demo-2",
-          url: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
-          title: "Hồ bơi vô cực ngoài trời",
-        },
-        {
-          id: "demo-3",
-          url: "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
-          title: "Phòng ngủ Deluxe Ocean View",
-        },
-      ],
-    }));
-    setIsAuditOpen(false);
-  };
-
+  // 🌟 BƯỚC 8: TẠO TÀI KHOẢN VÀ ĐĂNG TẢI KHÁCH SẠN TRỌN GÓI VÀO DATABASE
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
       return;
     }
 
-    const token =
-      localStorage.getItem("token") ||
-      localStorage.getItem("access_token") ||
-      useAuthStore.getState().token;
-
-    if (!token) {
-      alert(
-        "Phiên làm việc chưa có mã xác thực. Vui lòng quay lại Bước 1 kiểm tra tài khoản!",
-      );
-      setIsReviewOpen(false);
-      setCurrentStep(1);
-      return;
-    }
-
     setLoading(true);
 
     try {
+      let activeToken =
+        localStorage.getItem("token") ||
+        localStorage.getItem("access_token") ||
+        useAuthStore.getState().token;
+
+      let currentOwnerId = user?.id || formData.ownerId;
+
+      // 1. NẾU CHƯA CÓ TÀI KHOẢN -> TẠO NGAY TẠI BƯỚC NÀY
+      if (!activeToken || !currentOwnerId) {
+        const email = (formData.emailContact || "").trim().toLowerCase();
+        const password = formData.password;
+
+        const regRes = await apiClient.post("/auth/register", {
+          full_name: formData.ownerName.trim(),
+          name: formData.ownerName.trim(),
+          email: email,
+          phone: formData.phoneContact.trim(),
+          password: password,
+          role: "hotel_owner",
+        });
+
+        activeToken =
+          regRes.data?.token ||
+          regRes.data?.data?.token ||
+          regRes.token ||
+          regRes.data?.accessToken;
+
+        const createdUser =
+          regRes.data?.user || regRes.data?.data?.user || regRes.user;
+
+        if (!activeToken) {
+          try {
+            const loginRes = await apiClient.post("/auth/login", {
+              email: email,
+              password: password,
+            });
+            activeToken =
+              loginRes.data?.token ||
+              loginRes.data?.data?.token ||
+              loginRes.token ||
+              loginRes.data?.accessToken;
+          } catch (autoLoginErr) {
+            console.warn("Lỗi tự động đăng nhập sau đăng ký:", autoLoginErr);
+          }
+        }
+
+        if (activeToken) {
+          localStorage.setItem("token", activeToken);
+          localStorage.setItem("access_token", activeToken);
+          if (setAuth) setAuth(activeToken, createdUser);
+        }
+      }
+
+      // 2. CHUẨN BỊ PAYLOAD PHÒNG & KHÁCH SẠN
       const processedRooms = formData.rooms.map((r, rIdx) => {
         let numbers = [];
         if (r.roomNumbersText) {
@@ -548,7 +405,6 @@ export const RegisterForm = () => {
         cancellation_deadline_hours: Number(
           formData.cancellation_deadline_hours || 24,
         ),
-        // 🌟 BỔ SUNG ĐẦY ĐỦ THÔNG TIN NGÂN HÀNG OWNER
         bank_code: formData.bankCode || "VCB",
         bankCode: formData.bankCode || "VCB",
         bank_name: formData.bankName || "Vietcombank",
@@ -559,7 +415,7 @@ export const RegisterForm = () => {
         bankAccountHolder: formData.bankAccountHolder || formData.ownerName,
         tax_code: formData.taxCode || null,
         business_license_url: formData.businessLicenseUrl || null,
-        commission_rate: Number(formData.commissionRate || 18.0),
+        commission_rate: Number(formData.commissionRate || 18.0), // 💰 HOA HỒNG SÀN HƯỞNG
         image: formData.hotelMainImage || allImages[0]?.path || "",
         rooms: processedRooms,
         amenities: formData.propertyAmenities,
@@ -568,14 +424,13 @@ export const RegisterForm = () => {
 
       const res = await apiClient.post("/hotels/register", payload, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${activeToken}`,
         },
       });
 
       const responseData = res?.data || res;
       const createdHotel = responseData?.hotel || responseData;
 
-      // 🌟 NẾU BACKEND TRẢ VỀ TOKEN MỚI, TỰ ĐỘNG CẬP NHẬT ĐỂ KHÔNG BỊ LỖI 401
       const newToken = responseData?.token || responseData?.accessToken;
       const newUser = responseData?.user;
 
@@ -597,11 +452,11 @@ export const RegisterForm = () => {
             profileRes?.user;
 
           if (updatedUser && setAuth) {
-            setAuth(newToken || token, updatedUser);
+            setAuth(newToken || activeToken, updatedUser);
           }
         }
       } catch (profileErr) {
-        // Bỏ qua cảnh báo phụ nếu profile đã được cập nhật
+        // Bỏ qua cảnh báo phụ
       }
 
       setSubmittedApplication({
@@ -636,14 +491,19 @@ export const RegisterForm = () => {
 
   return (
     <div className="min-h-screen bg-[#f5f7fa] font-sans text-slate-800 pb-20">
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 sm:px-12 py-3 shadow-xs">
+      {/* 🌟 HEADER SIÊU GỌN: BẤM LOGO LÀ VỀ TRANG CHỦ, BỎ HOÀN TOÀN 2 NÚT THỪA */}
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 sm:px-12 py-3.5 shadow-2xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#003580] text-white flex items-center justify-center font-black shadow-md">
+          <div
+            onClick={() => navigate("/")}
+            className="flex items-center gap-3 cursor-pointer group select-none transition"
+            title="Quay về Trang chủ GoStay"
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#003580] text-white flex items-center justify-center font-black shadow-md group-hover:bg-blue-900 group-hover:scale-105 transition">
               <Building2 size={22} />
             </div>
             <div>
-              <span className="font-black text-[#003580] text-lg tracking-tight block leading-none">
+              <span className="font-black text-[#003580] text-lg tracking-tight block leading-none group-hover:text-blue-900 transition">
                 GoStay Partner Hub
               </span>
               <span className="text-[11px] font-bold text-slate-400">
@@ -651,31 +511,11 @@ export const RegisterForm = () => {
               </span>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 sm:gap-4">
-            <button
-              type="button"
-              onClick={() => setIsAuditOpen(true)}
-              className="text-xs font-bold text-[#006ce4] bg-[#e8f2ff] hover:bg-blue-100 px-3.5 py-2 rounded-xl border border-blue-200 flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <ShieldCheck size={16} />
-              <span className="hidden sm:inline">
-                Kiểm định hồ sơ (Auditor)
-              </span>
-            </button>
-
-            <button
-              onClick={() => navigate("/")}
-              className="text-xs font-bold text-slate-600 hover:text-slate-900 px-3 py-2 rounded-xl hover:bg-slate-100 transition cursor-pointer"
-            >
-              Lưu & Thoát
-            </button>
-          </div>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto pt-8 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-        <div className="hidden md:block md:col-span-4 lg:col-span-3 sticky top-20 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="hidden md:block md:col-span-4 lg:col-span-3 sticky top-20 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
           <div className="text-xs font-black text-[#003580] uppercase tracking-wider pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
             <span>Tiến trình hồ sơ</span>
             <span className="text-[#006ce4] font-black">{currentStep}/8</span>
@@ -725,7 +565,7 @@ export const RegisterForm = () => {
           </div>
         </div>
 
-        <div className="md:col-span-8 lg:col-span-9 bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="md:col-span-8 lg:col-span-9 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xs">
           {currentStep === 1 && (
             <Step1HotelInfo
               data={formData}
@@ -806,8 +646,8 @@ export const RegisterForm = () => {
                 >
                   {loading && currentStep === 1 ? (
                     <>
-                      <Loader2 size={16} className="animate-spin" /> Đang tạo
-                      tài khoản đối tác...
+                      <Loader2 size={16} className="animate-spin" /> Đang kiểm
+                      tra email...
                     </>
                   ) : (
                     <>
@@ -824,8 +664,8 @@ export const RegisterForm = () => {
                 >
                   {loading ? (
                     <>
-                      <Loader2 size={16} className="animate-spin" /> Đang xử lý
-                      đăng tải...
+                      <Loader2 size={16} className="animate-spin" /> Đang tạo
+                      tài khoản & đăng tải...
                     </>
                   ) : (
                     "Xác nhận & Mở bán"
@@ -844,16 +684,6 @@ export const RegisterForm = () => {
         onConfirmSubmit={handleFinalSubmit}
         loading={loading}
       />
-
-      {isAuditOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <AuditReportView
-            data={formData}
-            onClose={() => setIsAuditOpen(false)}
-            onAutoFillDemo={handleAutoFillDemo}
-          />
-        </div>
-      )}
     </div>
   );
 };
