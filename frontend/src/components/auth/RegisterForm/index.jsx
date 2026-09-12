@@ -56,7 +56,8 @@ const initialFormData = {
   enableFirstBookingDiscount: false,
   initialPromoPercent: 0,
   payoutMethod: "bank_transfer",
-  bankName: "",
+  bankCode: "VCB",
+  bankName: "Vietcombank",
   bankAccount: "",
   bankAccountHolder: "",
 
@@ -109,19 +110,21 @@ export const RegisterForm = () => {
   const [submittedApplication, setSubmittedApplication] = useState(null);
 
   useEffect(() => {
-    if (user && user.email) {
+    if (user && user.email && isAuthenticated) {
       setFormData((prev) => ({
         ...prev,
         isAccountCreated: true,
         ownerId: user.id || prev.ownerId,
-        ownerName: user.full_name || prev.ownerName,
+        ownerName: user.full_name || user.name || prev.ownerName,
         emailContact: user.email,
         phoneContact: user.phone || prev.phoneContact,
         bankAccountHolder:
-          user.full_name?.toUpperCase() || prev.bankAccountHolder,
+          user.full_name?.toUpperCase() ||
+          user.name?.toUpperCase() ||
+          prev.bankAccountHolder,
       }));
     }
-  }, [user]);
+  }, [user, isAuthenticated]);
 
   const handleChange = (updatedFields) => {
     setFormData((prev) => ({ ...prev, ...updatedFields }));
@@ -136,15 +139,8 @@ export const RegisterForm = () => {
     const err = {};
 
     if (currentStep === 1) {
-      const existingToken =
-        localStorage.getItem("token") || localStorage.getItem("access_token");
-      const isAlreadyReady =
-        isAuthenticated ||
-        formData.isAccountCreated ||
-        Boolean(formData.ownerId) ||
-        (existingToken &&
-          existingToken !== "undefined" &&
-          existingToken !== "null");
+      // Chỉ xem tài khoản đã sẵn sàng nếu người dùng thực sự đã đăng nhập với user hợp lệ
+      const isAlreadyReady = isAuthenticated && Boolean(user?.id);
 
       if (!isAlreadyReady) {
         if (!formData.ownerName?.trim()) {
@@ -232,19 +228,10 @@ export const RegisterForm = () => {
   const handleNext = async () => {
     if (!validateCurrentStep()) return;
 
-    const existingToken =
-      localStorage.getItem("token") || localStorage.getItem("access_token");
-    const hasValidToken =
-      existingToken &&
-      existingToken !== "undefined" &&
-      existingToken !== "null";
+    // Chỉ coi tài khoản đã sẵn sàng nếu user đã đăng nhập thực tế
+    const isAccountReady = isAuthenticated && Boolean(user?.id);
 
-    const isAccountReady =
-      isAuthenticated ||
-      hasValidToken ||
-      formData.isAccountCreated ||
-      Boolean(formData.ownerId);
-
+    // 🌟 NẾU CHƯA CÓ TÀI KHOẢN: TẠO NGAY VÀO BẢNG USERS Ở BƯỚC 1
     if (currentStep === 1 && !isAccountReady) {
       setLoading(true);
       const email = (formData.emailContact || "").trim().toLowerCase();
@@ -257,11 +244,14 @@ export const RegisterForm = () => {
           email: email,
           phone: formData.phoneContact.trim(),
           password: password,
-          role: "CUSTOMER",
+          role: "hotel_owner",
         });
 
         let token =
-          regRes.data?.token || regRes.data?.data?.token || regRes.token;
+          regRes.data?.token ||
+          regRes.data?.data?.token ||
+          regRes.token ||
+          regRes.data?.accessToken;
         let createdUser =
           regRes.data?.user || regRes.data?.data?.user || regRes.user;
 
@@ -274,7 +264,8 @@ export const RegisterForm = () => {
             token =
               loginRes.data?.token ||
               loginRes.data?.data?.token ||
-              loginRes.token;
+              loginRes.token ||
+              loginRes.data?.accessToken;
             createdUser =
               loginRes.data?.user ||
               loginRes.data?.data?.user ||
@@ -330,7 +321,8 @@ export const RegisterForm = () => {
             const loginToken =
               loginRes.data?.token ||
               loginRes.data?.data?.token ||
-              loginRes.token;
+              loginRes.token ||
+              loginRes.data?.accessToken;
             const loginUser =
               loginRes.data?.user || loginRes.data?.data?.user || loginRes.user;
 
@@ -444,6 +436,7 @@ export const RegisterForm = () => {
       checkInTo: "23:00",
       checkOutTo: "12:00",
       cancellation_deadline_hours: 24,
+      bankCode: "VCB",
       bankName: "Vietcombank",
       bankAccount: "0071001999888",
       bankAccountHolder: prev.ownerName?.toUpperCase() || "NGUYEN THANH LONG",
@@ -555,9 +548,15 @@ export const RegisterForm = () => {
         cancellation_deadline_hours: Number(
           formData.cancellation_deadline_hours || 24,
         ),
+        // 🌟 BỔ SUNG ĐẦY ĐỦ THÔNG TIN NGÂN HÀNG OWNER
+        bank_code: formData.bankCode || "VCB",
+        bankCode: formData.bankCode || "VCB",
         bank_name: formData.bankName || "Vietcombank",
+        bankName: formData.bankName || "Vietcombank",
         bank_account: formData.bankAccount || "Chưa cập nhật",
+        bankAccount: formData.bankAccount || "Chưa cập nhật",
         bank_account_holder: formData.bankAccountHolder || formData.ownerName,
+        bankAccountHolder: formData.bankAccountHolder || formData.ownerName,
         tax_code: formData.taxCode || null,
         business_license_url: formData.businessLicenseUrl || null,
         commission_rate: Number(formData.commissionRate || 18.0),
@@ -573,7 +572,20 @@ export const RegisterForm = () => {
         },
       });
 
-      const createdHotel = res.hotel || res.data?.hotel || res.data || res;
+      const responseData = res?.data || res;
+      const createdHotel = responseData?.hotel || responseData;
+
+      // 🌟 NẾU BACKEND TRẢ VỀ TOKEN MỚI, TỰ ĐỘNG CẬP NHẬT ĐỂ KHÔNG BỊ LỖI 401
+      const newToken = responseData?.token || responseData?.accessToken;
+      const newUser = responseData?.user;
+
+      if (newToken) {
+        localStorage.setItem("token", newToken);
+        localStorage.setItem("access_token", newToken);
+        if (setAuth && newUser) {
+          setAuth(newToken, newUser);
+        }
+      }
 
       try {
         if (authService?.getProfile) {
@@ -585,11 +597,11 @@ export const RegisterForm = () => {
             profileRes?.user;
 
           if (updatedUser && setAuth) {
-            setAuth(token, updatedUser);
+            setAuth(newToken || token, updatedUser);
           }
         }
       } catch (profileErr) {
-        console.warn("Không thể tự động đồng bộ profile mới:", profileErr);
+        // Bỏ qua cảnh báo phụ nếu profile đã được cập nhật
       }
 
       setSubmittedApplication({
@@ -794,8 +806,8 @@ export const RegisterForm = () => {
                 >
                   {loading && currentStep === 1 ? (
                     <>
-                      <Loader2 size={16} className="animate-spin" /> Đang xác
-                      thực tài khoản...
+                      <Loader2 size={16} className="animate-spin" /> Đang tạo
+                      tài khoản đối tác...
                     </>
                   ) : (
                     <>
