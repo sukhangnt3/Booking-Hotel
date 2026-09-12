@@ -767,7 +767,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (AN TOÀN TUYỆT ĐỐI - KHÔNG LỖI 500) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (CHUẨN THAM SỐ $1, $2... 100% TUẦN TỰ) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -801,12 +801,10 @@ async function registerHotel(req, res, next) {
       image,
       images = [],
       gallery = [],
-      amenities = [],
       is_beachfront = false,
       distance_to_center,
     } = req.body;
 
-    // 🌟 LẤY ĐÚNG THÔNG TIN NGÂN HÀNG (HỖ TRỢ CẢ CAMELCASE VÀ SNAKE_CASE TỪ FRONTEND)
     const bank_code = req.body.bank_code || req.body.bankCode || "VCB";
     const bank_name = req.body.bank_name || req.body.bankName || "Vietcombank";
     const bank_account = req.body.bank_account || req.body.bankAccount || null;
@@ -846,7 +844,7 @@ async function registerHotel(req, res, next) {
     const newHotelId = crypto.randomUUID();
     const finalPropType = property_type || propertyType || "hotel";
 
-    // 🌟 QUÉT CÁC CỘT THỰC TẾ TRONG BẢNG HOTEL ĐỂ TẠO CÂU INSERT AN TOÀN 100%
+    // 🌟 QUÉT CÁC CỘT THỰC TẾ TRONG BẢNG HOTEL ĐỂ TẠO CÂU LỆNH INSERT TUẦN TỰ CHUẨN XÁC
     const colRes = await client.query(
       `SELECT column_name 
        FROM information_schema.columns 
@@ -854,83 +852,65 @@ async function registerHotel(req, res, next) {
     );
     const existingCols = colRes.rows.map((r) => r.column_name.toLowerCase());
 
-    const insertFields = [
-      "id",
-      "owner_id",
-      "name",
-      "address",
-      "city",
-      "status",
-      "created_at",
-      "updated_at",
-    ];
-    const insertValues = [
-      newHotelId,
-      ownerId,
-      name.trim(),
-      address.trim(),
-      city.trim(),
-      "pending",
-      "NOW()",
-      "NOW()",
-    ];
-    const queryParams = [
-      newHotelId,
-      ownerId,
-      name.trim(),
-      address.trim(),
-      city.trim(),
-    ];
-    let paramIdx = 6;
+    const fields = [];
+    const placeholders = [];
+    const values = [];
 
-    const addFieldIfExist = (colName, value, isDirectSql = false) => {
+    const addField = (colName, value, customPlaceholder = null) => {
       if (existingCols.includes(colName.toLowerCase())) {
-        insertFields.push(colName);
-        if (isDirectSql) {
-          insertValues.push(value);
+        fields.push(colName);
+        if (customPlaceholder) {
+          placeholders.push(customPlaceholder);
         } else {
-          insertValues.push(`$${paramIdx}`);
-          queryParams.push(value);
-          paramIdx++;
+          values.push(value);
+          placeholders.push(`$${values.length}`);
         }
       }
     };
 
-    addFieldIfExist("latitude", finalLat);
-    addFieldIfExist("longitude", finalLng);
-    addFieldIfExist("phone", phone || null);
-    addFieldIfExist("email", email || null);
-    addFieldIfExist("star_rating", star_rating ? Number(star_rating) : 3);
-    addFieldIfExist("property_type", finalPropType);
-    addFieldIfExist("description", description || null);
-    addFieldIfExist(
+    addField("id", newHotelId);
+    addField("owner_id", ownerId);
+    addField("name", name.trim());
+    addField("address", address.trim());
+    addField("city", city.trim());
+    addField("status", "pending");
+    addField("created_at", null, "NOW()");
+    addField("updated_at", null, "NOW()");
+    addField("latitude", finalLat);
+    addField("longitude", finalLng);
+    addField("phone", phone || null);
+    addField("email", email || null);
+    addField("star_rating", star_rating ? Number(star_rating) : 3);
+    addField("property_type", finalPropType);
+    addField("description", description || null);
+    addField(
       "checkin_time",
       checkin_time ? String(checkin_time).slice(0, 5) + ":00" : "14:00:00",
     );
-    addFieldIfExist(
+    addField(
       "checkout_time",
       checkout_time ? String(checkout_time).slice(0, 5) + ":00" : "12:00:00",
     );
-    addFieldIfExist("bank_code", bank_code);
-    addFieldIfExist("bank_name", bank_name);
-    addFieldIfExist("bank_account", bank_account);
-    addFieldIfExist("bank_account_holder", bank_account_holder);
-    addFieldIfExist("tax_code", tax_code || taxCode || null);
-    addFieldIfExist(
+    addField("bank_code", bank_code);
+    addField("bank_name", bank_name);
+    addField("bank_account", bank_account);
+    addField("bank_account_holder", bank_account_holder);
+    addField("tax_code", tax_code || taxCode || null);
+    addField(
       "business_license_url",
       business_license_url || businessLicenseUrl || null,
     );
-    addFieldIfExist("is_beachfront", calculatedMetrics.is_beachfront);
-    addFieldIfExist("distance_to_center", calculatedMetrics.distance_to_center);
-    addFieldIfExist("commission_rate", 18.0);
+    addField("is_beachfront", calculatedMetrics.is_beachfront);
+    addField("distance_to_center", calculatedMetrics.distance_to_center);
+    addField("commission_rate", 18.0);
 
     const hotelInsertSql = `
-      INSERT INTO public.hotel (${insertFields.join(", ")})
-      VALUES (${insertValues.map((v) => (v.startsWith("$") || v === "NOW()" ? v : `'${v}'`)).join(", ")})
+      INSERT INTO public.hotel (${fields.join(", ")})
+      VALUES (${placeholders.join(", ")})
       RETURNING *;
     `;
 
-    const hotelResult = await client.query(hotelInsertSql, queryParams);
+    const hotelResult = await client.query(hotelInsertSql, values);
     const newHotel = hotelResult.rows[0];
 
     // Chèn ảnh đại diện
@@ -1010,7 +990,6 @@ async function registerHotel(req, res, next) {
                 (_, i) => `P.${roomFloor}0${i + 1}`,
               );
 
-        // Dùng SAVEPOINT an toàn để nếu room_unit có lỗi thì không làm hỏng cả transaction
         for (const num of roomNumbers) {
           if (!num || !String(num).trim()) continue;
           await client.query("SAVEPOINT sp_room_unit");
