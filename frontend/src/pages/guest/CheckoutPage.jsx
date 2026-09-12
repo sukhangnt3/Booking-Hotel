@@ -32,12 +32,12 @@ export default function CheckoutPage() {
   const remainingAmount = totalAmount - depositAmount;
   const expectedAmount = isDeposit ? depositAmount : totalAmount;
 
-  // 🌟 THÔNG TIN NGÂN HÀNG CỦA OWNER (MẶC ĐỊNH SẼ ĐƯỢC CẬP NHẬT TỪ API)
+  // 🌟 THÔNG TIN TÀI KHOẢN NGÂN HÀNG CỦA OWNER (STATE ĐỘNG)
   const [bankInfo, setBankInfo] = useState({
     bankId: "MB",
     bankName: "MBBank",
-    accountNumber: "0833404928",
-    accountName: "GOSTAY PARTNER",
+    accountNumber: "",
+    accountName: "",
   });
 
   const [paymentData, setPaymentData] = useState(null);
@@ -49,7 +49,7 @@ export default function CheckoutPage() {
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // 1. QUẢN LÝ ĐẾM NGƯỢC 15 PHÚT GIỮ CHỖ DUY NHẤT TẠI ĐÂY
+  // 1. ĐẾM NGƯỢC 15 PHÚT
   const getInitialTimeLeft = () => {
     if (!bookingCode) return 15 * 60;
     const storageKey = `lock_expires_${bookingCode}`;
@@ -97,27 +97,44 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 2. KHỞI TẠO DỮ LIỆU THANH TOÁN & LẤY THÔNG TIN NGÂN HÀNG OWNER TỪ DATABASE
+  // 2. KHỞI TẠO VÀ LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER TỪ BACKEND
   useEffect(() => {
     async function initPayment() {
       if (!bookingCode) return;
       try {
         setLoadingPayment(true);
 
-        // Lấy thông tin đơn hàng và tài khoản ngân hàng của Owner khách sạn này
-        const resBooking = await apiClient.get(`/bookings/code/${bookingCode}`);
-        const bData = resBooking?.data || resBooking;
+        const res = await apiClient.post("/payments/create-qr", {
+          booking_code: bookingCode,
+          bookingCode: bookingCode,
+          payment_method: "VietQR",
+          expected_amount: expectedAmount,
+          amount: expectedAmount,
+          payment_type: rawPaymentType,
+          paymentType: rawPaymentType,
+        });
 
-        if (bData?.bank_info) {
+        const data = res?.data || res;
+        setPaymentData(data);
+
+        // 🌟 CẬP NHẬT TÀI KHOẢN NGÂN HÀNG CỦA OWNER VÀO STATE
+        const ownerBank = data?.bankInfo || data?.bank_info;
+        if (ownerBank) {
           setBankInfo({
-            bankId: bData.bank_info.bankId,
-            bankName: bData.bank_info.bankName,
-            accountNumber: bData.bank_info.accountNumber,
-            accountName: bData.bank_info.accountName,
+            bankId: ownerBank.bankId || ownerBank.bank_id || "MB",
+            bankName: ownerBank.bankName || ownerBank.bank_name || "Ngân hàng",
+            accountNumber:
+              ownerBank.accountNumber ||
+              ownerBank.account_number ||
+              ownerBank.bankAccount ||
+              "",
+            accountName:
+              ownerBank.accountName ||
+              ownerBank.account_name ||
+              ownerBank.bankAccountHolder ||
+              "",
           });
         }
-
-        setPaymentData(bData);
       } catch (err) {
         console.warn("Lỗi tải thông tin thanh toán:", err);
       } finally {
@@ -126,13 +143,16 @@ export default function CheckoutPage() {
     }
 
     initPayment();
-  }, [bookingCode]);
+  }, [bookingCode, expectedAmount, rawPaymentType]);
 
   const qrImageSrc =
-    paymentData?.booking?.qr_code ||
-    `https://img.vietqr.io/image/${bankInfo.bankId}-${bankInfo.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${bookingCode}&accountName=${encodeURIComponent(bankInfo.accountName)}`;
+    paymentData?.qr_code ||
+    paymentData?.qrCodeUrl ||
+    (bankInfo.accountNumber
+      ? `https://img.vietqr.io/image/${bankInfo.bankId}-${bankInfo.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${bookingCode}&accountName=${encodeURIComponent(bankInfo.accountName)}`
+      : "");
 
-  // 3. POLLING TỰ ĐỘNG MỖI 2.5 GIÂY XÁC NHẬN TIỀN VÀO TÀI KHOẢN
+  // 3. POLLING TỰ ĐỘNG XÁC NHẬN KHI SEPAY BÁO TIỀN VÀO
   const pollingRef = useRef(null);
 
   const checkPaymentStatus = async (isManual = false) => {
@@ -158,9 +178,23 @@ export default function CheckoutPage() {
           );
         }, 1000);
       } else if (isManual) {
-        alert(
-          "Hệ thống đang chờ nhận tiền từ ngân hàng. Quý khách vui lòng đợi trong giây lát!",
-        );
+        // Nếu bấm kiểm tra thủ công, gọi sang endpoint kiểm tra trực tiếp với SePay
+        const manualRes = await apiClient.post("/payments/confirm-manual", {
+          bookingCode: bookingCode,
+          amount: expectedAmount,
+        });
+        if (manualRes?.data?.paid) {
+          setIsPaidSuccess(true);
+          localStorage.removeItem(`lock_expires_${bookingCode}`);
+          navigate(
+            `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
+          );
+        } else {
+          alert(
+            manualRes?.data?.message ||
+              "Hệ thống SePay chưa nhận được biến động số dư cho đơn này. Quý khách vui lòng chờ 5-10 giây!",
+          );
+        }
       }
     } catch (err) {
       console.error("Lỗi polling status:", err);
@@ -181,7 +215,7 @@ export default function CheckoutPage() {
     };
   }, [bookingCode, isPaidSuccess]);
 
-  // 4. XỬ LÝ KHI KHÁCH BẤM "QUAY LẠI": GIẢI PHÓNG PHÒNG NGAY LẬP TỨC
+  // 4. BẤM QUAY LẠI HỦY GIỮ PHÒNG
   const handleGoBack = async () => {
     const confirmCancel = window.confirm(
       "⚠️ Nếu bạn quay lại bây giờ, phiên giữ phòng sẽ bị HỦY và phòng sẽ được mở lại cho khách khác đặt.\n\nBạn có chắc chắn muốn hủy đơn và quay lại không?",
@@ -202,6 +236,7 @@ export default function CheckoutPage() {
   };
 
   const handleCopy = (text, field) => {
+    if (!text) return;
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
@@ -266,7 +301,6 @@ export default function CheckoutPage() {
       </div>
 
       <main className="max-w-4xl mx-auto px-4 pt-8 space-y-6">
-        {/* Banner khi thanh toán thành công */}
         {isPaidSuccess && (
           <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl flex items-center justify-between animate-bounce">
             <div className="flex items-center gap-3">
@@ -293,8 +327,8 @@ export default function CheckoutPage() {
                   : "Thanh Toán Chuyển Khoản Toàn Bộ"}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Quét mã VietQR chuyển khoản trực tiếp tới Chủ khách sạn. Hệ
-                thống xác nhận sau 2-3 giây.
+                Quét mã VietQR bằng App Ngân hàng bất kỳ. Tiền được chuyển trực
+                tiếp đến Chủ khách sạn.
               </p>
             </div>
 
@@ -327,7 +361,7 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* Khung thanh toán VietQR động của Owner */}
+          {/* KHUNG HIỂN THỊ VIETQR VÀ TÀI KHOẢN OWNER */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center pt-2">
             <div className="md:col-span-5 bg-slate-50 p-6 rounded-3xl border border-slate-200 text-center space-y-3">
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#003580]">
@@ -342,10 +376,10 @@ export default function CheckoutPage() {
                       size={28}
                     />
                     <span className="text-[11px] text-slate-400 font-bold">
-                      Đang lấy thông tin VietQR của Khách sạn...
+                      Đang lấy thông tin ngân hàng của Khách sạn...
                     </span>
                   </div>
-                ) : (
+                ) : qrImageSrc ? (
                   <>
                     <img
                       src={qrImageSrc}
@@ -357,22 +391,27 @@ export default function CheckoutPage() {
                       Đang lắng nghe chuyển khoản...
                     </div>
                   </>
+                ) : (
+                  <div className="w-52 h-52 flex items-center justify-center text-xs text-slate-400">
+                    Không thể tạo mã QR
+                  </div>
                 )}
               </div>
             </div>
 
+            {/* CỘT PHẢI: HIỂN THỊ CHÍNH XÁC THÔNG TIN NGÂN HÀNG OWNER */}
             <div className="md:col-span-7 space-y-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center">
                 <div>
                   <span className="text-slate-400 block font-medium">
-                    Ngân hàng thụ hưởng của Khách sạn
+                    Ngân hàng thụ hưởng
                   </span>
                   <strong className="text-slate-900 font-bold text-sm">
-                    {bankInfo.bankName}
+                    {bankInfo.bankName || "Đang cập nhật..."}
                   </strong>
                 </div>
-                <span className="font-bold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md">
-                  {bankInfo.bankId}
+                <span className="font-bold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md uppercase">
+                  {bankInfo.bankId || "BANK"}
                 </span>
               </div>
 
@@ -382,24 +421,26 @@ export default function CheckoutPage() {
                     Số tài khoản Chủ khách sạn
                   </span>
                   <span className="font-mono font-black text-slate-900 text-base">
-                    {bankInfo.accountNumber}
+                    {bankInfo.accountNumber || "Chưa có số tài khoản"}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(bankInfo.accountNumber, "acc")}
-                  className="px-3 py-1 bg-white border rounded-lg font-bold text-blue-600 hover:bg-blue-50 cursor-pointer shadow-2xs"
-                >
-                  {copiedField === "acc" ? "✓ Đã chép" : "Sao chép"}
-                </button>
+                {bankInfo.accountNumber && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(bankInfo.accountNumber, "acc")}
+                    className="px-3 py-1 bg-white border rounded-lg font-bold text-blue-600 hover:bg-blue-50 cursor-pointer shadow-2xs"
+                  >
+                    {copiedField === "acc" ? "✓ Đã chép" : "Sao chép"}
+                  </button>
+                )}
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border">
                 <span className="text-slate-400 block font-medium">
-                  Tên chủ tài khoản thụ hưởng
+                  Tên chủ tài khoản
                 </span>
                 <strong className="text-slate-900 uppercase font-bold text-sm">
-                  {bankInfo.accountName}
+                  {bankInfo.accountName || "Chưa cập nhật tên chủ tài khoản"}
                 </strong>
               </div>
 
@@ -451,7 +492,6 @@ export default function CheckoutPage() {
             </span>
           </div>
 
-          {/* Nút kiểm tra thủ công */}
           <div className="pt-2 max-w-sm mx-auto space-y-2">
             <button
               type="button"
