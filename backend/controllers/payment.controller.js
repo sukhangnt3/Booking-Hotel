@@ -12,70 +12,106 @@ const DEFAULT_PLATFORM_BANK = {
   accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
 };
 
-/**
- * 🌟 HÀM TỰ ĐỘNG TÌM KIẾM TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
- * Kiểm tra cả bảng hotel và bảng users (chủ sở hữu)
- */
 async function getOwnerBankAccount(hotelId) {
   if (!hotelId) return DEFAULT_PLATFORM_BANK;
   try {
-    // 1. Kiểm tra các cột thực tế đang có trong bảng hotel
-    const colRes = await pool.query(
-      `SELECT column_name 
-       FROM information_schema.columns 
-       WHERE table_schema = 'public' AND table_name = 'hotel'`,
-    );
-    const hotelCols = colRes.rows.map((r) => r.column_name);
+    const [hColsRes, uColsRes] = await Promise.all([
+      pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'hotel'`,
+      ),
+      pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users'`,
+      ),
+    ]);
 
-    // 2. Xây dựng câu query động tránh lỗi column does not exist
-    const hasBankAcc = hotelCols.includes("bank_account");
-    const hasBankName = hotelCols.includes("bank_name");
-    const hasBankCode = hotelCols.includes("bank_code");
-    const hasBankHolder = hotelCols.includes("bank_account_holder");
-    const hasOwnerId =
-      hotelCols.includes("owner_id") || hotelCols.includes("user_id");
+    const hCols = hColsRes.rows.map((r) => r.column_name.toLowerCase());
+    const uCols = uColsRes.rows.map((r) => r.column_name.toLowerCase());
 
-    const selectParts = [];
-    if (hasBankAcc) selectParts.push("h.bank_account");
-    if (hasBankName) selectParts.push("h.bank_name");
-    if (hasBankCode) selectParts.push("h.bank_code");
-    if (hasBankHolder) selectParts.push("h.bank_account_holder");
+    let ownerJoin = "";
+    if (hCols.includes("owner_id")) ownerJoin = "h.owner_id = u.id";
+    else if (hCols.includes("user_id")) ownerJoin = "h.user_id = u.id";
+    else if (hCols.includes("created_by")) ownerJoin = "h.created_by = u.id";
 
-    let joinClause = "";
-    if (hasOwnerId) {
-      const ownerCol = hotelCols.includes("owner_id") ? "owner_id" : "user_id";
-      joinClause = `LEFT JOIN public.users u ON u.id = h.${ownerCol}`;
-      selectParts.push("u.name AS user_name");
+    const findCol = (cols, candidates) =>
+      candidates.find((c) => cols.includes(c));
+
+    const hAcc = findCol(hCols, [
+      "bank_account",
+      "bank_number",
+      "account_number",
+      "bank_no",
+    ]);
+    const hName = findCol(hCols, ["bank_name", "bank"]);
+    const hCode = findCol(hCols, ["bank_code", "bank_id"]);
+    const hHolder = findCol(hCols, [
+      "bank_account_holder",
+      "account_name",
+      "bank_holder",
+      "account_holder",
+    ]);
+
+    const uAcc = findCol(uCols, [
+      "bank_account",
+      "bank_number",
+      "account_number",
+      "bank_no",
+    ]);
+    const uName = findCol(uCols, ["bank_name", "bank"]);
+    const uCode = findCol(uCols, ["bank_code", "bank_id"]);
+    const uHolder = findCol(uCols, [
+      "bank_account_holder",
+      "account_name",
+      "bank_holder",
+      "account_holder",
+      "full_name",
+      "name",
+    ]);
+
+    const selectFields = ["h.id AS hotel_id", "h.name AS hotel_name"];
+    if (hAcc) selectFields.push(`h.${hAcc} AS h_account`);
+    if (hName) selectFields.push(`h.${hName} AS h_bank_name`);
+    if (hCode) selectFields.push(`h.${hCode} AS h_bank_code`);
+    if (hHolder) selectFields.push(`h.${hHolder} AS h_holder`);
+
+    if (ownerJoin) {
+      if (uAcc) selectFields.push(`u.${uAcc} AS u_account`);
+      if (uName) selectFields.push(`u.${uName} AS u_bank_name`);
+      if (uCode) selectFields.push(`u.${uCode} AS u_bank_code`);
+      if (uHolder) selectFields.push(`u.${uHolder} AS u_holder`);
     }
 
-    if (selectParts.length > 0) {
-      const queryStr = `
-        SELECT h.id, h.name AS hotel_name, ${selectParts.join(", ")}
-        FROM public.hotel h
-        ${joinClause}
-        WHERE h.id = $1
-        LIMIT 1
-      `;
-      const res = await pool.query(queryStr, [hotelId]);
-      const row = res.rows[0];
+    const sql = `
+      SELECT ${selectFields.join(", ")}
+      FROM public.hotel h
+      ${ownerJoin ? `LEFT JOIN public.users u ON ${ownerJoin}` : ""}
+      WHERE h.id = $1
+      LIMIT 1
+    `;
 
-      if (row && (row.bank_account || row.bank_code)) {
+    const res = await pool.query(sql, [hotelId]);
+    if (res.rows.length > 0) {
+      const row = res.rows[0];
+      const acc = row.h_account || row.u_account;
+      const code = row.h_bank_code || row.u_bank_code;
+      const name = row.h_bank_name || row.u_bank_name;
+      const holder = row.h_holder || row.u_holder || row.hotel_name;
+
+      if (acc && String(acc).trim() !== "") {
         return {
-          bankId: (row.bank_code || DEFAULT_PLATFORM_BANK.bankId).toUpperCase(),
-          bankName: row.bank_name || DEFAULT_PLATFORM_BANK.bankName,
-          accountNumber:
-            row.bank_account || DEFAULT_PLATFORM_BANK.accountNumber,
-          accountName: (
-            row.bank_account_holder ||
-            row.user_name ||
-            row.hotel_name ||
-            DEFAULT_PLATFORM_BANK.accountName
-          ).toUpperCase(),
+          bankId: (code || "MB").toUpperCase().trim(),
+          bankName: name || "Ngân hàng",
+          accountNumber: String(acc).trim(),
+          accountName: String(holder || "CHU KHACH SAN")
+            .toUpperCase()
+            .trim(),
         };
       }
     }
   } catch (err) {
-    console.warn("⚠️ Lỗi truy vấn ngân hàng của Owner:", err.message);
+    console.error(
+      "❌ Lỗi getOwnerBankAccount trong paymentController:",
+      err.message,
+    );
   }
   return DEFAULT_PLATFORM_BANK;
 }
@@ -110,13 +146,10 @@ async function createVietQrPayment(req, res) {
     }
 
     const expectedAmount = Math.round(Number(amount));
-
-    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN NÀY
     const bank = await getOwnerBankAccount(booking.hotel_id);
 
     const qrCodeUrl = `https://img.vietqr.io/image/${bank.bankId}-${bank.accountNumber}-compact2.png?amount=${expectedAmount}&addInfo=${booking.booking_code}&accountName=${encodeURIComponent(bank.accountName)}`;
 
-    // Cập nhật hoặc thêm vào bảng payment
     const checkPayment = await pool.query(
       `SELECT id FROM public.payment WHERE booking_id = $1 LIMIT 1`,
       [booking.id],
@@ -151,7 +184,7 @@ async function createVietQrPayment(req, res) {
       bookingCode: booking.booking_code,
       expectedAmount,
       paymentType: paymentType || "FULL",
-      bankInfo: bank, // Trả tài khoản Owner về Frontend
+      bankInfo: bank,
       qrCodeUrl,
       qr_code: qrCodeUrl,
       qrContent: booking.booking_code,

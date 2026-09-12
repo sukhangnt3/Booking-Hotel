@@ -2,7 +2,6 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tài khoản dự phòng mặc định nếu khách sạn chưa điền thông tin ngân hàng
 const DEFAULT_PLATFORM_BANK = {
   bankId: process.env.PLATFORM_BANK_ID || "MB",
   bankName:
@@ -11,73 +10,111 @@ const DEFAULT_PLATFORM_BANK = {
   accountName: process.env.PLATFORM_BANK_HOLDER || "SU TRACH KHANG",
 };
 
-// 🌟 HÀM TỰ ĐỘNG TÌM TÀI KHOẢN NGÂN HÀNG CỦA CHỦ KHÁCH SẠN (OWNER)
+// 🌟 HÀM TỰ ĐỘNG TÌM TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
 async function getOwnerBankAccount(hotelId) {
   if (!hotelId) return DEFAULT_PLATFORM_BANK;
   try {
-    const colRes = await pool.query(
-      `SELECT column_name 
-       FROM information_schema.columns 
-       WHERE table_schema = 'public' AND table_name = 'hotel'`,
-    );
-    const hotelCols = colRes.rows.map((r) => r.column_name);
+    const [hColsRes, uColsRes] = await Promise.all([
+      pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'hotel'`,
+      ),
+      pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users'`,
+      ),
+    ]);
 
-    const hasBankAcc = hotelCols.includes("bank_account");
-    const hasBankName = hotelCols.includes("bank_name");
-    const hasBankCode = hotelCols.includes("bank_code");
-    const hasBankHolder = hotelCols.includes("bank_account_holder");
-    const hasOwnerId =
-      hotelCols.includes("owner_id") || hotelCols.includes("user_id");
+    const hCols = hColsRes.rows.map((r) => r.column_name.toLowerCase());
+    const uCols = uColsRes.rows.map((r) => r.column_name.toLowerCase());
 
-    const selectParts = [];
-    if (hasBankAcc) selectParts.push("h.bank_account");
-    if (hasBankName) selectParts.push("h.bank_name");
-    if (hasBankCode) selectParts.push("h.bank_code");
-    if (hasBankHolder) selectParts.push("h.bank_account_holder");
+    let ownerJoin = "";
+    if (hCols.includes("owner_id")) ownerJoin = "h.owner_id = u.id";
+    else if (hCols.includes("user_id")) ownerJoin = "h.user_id = u.id";
+    else if (hCols.includes("created_by")) ownerJoin = "h.created_by = u.id";
 
-    let joinClause = "";
-    if (hasOwnerId) {
-      const ownerCol = hotelCols.includes("owner_id") ? "owner_id" : "user_id";
-      joinClause = `LEFT JOIN public.users u ON u.id = h.${ownerCol}`;
-      selectParts.push("u.name AS user_name");
+    const findCol = (cols, candidates) =>
+      candidates.find((c) => cols.includes(c));
+
+    const hAcc = findCol(hCols, [
+      "bank_account",
+      "bank_number",
+      "account_number",
+      "bank_no",
+    ]);
+    const hName = findCol(hCols, ["bank_name", "bank"]);
+    const hCode = findCol(hCols, ["bank_code", "bank_id"]);
+    const hHolder = findCol(hCols, [
+      "bank_account_holder",
+      "account_name",
+      "bank_holder",
+      "account_holder",
+    ]);
+
+    const uAcc = findCol(uCols, [
+      "bank_account",
+      "bank_number",
+      "account_number",
+      "bank_no",
+    ]);
+    const uName = findCol(uCols, ["bank_name", "bank"]);
+    const uCode = findCol(uCols, ["bank_code", "bank_id"]);
+    const uHolder = findCol(uCols, [
+      "bank_account_holder",
+      "account_name",
+      "bank_holder",
+      "account_holder",
+      "full_name",
+      "name",
+    ]);
+
+    const selectFields = ["h.id AS hotel_id", "h.name AS hotel_name"];
+    if (hAcc) selectFields.push(`h.${hAcc} AS h_account`);
+    if (hName) selectFields.push(`h.${hName} AS h_bank_name`);
+    if (hCode) selectFields.push(`h.${hCode} AS h_bank_code`);
+    if (hHolder) selectFields.push(`h.${hHolder} AS h_holder`);
+
+    if (ownerJoin) {
+      if (uAcc) selectFields.push(`u.${uAcc} AS u_account`);
+      if (uName) selectFields.push(`u.${uName} AS u_bank_name`);
+      if (uCode) selectFields.push(`u.${uCode} AS u_bank_code`);
+      if (uHolder) selectFields.push(`u.${uHolder} AS u_holder`);
     }
 
-    if (selectParts.length > 0) {
-      const queryStr = `
-        SELECT h.id, h.name AS hotel_name, ${selectParts.join(", ")}
-        FROM public.hotel h
-        ${joinClause}
-        WHERE h.id = $1
-        LIMIT 1
-      `;
-      const res = await pool.query(queryStr, [hotelId]);
-      const row = res.rows[0];
+    const sql = `
+      SELECT ${selectFields.join(", ")}
+      FROM public.hotel h
+      ${ownerJoin ? `LEFT JOIN public.users u ON ${ownerJoin}` : ""}
+      WHERE h.id = $1
+      LIMIT 1
+    `;
 
-      if (row && (row.bank_account || row.bank_code)) {
+    const res = await pool.query(sql, [hotelId]);
+    if (res.rows.length > 0) {
+      const row = res.rows[0];
+      const acc = row.h_account || row.u_account;
+      const code = row.h_bank_code || row.u_bank_code;
+      const name = row.h_bank_name || row.u_bank_name;
+      const holder = row.h_holder || row.u_holder || row.hotel_name;
+
+      if (acc && String(acc).trim() !== "") {
         return {
-          bankId: (row.bank_code || DEFAULT_PLATFORM_BANK.bankId).toUpperCase(),
-          bankName: row.bank_name || DEFAULT_PLATFORM_BANK.bankName,
-          accountNumber:
-            row.bank_account || DEFAULT_PLATFORM_BANK.accountNumber,
-          accountName: (
-            row.bank_account_holder ||
-            row.user_name ||
-            row.hotel_name ||
-            DEFAULT_PLATFORM_BANK.accountName
-          ).toUpperCase(),
+          bankId: (code || "MB").toUpperCase().trim(),
+          bankName: name || "Ngân hàng",
+          accountNumber: String(acc).trim(),
+          accountName: String(holder || "CHU KHACH SAN")
+            .toUpperCase()
+            .trim(),
         };
       }
     }
   } catch (err) {
-    console.warn(
-      "⚠️ Lỗi truy vấn ngân hàng Owner trong booking.controller:",
+    console.error(
+      "❌ Lỗi getOwnerBankAccount trong booking.controller:",
       err.message,
     );
   }
   return DEFAULT_PLATFORM_BANK;
 }
 
-// Hàm lấy tên cột hạn khóa phòng trong temporary_locks (tránh lỗi sai tên cột)
 let cachedExpireCol = null;
 async function getLockExpireColumn() {
   if (cachedExpireCol) return cachedExpireCol;
@@ -98,7 +135,6 @@ async function getLockExpireColumn() {
   return cachedExpireCol;
 }
 
-// Hàm dọn dẹp các lock đã hết hạn (DÙNG POOL ĐỘC LẬP NGOÀI TRANSACTION)
 async function cleanupExpiredLocks() {
   try {
     const col = await getLockExpireColumn();
@@ -110,7 +146,6 @@ async function cleanupExpiredLocks() {
 
 // ─── 1. TẠO ĐƠN ĐẶT PHÒNG & KHÓA PHÒNG REAL-TIME 15 PHÚT ───
 async function createBooking(req, res, next) {
-  // Dọn dẹp lock cũ trước khi mở transaction mới
   await cleanupExpiredLocks();
 
   const client = await pool.connect();
@@ -158,7 +193,6 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
-    // KIỂM TRA TỒN KHO THEO TỪNG NGÀY TRONG KHOẢNG CHECKIN -> CHECKOUT
     if (room_id) {
       const roomStockRes = await client.query(
         `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
@@ -231,7 +265,6 @@ async function createBooking(req, res, next) {
       }
     }
 
-    // TÍNH TOÁN TIỀN PHÒNG & TIỀN CỌC 30%
     const newBookingId = crypto.randomUUID();
     const bookingCode = "BK" + Math.floor(10000000 + Math.random() * 90000000);
     const finalPrice = Math.round(Number(total_price || 650000));
@@ -245,7 +278,6 @@ async function createBooking(req, res, next) {
     const remAmount = isDeposit ? finalPrice - depAmount : 0;
     const amountToPayNow = Math.round(Number(expected_amount) || depAmount);
 
-    // TẠO BOOKING (TRUYỀN CHUỖI TRỰC TIẾP, KHÔNG ÉP KIỂU ENUM CỨNG)
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -283,7 +315,6 @@ async function createBooking(req, res, next) {
 
     const newBooking = insertRes.rows[0];
 
-    // LƯU BẢNG BOOKING_ROOM VÀ KHÓA PHÒNG 15 PHÚT
     if (room_id) {
       const roomRes = await client.query(
         `SELECT name, base_price AS room_price FROM public.room WHERE id = $1 LIMIT 1`,
@@ -338,12 +369,11 @@ async function createBooking(req, res, next) {
       ]);
     }
 
-    // 🌟 LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA CHỦ KHÁCH SẠN ĐỂ TẠO VIETQR
+    // LẤY ĐÚNG TÀI KHOẢN NGÂN HÀNG CỦA OWNER KHÁCH SẠN
     const ownerBank = await getOwnerBankAccount(hotel_id);
 
     const qrUrl = `https://img.vietqr.io/image/${ownerBank.bankId}-${ownerBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(ownerBank.accountName)}`;
 
-    // TẠO BẢN GHI PAYMENT: ĐÚNG CHUẨN SCHEMA status LÀ varchar(50) DEFAULT 'pending'
     const paymentInsertSql = `
       INSERT INTO public.payment (
         id, booking_id, payment_method, expected_amount, paid_amount, 
@@ -380,7 +410,7 @@ async function createBooking(req, res, next) {
       payment: payRes.rows[0],
       qr_code: qrUrl,
       qr_content: bookingCode,
-      bankInfo: ownerBank, // Gửi về cho frontend hiển thị
+      bankInfo: ownerBank,
       lock_expires_in_seconds: 15 * 60,
     });
   } catch (error) {
@@ -391,7 +421,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. HÀM CONFIRM PAYMENT (CHO BACKEND GỌI XÁC THỰC) ───
+// ─── 2. HÀM CONFIRM PAYMENT ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -432,7 +462,6 @@ async function confirmPayment(req, res, next) {
         ? paidAmountReq
         : Number(booking.expected_amount || booking.total_price);
 
-    // Cập nhật booking (status và payment_status thành 'confirmed' và 'paid')
     await client.query(
       `UPDATE public.booking
        SET payment_status = 'paid',
@@ -470,7 +499,6 @@ async function confirmPayment(req, res, next) {
       paymentId = newPay.rows[0].id;
     }
 
-    // Ghi vào bảng payment_transaction (ép kiểu an toàn sang transaction_status_enum)
     await client.query(
       `INSERT INTO public.payment_transaction (
         id, payment_id, transaction_id, gateway, amount, status, raw_response, created_at
@@ -489,7 +517,6 @@ async function confirmPayment(req, res, next) {
       ],
     );
 
-    // Giải phóng temporary_locks
     await client.query(
       `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
       [booking.id],
@@ -555,7 +582,6 @@ async function getBookingByCode(req, res, next) {
     const dep = isDep ? (paidMoney > 0 ? paidMoney : expAmount) : total;
     const rem = isDep ? total - dep : 0;
 
-    // Lấy thông tin tài khoản của Owner để trả về cùng đơn
     const ownerBank = await getOwnerBankAccount(row.hotel_id);
 
     const finalBooking = {
@@ -646,7 +672,6 @@ async function cancelBooking(req, res, next) {
 
     const cancelledBooking = result.rows[0];
 
-    // Xóa khóa phòng tạm thời
     await client.query(
       `DELETE FROM public.temporary_locks WHERE booking_id = $1`,
       [cancelledBooking.id],
