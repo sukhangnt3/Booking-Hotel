@@ -1,10 +1,5 @@
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
+// src/pages/admin/AdminDashboardPage.jsx
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ShieldCheck,
@@ -28,6 +23,7 @@ import {
   Wallet,
   X,
   Check,
+  Loader2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -67,10 +63,9 @@ export default function AdminDashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 
-  // Modal VietQR Quyết toán Tự Động
+  // Modal Quyết toán
   const [selectedPayoutHotel, setSelectedPayoutHotel] = useState(null);
-  const [isPayoutAutoSuccess, setIsPayoutAutoSuccess] = useState(false);
-  const payoutPollingRef = useRef(null);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
@@ -129,53 +124,43 @@ export default function AdminDashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // 🌟 TỰ ĐỘNG BẮT GIAO DỊCH TRỪ TIỀN (AUTO POLLING MỖI 2 GIÂY)
-  useEffect(() => {
-    if (!selectedPayoutHotel) {
-      if (payoutPollingRef.current) clearInterval(payoutPollingRef.current);
-      setIsPayoutAutoSuccess(false);
-      return;
-    }
+  // 🌟 HÀM BẤM XÁC NHẬN: GỬI LỆNH LƯU DATABASE VÀ CẬP NHẬT GIAO DIỆN TỨC THÌ
+  const handleConfirmPayout = async () => {
+    if (!selectedPayoutHotel) return;
+    setIsConfirming(true);
 
     const hotelId = selectedPayoutHotel.hotel_id;
+    const amount = selectedPayoutHotel.owner_payout;
+    const hotelName = selectedPayoutHotel.hotel_name;
 
-    const checkAutoPayoutStatus = async () => {
-      try {
-        const res = await apiClient.get(`/payments/payout-status/${hotelId}`);
-        const data = res?.data || res;
+    try {
+      // 1. Gọi Backend lưu trạng thái quyết toán xuống Database
+      await apiClient.post("/payments/payouts/confirm", {
+        hotelId: hotelId,
+        hotel_id: hotelId,
+        amount: amount,
+      });
 
-        // Khi Backend tìm thấy giao dịch -4.920đ trên SePay
-        if (data?.is_settled === true || data?.settled === true) {
-          setIsPayoutAutoSuccess(true);
-          if (payoutPollingRef.current) clearInterval(payoutPollingRef.current);
+      // 2. Cập nhật ngay tại chỗ trên màn hình Admin
+      setHotelRevenues((prev) =>
+        prev.map((h) =>
+          h.hotel_id === hotelId
+            ? { ...h, owner_payout: 0, is_settled: true }
+            : h,
+        ),
+      );
 
-          // Cập nhật số tiền về 0đ và đổi sang Đã quyết toán
-          setHotelRevenues((prev) =>
-            prev.map((h) =>
-              h.hotel_id === hotelId
-                ? { ...h, owner_payout: 0, is_settled: true }
-                : h,
-            ),
-          );
-
-          // Tự động đóng Popup sau 1.5s
-          setTimeout(() => {
-            setSelectedPayoutHotel(null);
-            setIsPayoutAutoSuccess(false);
-            fetchDashboardData();
-          }, 1500);
-        }
-      } catch {
-        // Tiếp tục lắng nghe...
-      }
-    };
-
-    payoutPollingRef.current = setInterval(checkAutoPayoutStatus, 2000);
-
-    return () => {
-      if (payoutPollingRef.current) clearInterval(payoutPollingRef.current);
-    };
-  }, [selectedPayoutHotel, fetchDashboardData]);
+      alert(
+        `✓ THÀNH CÔNG! Đã xác nhận quyết toán ${formatVND(amount)} cho cơ sở [${hotelName}]!`,
+      );
+      setSelectedPayoutHotel(null);
+      fetchDashboardData();
+    } catch (err) {
+      alert(`Lỗi quyết toán: ${err.message}`);
+    } finally {
+      setIsConfirming(false);
+    }
+  };
 
   const handleQuickApprove = async (hotelId) => {
     try {
@@ -249,7 +234,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* HEADER */}
+      {/* 🟢 HEADER */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex justify-between items-center">
         <div>
           <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider mb-1">
@@ -257,11 +242,11 @@ export default function AdminDashboardPage() {
             Center)
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            Giám Sát Doanh Thu & Quyết Toán Sàn Tự Động
+            Giám Sát Doanh Thu & Quyết Toán Sàn
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Quét mã VietQR chuyển tiền - Hệ thống tự động bắt giao dịch từ SePay
-            và hoàn tất trong 2 giây
+            Quét mã VietQR chuyển tiền cho Owner và bấm xác nhận để hệ thống lưu
+            Database ngay lập tức
           </p>
         </div>
 
@@ -364,8 +349,8 @@ export default function AdminDashboardPage() {
                   </span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Quét mã VietQR - SePay tự động phát hiện giao dịch trừ tiền và
-                  hoàn tất trong 2 giây
+                  Bấm nút Quyết Toán $\rightarrow$ Quét mã chuyển tiền
+                  $\rightarrow$ Bấm Xác Nhận để lưu Database
                 </p>
               </div>
 
@@ -808,7 +793,7 @@ export default function AdminDashboardPage() {
         </>
       )}
 
-      {/* 🌟 MODAL QUYẾT TOÁN TỰ ĐỘNG 100% */}
+      {/* 🌟 MODAL QUYẾT TOÁN: QUÉT QR & BẤM XÁC NHẬN */}
       {selectedPayoutHotel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-fadeIn">
@@ -816,7 +801,7 @@ export default function AdminDashboardPage() {
               <div className="flex items-center gap-2">
                 <Wallet size={18} />
                 <h3 className="font-black text-base tracking-tight">
-                  Quyết Toán Tự Động Cho Chủ Cơ Sở
+                  Quyết Toán Cho Chủ Cơ Sở
                 </h3>
               </div>
               <button
@@ -828,127 +813,130 @@ export default function AdminDashboardPage() {
               </button>
             </div>
 
-            {isPayoutAutoSuccess ? (
-              <div className="p-8 text-center space-y-3 bg-emerald-50 text-emerald-900">
-                <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg animate-bounce">
-                  <Check size={32} strokeWidth={3} />
+            <div className="p-6 space-y-4 text-xs">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">
+                    Khách sạn thụ hưởng:
+                  </span>
+                  <span className="font-black text-slate-900 text-sm">
+                    {selectedPayoutHotel.hotel_name}
+                  </span>
                 </div>
-                <h4 className="text-lg font-black">Chuyển Khoản Thành Công!</h4>
-                <p className="text-xs text-emerald-700">
-                  SePay đã nhận diện giao dịch trừ tiền. Cơ sở đã chuyển sang
-                  trạng thái <b>Đã quyết toán</b>!
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">
+                    Chủ cơ sở (Owner):
+                  </span>
+                  <span className="font-bold text-slate-800">
+                    {selectedPayoutHotel.owner_name} (
+                    {selectedPayoutHotel.owner_phone || "N/A"})
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">
+                    Tỷ lệ hoa hồng sàn:
+                  </span>
+                  <span className="font-black text-blue-700">
+                    {selectedPayoutHotel.commission_rate}%
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                  <span className="text-[10px] uppercase font-bold text-emerald-800 block">
+                    Hoa hồng Admin giữ lại
+                  </span>
+                  <span className="text-base font-black text-emerald-700">
+                    +{formatVND(selectedPayoutHotel.admin_commission)}
+                  </span>
+                </div>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl">
+                  <span className="text-[10px] uppercase font-bold text-blue-800 block">
+                    Tiền chuyển cho Owner
+                  </span>
+                  <span className="text-base font-black text-blue-700">
+                    {formatVND(selectedPayoutHotel.owner_payout)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="border border-slate-200 p-4 rounded-2xl space-y-2">
+                <h4 className="font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <CreditCard size={14} className="text-blue-600" /> STK Nhận
+                  Tiền Của Owner
+                </h4>
+                <p>
+                  <b>Ngân hàng:</b>{" "}
+                  {selectedPayoutHotel.bank_name ||
+                    selectedPayoutHotel.bank_code ||
+                    "Vietcombank"}
+                </p>
+                <p className="font-mono">
+                  <b>Số tài khoản:</b>{" "}
+                  <span className="text-sm font-black text-blue-800">
+                    {selectedPayoutHotel.bank_account || "Chưa cập nhật"}
+                  </span>
+                </p>
+                <p className="uppercase">
+                  <b>Chủ tài khoản:</b>{" "}
+                  {selectedPayoutHotel.bank_account_holder ||
+                    selectedPayoutHotel.owner_name}
                 </p>
               </div>
-            ) : (
-              <div className="p-6 space-y-4 text-xs">
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-bold">
-                      Khách sạn thụ hưởng:
-                    </span>
-                    <span className="font-black text-slate-900 text-sm">
-                      {selectedPayoutHotel.hotel_name}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-bold">
-                      Chủ cơ sở (Owner):
-                    </span>
-                    <span className="font-bold text-slate-800">
-                      {selectedPayoutHotel.owner_name} (
-                      {selectedPayoutHotel.owner_phone || "N/A"})
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-bold">
-                      Tỷ lệ hoa hồng sàn:
-                    </span>
-                    <span className="font-black text-blue-700">
-                      {selectedPayoutHotel.commission_rate}%
-                    </span>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
-                    <span className="text-[10px] uppercase font-bold text-emerald-800 block">
-                      Hoa hồng Admin giữ lại
-                    </span>
-                    <span className="text-base font-black text-emerald-700">
-                      +{formatVND(selectedPayoutHotel.admin_commission)}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl">
-                    <span className="text-[10px] uppercase font-bold text-blue-800 block">
-                      Tiền chuyển cho Owner
-                    </span>
-                    <span className="text-base font-black text-blue-700">
-                      {formatVND(selectedPayoutHotel.owner_payout)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="border border-slate-200 p-4 rounded-2xl space-y-2">
-                  <h4 className="font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                    <CreditCard size={14} className="text-blue-600" /> STK Nhận
-                    Tiền Của Owner
-                  </h4>
-                  <p>
-                    <b>Ngân hàng:</b>{" "}
-                    {selectedPayoutHotel.bank_name ||
-                      selectedPayoutHotel.bank_code ||
-                      "Vietcombank"}
-                  </p>
-                  <p className="font-mono">
-                    <b>Số tài khoản:</b>{" "}
-                    <span className="text-sm font-black text-blue-800">
-                      {selectedPayoutHotel.bank_account || "Chưa cập nhật"}
-                    </span>
-                  </p>
-                  <p className="uppercase">
-                    <b>Chủ tài khoản:</b>{" "}
-                    {selectedPayoutHotel.bank_account_holder ||
-                      selectedPayoutHotel.owner_name}
+              {selectedPayoutHotel.bank_account ? (
+                <div className="text-center pt-1 space-y-2">
+                  <span className="text-[11px] font-bold text-slate-500 block">
+                    Mở App Ngân hàng quét mã để chuyển đúng{" "}
+                    {formatVND(selectedPayoutHotel.owner_payout)}:
+                  </span>
+                  <img
+                    src={`https://img.vietqr.io/image/${selectedPayoutHotel.bank_code || "VCB"}-${selectedPayoutHotel.bank_account}-compact2.png?amount=${selectedPayoutHotel.owner_payout}&addInfo=${encodeURIComponent(`PAYOUT${String(selectedPayoutHotel.hotel_id).replace(/[^a-zA-Z0-9]/g, "")}`)}&accountName=${encodeURIComponent(selectedPayoutHotel.bank_account_holder || selectedPayoutHotel.owner_name)}`}
+                    alt="VietQR Payout"
+                    className="w-40 h-40 mx-auto rounded-xl border p-2 shadow-xs bg-white"
+                  />
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Sau khi quét mã chuyển tiền thành công trên điện thoại, bấm
+                    nút bên dưới để hoàn tất:
                   </p>
                 </div>
-
-                {/* 🌟 MÃ QR VIETQR NỘI DUNG CHUẨN XÁC: PAYOUT + UUID KHÔNG GẠCH NGANG */}
-                {selectedPayoutHotel.bank_account ? (
-                  <div className="text-center pt-1 space-y-2">
-                    <span className="text-[11px] font-bold text-slate-500 block">
-                      Mở App Ngân hàng quét mã để chuyển đúng{" "}
-                      {formatVND(selectedPayoutHotel.owner_payout)}:
-                    </span>
-                    <img
-                      src={`https://img.vietqr.io/image/${selectedPayoutHotel.bank_code || "VCB"}-${selectedPayoutHotel.bank_account}-compact2.png?amount=${selectedPayoutHotel.owner_payout}&addInfo=${encodeURIComponent(`PAYOUT${String(selectedPayoutHotel.hotel_id).replace(/[^a-zA-Z0-9]/g, "")}`)}&accountName=${encodeURIComponent(selectedPayoutHotel.bank_account_holder || selectedPayoutHotel.owner_name)}`}
-                      alt="VietQR Payout"
-                      className="w-40 h-40 mx-auto rounded-xl border p-2 shadow-xs bg-white"
-                    />
-                    <div className="flex items-center justify-center gap-2 text-xs font-black text-emerald-700 pt-1">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                      <span>
-                        Hệ thống đang tự động lắng nghe giao dịch chuyển tiền...
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl font-bold text-center">
-                    ⚠️ Cơ sở này chưa cập nhật Số tài khoản ngân hàng trong hồ
-                    sơ!
-                  </div>
-                )}
-
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPayoutHotel(null)}
-                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer transition"
-                  >
-                    Đóng
-                  </button>
+              ) : (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl font-bold text-center">
+                  ⚠️ Cơ sở này chưa cập nhật Số tài khoản ngân hàng trong hồ sơ!
                 </div>
+              )}
+
+              {/* 🌟 NÚT BẤM XÁC NHẬN LƯU DATABASE NGAY LẬP TỨC */}
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPayoutHotel(null)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer transition"
+                >
+                  Đóng
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isConfirming}
+                  onClick={handleConfirmPayout}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl cursor-pointer transition shadow-xs disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {isConfirming ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Đang lưu Database...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>Xác Nhận Đã Chuyển Tiền</span>
+                    </>
+                  )}
+                </button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
