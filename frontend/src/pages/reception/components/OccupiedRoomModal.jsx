@@ -24,10 +24,9 @@ export default function OccupiedRoomModal({
   const [hotelSettings, setHotelSettings] = useState(
     room.hotel_settings || null,
   );
-  // State lưu chi tiết booking tra cứu trực tiếp từ Database
   const [bookingDetail, setBookingDetail] = useState(room.booking || null);
 
-  // ─── TỰ ĐỘNG TRA CỨU CHI TIẾT ĐƠN PHÒNG ĐỂ LẤY SỐ LIỆU MỚI NHẤT ───
+  // ─── TỰ ĐỘNG TRA CỨU CHI TIẾT ĐƠN TỪ DATABASE ───
   useEffect(() => {
     const code =
       room.booking?.code || room.booking?.booking_code || room.booking?.id;
@@ -141,10 +140,9 @@ export default function OccupiedRoomModal({
   );
   const totalBill = baseRoomPrice + overtimeFee;
 
-  // ─── 🌟 LOGIC PHÂN BIỆT RẠCH RÒI GIỮA KHÁCH LẺ OFFLINE VÀ KHÁCH ONLINE ───
+  // ─── 🌟 XỬ LÝ CHUẨN XÁC: KHÔNG BỊ ÉP SỐ 0 THÀNH 200.000 ───
   const b = bookingDetail || room.booking;
 
-  // Nhận diện khách lẻ tại quầy (walk-in)
   const isWalkInGuest =
     b?.booking_type === "walk_in" ||
     b?.booking_type === "counter" ||
@@ -153,14 +151,12 @@ export default function OccupiedRoomModal({
     String(b?.booking_code || b?.code || "").startsWith("DP") ||
     !b?.payment_type;
 
-  // Nhận diện khách đặt qua web đã cọc 30%
   const isDepositOnline =
     !isWalkInGuest &&
     (b?.payment_type === "DEPOSIT_30" ||
       (Number(b?.deposit_amount) > 0 &&
         Number(b?.deposit_amount) < baseRoomPrice));
 
-  // Nhận diện khách đặt qua web đã thanh toán đủ 100%
   const isPaidFullOnline =
     !isWalkInGuest &&
     (b?.payment_status === "paid" || b?.status === "confirmed") &&
@@ -171,27 +167,38 @@ export default function OccupiedRoomModal({
   let paymentSubLabel = "";
 
   if (isWalkInGuest) {
-    // Khách lẻ trực tiếp tại quầy: Mặc định chưa thanh toán (trừ khi lễ tân đã chủ động thu trước)
-    customerPaid = Number(b?.customer_paid || b?.deposit_amount || 0);
-    paymentLabel = "Đã trả lúc nhận phòng:";
-    paymentSubLabel =
-      customerPaid > 0 ? "(Lễ tân đã thu trước)" : "(Khách lẻ thanh toán sau)";
+    // 🌟 SỬA BUG Ở ĐÂY: Dùng toán tử ?? để số 0 KHÔNG BỊ BỎ QUA
+    const paidVal =
+      b?.customer_paid !== undefined
+        ? Number(b.customer_paid)
+        : b?.deposit_amount !== undefined
+          ? Number(b.deposit_amount)
+          : Number(b?.paid_amount || 0);
+
+    // Nếu đơn chưa thanh toán hoặc số tiền trả bằng 0 -> customerPaid là 0đ
+    if (b?.payment_status === "unpaid" || paidVal === 0) {
+      customerPaid = 0;
+      paymentLabel = "Đã trả trước (Khách lẻ):";
+      paymentSubLabel = "(Khách lẻ thanh toán sau)";
+    } else {
+      customerPaid = paidVal;
+      paymentLabel = "Đã trả lúc nhận phòng:";
+      paymentSubLabel = "(Lễ tân đã thu trước)";
+    }
   } else if (isDepositOnline) {
-    // Khách online cọc 30% qua sàn GoStay
-    customerPaid = Number(b?.deposit_amount || Math.round(baseRoomPrice * 0.3));
+    customerPaid = Number(b?.deposit_amount ?? Math.round(baseRoomPrice * 0.3));
     paymentLabel = "Khách đã cọc online (30%):";
-    paymentSubLabel = "(Đã thanh toán qua sàn)";
+    paymentSubLabel = "(Đã cọc qua sàn GoStay)";
   } else if (isPaidFullOnline) {
-    // Khách online trả 100% qua sàn GoStay
     customerPaid = baseRoomPrice;
     paymentLabel = "Đã thanh toán online (100%):";
-    paymentSubLabel = "(Đã thanh toán qua sàn)";
+    paymentSubLabel = "(Đã trả qua sàn GoStay)";
   } else {
-    customerPaid = Number(b?.paid_amount || b?.customer_paid || 0);
+    customerPaid = Number(b?.paid_amount ?? 0);
   }
 
   // Tiền cần thu tại quầy:
-  // Với khách lẻ offline chưa trả tiền -> remainingAmount = đúng 100% tiền phòng + phụ thu quá giờ
+  // Nếu là khách lẻ chưa trả -> remainingAmount = 100% tiền phòng (200.000đ) + phụ thu
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
@@ -244,7 +251,7 @@ export default function OccupiedRoomModal({
               <span className="text-[#1b6a38]">{currentCustomerName}</span>
             </h3>
 
-            {/* HUY HIỆU PHÂN LOẠI NGUỒN KHÁCH HÀNG */}
+            {/* HUY HIỆU PHÂN LOẠI */}
             {isWalkInGuest ? (
               <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 font-bold text-[11px] border border-blue-300 flex items-center gap-1">
                 <Banknote size={12} />
@@ -285,7 +292,7 @@ export default function OccupiedRoomModal({
 
         {/* NỘI DUNG TÍNH TIỀN CHI TIẾT */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1">
-          {/* CỘT TRÁI: BẢNG CHI TIẾT PHÒNG VÀ PHỤ THU */}
+          {/* CỘT TRÁI: THÔNG TIN PHÒNG */}
           <div className="lg:col-span-7 space-y-4">
             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
@@ -398,7 +405,7 @@ export default function OccupiedRoomModal({
             </div>
           </div>
 
-          {/* CỘT PHẢI: TÍNH TOÁN TIỀN PHẢI THU VÀ THAO TÁC THANH TOÁN */}
+          {/* CỘT PHẢI: BẢNG TÍNH TIỀN CHUẨN XÁC */}
           <div className="lg:col-span-5 border-l border-slate-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-slate-600 font-semibold border border-slate-200 rounded-lg px-2 py-1 bg-slate-50">
@@ -430,7 +437,7 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* HIỂN THỊ CHUẨN XÁC THEO TỪNG LOẠI KHÁCH */}
+              {/* HIỂN THỊ ĐÚNG THEO BẢN CHẤT GIAO DỊCH */}
               <div className="flex justify-between items-center text-slate-700">
                 <div>
                   <span className="block font-medium text-slate-800">
@@ -447,7 +454,7 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* SỐ TIỀN THỰC SỰ CẦN THU TẠI QUẦY */}
+              {/* 🌟 CÒN CẦN THU TẠI QUẦY (ĐỐI VỚI TRẢ SAU SẼ LÀ ĐỦ 100% TIỀN PHÒNG) */}
               <div className="flex justify-between items-center pt-2 border-t border-slate-200 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
                 <div>
                   <span className="font-bold text-slate-900 text-xs block">
