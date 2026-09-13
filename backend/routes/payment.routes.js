@@ -14,6 +14,7 @@ const {
   checkPaymentStatus,
   handleBankWebhook,
   checkPayoutStatus,
+  confirmManualPayout,
 } = paymentController;
 
 // ─── 0. KIỂM TRA TRẠNG THÁI WEBHOOK (Dành cho trình duyệt GET) ───
@@ -47,7 +48,11 @@ router.get("/check-status", checkPaymentStatus);
 router.get("/payout-status/:hotelId", checkPayoutStatus);
 router.get("/payouts/status/:hotelId", checkPayoutStatus);
 
-// ─── 5. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY (POST 24/7) ───
+// ─── 5. NÚT XÁC NHẬN QUYẾT TOÁN THỦ CÔNG CỦA ADMIN ───
+router.post("/payouts/confirm", confirmManualPayout);
+router.post("/payout-confirm", confirmManualPayout);
+
+// ─── 6. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY (POST 24/7) ───
 router.post("/webhook", handleBankWebhook);
 router.post("/sepay-webhook", handleBankWebhook);
 
