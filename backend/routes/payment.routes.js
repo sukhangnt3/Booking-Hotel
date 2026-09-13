@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 
-// Tự động nhận diện cả 2 kiểu đặt tên file controller
 let paymentController;
 try {
   paymentController = require("../controllers/paymentController");
@@ -14,15 +13,14 @@ const {
   confirmManualPayment,
   checkPaymentStatus,
   handleBankWebhook,
+  checkPayoutStatus,
 } = paymentController;
 
 // ─── 0. KIỂM TRA TRẠNG THÁI WEBHOOK (Dành cho trình duyệt GET) ───
-// Giúp bạn mở link trên trình duyệt không bị lỗi "Không tìm thấy API"
 router.get("/webhook", (req, res) => {
   return res.status(200).json({
     success: true,
-    message:
-      "✓ Cổng Webhook SePay đang hoạt động bình thường (Sẵn sàng nhận POST từ SePay)!",
+    message: "✓ Cổng Webhook SePay đang hoạt động bình thường!",
     server_time: new Date().toISOString(),
   });
 });
@@ -33,19 +31,23 @@ router.get("/sepay-webhook", (req, res) => {
   });
 });
 
-// ─── 1. TẠO THÔNG TIN MÃ QR THANH TOÁN ───
+// ─── 1. TẠO THÔNG TIN MÃ QR THANH TOÁN (VỀ STK ADMIN) ───
 router.post("/create-qr", createVietQrPayment);
 router.post("/vietqr-init", createVietQrPayment);
 
-// ─── 2. NÚT "TÔI ĐÃ CHUYỂN KHOẢN - KIỂM TRA NGAY" (Đối soát trực tiếp SePay API) ───
+// ─── 2. NÚT KIỂM TRA NGAY TẠI CHECKOUT ───
 router.post("/confirm-manual", confirmManualPayment);
 
-// ─── 3. CHECK TRẠNG THÁI CHO FRONTEND AUTO-POLLING (Mỗi 2.5 giây) ───
+// ─── 3. CHECK TRẠNG THÁI CHO KHÁCH (CHECKOUT AUTO-POLLING) ───
 router.get("/status/:bookingCode", checkPaymentStatus);
 router.get("/status", checkPaymentStatus);
 router.get("/check-status", checkPaymentStatus);
 
-// ─── 4. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY (POST 24/7) ───
+// ─── 4. CHECK TRẠNG THÁI QUYẾT TOÁN CHO ADMIN (ADMIN AUTO-POLLING) ───
+router.get("/payout-status/:hotelId", checkPayoutStatus);
+router.get("/payouts/status/:hotelId", checkPayoutStatus);
+
+// ─── 5. WEBHOOK TỰ ĐỘNG NHẬN TÍN HIỆU TỪ SEPAY (POST 24/7) ───
 router.post("/webhook", handleBankWebhook);
 router.post("/sepay-webhook", handleBankWebhook);
 
