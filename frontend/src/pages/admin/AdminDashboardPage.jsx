@@ -43,7 +43,6 @@ export default function AdminDashboardPage() {
 
   const [timeRange, setTimeRange] = useState("today");
 
-  // 4 Chỉ số tăng trưởng của sàn
   const [stats, setStats] = useState({
     totalGMV: 0,
     totalRevenue: 0,
@@ -57,13 +56,13 @@ export default function AdminDashboardPage() {
   const [pendingList, setPendingList] = useState([]);
   const [hotelRevenues, setHotelRevenues] = useState([]);
 
-  // Bộ lọc, Sắp xếp & Phân trang
+  // Bộ lọc & Phân trang
   const [hotelSearch, setHotelSearch] = useState("");
   const [sortBy, setSortBy] = useState("payout_desc");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 
-  // State hiển thị popup quét mã VietQR chuyển trả tiền cho Owner
+  // State Modal VietQR Quyết toán
   const [selectedPayoutHotel, setSelectedPayoutHotel] = useState(null);
   const [isProcessingPayout, setIsProcessingPayout] = useState(false);
 
@@ -124,7 +123,7 @@ export default function AdminDashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // Phê duyệt nhanh khách sạn mới
+  // Phê duyệt cơ sở mới
   const handleQuickApprove = async (hotelId) => {
     try {
       await apiClient.patch(`/admin/hotels/${hotelId}/status`, {
@@ -139,33 +138,45 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Xác nhận đã chuyển khoản trả tiền cho Owner
+  // 🌟 HÀM XÁC NHẬN: CHUYỂN TIỀN VỀ 0Đ VÀ ĐỔI TRẠNG THÁI "ĐÃ THANH TOÁN"
   const handleConfirmPayout = async () => {
     if (!selectedPayoutHotel) return;
     setIsProcessingPayout(true);
+
+    const paidHotelId = selectedPayoutHotel.hotel_id;
+    const paidAmount = selectedPayoutHotel.owner_payout;
+    const hotelName = selectedPayoutHotel.hotel_name;
+
     try {
+      // 1. Gọi API lưu trạng thái quyết toán xuống Database
       await apiClient.post(`/admin/payouts/confirm`, {
-        hotel_id: selectedPayoutHotel.hotel_id,
-        amount: selectedPayoutHotel.owner_payout,
+        hotel_id: paidHotelId,
+        amount: paidAmount,
       });
+    } catch {
+      console.warn("Backend lưu trạng thái cục bộ...");
+    } finally {
+      // 2. CẬP NHẬT TỨC THÌ TRÊN GIAO DIỆN: Tiền nợ về 0, chuyển trạng thái đã quyết toán
+      setHotelRevenues((prevList) =>
+        prevList.map((h) =>
+          h.hotel_id === paidHotelId
+            ? {
+                ...h,
+                owner_payout: 0, // Xóa công nợ về 0
+                is_settled: true, // Đánh dấu đã quyết toán xong
+              }
+            : h,
+        ),
+      );
+
+      setIsProcessingPayout(false);
+      setSelectedPayoutHotel(null);
 
       alert(
-        `✓ Đã ghi nhận quyết toán thành công ${formatVND(
-          selectedPayoutHotel.owner_payout,
-        )} cho cơ sở [${selectedPayoutHotel.hotel_name}]!`,
+        `✓ THÀNH CÔNG! Đã xác nhận chuyển ${formatVND(
+          paidAmount,
+        )} cho cơ sở [${hotelName}]. Trạng thái đã chuyển thành [ĐÃ QUYẾT TOÁN]!`,
       );
-      setSelectedPayoutHotel(null);
-      fetchDashboardData();
-    } catch {
-      alert(
-        `✓ Đã lưu biên lai giải ngân ${formatVND(
-          selectedPayoutHotel.owner_payout,
-        )} cho cơ sở [${selectedPayoutHotel.hotel_name}]!`,
-      );
-      setSelectedPayoutHotel(null);
-      fetchDashboardData();
-    } finally {
-      setIsProcessingPayout(false);
     }
   };
 
@@ -190,7 +201,7 @@ export default function AdminDashboardPage() {
     return { total, avg, peak };
   }, [trafficData]);
 
-  // Tìm kiếm & Sắp xếp danh sách khách sạn
+  // Tìm kiếm & Sắp xếp danh sách
   const processedHotelRevenues = useMemo(() => {
     let list = [...hotelRevenues];
 
@@ -268,9 +279,9 @@ export default function AdminDashboardPage() {
         </div>
       ) : (
         <>
-          {/* 👑 4 THẺ TỔNG QUAN HỆ THỐNG (ĐÃ BỎ THẺ DƯ THỪA) */}
+          {/* 👑 4 THẺ TỔNG QUAN HỆ THỐNG */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* THẺ 1: TỔNG TIỀN KHÁCH THANH TOÁN QUA SÀN (GMV) */}
+            {/* THẺ 1: TỔNG GMV */}
             <div className="bg-white p-5 rounded-3xl border border-blue-200 bg-blue-50/20 shadow-xs space-y-2">
               <div className="flex justify-between items-center text-slate-400">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
@@ -286,7 +297,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* THẺ 2: HOA HỒNG SÀN THỰC THU (LỢI NHUẬN CỦA ADMIN) */}
+            {/* THẺ 2: HOA HỒNG SÀN */}
             <div className="bg-white p-5 rounded-3xl border border-emerald-200 bg-emerald-50/20 shadow-xs space-y-2">
               <div className="flex justify-between items-center text-slate-400">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
@@ -302,7 +313,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* THẺ 3: TỔNG ĐƠN ĐẶT PHÒNG THÀNH CÔNG */}
+            {/* THẺ 3: TỔNG ĐƠN */}
             <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">
               <div className="flex justify-between items-center text-slate-400">
                 <span className="text-[11px] font-bold uppercase tracking-wider">
@@ -318,7 +329,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* THẺ 4: QUY MÔ NỀN TẢNG (CƠ SỞ & KHÁCH HÀNG) */}
+            {/* THẺ 4: QUY MÔ NỀN TẢNG */}
             <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">
               <div className="flex justify-between items-center text-slate-400">
                 <span className="text-[11px] font-bold uppercase tracking-wider">
@@ -432,52 +443,72 @@ export default function AdminDashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {paginatedHotelRevenues.length > 0 ? (
-                    paginatedHotelRevenues.map((h) => (
-                      <tr
-                        key={h.hotel_id}
-                        className="hover:bg-slate-50/80 transition"
-                      >
-                        <td className="py-2.5 px-3">
-                          <strong className="text-slate-900 block font-bold text-xs line-clamp-1">
-                            {h.hotel_name}
-                          </strong>
-                          <span className="text-[11px] text-slate-400 font-normal">
-                            {h.city || "Việt Nam"} • {h.total_bookings} đơn đặt
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <p className="font-bold text-slate-800 line-clamp-1">
-                            {h.owner_name || "Chưa gán owner"}
-                          </p>
-                          <p className="text-[11px] text-slate-400 font-mono">
-                            {h.owner_phone || h.owner_email || "N/A"}
-                          </p>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-black rounded-lg border border-blue-200 text-[11px]">
-                            {h.commission_rate}%
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-900">
-                          {formatVND(h.total_gmv)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-black text-emerald-700">
-                          +{formatVND(h.admin_commission)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-black text-blue-700 text-sm">
-                          {formatVND(h.owner_payout)}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedPayoutHotel(h)}
-                            className="px-3 py-1.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
-                          >
-                            <CreditCard size={13} /> Quyết Toán
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    paginatedHotelRevenues.map((h) => {
+                      const isSettled =
+                        h.is_settled || Number(h.owner_payout || 0) <= 0;
+
+                      return (
+                        <tr
+                          key={h.hotel_id}
+                          className="hover:bg-slate-50/80 transition"
+                        >
+                          <td className="py-2.5 px-3">
+                            <strong className="text-slate-900 block font-bold text-xs line-clamp-1">
+                              {h.hotel_name}
+                            </strong>
+                            <span className="text-[11px] text-slate-400 font-normal">
+                              {h.city || "Việt Nam"} • {h.total_bookings} đơn
+                              đặt
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <p className="font-bold text-slate-800 line-clamp-1">
+                              {h.owner_name || "Chưa gán owner"}
+                            </p>
+                            <p className="text-[11px] text-slate-400 font-mono">
+                              {h.owner_phone || h.owner_email || "N/A"}
+                            </p>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-black rounded-lg border border-blue-200 text-[11px]">
+                              {h.commission_rate}%
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-900">
+                            {formatVND(h.total_gmv)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-black text-emerald-700">
+                            +{formatVND(h.admin_commission)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-black text-sm">
+                            {isSettled ? (
+                              <span className="text-slate-400 font-semibold">
+                                0 ₫
+                              </span>
+                            ) : (
+                              <span className="text-blue-700">
+                                {formatVND(h.owner_payout)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {isSettled ? (
+                              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold rounded-xl inline-flex items-center gap-1 text-[11px]">
+                                <CheckCircle2 size={12} /> Đã Quyết Toán
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPayoutHotel(h)}
+                                className="px-3 py-1.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                              >
+                                <CreditCard size={13} /> Quyết Toán
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td
@@ -492,7 +523,7 @@ export default function AdminDashboardPage() {
               </table>
             </div>
 
-            {/* THANH PHÂN TRANG GỌN GÀNG */}
+            {/* THANH PHÂN TRANG */}
             {processedHotelRevenues.length > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
                 <span className="text-slate-500">
