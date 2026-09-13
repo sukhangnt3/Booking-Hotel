@@ -1,3 +1,4 @@
+// src/pages/reception/components/OccupiedRoomModal.jsx
 import React, { useState, useEffect } from "react";
 import {
   Calendar,
@@ -140,9 +141,10 @@ export default function OccupiedRoomModal({
   );
   const totalBill = baseRoomPrice + overtimeFee;
 
-  // ─── 🌟 XỬ LÝ CHUẨN XÁC: KHÔNG BỊ ÉP SỐ 0 THÀNH 200.000 ───
+  // ─── 🌟 BỘ LỌC CHÍNH XÁC 100%: KHÓA CHẶT LỖI TỰ ĐỘNG THU TIỀN TRƯỚC ───
   const b = bookingDetail || room.booking;
 
+  // Nhận diện đơn khách lẻ tại quầy (bắt đầu bằng DP hoặc có nguồn walk_in / counter)
   const isWalkInGuest =
     b?.booking_type === "walk_in" ||
     b?.booking_type === "counter" ||
@@ -151,6 +153,7 @@ export default function OccupiedRoomModal({
     String(b?.booking_code || b?.code || "").startsWith("DP") ||
     !b?.payment_type;
 
+  // Khách online qua sàn mới có cọc 30%
   const isDepositOnline =
     !isWalkInGuest &&
     (b?.payment_type === "DEPOSIT_30" ||
@@ -167,23 +170,20 @@ export default function OccupiedRoomModal({
   let paymentSubLabel = "";
 
   if (isWalkInGuest) {
-    // 🌟 SỬA BUG Ở ĐÂY: Dùng toán tử ?? để số 0 KHÔNG BỊ BỎ QUA
-    const paidVal =
-      b?.customer_paid !== undefined
-        ? Number(b.customer_paid)
-        : b?.deposit_amount !== undefined
-          ? Number(b.deposit_amount)
-          : Number(b?.paid_amount || 0);
+    // 🌟 KHÁCH LẺ: CHỈ TÍNH LÀ ĐÃ THU KHI VÀ CHỈ KHI payment_status === 'paid' VÀ CÓ TIỀN THỰC SỰ
+    const hasPaidUpfront =
+      b?.payment_status === "paid" &&
+      Number(b?.customer_paid || b?.paid_amount || 0) > 0;
 
-    // Nếu đơn chưa thanh toán hoặc số tiền trả bằng 0 -> customerPaid là 0đ
-    if (b?.payment_status === "unpaid" || paidVal === 0) {
+    if (hasPaidUpfront) {
+      customerPaid = Number(b.customer_paid || b.paid_amount);
+      paymentLabel = "Đã trả lúc nhận phòng:";
+      paymentSubLabel = "(Lễ tân đã thu trước)";
+    } else {
+      // 🌟 MẶC ĐỊNH CHO TRẢ SAU: TIỀN ĐÃ TRẢ BẰNG 0 ĐỒNG
       customerPaid = 0;
       paymentLabel = "Đã trả trước (Khách lẻ):";
       paymentSubLabel = "(Khách lẻ thanh toán sau)";
-    } else {
-      customerPaid = paidVal;
-      paymentLabel = "Đã trả lúc nhận phòng:";
-      paymentSubLabel = "(Lễ tân đã thu trước)";
     }
   } else if (isDepositOnline) {
     customerPaid = Number(b?.deposit_amount ?? Math.round(baseRoomPrice * 0.3));
@@ -194,11 +194,11 @@ export default function OccupiedRoomModal({
     paymentLabel = "Đã thanh toán online (100%):";
     paymentSubLabel = "(Đã trả qua sàn GoStay)";
   } else {
-    customerPaid = Number(b?.paid_amount ?? 0);
+    customerPaid = 0;
   }
 
   // Tiền cần thu tại quầy:
-  // Nếu là khách lẻ chưa trả -> remainingAmount = 100% tiền phòng (200.000đ) + phụ thu
+  // Với khách lẻ chọn trả sau -> remainingAmount đúng 100% tiền phòng (200.000đ) + phụ thu nếu có
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
@@ -454,7 +454,7 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* 🌟 CÒN CẦN THU TẠI QUẦY (ĐỐI VỚI TRẢ SAU SẼ LÀ ĐỦ 100% TIỀN PHÒNG) */}
+              {/* 🌟 CÒN CẦN THU TẠI QUẦY (ĐỐI VỚI KHÁCH LẺ SẼ LUÔN LÀ ĐỦ 100% TIỀN PHÒNG) */}
               <div className="flex justify-between items-center pt-2 border-t border-slate-200 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
                 <div>
                   <span className="font-bold text-slate-900 text-xs block">
