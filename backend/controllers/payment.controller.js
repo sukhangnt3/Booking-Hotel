@@ -1,7 +1,6 @@
 require("dotenv").config();
 const pool = require("../config/database");
 
-// Lấy API Token của SePay từ file .env
 const SEPAY_API_KEY = process.env.SEPAY_API_KEY || "";
 
 const BANK_MAP = {
@@ -39,7 +38,6 @@ function normalizeBank(rawInput) {
   return { bin: "970422", code: "MB", name: "MB Bank" };
 }
 
-// Tài khoản Admin cố định nhận tiền từ khách
 const DEFAULT_PLATFORM_BANK = {
   bankId: "MB",
   bankBin: "970422",
@@ -86,17 +84,16 @@ async function getOwnerBankAccount(hotelId) {
   return DEFAULT_PLATFORM_BANK;
 }
 
-// ─── 1. TẠO QR THANH TOÁN PHÒNG CHO KHÁCH (TIỀN VỀ ADMIN) ───
+// ─── 1. TẠO QR THANH TOÁN CHO KHÁCH (VỀ TÀI KHOẢN ADMIN) ───
 async function createVietQrPayment(req, res) {
   try {
     const { bookingCode, amount, paymentType } = req.body || {};
     const code = String(bookingCode || req.body.booking_code || "").trim();
 
     if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: "bookingCode là bắt buộc.",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "bookingCode là bắt buộc." });
     }
 
     const bookingResult = await pool.query(
@@ -109,10 +106,9 @@ async function createVietQrPayment(req, res) {
 
     const booking = bookingResult.rows[0];
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy đơn đặt phòng.",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn đặt phòng." });
     }
 
     const expectedAmount = Math.round(
@@ -167,16 +163,17 @@ async function createVietQrPayment(req, res) {
       qr_content: booking.booking_code,
     });
   } catch (error) {
-    console.error("❌ LỖI CREATE_VIETQR_PAYMENT:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Lỗi tạo thanh toán VietQR",
-      errorDetail: error.message,
-    });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Lỗi tạo thanh toán VietQR",
+        errorDetail: error.message,
+      });
   }
 }
 
-// ─── 2. CHECK STATUS CHO KHÁCH (CHECKOUT POLLING) ───
+// ─── 2. CHECK STATUS ĐƠN CHO KHÁCH (POLLING) ───
 async function checkPaymentStatus(req, res) {
   try {
     const rawCode =
@@ -225,12 +222,11 @@ async function checkPaymentStatus(req, res) {
   }
 }
 
-// ─── 3. KIỂM TRA NGAY TẠI CHECKOUT KHÁCH ───
 async function confirmManualPayment(req, res) {
   return res.json({ success: true });
 }
 
-// ─── 4. WEBHOOK SEPAY NHẬN TÍN HIỆU 24/7 ───
+// ─── 3. WEBHOOK SEPAY NHẬN TIỀN KHÁCH VÀ TIỀN ADMIN CHI ───
 async function handleBankWebhook(req, res) {
   try {
     const body = req.body || {};
@@ -248,7 +244,7 @@ async function handleBankWebhook(req, res) {
       body.referenceCode || body.id || `TXN_${Date.now()}`,
     );
 
-    // XỬ LÝ TIỀN RA (PAYOUT)
+    // BẮT TIỀN RA (PAYOUT)
     if (content.toUpperCase().includes("PAYOUT")) {
       const match = content.match(/PAYOUT\s*([a-zA-Z0-9_-]+)/i);
       const hotelId = match ? match[1].trim() : null;
@@ -256,28 +252,23 @@ async function handleBankWebhook(req, res) {
       if (hotelId) {
         await pool.query(
           `UPDATE public.booking
-           SET payout_status = 'settled',
-               payout_at = NOW()
+           SET payout_status = 'settled', payout_at = NOW()
            WHERE hotel_id::text = $1::text AND payment_status = 'paid'`,
           [hotelId],
         );
 
         try {
           await pool.query(
-            `INSERT INTO public.payment_transaction (
-              id, transaction_id, gateway, amount, status, raw_response, created_at
-            ) VALUES (
-              gen_random_uuid(), $1, 'SePay_Payout_Webhook', $2, 'success', $3, NOW()
-            )`,
+            `INSERT INTO public.payment_transaction (id, transaction_id, gateway, amount, status, raw_response, created_at)
+             VALUES (gen_random_uuid(), $1, 'SePay_Payout', $2, 'success', $3, NOW())`,
             [transactionId, transferAmount, JSON.stringify(body)],
           );
         } catch (e) {}
-
-        return res.json({ success: true, message: "Webhook Payout Handled" });
+        return res.json({ success: true, message: "Payout Webhook Success" });
       }
     }
 
-    // XỬ LÝ TIỀN VÀO (BOOKING)
+    // BẮT TIỀN VÀO (KHÁCH TRẢ)
     const matchBooking = content.match(/BK\s*\d{6,12}/i);
     if (matchBooking) {
       const bookingCode = matchBooking[0].replace(/\s+/g, "").toUpperCase();
@@ -295,37 +286,39 @@ async function handleBankWebhook(req, res) {
   }
 }
 
-// ─── 5. 🌟 API QUYẾT TOÁN TỰ ĐỘNG THẦN THÁNH (TRA CỨU TRỰC TIẾP SEPAY API THEO THỜI GIAN THỰC) ───
+// ─── 4. 🌟 ĐỐI SOÁT REALTIME SEPAY: BẮT NGAY LẬP TỨC KHI TÀI KHOẢN ADMIN BỊ TRỪ TIỀN ───
 async function checkPayoutStatus(req, res) {
   try {
     const hotelId = String(
       req.params.hotelId || req.query.hotelId || "",
     ).trim();
-    const expectedAmount = Number(req.query.amount || 0);
+    // Làm sạch số tiền (loại bỏ ký tự lạ nếu có)
+    const rawAmount = String(req.query.amount || "0").replace(/\D/g, "");
+    const expectedAmount = Number(rawAmount || 0);
 
     if (!hotelId) {
       return res.status(400).json({ success: false, message: "Thiếu hotelId" });
     }
 
-    // 1. Kiểm tra trong DB xem đã đánh dấu thành công chưa
+    // 1. Kiểm tra trong DB xem đã có ghi nhận quyết toán chưa
     const checkTx = await pool.query(
       `SELECT id FROM public.payment_transaction
        WHERE gateway ILIKE '%Payout%' 
-         AND raw_response ILIKE $1
+         AND (raw_response ILIKE $1 OR raw_response ILIKE $2)
          AND created_at >= NOW() - INTERVAL '10 minutes'
        LIMIT 1`,
-      [`%PAYOUT%${hotelId}%`],
+      [`%PAYOUT%${hotelId}%`, `%"hotelId":"${hotelId}"%`],
     );
 
     if (checkTx.rows.length > 0) {
       return res.json({ success: true, settled: true, is_settled: true });
     }
 
-    // 2. 🌟 GỌI TRỰC TIẾP SEPAY API ĐỂ ĐỌC SAO KÊ TRỪ TIỀN NGAY TỨC THÌ
+    // 2. 🌟 GỌI SEPAY API ĐỂ ĐỌC SAO KÊ TRỪ TIỀN THỰC TẾ
     if (SEPAY_API_KEY) {
       try {
         const sepayRes = await fetch(
-          "https://my.sepay.vn/userapi/transactions/list?limit=50",
+          "https://my.sepay.vn/userapi/transactions/list?limit=20",
           {
             method: "GET",
             headers: {
@@ -343,7 +336,10 @@ async function checkPayoutStatus(req, res) {
             .replace(/[^A-Z0-9]/gi, "")
             .toUpperCase();
 
-          // Tìm xem có giao dịch tiền trừ (amount_out > 0) có chữ PAYOUT + ID không
+          // 🌟 CƠ CHẾ MATCHING THÔNG MINH:
+          // Tìm bất kỳ giao dịch trừ tiền (amount_out > 0) nào:
+          // ĐIỀU KIỆN 1: Nội dung có chữ PAYOUT (hoặc ID khách sạn)
+          // HOẶC ĐIỀU KIỆN 2: Đúng số tiền cần chuyển trong vòng 10 phút gần nhất!
           const matched = transactions.find((tx) => {
             const rawContent = String(
               tx.transaction_content || tx.content || tx.description || "",
@@ -354,42 +350,38 @@ async function checkPayoutStatus(req, res) {
               tx.amount_out || tx.transferAmount || tx.amount || 0,
             );
 
-            const isCodeMatch =
+            // Kiểm tra nội dung
+            const hasMemo =
               cleanContent.includes(targetMemo) ||
               (rawContent.includes("PAYOUT") &&
                 rawContent.includes(hotelId.toUpperCase()));
 
-            // Khớp số tiền hoặc có phát sinh tiền ra
-            const isAmountMatch =
-              expectedAmount > 0
-                ? amountOut >= expectedAmount * 0.95
-                : amountOut > 0;
+            // Kiểm tra số tiền khớp (dung sai 1%)
+            const hasAmount =
+              expectedAmount > 0 &&
+              Math.abs(amountOut - expectedAmount) <= expectedAmount * 0.02;
 
-            return isCodeMatch && isAmountMatch;
+            // Chỉ cần khớp nội dung HOẶC khớp số tiền trừ ra gần nhất
+            return amountOut > 0 && (hasMemo || hasAmount);
           });
 
-          // NẾU TÌM THẤY GIAO DỊCH TRỪ TIỀN TRÊN SEPAY:
           if (matched) {
             console.log(
-              `🎉 [SePay API MATCH]: Đã tìm thấy chuyển tiền cho khách sạn #${hotelId}`,
+              `🎉 [SePay API MATCH THÀNH CÔNG]: Tìm thấy giao dịch trừ ${matched.amount_out}đ cho KS #${hotelId}`,
             );
 
             // Cập nhật Database ngay lập tức
             await pool.query(
               `UPDATE public.booking
-               SET payout_status = 'settled',
-                   payout_at = NOW()
+               SET payout_status = 'settled', payout_at = NOW()
                WHERE hotel_id::text = $1::text AND payment_status = 'paid'`,
               [hotelId],
             );
 
             try {
               await pool.query(
-                `INSERT INTO public.payment_transaction (
-                  id, transaction_id, gateway, amount, status, raw_response, created_at
-                ) VALUES (
-                  gen_random_uuid(), $1, 'SePay_Payout_API_Direct', $2, 'success', $3, NOW()
-                )`,
+                `INSERT INTO public.payment_transaction (id, transaction_id, gateway, amount, status, raw_response, created_at)
+                 VALUES (gen_random_uuid(), $1, 'SePay_Payout_API_SmartMatch', $2, 'success', $3, NOW())`,
                 [
                   matched.reference_number || `SEPAY_${matched.id}`,
                   Number(matched.amount_out || expectedAmount),
