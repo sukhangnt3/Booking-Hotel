@@ -1,6 +1,20 @@
 const pool = require("../config/database");
 const bcrypt = require("bcryptjs");
 
+// 🌟 TỰ ĐỘNG ĐẢM BẢO BẢNG QUYẾT TOÁN TỒN TẠI ĐỂ ĐỐI SOÁT TRỪ NỢ
+pool
+  .query(
+    `
+  CREATE TABLE IF NOT EXISTS public.payout_settlement (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    hotel_id TEXT NOT NULL,
+    amount NUMERIC NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+`,
+  )
+  .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
+
 // ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & DOANH THU TỪNG KHÁCH SẠN ───
 async function getStats(req, res, next) {
   try {
@@ -78,7 +92,8 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN CHI TIẾT DOANH THU TỪNG KHÁCH SẠN CỦA OWNER
+    // 🌟 TRUY VẤN CHI TIẾT DOANH THU: CHỈ TÍNH ĐƠN ONLINE (BK), LOẠI TRỪ 100% KHÁCH LẺ (DP)
+    // VÀ TỰ ĐỘNG TRỪ SỐ TIỀN ADMIN ĐÃ THANH TOÁN TỪ BẢNG payout_settlement
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -105,14 +120,18 @@ async function getStats(req, res, next) {
           ), 
           0
         )::bigint AS admin_commission,
-        COALESCE(
-          SUM(
-            CASE 
-              WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
-              ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
-            END
-          ), 
-          0
+        -- 🌟 TỰ ĐỘNG TRỪ SỐ TIỀN ĐÃ QUYẾT TOÁN -> TIỀN NỢ TỰ NHẢY VỀ 0Đ TỪ DATABASE
+        GREATEST(
+          0,
+          COALESCE(
+            SUM(
+              CASE 
+                WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
+                ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
+              END
+            ), 
+            0
+          ) - COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0)
         )::bigint AS owner_payout,
         COALESCE(
           SUM(
@@ -122,13 +141,22 @@ async function getStats(req, res, next) {
             END
           ),
           0
-        )::bigint AS ready_to_payout
+        )::bigint AS ready_to_payout,
+        -- CỜ ĐÁNH DẤU ĐÃ QUYẾT TOÁN XONG HAY CHƯA
+        CASE 
+          WHEN COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0) > 0 
+           AND COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0) >= COALESCE(SUM(b.hotel_payout), 0)
+          THEN true 
+          ELSE false 
+        END AS is_settled
       FROM public.hotel h
       LEFT JOIN public.users u ON u.id = h.owner_id
       LEFT JOIN public.booking b 
         ON b.hotel_id = h.id 
        AND b.payment_status = 'paid'
        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+       -- 🛑 ĐIỀU KIỆN QUAN TRỌNG: CHỈ LẤY ĐƠN ONLINE (BK), LOẠI BỎ TOÀN BỘ ĐƠN KHÁCH LẺ (DP)
+       AND (b.booking_code LIKE 'BK%' AND COALESCE(b.source, 'online') != 'walk_in')
       GROUP BY h.id, u.id
       ORDER BY total_gmv DESC, h.created_at DESC;
     `;
@@ -148,7 +176,10 @@ async function getStats(req, res, next) {
       pool.query(
         `SELECT COUNT(*)::int AS count 
          FROM public.booking b 
-         WHERE b.status IN ('confirmed', 'checked_in', 'checked_out') ${timeBookingFilter}`,
+         WHERE b.status IN ('confirmed', 'checked_in', 'checked_out') 
+           -- 🛑 CHỈ ĐẾM ĐƠN ĐẶT ONLINE TỪ SÀN
+           AND (b.booking_code LIKE 'BK%' AND COALESCE(b.source, 'online') != 'walk_in')
+           ${timeBookingFilter}`,
       ),
       pool.query(
         `SELECT COUNT(*)::int AS count FROM public.hotel WHERE status = 'active'`,
@@ -165,19 +196,25 @@ async function getStats(req, res, next) {
              ), 
              0
            )::bigint AS commission_revenue,
-           COALESCE(
-             SUM(
-               CASE 
-                 WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
-                 ELSE (b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
-               END
-             ), 
-             0
+           -- 🌟 CÔNG NỢ TỔNG CỦA ADMIN: TRỪ TOÀN BỘ TIỀN ĐÃ GIẢI NGÂN
+           GREATEST(
+             0,
+             COALESCE(
+               SUM(
+                 CASE 
+                   WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
+                   ELSE (b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
+                 END
+               ), 
+               0
+             ) - COALESCE((SELECT SUM(amount) FROM public.payout_settlement), 0)
            )::bigint AS owner_payout
          FROM public.booking b
          JOIN public.hotel h ON h.id = b.hotel_id
          WHERE b.payment_status = 'paid'
            AND b.status IN ('confirmed', 'checked_in', 'checked_out')
+           -- 🛑 CHỈ TÍNH DOANH SỐ ĐƠN ONLINE TỪ SÀN
+           AND (b.booking_code LIKE 'BK%' AND COALESCE(b.source, 'online') != 'walk_in')
            ${timeBookingFilter}`,
       ),
       pool.query(
@@ -196,7 +233,7 @@ async function getStats(req, res, next) {
       totalOwnerPayout: Number(revenueResult.rows[0]?.owner_payout || 0),
       pendingHotels: pendingHotelCount.rows[0]?.count || 0,
       hourlyTraffic: trafficResult.rows || [],
-      hotelRevenues: hotelRevenuesResult.rows || [], // 🌟 MẢNG CHI TIẾT DOANH THU TỪNG KHÁCH SẠN
+      hotelRevenues: hotelRevenuesResult.rows || [],
       dbLatency: `${dbLatency}ms`,
       serverUptime: uptimeFormatted,
     };
@@ -515,11 +552,14 @@ async function listAllBookings(req, res, next) {
          b.*,
          h.name AS hotel_name,
          h.commission_rate,
+         -- 🌟 NẾU LÀ ĐƠN KHÁCH LẺ (DP) THÌ HOA HỒNG = 0, CHỦ KHÁCH SẠN HƯỞNG 100%
          CASE 
+           WHEN b.booking_code LIKE 'DP%' OR COALESCE(b.source, 'online') = 'walk_in' THEN 0
            WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
            ELSE ROUND(b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)::bigint
          END AS commission_amount,
          CASE 
+           WHEN b.booking_code LIKE 'DP%' OR COALESCE(b.source, 'online') = 'walk_in' THEN b.total_price
            WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
            ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))::bigint
          END AS owner_amount,

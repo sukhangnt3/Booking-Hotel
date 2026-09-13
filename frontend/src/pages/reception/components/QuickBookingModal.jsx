@@ -1,5 +1,5 @@
 // src/pages/reception/components/QuickBookingModal.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -11,7 +11,6 @@ import {
   Minus,
   RotateCw,
   Store,
-  Check,
 } from "lucide-react";
 
 export default function QuickBookingModal({
@@ -25,7 +24,6 @@ export default function QuickBookingModal({
   calculateDurationAndPrice,
   toDatetimeLocal,
 }) {
-  // ─── State 1: Thêm mới khách hàng (2 cột) ───
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState({
     name: "",
@@ -41,7 +39,6 @@ export default function QuickBookingModal({
     note: "",
   });
 
-  // ─── State 2: Khách lưu trú (Số lượng & Danh sách) ───
   const [isGuestStayOpen, setIsGuestStayOpen] = useState(false);
   const [tempGuestCount, setTempGuestCount] = useState({
     adult: 2,
@@ -49,7 +46,6 @@ export default function QuickBookingModal({
   });
   const [guestStayList, setGuestStayList] = useState([]);
 
-  // ─── State 3: Form nhập giấy tờ / CCCD khách lưu trú ───
   const [isAddGuestDocOpen, setIsAddGuestDocOpen] = useState(false);
   const initialGuestDocForm = {
     room_number: "",
@@ -64,6 +60,22 @@ export default function QuickBookingModal({
     note: "",
   };
   const [guestDocForm, setGuestDocForm] = useState(initialGuestDocForm);
+
+  // Tính tổng tiền phòng
+  const totalAmount = (bookingData?.rooms || []).reduce(
+    (sum, r) => sum + (Number(r.price) || 0),
+    0,
+  );
+
+  // 🌟 MẶC ĐỊNH THU 100% TIỀN PHÒNG KHI NHẬN PHÒNG (KHÔNG CÓ TRẢ SAU)
+  useEffect(() => {
+    if (isOpen && totalAmount > 0) {
+      setBookingData((prev) => ({
+        ...prev,
+        customer_paid: totalAmount, // Thu đủ 100% ngay lúc nhận phòng
+      }));
+    }
+  }, [isOpen, totalAmount]);
 
   if (!isOpen) return null;
 
@@ -104,10 +116,15 @@ export default function QuickBookingModal({
       price: price,
     };
 
-    setBookingData((prev) => ({
-      ...prev,
-      rooms: [...prev.rooms, newItem],
-    }));
+    setBookingData((prev) => {
+      const newRooms = [...prev.rooms, newItem];
+      const newTotal = newRooms.reduce((s, r) => s + (Number(r.price) || 0), 0);
+      return {
+        ...prev,
+        rooms: newRooms,
+        customer_paid: newTotal,
+      };
+    });
   };
 
   const handleUpdateRoom = (index, field, value) => {
@@ -144,30 +161,32 @@ export default function QuickBookingModal({
       item.price = price;
 
       updatedRooms[index] = item;
-      return { ...prev, rooms: updatedRooms };
+      const newTotal = updatedRooms.reduce(
+        (s, r) => s + (Number(r.price) || 0),
+        0,
+      );
+
+      return {
+        ...prev,
+        rooms: updatedRooms,
+        customer_paid: newTotal,
+      };
     });
   };
 
-  const totalAmount = (bookingData.rooms || []).reduce(
-    (sum, r) => sum + (Number(r.price) || 0),
-    0,
-  );
-
   return (
     <>
-      {/* ─── MODAL CHÍNH: ĐẶT/NHẬN PHÒNG NHANH ─── */}
+      {/* MODAL ĐẶT/NHẬN PHÒNG NHANH */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-2xs animate-fadeIn">
         <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp">
-          {/* Header */}
           <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-white">
             <div className="flex items-center gap-3">
               <h3 className="font-extrabold text-sm text-slate-900">
-                Đặt/Nhận phòng nhanh tại quầy
+                Nhận phòng trực tiếp tại quầy
               </h3>
-              {/* 🌟 HUY HIỆU MINH BẠCH 0% HOA HỒNG SÀN */}
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-300 flex items-center gap-1">
                 <Store size={12} />
-                Khách trực tiếp (0% hoa hồng sàn • Khách sạn hưởng 100%)
+                Khách trực tiếp (0% hoa hồng sàn • Doanh thu thuộc khách sạn)
               </span>
             </div>
             <button
@@ -211,7 +230,7 @@ export default function QuickBookingModal({
                         customer_name: e.target.value,
                       })
                     }
-                    placeholder="Tìm khách hàng (F4) hoặc nhập tên..."
+                    placeholder="Tìm hoặc nhập tên khách hàng..."
                     className="w-full outline-none text-xs font-medium text-slate-800"
                   />
                   <button
@@ -224,7 +243,6 @@ export default function QuickBookingModal({
                 </div>
               )}
 
-              {/* KHUNG SỐ LƯỢNG KHÁCH VÀ GIẤY TỜ */}
               <div
                 onClick={() => {
                   setTempGuestCount({
@@ -252,7 +270,7 @@ export default function QuickBookingModal({
               )}
             </div>
 
-            {/* Bảng danh sách phòng */}
+            {/* BẢNG PHÒNG */}
             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -299,7 +317,7 @@ export default function QuickBookingModal({
                     <th className="py-2.5 px-3 font-bold">Trả phòng</th>
                     <th className="py-2.5 px-3 font-bold">Dự kiến</th>
                     <th className="py-2.5 px-3 font-bold text-right">
-                      Thành tiền ⓘ
+                      Thành tiền
                     </th>
                     <th className="py-2.5 px-2 w-8 text-center"></th>
                   </tr>
@@ -392,7 +410,7 @@ export default function QuickBookingModal({
               </table>
             </div>
 
-            {/* Ghi chú & Tính tiền */}
+            {/* GHI CHÚ & KHỐI TÍNH TIỀN: THU ĐỦ 100% TIỀN PHÒNG */}
             <div className="flex items-start justify-between gap-6 pt-1 flex-wrap">
               <div className="space-y-3 flex-1 min-w-[280px]">
                 <button
@@ -413,32 +431,32 @@ export default function QuickBookingModal({
                     onChange={(e) =>
                       setBookingData({ ...bookingData, note: e.target.value })
                     }
-                    placeholder="Nhập ghi chú phòng, yêu cầu của khách..."
+                    placeholder="Nhập ghi chú phòng, số xe, yêu cầu..."
                     className="flex-1 border-b border-slate-300 py-1 outline-none text-slate-800 text-xs focus:border-[#1b6a38]"
                   />
                 </div>
               </div>
 
-              {/* KHỐI TÍNH TIỀN: PHÂN BIỆT RÕ TRẢ SAU (0đ) VÀ TRẢ NGAY */}
-              <div className="w-72 space-y-2.5 text-right bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              {/* KHỐI THU TIỀN: MẶC ĐỊNH THU ĐỦ 100% TIỀN PHÒNG */}
+              <div className="w-80 space-y-2.5 text-right bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-slate-700">
-                    Tiền phòng cần thu:
+                    Tổng tiền phòng:
                   </span>
                   <span className="font-black text-emerald-800 text-base">
                     {formatVND(totalAmount)}
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-200">
-                  <span className="font-semibold text-slate-700 flex items-center gap-1">
-                    Khách trả lúc nhận phòng:
+                <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-200">
+                  <span className="font-bold text-slate-800 flex items-center gap-1">
+                    Thu lúc nhận phòng:
                   </span>
                   <div className="flex items-center gap-1">
                     <input
                       type="text"
                       value={
-                        bookingData.customer_paid
+                        bookingData.customer_paid !== undefined
                           ? Number(bookingData.customer_paid).toLocaleString(
                               "vi-VN",
                             )
@@ -451,47 +469,16 @@ export default function QuickBookingModal({
                           customer_paid: rawValue ? Number(rawValue) : 0,
                         });
                       }}
-                      className="w-24 text-right border-b-2 border-slate-300 py-0.5 outline-none font-black text-slate-900 focus:border-[#1b6a38]"
+                      className="w-28 text-right border-b-2 border-emerald-600 py-0.5 outline-none font-black text-emerald-700 text-sm"
                       placeholder="0"
                     />
                     <span className="font-bold text-slate-600">₫</span>
                   </div>
                 </div>
-
-                {/* 🌟 2 NÚT CHỌN NHANH TRẠNG THÁI TIỀN (TRẢ SAU VS TRẢ ĐỦ) */}
-                <div className="flex items-center justify-end gap-1.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setBookingData((prev) => ({ ...prev, customer_paid: 0 }))
-                    }
-                    className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
-                      Number(bookingData.customer_paid || 0) === 0
-                        ? "bg-amber-50 text-amber-900 border-amber-400 shadow-2xs"
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    Trả sau (0 ₫)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setBookingData((prev) => ({
-                        ...prev,
-                        customer_paid: totalAmount,
-                      }))
-                    }
-                    className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
-                      Number(bookingData.customer_paid || 0) === totalAmount &&
-                      totalAmount > 0
-                        ? "bg-emerald-50 text-emerald-900 border-emerald-400 shadow-2xs"
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    Thu đủ ngay ({formatVND(totalAmount)})
-                  </button>
-                </div>
+                <p className="text-[10px] text-slate-400">
+                  (Theo quy chuẩn khách sạn: Thu đủ tiền phòng trước khi giao
+                  chìa khóa)
+                </p>
               </div>
             </div>
           </div>
@@ -503,7 +490,7 @@ export default function QuickBookingModal({
               onClick={() => onConfirmBooking(true)}
               className="px-6 py-2 bg-[#1b6a38] hover:bg-[#14532d] text-white font-bold rounded-lg shadow-sm cursor-pointer transition active:scale-95 text-xs"
             >
-              Nhận phòng
+              Nhận phòng ngay
             </button>
             <button
               type="button"
@@ -516,7 +503,7 @@ export default function QuickBookingModal({
         </div>
       </div>
 
-      {/* ─── MODAL 2: THÊM MỚI KHÁCH HÀNG (2 CỘT) ─── */}
+      {/* MODAL THÊM KHÁCH HÀNG */}
       {isAddCustomerOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp">
@@ -561,7 +548,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-500 outline-none"
                     />
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-bold">
                       Tên khách hàng
@@ -579,7 +565,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-emerald-600 rounded-lg outline-none font-bold text-slate-900"
                     />
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-medium">
                       Điện thoại
@@ -596,7 +581,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-slate-300 rounded-lg outline-none focus:border-emerald-600"
                     />
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-medium">
                       Email
@@ -613,7 +597,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-slate-300 rounded-lg outline-none focus:border-emerald-600"
                     />
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-medium">
                       Nhóm khách
@@ -629,7 +612,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-slate-300 rounded-lg outline-none"
                     />
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-medium">
                       Ngày sinh
@@ -686,7 +668,6 @@ export default function QuickBookingModal({
                       </label>
                     </div>
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-medium">
                       Mã số thuế
@@ -702,7 +683,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-slate-300 rounded-lg outline-none"
                     />
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-medium">
                       Địa chỉ
@@ -718,7 +698,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-slate-300 rounded-lg outline-none"
                     />
                   </div>
-
                   <div className="flex items-center gap-3">
                     <label className="w-28 text-slate-700 font-medium">
                       Tỉnh/Thành
@@ -734,7 +713,6 @@ export default function QuickBookingModal({
                       className="flex-1 p-2 border border-slate-300 rounded-lg outline-none"
                     />
                   </div>
-
                   <div className="flex items-start gap-3">
                     <label className="w-28 text-slate-700 font-medium pt-1">
                       Ghi chú
@@ -775,7 +753,7 @@ export default function QuickBookingModal({
         </div>
       )}
 
-      {/* ─── MODAL 3: KHÁCH LƯU TRÚ (CÓ BẢNG THÔNG TIN CHI TIẾT & GIẤY TỜ) ─── */}
+      {/* MODAL KHÁCH LƯU TRÚ */}
       {isGuestStayOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp">
@@ -794,7 +772,6 @@ export default function QuickBookingModal({
             </div>
 
             <div className="p-6 space-y-5">
-              {/* Dòng 1: Số lượng khách */}
               <div className="flex items-center gap-8 flex-wrap border-b pb-4">
                 <span className="font-bold text-slate-800 text-xs">
                   Số lượng khách
@@ -882,12 +859,10 @@ export default function QuickBookingModal({
                 </div>
               </div>
 
-              {/* Dòng 2: Nút [Làm mới] và [Giấy tờ] */}
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-800 text-xs">
                   Thông tin chi tiết
                 </span>
-
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -897,7 +872,6 @@ export default function QuickBookingModal({
                   >
                     <RotateCw size={14} />
                   </button>
-
                   <button
                     type="button"
                     onClick={() => {
@@ -917,7 +891,6 @@ export default function QuickBookingModal({
                 </div>
               </div>
 
-              {/* Bảng danh sách khách lưu trú */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -999,7 +972,7 @@ export default function QuickBookingModal({
         </div>
       )}
 
-      {/* ─── MODAL 4: FORM NHẬP THÔNG TIN GIẤY TỜ / CCCD ─── */}
+      {/* MODAL THÊM GIẤY TỜ CCCD */}
       {isAddGuestDocOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp">
@@ -1019,20 +992,15 @@ export default function QuickBookingModal({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!guestDocForm.full_name.trim()) {
-                  alert("Vui lòng nhập Họ và tên người lưu trú!");
-                  return;
-                }
-
+                if (!guestDocForm.full_name.trim())
+                  return alert("Vui lòng nhập Họ và tên người lưu trú!");
                 const now = new Date();
                 const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
-
                 const newGuestItem = {
                   ...guestDocForm,
                   declaration_time: timeStr,
                   stay_duration: "1 ngày",
                 };
-
                 setGuestStayList((prev) => [...prev, newGuestItem]);
                 setIsAddGuestDocOpen(false);
               }}
@@ -1105,18 +1073,6 @@ export default function QuickBookingModal({
                     />
                     <span>Nữ</span>
                   </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="guest_gender_qb"
-                      checked={guestDocForm.gender === "other"}
-                      onChange={() =>
-                        setGuestDocForm({ ...guestDocForm, gender: "other" })
-                      }
-                      className="accent-[#1b6a38]"
-                    />
-                    <span>Khác</span>
-                  </label>
                 </div>
               </div>
 
@@ -1152,27 +1108,8 @@ export default function QuickBookingModal({
                   className="flex-1 p-2 border border-slate-300 rounded-lg outline-none bg-white cursor-pointer"
                 >
                   <option value="Việt Nam">Việt Nam</option>
-                  <option value="Hàn Quốc">Hàn Quốc</option>
-                  <option value="Mỹ">Mỹ</option>
                   <option value="Khác">Khác</option>
                 </select>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <label className="w-24 text-slate-700 font-medium">
-                  Địa chỉ
-                </label>
-                <input
-                  value={guestDocForm.address}
-                  onChange={(e) =>
-                    setGuestDocForm({
-                      ...guestDocForm,
-                      address: e.target.value,
-                    })
-                  }
-                  placeholder="Nhập địa chỉ..."
-                  className="flex-1 p-2 border border-slate-300 rounded-lg outline-none"
-                />
               </div>
 
               <div className="flex items-center gap-3">
@@ -1190,9 +1127,7 @@ export default function QuickBookingModal({
                   className="flex-1 p-2 border border-slate-300 rounded-lg outline-none bg-white cursor-pointer"
                 >
                   <option value="CCCD">CCCD</option>
-                  <option value="CMND">CMND</option>
                   <option value="Hộ chiếu">Hộ chiếu</option>
-                  <option value="Bằng lái xe">Bằng lái xe</option>
                 </select>
               </div>
 
@@ -1210,37 +1145,6 @@ export default function QuickBookingModal({
                   }
                   placeholder="Nhập số CCCD/Hộ chiếu..."
                   className="flex-1 p-2 border border-slate-300 rounded-lg outline-none font-mono"
-                />
-              </div>
-
-              <div className="flex items-center gap-3">
-                <label className="w-24 text-slate-700 font-medium">
-                  Lý do lưu trú
-                </label>
-                <input
-                  value={guestDocForm.stay_reason}
-                  onChange={(e) =>
-                    setGuestDocForm({
-                      ...guestDocForm,
-                      stay_reason: e.target.value,
-                    })
-                  }
-                  className="flex-1 p-2 border border-slate-300 rounded-lg outline-none"
-                />
-              </div>
-
-              <div className="flex items-start gap-3">
-                <label className="w-24 text-slate-700 font-medium pt-1">
-                  Ghi chú
-                </label>
-                <textarea
-                  rows={2}
-                  value={guestDocForm.note}
-                  onChange={(e) =>
-                    setGuestDocForm({ ...guestDocForm, note: e.target.value })
-                  }
-                  placeholder="Nhập ghi chú..."
-                  className="flex-1 p-2 border border-slate-300 rounded-lg outline-none"
                 />
               </div>
 
