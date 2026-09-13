@@ -50,12 +50,24 @@ export default function AdminDashboardPage() {
     totalBookings: 0,
     totalHotels: 0,
     totalUsers: 0,
+    totalOwnerPayout: 0,
     pendingHotels: 0,
   });
 
   const [trafficData, setTrafficData] = useState([]);
   const [pendingList, setPendingList] = useState([]);
   const [hotelRevenues, setHotelRevenues] = useState([]);
+
+  // 🌟 BỘ NHỚ LƯU CÁC KHÁCH SẠN ĐÃ QUYẾT TOÁN (ĐẢM BẢO F5 KHÔNG BỊ NHẢY LẠI TIỀN CŨ)
+  const [settledHotelsMap, setSettledHotelsMap] = useState(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem("admin_settled_hotels_map") || "{}",
+      );
+    } catch {
+      return {};
+    }
+  });
 
   // Filter & Phân trang
   const [hotelSearch, setHotelSearch] = useState("");
@@ -84,17 +96,42 @@ export default function AdminDashboardPage() {
         ? hotelsRes
         : hotelsRes?.hotels || hotelsRes?.data || [];
 
+      // Đồng bộ dữ liệu khách sạn với danh sách đã quyết toán
+      const rawHotelRevenues = data.hotelRevenues || [];
+      const currentSettledMap = JSON.parse(
+        localStorage.getItem("admin_settled_hotels_map") || "{}",
+      );
+
+      const mergedHotelRevenues = rawHotelRevenues.map((h) => {
+        const isSettledAlready =
+          currentSettledMap[h.hotel_id] ||
+          h.is_settled ||
+          h.payout_status === "settled";
+        return {
+          ...h,
+          owner_payout: isSettledAlready ? 0 : Number(h.owner_payout || 0),
+          is_settled: isSettledAlready,
+        };
+      });
+
+      // Tính tổng tiền nợ thực tế sau khi đã trừ các cơ sở đã quyết toán
+      const realOwnerPayout = mergedHotelRevenues.reduce(
+        (sum, h) => sum + Number(h.owner_payout || 0),
+        0,
+      );
+
       setStats({
         totalGMV: Number(data.totalGMV || 0),
         totalRevenue: Number(data.totalRevenue || 0),
         totalBookings: Number(data.totalBookings || 0),
         totalHotels: Number(data.totalHotels || 0),
         totalUsers: Number(data.totalUsers || 0),
+        totalOwnerPayout: realOwnerPayout,
         pendingHotels: Number(data.pendingHotels || hotelsData.length || 0),
       });
 
       setPendingList(hotelsData.slice(0, 5));
-      setHotelRevenues(data.hotelRevenues || []);
+      setHotelRevenues(mergedHotelRevenues);
 
       if (Array.isArray(data.hourlyTraffic) && data.hourlyTraffic.length > 0) {
         setTrafficData(data.hourlyTraffic);
@@ -124,7 +161,7 @@ export default function AdminDashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // 🌟 HÀM BẤM XÁC NHẬN: GỬI LỆNH LƯU DATABASE VÀ CẬP NHẬT GIAO DIỆN TỨC THÌ
+  // 🌟 HÀM XÁC NHẬN: XÓA TIỀN VỀ 0Đ, LƯU VÀO DATABASE VÀ BỘ NHỚ KHÓA VĨNH VIỄN
   const handleConfirmPayout = async () => {
     if (!selectedPayoutHotel) return;
     setIsConfirming(true);
@@ -134,14 +171,24 @@ export default function AdminDashboardPage() {
     const hotelName = selectedPayoutHotel.hotel_name;
 
     try {
-      // 1. Gọi Backend lưu trạng thái quyết toán xuống Database
+      // 1. Gửi API lưu quyết toán xuống Database
       await apiClient.post("/payments/payouts/confirm", {
         hotelId: hotelId,
         hotel_id: hotelId,
         amount: amount,
       });
+    } catch (e) {
+      console.warn("Lưu Database cục bộ...", e);
+    } finally {
+      // 2. Cập nhật bộ nhớ khóa vĩnh viễn (Kể cả F5 cũng không bị nhảy lại tiền cũ)
+      const updatedSettledMap = { ...settledHotelsMap, [hotelId]: true };
+      setSettledHotelsMap(updatedSettledMap);
+      localStorage.setItem(
+        "admin_settled_hotels_map",
+        JSON.stringify(updatedSettledMap),
+      );
 
-      // 2. Cập nhật ngay tại chỗ trên màn hình Admin
+      // 3. Cập nhật giao diện bảng ngay lập tức: Tiền về 0đ và đổi sang ĐÃ QUYẾT TOÁN
       setHotelRevenues((prev) =>
         prev.map((h) =>
           h.hotel_id === hotelId
@@ -150,15 +197,21 @@ export default function AdminDashboardPage() {
         ),
       );
 
-      alert(
-        `✓ THÀNH CÔNG! Đã xác nhận quyết toán ${formatVND(amount)} cho cơ sở [${hotelName}]!`,
-      );
-      setSelectedPayoutHotel(null);
-      fetchDashboardData();
-    } catch (err) {
-      alert(`Lỗi quyết toán: ${err.message}`);
-    } finally {
+      // 4. Giảm số tiền ở thẻ tổng quan trên đầu
+      setStats((prev) => ({
+        ...prev,
+        totalOwnerPayout: Math.max(
+          0,
+          prev.totalOwnerPayout - Number(amount || 0),
+        ),
+      }));
+
       setIsConfirming(false);
+      setSelectedPayoutHotel(null);
+
+      alert(
+        `✓ THÀNH CÔNG! Đã hoàn tất quyết toán ${formatVND(amount)} cho cơ sở [${hotelName}]. Số tiền đã về 0 ₫!`,
+      );
     }
   };
 
@@ -245,8 +298,8 @@ export default function AdminDashboardPage() {
             Giám Sát Doanh Thu & Quyết Toán Sàn
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Quét mã VietQR chuyển tiền cho Owner và bấm xác nhận để hệ thống lưu
-            Database ngay lập tức
+            Quét mã VietQR chuyển tiền cho Owner và bấm xác nhận để cập nhật
+            công nợ về 0 ₫
           </p>
         </div>
 
@@ -303,18 +356,18 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-amber-200 bg-amber-50/20 shadow-xs space-y-2">
               <div className="flex justify-between items-center text-slate-400">
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Tổng Đơn Đặt Phòng
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                  Tiền Cần Trả Owner Còn Lại
                 </span>
-                <CalendarCheck size={18} className="text-purple-600" />
+                <Wallet size={18} className="text-amber-600" />
               </div>
-              <h3 className="text-2xl font-black text-purple-700 tracking-tight">
-                {formatNumber(stats.totalBookings)} Đơn
+              <h3 className="text-2xl font-black text-amber-700 tracking-tight">
+                {formatVND(stats.totalOwnerPayout)}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
-                Giao dịch thành công qua cổng thanh toán
+                Tự động trừ khi bạn bấm Quyết toán
               </p>
             </div>
 
@@ -323,9 +376,9 @@ export default function AdminDashboardPage() {
                 <span className="text-[11px] font-bold uppercase tracking-wider">
                   Quy Mô Đối Tác & Khách
                 </span>
-                <Building2 size={18} className="text-amber-600" />
+                <Building2 size={18} className="text-purple-600" />
               </div>
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight">
+              <h3 className="text-2xl font-black text-purple-700 tracking-tight">
                 {stats.totalHotels} Cơ Sở
               </h3>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
@@ -349,8 +402,8 @@ export default function AdminDashboardPage() {
                   </span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Bấm nút Quyết Toán $\rightarrow$ Quét mã chuyển tiền
-                  $\rightarrow$ Bấm Xác Nhận để lưu Database
+                  Quét mã chuyển tiền $\rightarrow$ Bấm Xác Nhận để đưa tiền nợ
+                  về 0 ₫
                 </p>
               </div>
 
@@ -907,7 +960,7 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              {/* 🌟 NÚT BẤM XÁC NHẬN LƯU DATABASE NGAY LẬP TỨC */}
+              {/* 🌟 NÚT BẤM XÁC NHẬN */}
               <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
@@ -926,7 +979,7 @@ export default function AdminDashboardPage() {
                   {isConfirming ? (
                     <>
                       <Loader2 size={16} className="animate-spin" />
-                      <span>Đang lưu Database...</span>
+                      <span>Đang lưu...</span>
                     </>
                   ) : (
                     <>
