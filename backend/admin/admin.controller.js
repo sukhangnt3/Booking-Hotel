@@ -92,8 +92,7 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN CHI TIẾT DOANH THU: CHỈ TÍNH ĐƠN ONLINE (BK), LOẠI TRỪ 100% KHÁCH LẺ (DP)
-    // VÀ TỰ ĐỘNG TRỪ SỐ TIỀN ADMIN ĐÃ THANH TOÁN TỪ BẢNG payout_settlement
+    // 🌟 TRUY VẤN CHI TIẾT DOANH THU: DÙNG b.booking_code LIKE 'BK%' ĐỂ LỌC ĐƠN ONLINE
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -142,7 +141,6 @@ async function getStats(req, res, next) {
           ),
           0
         )::bigint AS ready_to_payout,
-        -- CỜ ĐÁNH DẤU ĐÃ QUYẾT TOÁN XONG HAY CHƯA
         CASE 
           WHEN COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0) > 0 
            AND COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0) >= COALESCE(SUM(b.hotel_payout), 0)
@@ -155,8 +153,8 @@ async function getStats(req, res, next) {
         ON b.hotel_id = h.id 
        AND b.payment_status = 'paid'
        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-       -- 🛑 ĐIỀU KIỆN QUAN TRỌNG: CHỈ LẤY ĐƠN ONLINE (BK), LOẠI BỎ TOÀN BỘ ĐƠN KHÁCH LẺ (DP)
-       AND (b.booking_code LIKE 'BK%' AND COALESCE(b.source, 'online') != 'walk_in')
+       -- 🛑 CHỈ LẤY ĐƠN ONLINE (BK), BỎ QUA ĐƠN KHÁCH LẺ (DP)
+       AND b.booking_code LIKE 'BK%'
       GROUP BY h.id, u.id
       ORDER BY total_gmv DESC, h.created_at DESC;
     `;
@@ -177,8 +175,8 @@ async function getStats(req, res, next) {
         `SELECT COUNT(*)::int AS count 
          FROM public.booking b 
          WHERE b.status IN ('confirmed', 'checked_in', 'checked_out') 
-           -- 🛑 CHỈ ĐẾM ĐƠN ĐẶT ONLINE TỪ SÀN
-           AND (b.booking_code LIKE 'BK%' AND COALESCE(b.source, 'online') != 'walk_in')
+           -- 🛑 CHỈ ĐẾM ĐƠN ONLINE SÀN
+           AND b.booking_code LIKE 'BK%'
            ${timeBookingFilter}`,
       ),
       pool.query(
@@ -214,7 +212,7 @@ async function getStats(req, res, next) {
          WHERE b.payment_status = 'paid'
            AND b.status IN ('confirmed', 'checked_in', 'checked_out')
            -- 🛑 CHỈ TÍNH DOANH SỐ ĐƠN ONLINE TỪ SÀN
-           AND (b.booking_code LIKE 'BK%' AND COALESCE(b.source, 'online') != 'walk_in')
+           AND b.booking_code LIKE 'BK%'
            ${timeBookingFilter}`,
       ),
       pool.query(
@@ -554,12 +552,12 @@ async function listAllBookings(req, res, next) {
          h.commission_rate,
          -- 🌟 NẾU LÀ ĐƠN KHÁCH LẺ (DP) THÌ HOA HỒNG = 0, CHỦ KHÁCH SẠN HƯỞNG 100%
          CASE 
-           WHEN b.booking_code LIKE 'DP%' OR COALESCE(b.source, 'online') = 'walk_in' THEN 0
+           WHEN b.booking_code LIKE 'DP%' THEN 0
            WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
            ELSE ROUND(b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)::bigint
          END AS commission_amount,
          CASE 
-           WHEN b.booking_code LIKE 'DP%' OR COALESCE(b.source, 'online') = 'walk_in' THEN b.total_price
+           WHEN b.booking_code LIKE 'DP%' THEN b.total_price
            WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
            ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))::bigint
          END AS owner_amount,

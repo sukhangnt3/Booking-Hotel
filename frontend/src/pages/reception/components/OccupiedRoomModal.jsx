@@ -27,6 +27,7 @@ export default function OccupiedRoomModal({
   );
   const [bookingDetail, setBookingDetail] = useState(room.booking || null);
 
+  // ─── TỰ ĐỘNG TRA CỨU CHI TIẾT ĐƠN TỪ DATABASE ───
   useEffect(() => {
     const code =
       room.booking?.code || room.booking?.booking_code || room.booking?.id;
@@ -36,9 +37,13 @@ export default function OccupiedRoomModal({
       .get(`/bookings/code/${code}`)
       .then((res) => {
         const b = res?.data?.booking || res?.booking || res?.data || res;
-        if (b) setBookingDetail(b);
+        if (b) {
+          setBookingDetail(b);
+        }
       })
-      .catch((err) => console.warn("Không lấy được chi tiết đơn phòng:", err));
+      .catch((err) => {
+        console.warn("Không lấy được chi tiết đơn phòng:", err);
+      });
   }, [room.booking?.code, room.booking?.booking_code, room.booking?.id]);
 
   useEffect(() => {
@@ -61,8 +66,13 @@ export default function OccupiedRoomModal({
       });
   }, [room.hotel_id, hotelSettings]);
 
-  const graceMinutes = Number(hotelSettings?.hourly_grace_minutes ?? 30);
-  const defaultCheckoutTime = hotelSettings?.checkout_time ?? "12:00:00";
+  const graceMinutes = Number(
+    hotelSettings?.hourly_grace_minutes ??
+      room.hotel?.hourly_grace_minutes ??
+      30,
+  );
+  const defaultCheckoutTime =
+    hotelSettings?.checkout_time ?? room.hotel?.checkout_time ?? "12:00:00";
 
   const hourlyTiers = room.hourly_tiers || [];
   const firstHourRate = Number(
@@ -122,6 +132,7 @@ export default function OccupiedRoomModal({
     (bookingDetail?.room_legs || room.booking?.room_legs).length > 0
       ? bookingDetail?.room_legs || room.booking?.room_legs
       : null;
+
   const baseRoomPrice = Number(
     bookingDetail?.total_price ||
       room.booking?.total_price ||
@@ -130,6 +141,7 @@ export default function OccupiedRoomModal({
   );
   const totalBill = baseRoomPrice + overtimeFee;
 
+  // ─── 🌟 XỬ LÝ CHUẨN XÁC NGUỒN KHÁCH VÀ TIỀN PHÒNG ───
   const b = bookingDetail || room.booking;
 
   const isWalkInGuest =
@@ -156,15 +168,17 @@ export default function OccupiedRoomModal({
   let paymentSubLabel = "";
 
   if (isWalkInGuest) {
-    // 🌟 KHÁCH LẺ: MẶC ĐỊNH LÀ ĐÃ THU ĐỦ TIỀN PHÒNG LÚC NHẬN PHÒNG
+    // Với khách lẻ tại quầy: Mặc định đã thu đủ tiền phòng lúc nhận phòng
     customerPaid = baseRoomPrice;
     paymentLabel = "Đã thanh toán lúc nhận phòng:";
     paymentSubLabel = "(Đã thu đủ 100% tiền phòng)";
   } else if (isDepositOnline) {
+    // Khách online cọc 30% qua sàn GoStay
     customerPaid = Number(b?.deposit_amount ?? Math.round(baseRoomPrice * 0.3));
     paymentLabel = "Khách cọc online qua sàn:";
     paymentSubLabel = "(Đã cọc 30% qua GoStay)";
   } else if (isPaidFullOnline) {
+    // Khách online thanh toán 100% qua sàn GoStay
     customerPaid = baseRoomPrice;
     paymentLabel = "Đã thanh toán online qua sàn:";
     paymentSubLabel = "(Đã trả 100% qua GoStay)";
@@ -172,7 +186,9 @@ export default function OccupiedRoomModal({
     customerPaid = baseRoomPrice;
   }
 
-  // 🌟 NẾU CÓ PHỤ THU QUÁ GIỜ THÌ CHỈ THU PHẦN QUÁ GIỜ ĐÓ, NẾU KHÔNG CÓ THÌ CÒN THU = 0Đ
+  // Số tiền còn cần thu tại quầy:
+  // Nếu đã thu đủ tiền phòng và không trễ giờ -> remainingAmount = 0 ₫!
+  // Nếu có phụ thu trễ giờ -> remainingAmount = đúng bằng số tiền phụ thu!
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
@@ -194,13 +210,20 @@ export default function OccupiedRoomModal({
     .filter((v, i, a) => v > 0 && a.indexOf(v) === i)
     .slice(0, 4);
 
-  const currentDateStr = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const currentDateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
+    now.getMonth() + 1,
+  ).padStart(2, "0")}/${now.getFullYear()} ${String(now.getHours()).padStart(
+    2,
+    "0",
+  )}:${String(now.getMinutes()).padStart(2, "0")}`;
+
   const currentBookingCode =
     bookingDetail?.booking_code ||
     b?.code ||
     b?.booking_code ||
     room.booking?.code ||
     "DP000010";
+
   const currentCustomerName =
     bookingDetail?.customer_name ||
     b?.customer_name ||
@@ -210,6 +233,7 @@ export default function OccupiedRoomModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
       <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col">
+        {/* HEADER MODAL */}
         <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-200 bg-white shrink-0">
           <div className="flex items-center gap-3">
             <h3 className="font-extrabold text-base text-slate-900">
@@ -217,6 +241,7 @@ export default function OccupiedRoomModal({
               <span className="text-[#1b6a38]">{currentCustomerName}</span>
             </h3>
 
+            {/* HUY HIỆU PHÂN LOẠI */}
             {isWalkInGuest ? (
               <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 font-bold text-[11px] border border-blue-300 flex items-center gap-1">
                 <Banknote size={12} />
@@ -236,7 +261,9 @@ export default function OccupiedRoomModal({
 
             <button
               type="button"
-              onClick={() => onOpenChangeRoom && onOpenChangeRoom(room)}
+              onClick={() => {
+                if (onOpenChangeRoom) onOpenChangeRoom(room);
+              }}
               className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-amber-500 bg-amber-50 text-amber-800 font-bold text-[11px] hover:bg-amber-100 cursor-pointer shadow-2xs transition"
             >
               <ArrowRightLeft size={13} className="text-amber-700" />
@@ -253,7 +280,9 @@ export default function OccupiedRoomModal({
           </button>
         </div>
 
+        {/* NỘI DUNG TÍNH TIỀN CHI TIẾT */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1">
+          {/* CỘT TRÁI: THÔNG TIN PHÒNG */}
           <div className="lg:col-span-7 space-y-4">
             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
@@ -366,6 +395,7 @@ export default function OccupiedRoomModal({
             </div>
           </div>
 
+          {/* CỘT PHẢI: BẢNG TÍNH TIỀN THÔNG MINH */}
           <div className="lg:col-span-5 border-l border-slate-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-slate-600 font-semibold border border-slate-200 rounded-lg px-2 py-1 bg-slate-50">
@@ -397,7 +427,7 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* HIỂN THỊ ĐÃ THU ĐỦ TIỀN PHÒNG LÚC CHECK-IN */}
+              {/* TIỀN ĐÃ THU */}
               <div className="flex justify-between items-center text-slate-700">
                 <div>
                   <span className="block font-medium text-slate-800">
@@ -414,7 +444,7 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* CÒN CẦN THU TẠI QUẦY (NẾU ĐÚNG GIỜ LÀ 0Đ, QUÁ GIỜ THÌ CHỈ THU PHỤ THU) */}
+              {/* SỐ TIỀN CÒN CẦN THU */}
               <div className="flex justify-between items-center pt-2 border-t border-slate-200 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
                 <div>
                   <span className="font-bold text-slate-900 text-xs block">
@@ -423,8 +453,8 @@ export default function OccupiedRoomModal({
                   <span className="text-[10px] text-amber-800 font-medium">
                     {remainingAmount === 0
                       ? "(Tiền phòng đã thanh toán đủ)"
-                      : overtimeFee > 0
-                        ? "(Chỉ thu tiền phụ thu quá giờ)"
+                      : overtimeFee > 0 && customerPaid >= baseRoomPrice
+                        ? "(Chỉ thu tiền phụ phí quá giờ)"
                         : "(Khách thanh toán nốt tiền phòng)"}
                   </span>
                 </div>
@@ -433,82 +463,100 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              <div className="flex justify-between items-center pt-2">
-                <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                  Lễ tân thu thực tế:
-                  <CreditCard size={14} className="text-emerald-700" />
-                </span>
-                <input
-                  type="text"
-                  value={
-                    guestPayment
-                      ? Number(guestPayment).toLocaleString("vi-VN")
-                      : ""
-                  }
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, "");
-                    setGuestPayment(raw ? Number(raw) : 0);
-                  }}
-                  className="w-32 text-right border-b-2 border-slate-300 focus:border-[#1b6a38] py-0.5 outline-none font-black text-sm text-slate-900"
-                  placeholder="0"
-                />
-              </div>
+              {/* 🌟 NẾU ĐÃ THANH TOÁN ĐỦ (REMAINING = 0): HIỆN THÔNG BÁO XANH MƯỢT, ẨN Ô NHẬP TIỀN */}
+              {remainingAmount === 0 ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-center space-y-1 mt-2">
+                  <div className="font-black text-xs flex items-center justify-center gap-1.5 text-emerald-800">
+                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <span>Hóa đơn đã được thanh toán đủ 100%</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-700">
+                    Không phát sinh phụ phí. Bấm nút bên dưới để nhận lại chìa
+                    khóa và hoàn tất trả phòng!
+                  </p>
+                </div>
+              ) : (
+                /* 🌟 NẾU CÓ PHỤ THU QUÁ GIỜ HOẶC CẦN THU THÊM: MỚI HIỆN Ô NHẬP TIỀN */
+                <div className="space-y-2 pt-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                      Lễ tân thu phụ phí phát sinh:
+                      <CreditCard size={14} className="text-emerald-700" />
+                    </span>
+                    <input
+                      type="text"
+                      value={
+                        guestPayment
+                          ? Number(guestPayment).toLocaleString("vi-VN")
+                          : ""
+                      }
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, "");
+                        setGuestPayment(raw ? Number(raw) : 0);
+                      }}
+                      className="w-32 text-right border-b-2 border-slate-300 focus:border-[#1b6a38] py-0.5 outline-none font-black text-sm text-slate-900"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-start gap-6 pt-1 text-slate-700 font-semibold">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="checkout_pay_method"
+                        checked={paymentMethod === "cash"}
+                        onChange={() => setPaymentMethod("cash")}
+                        className="accent-[#1b6a38]"
+                      />
+                      <span>Tiền mặt</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="checkout_pay_method"
+                        checked={paymentMethod === "transfer"}
+                        onChange={() => setPaymentMethod("transfer")}
+                        className="accent-[#1b6a38]"
+                      />
+                      <span>Chuyển khoản</span>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    {quickAmounts.map((amt, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setGuestPayment(amt)}
+                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-[11px] cursor-pointer"
+                      >
+                        {formatVND(amt)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center justify-start gap-6 pt-2 text-slate-700 font-semibold">
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="checkout_pay_method"
-                  checked={paymentMethod === "cash"}
-                  onChange={() => setPaymentMethod("cash")}
-                  className="accent-[#1b6a38]"
-                />
-                <span>Tiền mặt</span>
-              </label>
-
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="checkout_pay_method"
-                  checked={paymentMethod === "transfer"}
-                  onChange={() => setPaymentMethod("transfer")}
-                  className="accent-[#1b6a38]"
-                />
-                <span>Chuyển khoản</span>
-              </label>
-            </div>
-
-            {/* CÁC MỨC TIỀN NHANH */}
-            <div className="flex items-center gap-2 flex-wrap pt-1">
-              {quickAmounts.map((amt, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setGuestPayment(amt)}
-                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-[11px] cursor-pointer"
-                >
-                  {formatVND(amt)}
-                </button>
-              ))}
-            </div>
-
+            {/* GHI CHÚ */}
             <div className="pt-2">
               <input
                 type="text"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="✎ Nhập ghi chú hóa đơn..."
+                placeholder="✎ Nhập ghi chú hóa đơn trả phòng..."
                 className="w-full border-b border-slate-300 py-1 outline-none text-slate-700 focus:border-[#1b6a38]"
               />
             </div>
 
+            {/* NÚT HOÀN THÀNH TRẢ PHÒNG */}
             <div className="pt-3 flex items-center gap-3">
               <button
                 type="button"
                 onClick={() =>
                   onCheckOut(currentBookingCode, {
-                    paidAmount: guestPayment,
+                    paidAmount: remainingAmount === 0 ? 0 : guestPayment,
                     paymentMethod: paymentMethod,
                     note: note,
                   })
