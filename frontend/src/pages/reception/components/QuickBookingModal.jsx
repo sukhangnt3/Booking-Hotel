@@ -10,6 +10,8 @@ import {
   Trash2,
   Minus,
   RotateCw,
+  Store,
+  Check,
 } from "lucide-react";
 
 export default function QuickBookingModal({
@@ -157,13 +159,20 @@ export default function QuickBookingModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-2xs animate-fadeIn">
         <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp">
           {/* Header */}
-          <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200">
-            <h3 className="font-extrabold text-sm text-slate-900">
-              Đặt/Nhận phòng nhanh
-            </h3>
+          <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-white">
+            <div className="flex items-center gap-3">
+              <h3 className="font-extrabold text-sm text-slate-900">
+                Đặt/Nhận phòng nhanh tại quầy
+              </h3>
+              {/* 🌟 HUY HIỆU MINH BẠCH 0% HOA HỒNG SÀN */}
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-300 flex items-center gap-1">
+                <Store size={12} />
+                Khách trực tiếp (0% hoa hồng sàn • Khách sạn hưởng 100%)
+              </span>
+            </div>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-700 text-lg font-bold"
+              className="text-slate-400 hover:text-slate-700 text-lg font-bold cursor-pointer"
             >
               ✕
             </button>
@@ -185,7 +194,7 @@ export default function QuickBookingModal({
                         customer_phone: "",
                       }))
                     }
-                    className="text-slate-400 hover:text-rose-600 pl-2 font-bold"
+                    className="text-slate-400 hover:text-rose-600 pl-2 font-bold cursor-pointer"
                   >
                     ✕
                   </button>
@@ -202,12 +211,13 @@ export default function QuickBookingModal({
                         customer_name: e.target.value,
                       })
                     }
-                    placeholder="Tìm khách hàng (F4)"
+                    placeholder="Tìm khách hàng (F4) hoặc nhập tên..."
                     className="w-full outline-none text-xs font-medium text-slate-800"
                   />
                   <button
                     onClick={() => setIsAddCustomerOpen(true)}
-                    className="ml-1 p-1 text-slate-600 hover:text-emerald-700 font-bold"
+                    className="ml-1 p-1 text-slate-600 hover:text-emerald-700 font-bold cursor-pointer"
+                    title="Thêm hồ sơ khách hàng mới"
                   >
                     <Plus size={16} strokeWidth={2.5} />
                   </button>
@@ -226,12 +236,12 @@ export default function QuickBookingModal({
                 className="flex items-center gap-2 border border-slate-300 rounded-lg px-3 py-1.5 bg-white hover:bg-slate-50 font-bold text-slate-700 cursor-pointer shadow-2xs select-none"
               >
                 <User size={14} className="text-slate-500" />
-                <span>{bookingData.guest_count.adult}</span>
+                <span>{bookingData.guest_count.adult} lớn</span>
                 <span className="text-slate-300">|</span>
-                <span>👶 {bookingData.guest_count.children}</span>
+                <span>👶 {bookingData.guest_count.children} trẻ</span>
                 <span className="text-slate-300">|</span>
                 <CreditCard size={13} className="text-slate-500" />
-                <span>{guestStayList.length}</span>
+                <span>{guestStayList.length} CCCD</span>
               </div>
 
               {bookingData.customer_phone && (
@@ -383,8 +393,8 @@ export default function QuickBookingModal({
             </div>
 
             {/* Ghi chú & Tính tiền */}
-            <div className="flex items-start justify-between gap-6 pt-1">
-              <div className="space-y-3 flex-1">
+            <div className="flex items-start justify-between gap-6 pt-1 flex-wrap">
+              <div className="space-y-3 flex-1 min-w-[280px]">
                 <button
                   type="button"
                   onClick={handleAddMoreRoom}
@@ -403,27 +413,27 @@ export default function QuickBookingModal({
                     onChange={(e) =>
                       setBookingData({ ...bookingData, note: e.target.value })
                     }
-                    placeholder="Nhập ghi chú..."
+                    placeholder="Nhập ghi chú phòng, yêu cầu của khách..."
                     className="flex-1 border-b border-slate-300 py-1 outline-none text-slate-800 text-xs focus:border-[#1b6a38]"
                   />
                 </div>
               </div>
 
-              <div className="w-64 space-y-2 text-right">
+              {/* KHỐI TÍNH TIỀN: PHÂN BIỆT RÕ TRẢ SAU (0đ) VÀ TRẢ NGAY */}
+              <div className="w-72 space-y-2.5 text-right bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-slate-700">
-                    Khách cần trả:
+                    Tiền phòng cần thu:
                   </span>
-                  <span className="font-black text-emerald-700 text-sm">
+                  <span className="font-black text-emerald-800 text-base">
                     {formatVND(totalAmount)}
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-600 flex items-center gap-1">
-                    Khách thanh toán <CreditCard size={13} />:
+                <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-200">
+                  <span className="font-semibold text-slate-700 flex items-center gap-1">
+                    Khách trả lúc nhận phòng:
                   </span>
-                  {/* 🌟 TỰ ĐỘNG THÊM DẤU CHẤM HÀNG NGHÌN (VD: 100.000) */}
                   <div className="flex items-center gap-1">
                     <input
                       type="text"
@@ -435,18 +445,52 @@ export default function QuickBookingModal({
                           : ""
                       }
                       onChange={(e) => {
-                        // Tự động lọc bỏ các ký tự không phải số rồi lưu lại
                         const rawValue = e.target.value.replace(/\D/g, "");
                         setBookingData({
                           ...bookingData,
                           customer_paid: rawValue ? Number(rawValue) : 0,
                         });
                       }}
-                      className="w-28 text-right border-b border-slate-300 py-0.5 outline-none font-bold text-slate-900 focus:border-[#1b6a38]"
+                      className="w-24 text-right border-b-2 border-slate-300 py-0.5 outline-none font-black text-slate-900 focus:border-[#1b6a38]"
                       placeholder="0"
                     />
-                    <span className="font-bold text-slate-600">đ</span>
+                    <span className="font-bold text-slate-600">₫</span>
                   </div>
+                </div>
+
+                {/* 🌟 2 NÚT CHỌN NHANH TRẠNG THÁI TIỀN (TRẢ SAU VS TRẢ ĐỦ) */}
+                <div className="flex items-center justify-end gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBookingData((prev) => ({ ...prev, customer_paid: 0 }))
+                    }
+                    className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      Number(bookingData.customer_paid || 0) === 0
+                        ? "bg-amber-50 text-amber-900 border-amber-400 shadow-2xs"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    Trả sau (0 ₫)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBookingData((prev) => ({
+                        ...prev,
+                        customer_paid: totalAmount,
+                      }))
+                    }
+                    className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      Number(bookingData.customer_paid || 0) === totalAmount &&
+                      totalAmount > 0
+                        ? "bg-emerald-50 text-emerald-900 border-emerald-400 shadow-2xs"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    Thu đủ ngay ({formatVND(totalAmount)})
+                  </button>
                 </div>
               </div>
             </div>

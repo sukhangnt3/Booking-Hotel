@@ -297,10 +297,6 @@ export default function AdminDashboardPage() {
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             Giám Sát Doanh Thu & Quyết Toán Sàn
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Quét mã VietQR chuyển tiền cho Owner và bấm xác nhận để cập nhật
-            công nợ về 0 ₫
-          </p>
         </div>
 
         <button
@@ -352,7 +348,7 @@ export default function AdminDashboardPage() {
                 {formatVND(stats.totalRevenue)}
               </h3>
               <p className="text-[11px] text-emerald-600 font-medium">
-                Doanh thu thực tế Admin được hưởng
+                Doanh thu thực tế
               </p>
             </div>
 
@@ -366,9 +362,6 @@ export default function AdminDashboardPage() {
               <h3 className="text-2xl font-black text-amber-700 tracking-tight">
                 {formatVND(stats.totalOwnerPayout)}
               </h3>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Tự động trừ khi bạn bấm Quyết toán
-              </p>
             </div>
 
             <div className="bg-white p-5 rounded-3xl border shadow-xs space-y-2">

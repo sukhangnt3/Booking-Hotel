@@ -85,7 +85,7 @@ async function cleanupExpiredLocks() {
   }
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG & TỰ ĐỘNG CẮT HOA HỒNG CHO ADMIN ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG: TỰ ĐỘNG PHÂN BIỆT KHÁCH ONLINE VÀ KHÁCH LẺ OFFLINE ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -112,6 +112,11 @@ async function createBooking(req, res, next) {
       deposit_amount = 0,
       remaining_amount = 0,
       expected_amount,
+      booking_type = "online",
+      source = "online",
+      is_walk_in = false,
+      is_check_in_now = false,
+      customer_paid = 0,
     } = req.body;
 
     if (!hotel_id || !checkin_date || !checkout_date) {
@@ -134,7 +139,7 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
-    // 🌟 1. LẤY TỶ LỆ HOA HỒNG (% COMMISSION) ĐÃ THIẾT LẬP CỦA KHÁCH SẠN NÀY
+    // 🌟 1. LẤY TỶ LỆ HOA HỒNG (% COMMISSION) CỦA KHÁCH SẠN
     const hotelQueryRes = await client.query(
       `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder 
        FROM public.hotel 
@@ -152,7 +157,20 @@ async function createBooking(req, res, next) {
     }
 
     const hotelData = hotelQueryRes.rows[0];
-    const commissionRate = Number(hotelData.commission_rate ?? 18.0); // Mặc định 18% nếu chưa gán
+
+    // 🌟 PHÂN LOẠI NGUỒN ĐƠN: KHÁCH LẺ OFFLINE (WALK-IN) VS KHÁCH ONLINE
+    const isWalkInBooking =
+      Boolean(is_walk_in) ||
+      booking_type === "walk_in" ||
+      booking_type === "counter" ||
+      source === "walk_in" ||
+      source === "counter";
+
+    // 👉 KHÁCH LẺ OFFLINE: HOA HỒNG = 0%
+    // 👉 KHÁCH ONLINE QUA SÀN: HOA HỒNG = 18% (HOẶC THEO CẤU HÌNH CỦA KHÁCH SẠN)
+    const commissionRate = isWalkInBooking
+      ? 0
+      : Number(hotelData.commission_rate ?? 18.0);
 
     // 🌟 2. KIỂM TRA PHÒNG TRỐNG VÀ XUNG ĐỘT PHÒNG
     if (room_id) {
@@ -229,16 +247,23 @@ async function createBooking(req, res, next) {
       }
     }
 
-    // 🌟 3. TÍNH TOÁN DÒNG TIỀN HOA HỒNG (ADMIN ĂN HOA HỒNG TẠI ĐÂY)
+    // 🌟 3. TÍNH TOÁN DÒNG TIỀN HOA HỒNG CHUẨN XÁC
     const newBookingId = crypto.randomUUID();
-    const bookingCode = "BK" + Math.floor(10000000 + Math.random() * 90000000);
+    // Khách lẻ dùng tiền tố DP (Direct Placement), khách online dùng BK
+    const bookingCodePrefix = isWalkInBooking ? "DP" : "BK";
+    const bookingCode =
+      bookingCodePrefix + Math.floor(10000000 + Math.random() * 90000000);
+
     const finalPrice = Math.round(Number(total_price || 650000));
     const discountVal = Math.round(Number(discount || 0));
     const subtotalVal = finalPrice + discountVal;
 
-    // Tiền hoa hồng Admin thu về: Ví dụ 1.000.000đ * 18% = 180.000đ
-    const adminCommission = Math.round((finalPrice * commissionRate) / 100);
-    // Tiền sàn sẽ quyết toán cho Owner sau này: 1.000.000đ - 180.000đ = 820.000đ
+    // 💰 TÍNH HOA HỒNG:
+    // - Khách lẻ offline: adminCommission = 0đ, hotelPayout = 100% finalPrice!
+    // - Khách online sàn: adminCommission = 18%, hotelPayout = 82%!
+    const adminCommission = isWalkInBooking
+      ? 0
+      : Math.round((finalPrice * commissionRate) / 100);
     const hotelPayout = finalPrice - adminCommission;
 
     const isDeposit = payment_type === "DEPOSIT_30";
@@ -248,7 +273,17 @@ async function createBooking(req, res, next) {
     const remAmount = isDeposit ? finalPrice - depAmount : 0;
     const amountToPayNow = Math.round(Number(expected_amount) || depAmount);
 
-    // 🌟 4. INSERT VÀO BẢNG BOOKING (LƯU CHUẨN XÁC hotel_payout THAY VÌ 0)
+    // XÁC ĐỊNH TRẠNG THÁI ĐƠN & THANH TOÁN
+    let initialStatus = "pending";
+    let initialPaymentStatus = "unpaid";
+
+    if (isWalkInBooking) {
+      initialStatus = is_check_in_now ? "checked_in" : "confirmed";
+      initialPaymentStatus =
+        Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
+    }
+
+    // 🌟 4. INSERT VÀO BẢNG BOOKING (GHI NHẬN CHUẨN XÁC NGUỒN ĐƠN VÀ DOANH THU)
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -260,9 +295,9 @@ async function createBooking(req, res, next) {
         $1, $2, $3, $4, $5,
         $6::date, $7::date, $8, 0,
         $9, $10, $11, $12,
-        'pending', 'unpaid',
-        $13, $14, 0,
-        $15, $16, NOW(), NOW()
+        $13, $14,
+        $15, $16, 0,
+        $17, $18, NOW(), NOW()
       ) RETURNING *;
     `;
 
@@ -275,14 +310,19 @@ async function createBooking(req, res, next) {
       checkin_date,
       checkout_date,
       Number(adults) || 2,
-      customer_name || "Khách đặt trực tuyến",
-      guest_email || req.user?.email || "guest@gostay.vn",
+      customer_name ||
+        (isWalkInBooking ? "Khách lẻ tại quầy" : "Khách đặt trực tuyến"),
+      guest_email ||
+        req.user?.email ||
+        (isWalkInBooking ? "walkin@hotel.local" : "guest@gostay.vn"),
       guest_phone || "0900000000",
       special_require || null,
+      initialStatus,
+      initialPaymentStatus,
       subtotalVal,
       discountVal,
       finalPrice,
-      hotelPayout, // 💰 GHI RÕ TIỀN SẼ TRẢ CHO OWNER VÀO ĐÂY
+      hotelPayout, // 💰 Khách lẻ thì hotelPayout = 100% tiền phòng!
     ]);
 
     const newBooking = insertRes.rows[0];
@@ -306,111 +346,122 @@ async function createBooking(req, res, next) {
         [newBooking.id, room_id, roomName, checkin_date, bookingQty, roomPrice],
       );
 
-      const sessionId =
-        req.headers["x-session-id"] ||
-        req.sessionID ||
-        `sess_${crypto.randomBytes(8).toString("hex")}`;
+      // Nếu là khách online mới cần khóa tạm 15 phút, khách lẻ nhận phòng ngay không khóa tạm
+      if (!isWalkInBooking) {
+        const sessionId =
+          req.headers["x-session-id"] ||
+          req.sessionID ||
+          `sess_${crypto.randomBytes(8).toString("hex")}`;
 
-      const tlColsRes = await client.query(
-        `SELECT column_name 
-         FROM information_schema.columns 
-         WHERE table_schema = 'public' AND table_name = 'temporary_locks'`,
-      );
-      const tlCols = tlColsRes.rows.map((r) => r.column_name.toLowerCase());
+        const tlColsRes = await client.query(
+          `SELECT column_name 
+           FROM information_schema.columns 
+           WHERE table_schema = 'public' AND table_name = 'temporary_locks'`,
+        );
+        const tlCols = tlColsRes.rows.map((r) => r.column_name.toLowerCase());
 
-      const lockCols = [
-        "id",
-        "room_id",
-        "user_id",
-        "session_id",
-        "lock_date",
-        "quantity",
-        "booking_id",
-        "created_at",
-      ];
-      const selectCols = [
-        "gen_random_uuid()",
-        "$1",
-        "$2",
-        "$3",
-        "d::date",
-        "$4",
-        "$5",
-        "NOW()",
-      ];
+        const lockCols = [
+          "id",
+          "room_id",
+          "user_id",
+          "session_id",
+          "lock_date",
+          "quantity",
+          "booking_id",
+          "created_at",
+        ];
+        const selectCols = [
+          "gen_random_uuid()",
+          "$1",
+          "$2",
+          "$3",
+          "d::date",
+          "$4",
+          "$5",
+          "NOW()",
+        ];
 
-      if (tlCols.includes("lock_expires_at")) {
-        lockCols.push("lock_expires_at");
-        selectCols.push("NOW() + INTERVAL '15 minutes'");
+        if (tlCols.includes("lock_expires_at")) {
+          lockCols.push("lock_expires_at");
+          selectCols.push("NOW() + INTERVAL '15 minutes'");
+        }
+        if (tlCols.includes("expires_at")) {
+          lockCols.push("expires_at");
+          selectCols.push("NOW() + INTERVAL '15 minutes'");
+        }
+
+        const insertLockSql = `
+          INSERT INTO public.temporary_locks (${lockCols.join(", ")})
+          SELECT ${selectCols.join(", ")}
+          FROM generate_series($6::date, ($7::date - interval '1 day')::date, '1 day'::interval) d;
+        `;
+
+        await client.query(insertLockSql, [
+          room_id,
+          userId,
+          sessionId,
+          bookingQty,
+          newBooking.id,
+          checkin_date,
+          checkout_date,
+        ]);
       }
-      if (tlCols.includes("expires_at")) {
-        lockCols.push("expires_at");
-        selectCols.push("NOW() + INTERVAL '15 minutes'");
-      }
-
-      const insertLockSql = `
-        INSERT INTO public.temporary_locks (${lockCols.join(", ")})
-        SELECT ${selectCols.join(", ")}
-        FROM generate_series($6::date, ($7::date - interval '1 day')::date, '1 day'::interval) d;
-      `;
-
-      await client.query(insertLockSql, [
-        room_id,
-        userId,
-        sessionId,
-        bookingQty,
-        newBooking.id,
-        checkin_date,
-        checkout_date,
-      ]);
     }
 
-    // 🌟 5. TẠO MÃ VIETQR VỀ TÀI KHOẢN ADMIN ĐỂ THU TIỀN VÀ GIỮ HOA HỒNG
+    // 🌟 5. TẠO MÃ QR NẾU LÀ ĐƠN ONLINE (VỀ VÍ ADMIN ĐỂ CẮT HOA HỒNG)
+    let qrUrl = null;
+    let payRecord = null;
     const paymentBank = PLATFORM_ADMIN_BANK;
 
-    const qrUrl = `https://img.vietqr.io/image/${paymentBank.bankId}-${paymentBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(paymentBank.accountName)}`;
+    if (!isWalkInBooking) {
+      qrUrl = `https://img.vietqr.io/image/${paymentBank.bankId}-${paymentBank.accountNumber}-compact2.png?amount=${amountToPayNow}&addInfo=${bookingCode}&accountName=${encodeURIComponent(paymentBank.accountName)}`;
 
-    const paymentInsertSql = `
-      INSERT INTO public.payment (
-        id, booking_id, payment_method, expected_amount, paid_amount, 
-        qr_code, qr_content, status, created_at, updated_at
-      ) VALUES (
-        gen_random_uuid(), $1, 'VietQR', $2, 0, 
-        $3, $4, 'pending', NOW(), NOW()
-      ) RETURNING *;
-    `;
+      const paymentInsertSql = `
+        INSERT INTO public.payment (
+          id, booking_id, payment_method, expected_amount, paid_amount, 
+          qr_code, qr_content, status, created_at, updated_at
+        ) VALUES (
+          gen_random_uuid(), $1, 'VietQR', $2, 0, 
+          $3, $4, 'pending', NOW(), NOW()
+        ) RETURNING *;
+      `;
 
-    const payRes = await client.query(paymentInsertSql, [
-      newBooking.id,
-      amountToPayNow,
-      qrUrl,
-      bookingCode,
-    ]);
+      const payRes = await client.query(paymentInsertSql, [
+        newBooking.id,
+        amountToPayNow,
+        qrUrl,
+        bookingCode,
+      ]);
+      payRecord = payRes.rows[0];
+    }
 
     await client.query("COMMIT");
     client.release();
 
     return res.status(201).json({
       success: true,
-      message: "Khởi tạo đơn đặt phòng và giữ chỗ 15 phút thành công!",
+      message: isWalkInBooking
+        ? "Tạo đơn đặt phòng tại quầy (Offline) thành công!"
+        : "Khởi tạo đơn đặt phòng và giữ chỗ 15 phút thành công!",
       booking: {
         ...newBooking,
         commission_rate: commissionRate,
-        commission_amount: adminCommission, // Số tiền Admin hưởng
-        hotel_payout: hotelPayout, // Số tiền chuyển trả Owner sau này
+        commission_amount: adminCommission, // Khách lẻ = 0đ
+        hotel_payout: hotelPayout, // Khách lẻ = 100% tiền phòng
         payment_type: payment_type,
         deposit_amount: depAmount,
         remaining_amount: remAmount,
+        is_walk_in: isWalkInBooking,
       },
       booking_code: newBooking.booking_code,
       deposit_amount: depAmount,
       remaining_amount: remAmount,
       payment_type: payment_type,
-      payment: payRes.rows[0],
+      payment: payRecord,
       qr_code: qrUrl,
       qr_content: bookingCode,
       bankInfo: paymentBank,
-      lock_expires_in_seconds: 15 * 60,
+      lock_expires_in_seconds: isWalkInBooking ? 0 : 15 * 60,
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -420,7 +471,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. HÀM CONFIRM PAYMENT (XÁC NHẬN TIỀN ĐÃ VÀO VÍ ADMIN) ───
+// ─── 2. HÀM CONFIRM PAYMENT (XÁC NHẬN TIỀN ĐÃ VÀO TÀI KHOẢN ADMIN) ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -526,8 +577,7 @@ async function confirmPayment(req, res, next) {
 
     return res.json({
       success: true,
-      message:
-        "✓ Xác nhận thanh toán thành công! Tiền đã ghi nhận vào tài khoản Admin.",
+      message: "✓ Xác nhận thanh toán thành công!",
       bookingCode: booking.booking_code,
       paidAmount: actualPaid,
       status: "paid",
@@ -577,18 +627,35 @@ async function getBookingByCode(req, res, next) {
     const expAmount = Number(row.expected_amount || 0);
     const paidMoney = Number(row.paid_amount || 0);
 
-    const isDep =
-      (expAmount > 0 && expAmount < total) ||
-      (paidMoney > 0 && paidMoney < total);
+    // Nhận diện đơn offline tại quầy
+    const isWalkIn =
+      row.booking_type === "walk_in" ||
+      row.source === "walk_in" ||
+      row.source === "counter" ||
+      String(row.booking_code).startsWith("DP");
 
-    const dep = isDep ? (paidMoney > 0 ? paidMoney : expAmount) : total;
-    const rem = isDep ? total - dep : 0;
+    const isDep =
+      !isWalkIn &&
+      ((expAmount > 0 && expAmount < total) ||
+        (paidMoney > 0 && paidMoney < total));
+
+    const dep = isDep
+      ? paidMoney > 0
+        ? paidMoney
+        : expAmount
+      : isWalkIn
+        ? paidMoney
+        : total;
+    const rem = isDep ? total - dep : isWalkIn ? total - paidMoney : 0;
 
     const paymentBank = PLATFORM_ADMIN_BANK;
     const ownerBank = await getOwnerBankAccount(row.hotel_id);
 
     const finalBooking = {
       ...row,
+      is_walk_in: isWalkIn,
+      commission_rate: isWalkIn ? 0 : row.commission_rate,
+      commission_amount: isWalkIn ? 0 : Number(row.commission_amount || 0),
       payment_type: isDep ? "DEPOSIT_30" : "FULL",
       deposit_amount: dep,
       remaining_amount: rem,
@@ -598,8 +665,8 @@ async function getBookingByCode(req, res, next) {
       success: true,
       booking: finalBooking,
       data: finalBooking,
-      bankInfo: paymentBank, // Tài khoản nhận tiền (Admin)
-      ownerBankInfo: ownerBank, // Tài khoản để Admin chuyển khoản trả cho Owner sau này
+      bankInfo: paymentBank,
+      ownerBankInfo: ownerBank,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
