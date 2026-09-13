@@ -33,16 +33,15 @@ export default function CheckoutPage() {
   const remainingAmount = totalAmount - depositAmount;
   const expectedAmount = isDeposit ? depositAmount : totalAmount;
 
-  // 🌟 THÔNG TIN TÀI KHOẢN NGÂN HÀNG OWNER
-  const [bankInfo, setBankInfo] = useState({
+  // 🌟 CỐ ĐỊNH TÀI KHOẢN ADMIN (SEPAY) - KHÔNG BAO GIỜ BỊ ĐỔI THEO OWNER
+  const ADMIN_BANK = {
     bankId: "MB",
     bankBin: "970422",
     bankName: "MB Bank",
-    accountNumber: "0833404928",
-    accountName: "SU TRACH KHANG",
-  });
+    accountNumber: "0833404928", // STK của Admin
+    accountName: "SU TRACH KHANG", // Tên chủ tài khoản Admin
+  };
 
-  const [paymentData, setPaymentData] = useState(null);
   const [loadingPayment, setLoadingPayment] = useState(true);
   const [isPaidSuccess, setIsPaidSuccess] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
@@ -97,99 +96,40 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 🌟 TẢI THÔNG TIN VÀ CHUẨN HÓA MÃ NGÂN HÀNG
   useEffect(() => {
     async function initPayment() {
       if (!bookingCode) return;
       try {
         setLoadingPayment(true);
-
-        const [bookingRes, qrRes] = await Promise.allSettled([
-          apiClient.get(`/bookings/code/${bookingCode}`),
-          apiClient.post("/payments/create-qr", {
-            booking_code: bookingCode,
-            bookingCode: bookingCode,
-            amount: expectedAmount,
-            payment_type: rawPaymentType,
-          }),
-        ]);
-
-        const bData =
-          bookingRes.status === "fulfilled"
-            ? bookingRes.value?.data || bookingRes.value
-            : null;
-        const qData =
-          qrRes.status === "fulfilled"
-            ? qrRes.value?.data || qrRes.value
-            : null;
-
-        const combinedData = qData || bData;
-        setPaymentData(combinedData);
-
-        const ownerBank =
-          qData?.bankInfo ||
-          qData?.bank_info ||
-          bData?.bankInfo ||
-          bData?.bank_info ||
-          bData?.booking?.bank_info;
-
-        if (ownerBank && ownerBank.accountNumber) {
-          const rawId = String(
-            ownerBank.bankId || ownerBank.bank_id || "MB",
-          ).trim();
-          const cleanBankId = rawId.toUpperCase().includes("MB")
-            ? "MB"
-            : rawId.replace(/\s+/g, "");
-
-          setBankInfo({
-            bankId: cleanBankId,
-            bankBin: ownerBank.bankBin || ownerBank.bank_bin || "970422",
-            bankName: ownerBank.bankName || ownerBank.bank_name || "MB Bank",
-            accountNumber: String(
-              ownerBank.accountNumber || ownerBank.account_number || "",
-            ).replace(/\D/g, ""),
-            accountName: String(
-              ownerBank.accountName ||
-                ownerBank.account_name ||
-                "SU TRACH KHANG",
-            )
-              .toUpperCase()
-              .trim(),
-          });
-        }
+        // Gọi API tạo QR hoặc lấy dữ liệu đơn
+        await apiClient.get(`/bookings/code/${bookingCode}`);
       } catch (err) {
-        console.error("Lỗi tải thông tin thanh toán:", err);
+        console.error("Lỗi khởi tạo đơn thanh toán:", err);
       } finally {
         setLoadingPayment(false);
       }
     }
 
     initPayment();
-  }, [bookingCode, expectedAmount, rawPaymentType]);
+  }, [bookingCode]);
 
-  const cleanBankCode = encodeURIComponent(bankInfo.bankId || "MB");
-  const cleanAccNumber = encodeURIComponent(
-    bankInfo.accountNumber || "0833404928",
-  );
+  // 🌟 MÃ QR CỐ ĐỊNH 100% VỀ TÀI KHOẢN ADMIN/SEPAY
+  const cleanBankCode = encodeURIComponent(ADMIN_BANK.bankId);
+  const cleanAccNumber = encodeURIComponent(ADMIN_BANK.accountNumber);
   const cleanBookingCode = encodeURIComponent(bookingCode);
-  const cleanAccName = encodeURIComponent(
-    bankInfo.accountName || "SU TRACH KHANG",
-  );
+  const cleanAccName = encodeURIComponent(ADMIN_BANK.accountName);
 
-  const qrImageSrc =
-    paymentData?.qr_code ||
-    paymentData?.qrCodeUrl ||
-    `https://qr.sepay.vn/img?acc=${cleanAccNumber}&bank=${cleanBankCode}&amount=${expectedAmount}&des=${cleanBookingCode}`;
+  // QR Của SePay luôn luôn trỏ về STK Admin 0833404928
+  const qrImageSrc = `https://qr.sepay.vn/img?acc=${cleanAccNumber}&bank=${cleanBankCode}&amount=${expectedAmount}&des=${cleanBookingCode}`;
 
   const pollingRef = useRef(null);
 
-  // 🌟 CƠ CHẾ TỰ ĐỘNG BẮT TRẠNG THÁI VÀ CHUYỂN TRANG 100%
+  // TỰ ĐỘNG BẮT TRẠNG THÁI THANH TOÁN TỪ SEPAY
   const checkPaymentStatus = async () => {
     if (!bookingCode || isPaidSuccess) return;
 
     try {
       const rawRes = await apiClient.get(`/payments/status/${bookingCode}`);
-      // Chuẩn hóa dữ liệu tương thích cả Axios gốc lẫn Axios interceptor
       const resData = rawRes?.data || rawRes;
 
       const pStatus = String(
@@ -206,7 +146,6 @@ export default function CheckoutPage() {
         .trim()
         .toLowerCase();
 
-      // Đã thanh toán thành công nếu 1 trong các cờ báo paid, success hoặc confirmed
       const isPaid =
         resData?.paid === true ||
         pStatus === "paid" ||
@@ -220,7 +159,6 @@ export default function CheckoutPage() {
 
         localStorage.removeItem(`lock_expires_${bookingCode}`);
 
-        // TỰ ĐỘNG CHUYỂN TRANG ĐẶT PHÒNG THÀNH CÔNG
         setTimeout(() => {
           navigate(
             `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
@@ -232,14 +170,10 @@ export default function CheckoutPage() {
     }
   };
 
-  // 🌟 AUTO-POLLING: TỰ ĐỘNG QUÉT MỖI 2 GIÂY
   useEffect(() => {
     if (!bookingCode || isPaidSuccess) return;
 
-    // Quét ngay lập tức khi mở trang
     checkPaymentStatus();
-
-    // Tiếp tục quét định kỳ mỗi 2 giây
     pollingRef.current = setInterval(() => {
       checkPaymentStatus();
     }, 2000);
@@ -300,7 +234,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24">
-      {/* THANH ĐIỀU HƯỚNG TRÊN CÙNG */}
+      {/* THANH ĐIỀU HƯỚNG */}
       <div className="bg-white border-b border-slate-200 py-4 shadow-xs">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <button
@@ -334,7 +268,6 @@ export default function CheckoutPage() {
       </div>
 
       <main className="max-w-4xl mx-auto px-4 pt-8 space-y-6">
-        {/* BANNER KHI NHẬN TIỀN THÀNH CÔNG */}
         {isPaidSuccess && (
           <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl flex items-center justify-between animate-bounce">
             <div className="flex items-center gap-3">
@@ -361,8 +294,8 @@ export default function CheckoutPage() {
                   : "Thanh Toán Chuyển Khoản Toàn Bộ"}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Quét mã VietQR bằng App Ngân hàng bất kỳ. Tiền được chuyển trực
-                tiếp đến Chủ khách sạn.
+                Quét mã VietQR bằng App Ngân hàng bất kỳ. Cổng thanh toán bảo
+                mật của hệ thống.
               </p>
             </div>
 
@@ -396,7 +329,7 @@ export default function CheckoutPage() {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center pt-2">
-            {/* CỘT TRÁI: MÃ QR ĐỘNG */}
+            {/* CỘT TRÁI: MÃ QR CỐ ĐỊNH TÀI KHOẢN ADMIN */}
             <div className="md:col-span-5 bg-slate-50 p-6 rounded-3xl border border-slate-200 text-center space-y-3">
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#003580]">
                 <Sparkles size={14} /> Quét mã để thanh toán tự động
@@ -410,72 +343,70 @@ export default function CheckoutPage() {
                       size={28}
                     />
                     <span className="text-[11px] text-slate-400 font-bold">
-                      Đang lấy mã QR của Khách sạn...
+                      Đang khởi tạo mã QR...
                     </span>
                   </div>
                 ) : (
                   <>
                     <img
                       src={qrImageSrc}
-                      alt="VietQR Chủ Khách Sạn"
+                      alt="VietQR Cổng Thanh Toán Sàn"
                       className="w-52 h-52 mx-auto object-contain rounded-xl"
                       onError={(e) => {
                         e.currentTarget.onerror = null;
-                        const fallbackUrl = `https://img.vietqr.io/image/970422-${cleanAccNumber}-compact2.png?amount=${expectedAmount}&addInfo=${cleanBookingCode}&accountName=${cleanAccName}`;
+                        const fallbackUrl = `https://img.vietqr.io/image/${ADMIN_BANK.bankBin}-${cleanAccNumber}-compact2.png?amount=${expectedAmount}&addInfo=${cleanBookingCode}&accountName=${cleanAccName}`;
                         e.currentTarget.src = fallbackUrl;
                       }}
                     />
                     <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-emerald-700 font-black">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      Đang tự động lắng nghe chuyển khoản...
+                      Cổng thanh toán tự động lắng nghe 24/7...
                     </div>
                   </>
                 )}
               </div>
             </div>
 
-            {/* CỘT PHẢI: CHI TIẾT TÀI KHOẢN VÀ THÔNG TIN CHUYỂN KHOẢN */}
+            {/* CỘT PHẢI: CỐ ĐỊNH THÔNG TIN SÀN/ADMIN */}
             <div className="md:col-span-7 space-y-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center">
                 <div>
                   <span className="text-slate-400 block font-medium">
-                    Ngân hàng thụ hưởng
+                    Ngân hàng thụ hưởng (Cổng Sàn)
                   </span>
                   <strong className="text-slate-900 font-bold text-sm">
-                    {bankInfo.bankName || "MB Bank"}
+                    {ADMIN_BANK.bankName}
                   </strong>
                 </div>
                 <span className="font-bold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-md uppercase">
-                  {bankInfo.bankId || "MB"}
+                  {ADMIN_BANK.bankId}
                 </span>
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center">
                 <div>
                   <span className="text-slate-400 block font-medium">
-                    Số tài khoản Chủ khách sạn
+                    Số tài khoản Sàn nhận thanh toán
                   </span>
                   <span className="font-mono font-black text-slate-900 text-base">
-                    {bankInfo.accountNumber || "0833404928"}
+                    {ADMIN_BANK.accountNumber}
                   </span>
                 </div>
-                {bankInfo.accountNumber && (
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(bankInfo.accountNumber, "acc")}
-                    className="px-3 py-1 bg-white border rounded-lg font-bold text-blue-600 hover:bg-blue-50 cursor-pointer shadow-2xs"
-                  >
-                    {copiedField === "acc" ? "✓ Đã chép" : "Sao chép"}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleCopy(ADMIN_BANK.accountNumber, "acc")}
+                  className="px-3 py-1 bg-white border rounded-lg font-bold text-blue-600 hover:bg-blue-50 cursor-pointer shadow-2xs"
+                >
+                  {copiedField === "acc" ? "✓ Đã chép" : "Sao chép"}
+                </button>
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border">
                 <span className="text-slate-400 block font-medium">
-                  Tên chủ tài khoản
+                  Đơn vị thụ hưởng
                 </span>
                 <strong className="text-slate-900 uppercase font-bold text-sm">
-                  {bankInfo.accountName || "SU TRACH KHANG"}
+                  {ADMIN_BANK.accountName}
                 </strong>
               </div>
 
@@ -522,12 +453,11 @@ export default function CheckoutPage() {
           <div className="flex items-center gap-2 text-xs text-slate-500 justify-center pt-2">
             <ShieldCheck size={16} className="text-emerald-600" />
             <span>
-              Phòng được giữ trong 15 phút và tự động khóa chính thức ngay khi
-              quét QR thành công
+              Giao dịch qua cổng bảo vệ thanh toán. Phòng tự động khóa ngay khi
+              nhận tiền.
             </span>
           </div>
 
-          {/* KHUNG TRẠNG THÁI TỰ ĐỘNG (HOÀN TOÀN TỰ ĐỘNG, KHÔNG CẦN BẤM NÚT) */}
           <div className="pt-2 max-w-md mx-auto">
             <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl text-center space-y-1.5 shadow-xs">
               <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#003580]">
@@ -537,7 +467,7 @@ export default function CheckoutPage() {
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 Sau khi chuyển khoản từ App Ngân hàng, màn hình sẽ{" "}
                 <strong>tự động chuyển sang trang Hoàn tất</strong> trong vài
-                giây. Bạn không cần thao tác thêm.
+                giây.
               </p>
             </div>
           </div>
