@@ -28,7 +28,6 @@ import {
   Wallet,
   X,
   Check,
-  Loader2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -68,7 +67,7 @@ export default function AdminDashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 
-  // State Modal VietQR Quyết toán Tự Động
+  // Modal VietQR Quyết toán Tự Động
   const [selectedPayoutHotel, setSelectedPayoutHotel] = useState(null);
   const [isPayoutAutoSuccess, setIsPayoutAutoSuccess] = useState(false);
   const payoutPollingRef = useRef(null);
@@ -130,7 +129,7 @@ export default function AdminDashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // 🌟 CƠ CHẾ TỰ ĐỘNG BẮT BIẾN ĐỘNG TRỪ TIỀN (AUTO POLLING 2 GIÂY/LẦN)
+  // 🌟 TỰ ĐỘNG BẮT GIAO DỊCH TRỪ TIỀN (AUTO POLLING MỖI 2 GIÂY)
   useEffect(() => {
     if (!selectedPayoutHotel) {
       if (payoutPollingRef.current) clearInterval(payoutPollingRef.current);
@@ -139,22 +138,18 @@ export default function AdminDashboardPage() {
     }
 
     const hotelId = selectedPayoutHotel.hotel_id;
-    const amount = selectedPayoutHotel.owner_payout;
 
     const checkAutoPayoutStatus = async () => {
       try {
-        // Gửi cả hotelId và số tiền cần chuyển sang Backend để SePay đối soát trực tiếp
-        const res = await apiClient.get(
-          `/payments/payout-status/${hotelId}?amount=${amount}`,
-        );
+        const res = await apiClient.get(`/payments/payout-status/${hotelId}`);
         const data = res?.data || res;
 
-        // Nếu Backend tìm thấy giao dịch trừ tiền trên SePay
+        // Khi Backend tìm thấy giao dịch -4.920đ trên SePay
         if (data?.is_settled === true || data?.settled === true) {
           setIsPayoutAutoSuccess(true);
           if (payoutPollingRef.current) clearInterval(payoutPollingRef.current);
 
-          // Cập nhật ngay bảng bên ngoài: Số tiền về 0 và chuyển sang Đã quyết toán
+          // Cập nhật số tiền về 0đ và đổi sang Đã quyết toán
           setHotelRevenues((prev) =>
             prev.map((h) =>
               h.hotel_id === hotelId
@@ -175,7 +170,6 @@ export default function AdminDashboardPage() {
       }
     };
 
-    // Quét liên tục mỗi 2 giây
     payoutPollingRef.current = setInterval(checkAutoPayoutStatus, 2000);
 
     return () => {
@@ -188,9 +182,7 @@ export default function AdminDashboardPage() {
       await apiClient.patch(`/admin/hotels/${hotelId}/status`, {
         status: "active",
       });
-      alert(
-        "✓ Đã phê duyệt cơ sở thành công! Khách sạn đã được mở bán trên sàn.",
-      );
+      alert("✓ Đã phê duyệt cơ sở thành công!");
       fetchDashboardData();
     } catch (err) {
       alert(`Lỗi phê duyệt: ${err.message}`);
@@ -257,7 +249,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* 🟢 HEADER */}
+      {/* HEADER */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex justify-between items-center">
         <div>
           <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider mb-1">
@@ -268,8 +260,8 @@ export default function AdminDashboardPage() {
             Giám Sát Doanh Thu & Quyết Toán Sàn Tự Động
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Quét mã VietQR chuyển khoản - SePay tự động phát hiện và giải ngân
-            100% không cần nút xác nhận
+            Quét mã VietQR chuyển tiền - Hệ thống tự động bắt giao dịch từ SePay
+            và hoàn tất trong 2 giây
           </p>
         </div>
 
@@ -372,8 +364,8 @@ export default function AdminDashboardPage() {
                   </span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Quét mã VietQR - Hệ thống tự động bắt biến động trừ tiền từ
-                  SePay và hoàn tất trong 2-3 giây
+                  Quét mã VietQR - SePay tự động phát hiện giao dịch trừ tiền và
+                  hoàn tất trong 2 giây
                 </p>
               </div>
 
@@ -580,7 +572,7 @@ export default function AdminDashboardPage() {
             )}
           </div>
 
-          {/* 📊 PHẦN 2: BIỂU ĐỒ GIÁM SÁT LƯU LƯỢNG */}
+          {/* BIỂU ĐỒ GIÁM SÁT LƯU LƯỢNG */}
           <div className="bg-white p-6 rounded-3xl border shadow-xs space-y-5">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b pb-4 border-slate-100">
               <div>
@@ -718,7 +710,7 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* 🛎️ PHẦN 3: HÀNG CHỜ PHÊ DUYỆT */}
+          {/* HÀNG CHỜ PHÊ DUYỆT */}
           <div className="bg-white p-6 rounded-3xl border shadow-xs space-y-4">
             <div className="flex justify-between items-center">
               <div>
@@ -816,7 +808,7 @@ export default function AdminDashboardPage() {
         </>
       )}
 
-      {/* 🌟 MODAL QUYẾT TOÁN: TỰ ĐỘNG 100% (KHÔNG CÒN NÚT XÁC NHẬN THỦ CÔNG) */}
+      {/* 🌟 MODAL QUYẾT TOÁN TỰ ĐỘNG 100% */}
       {selectedPayoutHotel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-fadeIn">
@@ -836,7 +828,6 @@ export default function AdminDashboardPage() {
               </button>
             </div>
 
-            {/* Màn hình thành công tự động nổ khi SePay bắt được giao dịch */}
             {isPayoutAutoSuccess ? (
               <div className="p-8 text-center space-y-3 bg-emerald-50 text-emerald-900">
                 <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-lg animate-bounce">
@@ -844,8 +835,8 @@ export default function AdminDashboardPage() {
                 </div>
                 <h4 className="text-lg font-black">Chuyển Khoản Thành Công!</h4>
                 <p className="text-xs text-emerald-700">
-                  SePay đã tự động nhận diện giao dịch chuyển tiền. Cơ sở đã
-                  được cập nhật sang trạng thái <b>Đã quyết toán</b>.
+                  SePay đã nhận diện giao dịch trừ tiền. Cơ sở đã chuyển sang
+                  trạng thái <b>Đã quyết toán</b>!
                 </p>
               </div>
             ) : (
@@ -921,7 +912,7 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
 
-                {/* QR CODE CÓ MÃ PAYOUT VÀ RADAR QUÉT TỰ ĐỘNG */}
+                {/* 🌟 MÃ QR VIETQR NỘI DUNG CHUẨN XÁC: PAYOUT + UUID KHÔNG GẠCH NGANG */}
                 {selectedPayoutHotel.bank_account ? (
                   <div className="text-center pt-1 space-y-2">
                     <span className="text-[11px] font-bold text-slate-500 block">
@@ -929,21 +920,16 @@ export default function AdminDashboardPage() {
                       {formatVND(selectedPayoutHotel.owner_payout)}:
                     </span>
                     <img
-                      src={`https://img.vietqr.io/image/${selectedPayoutHotel.bank_code || "VCB"}-${selectedPayoutHotel.bank_account}-compact2.png?amount=${selectedPayoutHotel.owner_payout}&addInfo=${encodeURIComponent(`PAYOUT${selectedPayoutHotel.hotel_id}`)}&accountName=${encodeURIComponent(selectedPayoutHotel.bank_account_holder || selectedPayoutHotel.owner_name)}`}
+                      src={`https://img.vietqr.io/image/${selectedPayoutHotel.bank_code || "VCB"}-${selectedPayoutHotel.bank_account}-compact2.png?amount=${selectedPayoutHotel.owner_payout}&addInfo=${encodeURIComponent(`PAYOUT${String(selectedPayoutHotel.hotel_id).replace(/[^a-zA-Z0-9]/g, "")}`)}&accountName=${encodeURIComponent(selectedPayoutHotel.bank_account_holder || selectedPayoutHotel.owner_name)}`}
                       alt="VietQR Payout"
                       className="w-40 h-40 mx-auto rounded-xl border p-2 shadow-xs bg-white"
                     />
                     <div className="flex items-center justify-center gap-2 text-xs font-black text-emerald-700 pt-1">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
                       <span>
-                        Hệ thống đang tự động lắng nghe chuyển khoản...
+                        Hệ thống đang tự động lắng nghe giao dịch chuyển tiền...
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-400">
-                      (Vui lòng giữ nguyên nội dung chuyển khoản PAYOUT
-                      {selectedPayoutHotel.hotel_id} để hệ thống tự động nhận
-                      diện)
-                    </p>
                   </div>
                 ) : (
                   <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl font-bold text-center">
@@ -952,7 +938,6 @@ export default function AdminDashboardPage() {
                   </div>
                 )}
 
-                {/* NÚT ĐÓNG (NẾU MUỐN HỦY GIAO DỊCH) */}
                 <div className="pt-2 flex justify-end">
                   <button
                     type="button"
