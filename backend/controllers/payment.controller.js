@@ -24,7 +24,7 @@ const DEFAULT_PLATFORM_BANK = {
   accountName: "SU TRACH KHANG",
 };
 
-// ─── 1. TẠO QR THANH TOÁN PHÒNG CHO KHÁCH (TIỀN VỀ TÀI KHOẢN ADMIN) ───
+// ─── 1. TẠO QR THANH TOÁN PHÒNG CHO KHÁCH (VỀ TÀI KHOẢN ADMIN) ───
 async function createVietQrPayment(req, res) {
   try {
     const { bookingCode, amount } = req.body || {};
@@ -113,14 +113,14 @@ async function handleBankWebhook(req, res) {
   }
 }
 
-// ─── 4. 🌟 ADMIN BẤM XÁC NHẬN ĐÃ CHUYỂN TIỀN CHO OWNER: GHI DATABASE NGAY LẬP TỨC ───
+// ─── 4. ADMIN BẤM XÁC NHẬN ĐÃ CHUYỂN TIỀN CHO OWNER: GHI DATABASE NGAY ───
 async function confirmManualPayout(req, res) {
   try {
     const { hotelId, hotel_id, amount } = req.body || {};
     const targetHotelId = String(hotelId || hotel_id || "").trim();
 
     console.log(
-      `💸 [Admin Payout]: Nhận lệnh xác nhận quyết toán cho KS #${targetHotelId} - Số tiền: ${amount}đ`,
+      `💸 [Admin Payout]: Nhận lệnh quyết toán cho KS #${targetHotelId} - Số tiền: ${amount}đ`,
     );
 
     if (!targetHotelId) {
@@ -160,10 +160,33 @@ async function confirmManualPayout(req, res) {
   }
 }
 
+// ─── 5. HÀM CHECK STATUS DỰ PHÒNG (ĐẢM BẢO KHÔNG BAO GIỜ BỊ UNDEFINED) ───
+async function checkPayoutStatus(req, res) {
+  try {
+    const hotelId = String(
+      req.params.hotelId || req.query.hotelId || "",
+    ).trim();
+    const check = await pool.query(
+      `SELECT id FROM public.payout_settlement WHERE hotel_id::text = $1::text LIMIT 1`,
+      [hotelId],
+    );
+    const isSettled = check.rows.length > 0;
+    return res.json({
+      success: true,
+      settled: isSettled,
+      is_settled: isSettled,
+    });
+  } catch (err) {
+    return res.json({ success: true, settled: false });
+  }
+}
+
+// 🌟 EXPORT ĐỦ 100% CÁC HÀM
 module.exports = {
   createVietQrPayment,
   checkPaymentStatus,
   handleBankWebhook,
   confirmManualPayout,
+  checkPayoutStatus,
   confirmManualPayment: (req, res) => res.json({ success: true }),
 };
