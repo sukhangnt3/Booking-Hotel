@@ -1,3 +1,4 @@
+// backend/controllers/payment.controller.js
 require("dotenv").config();
 const pool = require("../config/database");
 
@@ -66,7 +67,7 @@ async function checkPaymentStatus(req, res) {
       req.params.bookingCode || req.query.bookingCode || "",
     ).trim();
     const result = await pool.query(
-      `SELECT status, payment_status FROM public.booking WHERE booking_code ILIKE $1 LIMIT 1`,
+      `SELECT status, payment_status, room_number FROM public.booking WHERE booking_code ILIKE $1 OR id::text = $1 LIMIT 1`,
       [code],
     );
 
@@ -81,6 +82,8 @@ async function checkPaymentStatus(req, res) {
       success: true,
       paid: isPaid,
       status: isPaid ? "paid" : "pending",
+      payment_status: result.rows[0].payment_status,
+      booking_status: result.rows[0].status,
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -91,25 +94,98 @@ async function checkPaymentStatus(req, res) {
 async function handleBankWebhook(req, res) {
   try {
     const body = req.body || {};
-    const content = String(body.content || body.description || "");
+    const content = String(
+      body.content ||
+        body.description ||
+        body.code ||
+        body.bookingCode ||
+        body.booking_code ||
+        "",
+    );
 
-    const matchBooking = content.match(/BK\s*\d{6,12}/i);
+    console.log("🔔 [SePay Webhook Received]:", {
+      content,
+      transferAmount: body.transferAmount,
+    });
+
+    // 🌟 Bắt được cả mã DP lẫn mã BK linh hoạt
+    const matchBooking = content.match(/(DP\s*\d+|BK\s*\d+|[A-Z0-9]{6,15})/i);
+
     if (matchBooking) {
       const bookingCode = matchBooking[0].replace(/\s+/g, "").toUpperCase();
-      await pool.query(
+
+      // 🌟 LƯU Ý CỐT LÕI:
+      // payment_status = 'paid' (Tiền đã vào tài khoản Admin)
+      // status = 'pending' và room_number = NULL (Để Lễ tân nhìn thấy ở mục Chờ xác nhận và bấm chọn phòng!)
+      const updateResult = await pool.query(
         `UPDATE public.booking 
-         SET payment_status = 'paid', status = 'confirmed', confirmed_at = NOW()
-         WHERE booking_code ILIKE $1`,
-        [`%${bookingCode}%`],
+         SET payment_status = 'paid', 
+             status = 'pending'::public.booking_status_enum,
+             room_number = NULL,
+             confirmed_at = NULL,
+             updated_at = NOW()
+         WHERE booking_code ILIKE $1 OR booking_code ILIKE $2
+         RETURNING id, booking_code, hotel_id`,
+        [bookingCode, `%${bookingCode}%`],
       );
-      console.log(
-        `✅ [SePay Khách Thanh Toán]: Đã duyệt tự động đơn ${bookingCode}`,
+
+      if (updateResult.rows.length > 0) {
+        console.log(
+          `✅ [SePay Khách Thanh Toán]: Đã nhận tiền đơn ${bookingCode}. Đơn đã sẵn sàng trên màn hình Lễ tân!`,
+        );
+      } else {
+        console.warn(
+          `⚠️ [SePay]: Không tìm thấy đơn nào trong DB khớp mã ${bookingCode}`,
+        );
+      }
+    } else {
+      console.warn(
+        "⚠️ [SePay]: Không trích xuất được mã đơn từ nội dung:",
+        content,
       );
     }
 
     return res.json({ success: true });
   } catch (error) {
+    console.error("❌ Lỗi SePay Webhook:", error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─── 3.1. HÀM XÁC NHẬN THANH TOÁN (KHI BẤM NÚT TRÊN WEB HOẶC TEST) ───
+async function confirmManualPayment(req, res) {
+  try {
+    const { booking_code, bookingCode, code } = req.body || {};
+    const raw = String(booking_code || bookingCode || code || "").trim();
+
+    if (!raw) {
+      return res.status(400).json({ success: false, message: "Thiếu mã đơn" });
+    }
+
+    const updateRes = await pool.query(
+      `UPDATE public.booking 
+       SET payment_status = 'paid', 
+           status = 'pending'::public.booking_status_enum,
+           room_number = NULL,
+           updated_at = NOW()
+       WHERE booking_code ILIKE $1 OR id::text = $1
+       RETURNING *`,
+      [raw],
+    );
+
+    if (updateRes.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn đặt phòng." });
+    }
+
+    console.log(
+      `✅ [Manual Payment]: Đã duyệt thanh toán đơn ${raw} sang Chờ Lễ Tân chọn phòng!`,
+    );
+    return res.json({ success: true, booking: updateRes.rows[0] });
+  } catch (err) {
+    console.error("❌ Lỗi confirmManualPayment:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 }
 
@@ -186,7 +262,7 @@ module.exports = {
   createVietQrPayment,
   checkPaymentStatus,
   handleBankWebhook,
+  confirmManualPayment,
   confirmManualPayout,
   checkPayoutStatus,
-  confirmManualPayment: (req, res) => res.json({ success: true }),
 };

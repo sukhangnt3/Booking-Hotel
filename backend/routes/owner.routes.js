@@ -38,14 +38,14 @@ const safeRoute = (method, path, handler) => {
 // Lấy sơ đồ phòng
 safeRoute("get", "/room-map", ownerController.getRoomMapData);
 
-// 🌟 Lấy danh sách đơn online đã thanh toán đang chờ lễ tân xác nhận & gán phòng
+// 🌟 API Lấy danh sách các đơn đặt online đã thanh toán đang chờ lễ tân xếp phòng
 safeRoute(
   "get",
   "/bookings/pending-online",
   ownerController.getPendingOnlineBookings,
 );
 
-// 🌟 Lễ tân chọn phòng & bấm "Xác nhận" -> chuyển sang trạng thái "Đã đặt trước"
+// 🌟 API Lễ tân chọn số phòng thực tế và xác nhận đơn
 safeRoute(
   "post",
   "/bookings/confirm-assign-room",
