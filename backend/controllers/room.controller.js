@@ -3,6 +3,17 @@ const crypto = require("crypto");
 const pool = require("../config/database");
 const { formatRoom } = require("../utils/formatters");
 
+// Tự động đảm bảo cột hourly_tiers tồn tại trong bảng room để không bao giờ bị lỗi UPDATE
+(async function ensureHourlyTiersColumn() {
+  try {
+    await pool.query(
+      `ALTER TABLE public.room ADD COLUMN IF NOT EXISTS hourly_tiers jsonb DEFAULT '[]'::jsonb;`,
+    );
+  } catch (err) {
+    console.warn("⚠️ Cảnh báo migration hourly_tiers:", err.message);
+  }
+})();
+
 // ─── 1. LẤY DANH SÁCH HẠNG PHÒNG THEO KHÁCH SẠN ───
 async function listRooms(req, res, next) {
   try {
@@ -19,7 +30,7 @@ async function listRooms(req, res, next) {
          r.name,
          r.capacity,
          r.code,
-         r.hourly_tiers, -- 🌟 LẤY BẬC THANG
+         COALESCE(r.hourly_tiers, '[]'::jsonb) AS hourly_tiers,
          r.base_price,
          COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
          COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
@@ -88,7 +99,7 @@ async function getRoomById(req, res, next) {
          r.code,
          r.name,
          r.capacity,
-         r.hourly_tiers,
+         COALESCE(r.hourly_tiers, '[]'::jsonb) AS hourly_tiers,
          r.base_price,
          COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
          COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
@@ -147,7 +158,7 @@ async function getRoomById(req, res, next) {
   }
 }
 
-// ─── 3. TẠO HẠNG PHÒNG MỚI (TỰ ĐỘNG SINH MÃ P001, P002...) ───
+// ─── 3. TẠO HẠNG PHÒNG MỚI ───
 async function createRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -158,7 +169,7 @@ async function createRoom(req, res, next) {
       capacity,
       base_price,
       hourly_price,
-      hourly_tiers = [], // 🌟 NHẬN BẬC THANG NẾU CÓ
+      hourly_tiers = [],
       overnight_price,
       early_checkin_fee,
       late_checkout_fee,
@@ -179,7 +190,6 @@ async function createRoom(req, res, next) {
 
     await client.query("BEGIN");
 
-    // 1. Tự động sinh mã phòng P001, P002...
     let finalCode = code ? String(code).trim() : "";
     if (!finalCode) {
       const countRes = await client.query(
@@ -201,7 +211,6 @@ async function createRoom(req, res, next) {
     const parsedEarlyFee = Number(early_checkin_fee || 0);
     const parsedLateFee = Number(late_checkout_fee || 0);
 
-    // 2. Lưu vào Database (có lưu cả code và hourly_tiers)
     const result = await client.query(
       `INSERT INTO public.room (
          id, hotel_id, code, name, capacity, base_price, hourly_price, hourly_tiers, overnight_price,
@@ -218,7 +227,7 @@ async function createRoom(req, res, next) {
         Number(capacity || 2),
         parsedBasePrice,
         parsedHourlyPrice,
-        JSON.stringify(hourly_tiers || []), // 🌟 LƯU BẬC THANG VÀO DB
+        JSON.stringify(hourly_tiers || []),
         parsedOvernightPrice,
         parsedEarlyFee,
         parsedLateFee,
@@ -232,7 +241,6 @@ async function createRoom(req, res, next) {
 
     const newRoom = result.rows[0];
 
-    // Tạo danh sách phòng vật lý tự động mặc định Tầng 1
     for (let i = 1; i <= Number(amount || 1); i++) {
       await client
         .query(
@@ -300,7 +308,7 @@ async function createRoom(req, res, next) {
   }
 }
 
-// ─── 4. CẬP NHẬT HẠNG PHÒNG (ĐÃ THÊM LƯU hourly_tiers VÀO DATABASE) ───
+// ─── 4. CẬP NHẬT HẠNG PHÒNG (SỬA GIÁ PHÒNG CHUẨN XÁC 100%) ───
 async function updateRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -311,7 +319,7 @@ async function updateRoom(req, res, next) {
       base_price,
       code,
       hourly_price,
-      hourly_tiers, // 🌟 NHẬN CÁC NẤC BẬC THANG TỪ FRONTEND
+      hourly_tiers,
       overnight_price,
       early_checkin_fee,
       late_checkout_fee,
@@ -336,30 +344,28 @@ async function updateRoom(req, res, next) {
     }
     const currentRoom = currentRes.rows[0];
 
-    const finalBasePrice = base_price
-      ? Number(base_price)
-      : currentRoom.base_price;
+    // Cập nhật giá theo ngày
+    const finalBasePrice =
+      base_price !== undefined && base_price !== null && base_price !== ""
+        ? Number(base_price)
+        : Number(currentRoom.base_price || 0);
 
-    let finalHourlyPrice = currentRoom.hourly_price;
-    if (
-      hourly_price !== undefined &&
-      hourly_price !== null &&
-      hourly_price !== ""
-    ) {
-      finalHourlyPrice = Number(hourly_price);
-    }
+    // Cập nhật giá theo giờ
+    let finalHourlyPrice =
+      hourly_price !== undefined && hourly_price !== null && hourly_price !== ""
+        ? Number(hourly_price)
+        : Number(currentRoom.hourly_price || 0);
     if (!finalHourlyPrice || finalHourlyPrice <= 0) {
       finalHourlyPrice = Math.round(finalBasePrice * 0.25);
     }
 
-    let finalOvernightPrice = currentRoom.overnight_price;
-    if (
+    // Cập nhật giá qua đêm
+    let finalOvernightPrice =
       overnight_price !== undefined &&
       overnight_price !== null &&
       overnight_price !== ""
-    ) {
-      finalOvernightPrice = Number(overnight_price);
-    }
+        ? Number(overnight_price)
+        : Number(currentRoom.overnight_price || 0);
     if (!finalOvernightPrice || finalOvernightPrice <= 0) {
       finalOvernightPrice = finalBasePrice;
     }
@@ -369,16 +375,15 @@ async function updateRoom(req, res, next) {
       early_checkin_fee !== null &&
       early_checkin_fee !== ""
         ? Number(early_checkin_fee)
-        : currentRoom.early_checkin_fee;
+        : Number(currentRoom.early_checkin_fee || 0);
 
     const finalLateFee =
       late_checkout_fee !== undefined &&
       late_checkout_fee !== null &&
       late_checkout_fee !== ""
         ? Number(late_checkout_fee)
-        : currentRoom.late_checkout_fee;
+        : Number(currentRoom.late_checkout_fee || 0);
 
-    // 🌟 ĐÃ THÊM CẬP NHẬT hourly_tiers VÀO CÂU LỆNH UPDATE
     const result = await client.query(
       `UPDATE public.room
        SET code = COALESCE($1, code),
@@ -394,7 +399,7 @@ async function updateRoom(req, res, next) {
            bed_type = COALESCE($11, bed_type),
            room_area = COALESCE($12, room_area),
            description = COALESCE($13, description),
-           hourly_tiers = COALESCE($14::jsonb, hourly_tiers), -- 🌟 LƯU BẬC THANG
+           hourly_tiers = COALESCE($14::jsonb, hourly_tiers),
            updated_at = NOW()
        WHERE id::text = $15
        RETURNING *`,
@@ -412,7 +417,7 @@ async function updateRoom(req, res, next) {
         bed_type,
         room_area ? Number(room_area) : null,
         description,
-        hourly_tiers ? JSON.stringify(hourly_tiers) : null, // 🌟 TRUYỀN MẢNG JSON
+        hourly_tiers ? JSON.stringify(hourly_tiers) : null,
         id,
       ],
     );
@@ -783,6 +788,8 @@ async function listRoomUnits(req, res, next) {
               COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
               r.base_price AS daily_price,
               COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
+              COALESCE(r.early_checkin_fee, 0) AS early_checkin_fee,
+              COALESCE(r.late_checkout_fee, 0) AS late_checkout_fee,
               ru.status
        FROM public.room_unit ru
        JOIN public.room r ON r.id = ru.room_id
@@ -797,18 +804,34 @@ async function listRoomUnits(req, res, next) {
   }
 }
 
-// ─── 13. TẠO HOẶC CẬP NHẬT PHÒNG VẬT LÝ (TỰ ĐỒNG BỘ AMOUNT VÀO BẢNG ROOM) ───
+// ─── 13. TẠO HOẶC CẬP NHẬT PHÒNG VẬT LÝ (🌟 ĐÃ THÊM CẬP NHẬT GIÁ CHO HẠNG PHÒNG CHA) ───
 async function upsertRoomUnit(req, res, next) {
+  const client = await pool.connect();
   try {
-    const { id, room_id, hotel_id, name, area } = req.body;
+    const {
+      id,
+      room_id,
+      hotel_id,
+      name,
+      area,
+      daily_price,
+      hourly_price,
+      overnight_price,
+      early_checkin_fee,
+      late_checkout_fee,
+    } = req.body;
+
     if (!room_id || !name) {
+      client.release();
       return res.status(400).json({ message: "Thiếu thông tin phòng." });
     }
+
+    await client.query("BEGIN");
 
     const targetHotelId =
       hotel_id ||
       (
-        await pool.query(
+        await client.query(
           `SELECT hotel_id FROM public.room WHERE id::text = $1`,
           [room_id],
         )
@@ -816,12 +839,12 @@ async function upsertRoomUnit(req, res, next) {
 
     let existing;
     if (id && !String(id).includes("_unit_")) {
-      existing = await pool.query(
+      existing = await client.query(
         `SELECT id FROM public.room_unit WHERE id::text = $1`,
         [id],
       );
     } else {
-      existing = await pool.query(
+      existing = await client.query(
         `SELECT id FROM public.room_unit WHERE hotel_id::text = $1 AND room_number = $2`,
         [targetHotelId, name.trim()],
       );
@@ -829,7 +852,7 @@ async function upsertRoomUnit(req, res, next) {
 
     let savedUnit;
     if (existing && existing.rows.length > 0) {
-      const updateRes = await pool.query(
+      const updateRes = await client.query(
         `UPDATE public.room_unit 
          SET room_number = $1, area = $2, room_id = $3, updated_at = NOW() 
          WHERE id = $4 RETURNING *`,
@@ -837,7 +860,7 @@ async function upsertRoomUnit(req, res, next) {
       );
       savedUnit = updateRes.rows[0];
     } else {
-      const insertRes = await pool.query(
+      const insertRes = await client.query(
         `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, area, status, created_at, updated_at)
          VALUES (gen_random_uuid(), $1, $2, $3, $4, 'available', NOW(), NOW())
          RETURNING *`,
@@ -846,7 +869,36 @@ async function upsertRoomUnit(req, res, next) {
       savedUnit = insertRes.rows[0];
     }
 
-    await pool.query(
+    // 🌟 CẬP NHẬT LUÔN CẢ GIÁ TIỀN CHO HẠNG PHÒNG ĐỂ ĐỒNG BỘ 100%
+    if (
+      daily_price !== undefined &&
+      daily_price !== null &&
+      Number(daily_price) > 0
+    ) {
+      const dPrice = Number(daily_price);
+      const hPrice =
+        Number(hourly_price) > 0
+          ? Number(hourly_price)
+          : Math.round(dPrice * 0.25);
+      const oPrice =
+        Number(overnight_price) > 0 ? Number(overnight_price) : dPrice;
+      const eFee = Number(early_checkin_fee || 0);
+      const lFee = Number(late_checkout_fee || 0);
+
+      await client.query(
+        `UPDATE public.room 
+         SET base_price = $1,
+             hourly_price = $2,
+             overnight_price = $3,
+             early_checkin_fee = $4,
+             late_checkout_fee = $5,
+             updated_at = NOW()
+         WHERE id = $6`,
+        [dPrice, hPrice, oPrice, eFee, lFee, room_id],
+      );
+    }
+
+    await client.query(
       `UPDATE public.room 
        SET amount = (SELECT COUNT(id) FROM public.room_unit WHERE room_id = $1),
            updated_at = NOW()
@@ -854,14 +906,19 @@ async function upsertRoomUnit(req, res, next) {
       [room_id],
     );
 
+    await client.query("COMMIT");
+
     return res.json({
       success: true,
-      message: "Đã lưu phòng vào Database!",
+      message: "Đã lưu phòng và cập nhật giá thành công!",
       unit: savedUnit,
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("Lỗi lưu room_unit:", error);
     return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
   }
 }
 

@@ -673,6 +673,7 @@ export default function RoomManagementPage() {
     }
   };
 
+  // 🌟 ĐÃ SỬA: GỬI ĐẦY ĐỦ GIÁ TIỀN ĐỂ ĐỔI GIÁ PHÒNG THÀNH CÔNG 100%
   const handleSaveRoomUnit = async (e, keepOpen = false) => {
     if (e) e.preventDefault();
     if (!roomUnitFormData.name.trim()) {
@@ -691,10 +692,16 @@ export default function RoomManagementPage() {
         hotel_id: selectedHotelId,
         name: roomUnitFormData.name.trim(),
         area: roomUnitFormData.area || "Tầng 1",
+        // 🌟 GỬI ĐẦY ĐỦ CÁC MỨC GIÁ LÊN SERVER:
+        daily_price: Number(roomUnitFormData.daily_price || 0),
+        hourly_price: Number(roomUnitFormData.hourly_price || 0),
+        overnight_price: Number(roomUnitFormData.overnight_price || 0),
+        early_checkin_fee: Number(roomUnitFormData.early_checkin_fee || 0),
+        late_checkout_fee: Number(roomUnitFormData.late_checkout_fee || 0),
       });
 
       alert(
-        `✓ Đã lưu phòng "${roomUnitFormData.name}" vào "${roomUnitFormData.area || "Tầng 1"}" thành công!`,
+        `✓ Đã lưu phòng "${roomUnitFormData.name}" và cập nhật giá thành công!`,
       );
 
       await fetchRoomsByHotel();
@@ -720,7 +727,7 @@ export default function RoomManagementPage() {
 
   return (
     <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* HEADER THEO PHONG CÁCH GHOSTAY */}
+      {/* HEADER THEO PHONG CÁCH GOSTAY */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
         <div>
           <div className="text-xs font-black text-[#006ce4] uppercase tracking-wider mb-1">
