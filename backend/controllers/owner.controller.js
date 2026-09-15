@@ -836,7 +836,7 @@ async function getRoomMapData(req, res, next) {
   }
 }
 
-// ─── 3.1. LẤY DANH SÁCH ĐƠN ONLINE ĐANG CHỜ LỄ TÂN XẾP PHÒNG ───
+// ─── 3.1. LẤY DANH SÁCH ĐƠN ONLINE ĐANG CHỜ LỄ TÂN XẾP PHÒNG (SIÊU LINH HOẠT) ───
 async function getPendingOnlineBookings(req, res, next) {
   try {
     const rawHotelId = req.query.hotel_id
@@ -871,18 +871,30 @@ async function getPendingOnlineBookings(req, res, next) {
          AND (
            b.status = 'pending'
            OR b.room_number IS NULL 
-           OR TRIM(b.room_number) = ''
+           OR TRIM(COALESCE(b.room_number, '')) = ''
            OR b.room_number ILIKE '%chưa%'
+           OR b.confirmed_at IS NULL
          )
-         AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1)
+         AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1 OR b.hotel_id IS NULL)
        ORDER BY b.created_at DESC
+       LIMIT 50
     `;
 
     const result = await pool.query(querySql, [rawHotelId]);
 
+    console.log(`\n==================================================`);
     console.log(
       `📋 [LỄ TÂN API]: Tìm thấy ${result.rows.length} đơn đang chờ xếp phòng (hotel_id filter: "${rawHotelId}")`,
     );
+    if (result.rows.length > 0) {
+      console.log(
+        `👉 Danh sách mã đơn:`,
+        result.rows
+          .map((r) => `${r.booking_code} (${r.customer_name})`)
+          .join(" | "),
+      );
+    }
+    console.log(`==================================================\n`);
 
     return res.json({
       success: true,

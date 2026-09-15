@@ -108,15 +108,12 @@ async function handleBankWebhook(req, res) {
       transferAmount: body.transferAmount,
     });
 
-    // 🌟 Bắt được cả mã DP lẫn mã BK linh hoạt
     const matchBooking = content.match(/(DP\s*\d+|BK\s*\d+|[A-Z0-9]{6,15})/i);
 
     if (matchBooking) {
       const bookingCode = matchBooking[0].replace(/\s+/g, "").toUpperCase();
 
-      // 🌟 LƯU Ý CỐT LÕI:
-      // payment_status = 'paid' (Tiền đã vào tài khoản Admin)
-      // status = 'pending' và room_number = NULL (Để Lễ tân nhìn thấy ở mục Chờ xác nhận và bấm chọn phòng!)
+      // Đánh dấu thanh toán thành công, giữ room_number = NULL và confirmed_at = NULL để Lễ tân chọn phòng
       const updateResult = await pool.query(
         `UPDATE public.booking 
          SET payment_status = 'paid', 
@@ -167,6 +164,7 @@ async function confirmManualPayment(req, res) {
        SET payment_status = 'paid', 
            status = 'pending'::public.booking_status_enum,
            room_number = NULL,
+           confirmed_at = NULL,
            updated_at = NOW()
        WHERE booking_code ILIKE $1 OR id::text = $1
        RETURNING *`,
@@ -203,13 +201,11 @@ async function confirmManualPayout(req, res) {
       return res.status(400).json({ success: false, message: "Thiếu hotelId" });
     }
 
-    // 1. Lưu vào bảng payout_settlement
     await pool.query(
       `INSERT INTO public.payout_settlement (hotel_id, amount) VALUES ($1, $2)`,
       [targetHotelId, Number(amount || 0)],
     );
 
-    // 2. Cập nhật các đơn phòng của khách sạn này thành ĐÃ QUYẾT TOÁN
     try {
       await pool.query(
         `UPDATE public.booking
@@ -257,7 +253,6 @@ async function checkPayoutStatus(req, res) {
   }
 }
 
-// 🌟 EXPORT ĐỦ 100% CÁC HÀM
 module.exports = {
   createVietQrPayment,
   checkPaymentStatus,

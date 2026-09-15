@@ -34,18 +34,18 @@ const safeRoute = (method, path, handler) => {
   }
 };
 
-// ─── 1. CÁC API SƠ ĐỒ PHÒNG LỄ TÂN ───
+// ─── 1. CÁC API SƠ ĐỒ PHÒNG LỄ TÂN & CHỜ XÁC NHẬN ───
 // Lấy sơ đồ phòng
 safeRoute("get", "/room-map", ownerController.getRoomMapData);
 
-// 🌟 API Lấy danh sách các đơn đặt online đã thanh toán đang chờ lễ tân xếp phòng
+// API Lấy danh sách các đơn đặt online đang chờ lễ tân xếp phòng
 safeRoute(
   "get",
   "/bookings/pending-online",
   ownerController.getPendingOnlineBookings,
 );
 
-// 🌟 API Lễ tân chọn số phòng thực tế và xác nhận đơn
+// API Lễ tân chọn số phòng thực tế và xác nhận đơn
 safeRoute(
   "post",
   "/bookings/confirm-assign-room",
@@ -84,16 +84,9 @@ safeRoute(
 );
 
 // ─── 2. CÁC API QUẢN LÝ NHÂN VIÊN LỄ TÂN ───
-// Lấy danh sách nhân viên lễ tân của Owner
 safeRoute("get", "/staff", ownerController.getOwnerStaff);
-
-// Owner cấp tài khoản lễ tân mới gắn vào khách sạn
 safeRoute("post", "/staff", ownerController.createOwnerStaff);
-
-// Xóa tài khoản nhân viên lễ tân
 safeRoute("delete", "/staff/:id", ownerController.deleteOwnerStaff);
-
-// Khóa / Mở khóa tài khoản lễ tân
 safeRoute("patch", "/staff/:id/status", ownerController.toggleStaffStatus);
 
 // ─── 3. CÁC API QUẢN TRỊ OWNER KHÁC ───
