@@ -1,6 +1,17 @@
 // src/pages/reception/ReceptionMapPage.jsx
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Calendar, Search, Plus, Building2 } from "lucide-react";
+import {
+  Calendar,
+  Search,
+  Plus,
+  Building2,
+  Bell,
+  CheckCircle2,
+  X,
+  FileDown,
+  Check,
+  ClipboardList,
+} from "lucide-react";
 import apiClient from "@/services/apiClient";
 import { LoadingSpinner } from "@/components/common";
 
@@ -28,7 +39,7 @@ const formatDisplayDateTime = (dateStr) => {
   const month = d.getMonth() + 1;
   const hours = String(d.getHours()).padStart(2, "0");
   const minutes = String(d.getMinutes()).padStart(2, "0");
-  return `${day} thg ${month}, ${hours}:${minutes}`;
+  return `${day} Thg ${month < 10 ? "0" + month : month}, ${hours}:${minutes}`;
 };
 
 const getCheckinCountdownText = (checkinDateStr) => {
@@ -55,7 +66,7 @@ export default function ReceptionMapPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🌟 3 BỘ LỌC TRẠNG THÁI CHUẨN XÁC
+  // 🌟 3 BỘ LỌC TRẠNG THÁI PHÒNG
   const [statusFilters, setStatusFilters] = useState({
     incoming: true,
     occupied: true,
@@ -68,6 +79,13 @@ export default function ReceptionMapPage() {
   const [activeModalType, setActiveModalType] = useState(null);
   const [activeRoomData, setActiveRoomData] = useState(null);
   const [changeRoomTarget, setChangeRoomTarget] = useState(null);
+
+  // 🌟 STATE CHO ĐƠN CHỜ XÁC NHẬN (Ảnh 1 & Ảnh 2)
+  const [pendingBookings, setPendingBookings] = useState([]);
+  const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
+  const [assigningBooking, setAssigningBooking] = useState(null);
+  const [selectedAssignRoom, setSelectedAssignRoom] = useState("");
+  const [isSubmittingAssign, setIsSubmittingAssign] = useState(false);
 
   // Dữ liệu luồng Check-in
   const [confirmCheckInData, setConfirmCheckInData] = useState({
@@ -203,11 +221,36 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
+  // 🌟 LẤY DANH SÁCH ĐƠN ONLINE CHỜ XÁC NHẬN
+  const fetchPendingBookings = useCallback(async () => {
+    if (!selectedHotelId) {
+      setPendingBookings([]);
+      return;
+    }
+    try {
+      const res = await apiClient.get(
+        `/owner/bookings/pending-online?hotel_id=${selectedHotelId}&_t=${Date.now()}`,
+      );
+      setPendingBookings(res.data?.data || []);
+    } catch (err) {
+      console.warn("Chưa lấy được đơn chờ xác nhận:", err.message);
+      setPendingBookings([]);
+    }
+  }, [selectedHotelId]);
+
+  // Tự động load dữ liệu và refresh định kỳ mỗi 15 giây
   useEffect(() => {
     fetchRoomMap();
-  }, [fetchRoomMap]);
+    fetchPendingBookings();
 
-  // 🌟 ĐẾM SỐ LƯỢNG CHUẨN XÁC THEO TỪNG NHÓM TRẠNG THÁI
+    const interval = setInterval(() => {
+      fetchPendingBookings();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [fetchRoomMap, fetchPendingBookings]);
+
+  // Đếm số lượng theo nhóm trạng thái
   const counts = useMemo(() => {
     return {
       incoming: rooms.filter((r) => r.status === "incoming").length,
@@ -220,7 +263,7 @@ export default function ReceptionMapPage() {
     };
   }, [rooms]);
 
-  // 🌟 THUẬT TOÁN LỌC PHÒNG CHUẨN XÁC 100%
+  // Nhóm phòng theo Tầng/Khu vực
   const groupedRooms = useMemo(() => {
     const groups = {};
     rooms.forEach((room) => {
@@ -258,7 +301,51 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // Click vào thẻ phòng
+  // Danh sách các phòng trống khả dụng để chọn cho đơn
+  const availableRoomsForAssign = useMemo(() => {
+    if (!assigningBooking) return [];
+    return rooms.filter(
+      (r) =>
+        r.status === "available" &&
+        (!assigningBooking.room_type_id ||
+          String(r.room_type_id) === String(assigningBooking.room_type_id) ||
+          r.type_name
+            ?.toLowerCase()
+            .includes(assigningBooking.room_type_name?.toLowerCase())),
+    );
+  }, [rooms, assigningBooking]);
+
+  // 🌟 LỄ TÂN BẤM "XÁC NHẬN" VÀ GÁN PHÒNG (Ảnh 2 -> Chuyển thành Ảnh 3)
+  const handleConfirmAssignRoom = async () => {
+    if (!selectedAssignRoom) {
+      return alert("Vui lòng chọn số phòng trong danh sách!");
+    }
+    setIsSubmittingAssign(true);
+    try {
+      await apiClient.post("/owner/bookings/confirm-assign-room", {
+        booking_id: assigningBooking.id,
+        room_number: selectedAssignRoom,
+        hotel_id: selectedHotelId,
+      });
+
+      alert(
+        `✓ Đã xác nhận đơn ${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công!`,
+      );
+      setAssigningBooking(null);
+      setSelectedAssignRoom("");
+      setIsPendingModalOpen(false);
+
+      // Tải lại sơ đồ phòng và danh sách đơn chờ ngay lập tức
+      await Promise.all([fetchRoomMap(), fetchPendingBookings()]);
+    } catch (err) {
+      alert(
+        "Lỗi xác nhận phòng: " + (err.response?.data?.message || err.message),
+      );
+    } finally {
+      setIsSubmittingAssign(false);
+    }
+  };
+
   const handleRoomCardClick = (room) => {
     setActiveRoomData(room);
     if (room.status === "occupied" || room.status === "checkout_soon") {
@@ -315,7 +402,6 @@ export default function ReceptionMapPage() {
     setActiveModalType("quick_booking");
   };
 
-  // 🌟 GỬI ĐẦY ĐỦ THÔNG TIN SỐ KHÁCH LÊN SERVER
   const handleConfirmQuickBooking = async (isCheckInNow = true) => {
     if (quickBookingData.rooms.length === 0)
       return alert("Vui lòng chọn ít nhất một phòng!");
@@ -558,10 +644,8 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // 🌟 CẬP NHẬT TỨC THÌ (OPTIMISTIC UI): BẤM LÀ ĐỔI MÀU NGAY TRONG 0.1s
   const handleMarkCleaned = async (room) => {
     try {
-      // Đổi màu sang Sạch ngay tức thì
       setRooms((prev) =>
         prev.map((r) =>
           r.id === room.id
@@ -589,7 +673,6 @@ export default function ReceptionMapPage() {
 
   const handleMarkDirty = async (room) => {
     try {
-      // Đổi sang trạng thái Cần dọn (viền cam + icon chổi) ngay tức thì
       setRooms((prev) =>
         prev.map((r) =>
           r.id === room.id
@@ -617,9 +700,10 @@ export default function ReceptionMapPage() {
 
   return (
     <div className="min-h-screen bg-gray-50/50 text-gray-900 font-sans text-xs pb-16">
-      {/* ─── TOOLBAR TIẾP TÂN ─── */}
-      <div className="bg-white border-b border-gray-200 px-5 py-3.5 flex items-center justify-between shadow-xs flex-wrap gap-4 sticky top-0 z-20">
+      {/* ─── DÒNG 1: TOOLBAR HEADER TIẾP TÂN ─── */}
+      <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between shadow-xs sticky top-0 z-20 gap-4 flex-wrap">
         <div className="flex items-center gap-3">
+          {/* Ô tìm kiếm */}
           <div className="relative flex items-center">
             <input
               type="text"
@@ -631,6 +715,7 @@ export default function ReceptionMapPage() {
             <Search size={14} className="absolute right-3 text-gray-400" />
           </div>
 
+          {/* Chọn cơ sở khách sạn */}
           <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5">
             <Building2 size={14} className="text-[#003580]" />
             <select
@@ -651,65 +736,126 @@ export default function ReceptionMapPage() {
           </div>
         </div>
 
-        {/* BỘ LỌC CHECKBOX: TÍCH CHỌN MỤC NÀO CHỈ HIỆN ĐÚNG MỤC ĐÓ */}
-        <div className="flex items-center gap-5 font-bold text-gray-700 select-none flex-wrap">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={statusFilters.incoming}
-              onChange={(e) =>
-                setStatusFilters({
-                  ...statusFilters,
-                  incoming: e.target.checked,
-                })
+        {/* 🌟 CỤM BÊN PHẢI: NÚT CHỜ XÁC NHẬN TO RÕ RÀNG & NÚT ĐẶT PHÒNG NHANH */}
+        <div className="flex items-center gap-3">
+          {/* 🌟 NÚT 1: CHỜ XÁC NHẬN (VỊ TRÍ NỔI BẬT NHẤT TRÊN THANH TOOLBAR) */}
+          <button
+            type="button"
+            onClick={() => setIsPendingModalOpen(true)}
+            className={`px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition cursor-pointer border shadow-xs ${
+              pendingBookings.length > 0
+                ? "bg-emerald-50 border-emerald-500 text-emerald-800 animate-bounce ring-2 ring-emerald-400/30"
+                : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            <ClipboardList
+              size={16}
+              className={
+                pendingBookings.length > 0
+                  ? "text-emerald-600"
+                  : "text-gray-500"
               }
-              className="accent-amber-500 rounded"
             />
-            <span className="w-3.5 h-3.5 rounded-md border border-amber-500 bg-[#fff9f1] inline-block" />
-            <span>Phòng sắp đến ({counts.incoming})</span>
-          </label>
+            <span className="text-xs">Chờ xác nhận</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
+                pendingBookings.length > 0
+                  ? "bg-emerald-600 text-white"
+                  : "bg-gray-200 text-gray-700"
+              }`}
+            >
+              {pendingBookings.length}
+            </span>
+          </button>
 
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={statusFilters.occupied}
-              onChange={(e) =>
-                setStatusFilters({
-                  ...statusFilters,
-                  occupied: e.target.checked,
-                })
-              }
-              className="accent-[#003580] rounded"
-            />
-            <span className="w-3.5 h-3.5 rounded-md border border-[#003580] bg-blue-50 inline-block" />
-            <span>Đang có khách ({counts.occupied})</span>
-          </label>
+          {/* Nút đặt phòng nhanh */}
+          <button
+            type="button"
+            onClick={() => handleOpenQuickBooking()}
+            className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl cursor-pointer shadow-xs transition flex items-center gap-1.5 font-bold active:scale-95"
+          >
+            <Plus size={16} />
+            <span>+ Đặt phòng</span>
+          </button>
+        </div>
+      </header>
 
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={statusFilters.available}
-              onChange={(e) =>
-                setStatusFilters({
-                  ...statusFilters,
-                  available: e.target.checked,
-                })
-              }
-              className="accent-gray-400 rounded"
-            />
-            <span className="w-3.5 h-3.5 rounded-md border border-gray-300 bg-white inline-block" />
-            <span>Phòng trống ({counts.available})</span>
-          </label>
+      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI GIỐNG KIOTVIET (Ảnh 1) ─── */}
+      <div className="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center justify-between gap-4 flex-wrap text-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 🌟 NÚT 2: TAB TRẠNG THÁI "CHỜ XÁC NHẬN" (Bấm vào mở luôn Modal Ảnh 1) */}
+          <button
+            type="button"
+            onClick={() => setIsPendingModalOpen(true)}
+            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+              pendingBookings.length > 0
+                ? "bg-blue-50 border-blue-400 text-blue-800 font-extrabold"
+                : "bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-blue-600 inline-block animate-ping" />
+            <span>● Chờ xác nhận ({pendingBookings.length})</span>
+          </button>
+
+          {/* Các bộ lọc trạng thái phòng */}
+          <button
+            type="button"
+            onClick={() =>
+              setStatusFilters({
+                ...statusFilters,
+                incoming: !statusFilters.incoming,
+              })
+            }
+            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+              statusFilters.incoming
+                ? "bg-amber-50 border-amber-400 text-amber-800"
+                : "bg-gray-100 border-gray-200 text-gray-400"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+            <span>● Đã đặt trước ({counts.incoming})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setStatusFilters({
+                ...statusFilters,
+                occupied: !statusFilters.occupied,
+              })
+            }
+            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+              statusFilters.occupied
+                ? "bg-blue-50 border-blue-400 text-[#003580]"
+                : "bg-gray-100 border-gray-200 text-gray-400"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-[#003580] inline-block" />
+            <span>● Đang sử dụng ({counts.occupied})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setStatusFilters({
+                ...statusFilters,
+                available: !statusFilters.available,
+              })
+            }
+            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+              statusFilters.available
+                ? "bg-gray-100 border-gray-300 text-gray-800"
+                : "bg-gray-50 border-gray-200 text-gray-400"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
+            <span>● Đang trống ({counts.available})</span>
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => handleOpenQuickBooking()}
-          className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl cursor-pointer shadow-xs transition flex items-center gap-1.5 font-bold active:scale-95"
-        >
-          <Plus size={16} />
-          <span>Đặt phòng nhanh</span>
-        </button>
+        <div className="text-gray-500 font-semibold text-[11px]">
+          Tổng cộng: <b className="text-gray-900">{rooms.length} phòng</b>
+        </div>
       </div>
 
       {/* ─── SƠ ĐỒ PHÒNG ─── */}
@@ -774,6 +920,210 @@ export default function ReceptionMapPage() {
           })
         )}
       </main>
+
+      {/* ─── POPUP 1: MODAL "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (Ảnh 1) ─── */}
+      {isPendingModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-gray-900 text-sm">
+                  Khách đặt online
+                </span>
+                <span className="text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full font-bold text-[11px]">
+                  Chờ xác nhận ({pendingBookings.length})
+                </span>
+              </div>
+              <button
+                onClick={() => setIsPendingModalOpen(false)}
+                className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200/60 cursor-pointer transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {pendingBookings.length === 0 ? (
+                <div className="py-16 text-center space-y-2">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center mx-auto">
+                    <ClipboardList size={24} />
+                  </div>
+                  <div className="text-gray-500 font-bold text-sm">
+                    Hiện không có đơn đặt phòng nào đang chờ xác nhận
+                  </div>
+                  <div className="text-gray-400 text-xs">
+                    Khi khách thanh toán QR thành công, đơn đặt phòng sẽ tự động
+                    xuất hiện tại đây.
+                  </div>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-500 text-[11px] font-bold">
+                      <th className="pb-3">Mã đặt phòng</th>
+                      <th className="pb-3">Khách đặt</th>
+                      <th className="pb-3">Lưu trú</th>
+                      <th className="pb-3">Phòng đặt</th>
+                      <th className="pb-3 text-right">Tổng cộng</th>
+                      <th className="pb-3 text-right">Khách đã trả</th>
+                      <th className="pb-3 text-center">Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs font-semibold">
+                    {pendingBookings.map((b) => (
+                      <tr key={b.id} className="hover:bg-blue-50/40 transition">
+                        <td className="py-3.5 font-bold text-[#003580]">
+                          {b.booking_code}
+                          <div className="text-[10px] text-gray-400 font-normal">
+                            {formatDisplayDateTime(b.created_at)}
+                          </div>
+                        </td>
+                        <td className="py-3.5">
+                          <div className="font-bold text-gray-900">
+                            {b.customer_name}
+                          </div>
+                          <div className="text-gray-500 text-[11px]">
+                            {b.guest_phone || b.guest_email || "Chưa có SĐT"}
+                          </div>
+                        </td>
+                        <td className="py-3.5 text-gray-700">
+                          <div>
+                            {formatDisplayDateTime(b.checkin_date)} -{" "}
+                            {formatDisplayDateTime(b.checkout_date)}
+                          </div>
+                          <div className="text-[10px] text-gray-400">
+                            {b.adult_total} người lớn, {b.children_total} trẻ em
+                          </div>
+                        </td>
+                        <td className="py-3.5 text-gray-800">
+                          <span className="bg-gray-100 border border-gray-200 px-2 py-1 rounded-md text-[11px] font-bold">
+                            1 {b.room_type_name}
+                          </span>
+                        </td>
+                        <td className="py-3.5 text-right font-bold text-gray-900">
+                          {formatVND(b.total_price)}
+                        </td>
+                        <td className="py-3.5 text-right font-bold text-emerald-600">
+                          {formatVND(b.paid_amount)}
+                        </td>
+                        <td className="py-3.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssigningBooking(b);
+                              setSelectedAssignRoom("");
+                            }}
+                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer"
+                          >
+                            Xác nhận
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── POPUP 2: MODAL "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (Ảnh 2) ─── */}
+      {assigningBooking && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-black text-gray-900 text-sm">
+                Xác nhận đặt phòng - {assigningBooking.booking_code}
+              </h3>
+              <button
+                onClick={() => setAssigningBooking(null)}
+                className="text-gray-400 hover:text-gray-700 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="text-gray-700 font-bold flex items-center gap-2 text-xs">
+                <span>👤 {assigningBooking.customer_name}</span>
+                <span className="text-gray-400 font-normal">
+                  - {assigningBooking.guest_phone}
+                </span>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className="text-[10px] text-gray-400 font-bold uppercase">
+                    Hạng phòng
+                  </div>
+                  <div className="font-bold text-[#003580] text-sm">
+                    {assigningBooking.room_type_name}
+                  </div>
+                </div>
+
+                <div className="min-w-[180px]">
+                  <div className="text-[10px] text-gray-500 font-bold uppercase mb-1">
+                    Phòng <span className="text-red-500">*</span>
+                  </div>
+                  <select
+                    value={selectedAssignRoom}
+                    onChange={(e) => setSelectedAssignRoom(e.target.value)}
+                    className="w-full bg-white border border-emerald-500 text-emerald-800 font-bold rounded-lg p-2 text-xs outline-none shadow-xs cursor-pointer"
+                  >
+                    <option value="">-- Chọn số phòng --</option>
+                    {availableRoomsForAssign.map((r) => (
+                      <option key={r.id} value={r.room_number}>
+                        Phòng {r.room_number} ({r.area || "Tầng 1"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="text-[10px] text-gray-400 font-bold uppercase">
+                    Nhận
+                  </div>
+                  <div className="font-bold text-gray-700 text-xs">
+                    {formatDisplayDateTime(assigningBooking.checkin_date)}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] text-gray-400 font-bold uppercase">
+                    Trả
+                  </div>
+                  <div className="font-bold text-gray-700 text-xs">
+                    {formatDisplayDateTime(assigningBooking.checkout_date)}
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-gray-500 italic">
+                Sau khi xác nhận, các phòng sẽ chuyển về trạng thái đặt trước
+              </p>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setAssigningBooking(null)}
+                className="px-4 py-2 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingAssign}
+                onClick={handleConfirmAssignRoom}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSubmittingAssign ? "Đang xử lý..." : "Xác nhận"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── 1. MODAL PHÒNG SẮP ĐẾN ─── */}
       <IncomingRoomModal

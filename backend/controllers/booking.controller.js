@@ -1,7 +1,8 @@
+// backend/controllers/booking.controller.js
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// 🌟 BẢNG MÃ BIN NAPAS 6 CHỮ SỐ CHUẨN QUỐC GIA (KHÔNG BAO GIỜ BỊ LỖI QR)
+// 🌟 BẢNG MÃ BIN NAPAS 6 CHỮ SỐ CHUẨN QUỐC GIA
 const NAPAS_BANK_BINS = {
   VCB: "970436",
   VIETCOMBANK: "970436",
@@ -25,7 +26,7 @@ const NAPAS_BANK_BINS = {
   AGRIBANK: "970405",
 };
 
-// 👑 TÀI KHOẢN TRUNG TÂM CỦA ADMIN / SÀN GOSTAY (TIỀN PHẢI VỀ ĐÂY ĐỂ ADMIN GIỮ HOA HỒNG)
+// 👑 TÀI KHOẢN TRUNG TÂM CỦA ADMIN / SÀN GOSTAY
 const PLATFORM_ADMIN_BANK = {
   bankId: "970422",
   bankCode: "MB",
@@ -85,7 +86,7 @@ async function cleanupExpiredLocks() {
   }
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG: TỰ ĐỘNG PHÂN BIỆT KHÁCH ONLINE VÀ KHÁCH LẺ OFFLINE ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -138,7 +139,6 @@ async function createBooking(req, res, next) {
       });
     }
 
-    // 🌟 ĐỌC CHUẨN XÁC SỐ LƯỢNG NGƯỜI LỚN & TRẺ EM (KHÔNG ÉP VỀ 2 VÀ KHÔNG GÁN CỨNG 0)
     const finalAdults = Math.max(
       1,
       Number(adult_total ?? adults ?? req.body.adult ?? 1),
@@ -152,7 +152,6 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
-    // 🌟 1. LẤY TỶ LỆ HOA HỒNG (% COMMISSION) CỦA KHÁCH SẠN
     const hotelQueryRes = await client.query(
       `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder 
        FROM public.hotel 
@@ -171,7 +170,6 @@ async function createBooking(req, res, next) {
 
     const hotelData = hotelQueryRes.rows[0];
 
-    // 🌟 PHÂN LOẠI NGUỒN ĐƠN: KHÁCH LẺ OFFLINE (WALK-IN) VS KHÁCH ONLINE
     const isWalkInBooking =
       Boolean(is_walk_in) ||
       booking_type === "walk_in" ||
@@ -183,7 +181,6 @@ async function createBooking(req, res, next) {
       ? 0
       : Number(hotelData.commission_rate ?? 18.0);
 
-    // 🌟 2. KIỂM TRA PHÒNG TRỐNG VÀ XUNG ĐỘT PHÒNG
     if (room_id) {
       const roomStockRes = await client.query(
         `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
@@ -258,7 +255,6 @@ async function createBooking(req, res, next) {
       }
     }
 
-    // 🌟 3. TÍNH TOÁN DÒNG TIỀN HOA HỒNG CHUẨN XÁC
     const newBookingId = crypto.randomUUID();
     const bookingCodePrefix = isWalkInBooking ? "DP" : "BK";
     const bookingCode =
@@ -289,7 +285,6 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
-    // 🌟 4. INSERT VÀO BẢNG BOOKING (ĐÃ TRUYỀN ĐÚNG $8 LÀ ADULTS VÀ $9 LÀ CHILDREN)
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -315,8 +310,8 @@ async function createBooking(req, res, next) {
       promotion_id || null,
       checkin_date,
       checkout_date,
-      finalAdults, // 👈 $8: Đúng số người lớn bạn nhập
-      finalChildren, // 👈 $9: Đúng số trẻ em bạn nhập (Không còn bị ép về 0!)
+      finalAdults,
+      finalChildren,
       customer_name ||
         (isWalkInBooking ? "Khách lẻ tại quầy" : "Khách đặt trực tuyến"),
       guest_email ||
@@ -334,7 +329,6 @@ async function createBooking(req, res, next) {
 
     const newBooking = insertRes.rows[0];
 
-    // LƯU CHI TIẾT PHÒNG
     if (room_id) {
       const roomRes = await client.query(
         `SELECT name, base_price AS room_price FROM public.room WHERE id = $1 LIMIT 1`,
@@ -414,7 +408,6 @@ async function createBooking(req, res, next) {
       }
     }
 
-    // 🌟 5. TẠO MÃ QR NẾU LÀ ĐƠN ONLINE
     let qrUrl = null;
     let payRecord = null;
     const paymentBank = PLATFORM_ADMIN_BANK;
@@ -477,7 +470,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. HÀM CONFIRM PAYMENT (XÁC NHẬN TIỀN ĐÃ VÀO TÀI KHOẢN ADMIN) ───
+// ─── 2. XÁC NHẬN THANH TOÁN QR XONG: GIỮ NGUYÊN STATUS = 'pending' NẾU CHƯA CÓ SỐ PHÒNG ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -518,11 +511,20 @@ async function confirmPayment(req, res, next) {
         ? paidAmountReq
         : Number(booking.expected_amount || booking.total_price);
 
+    // 🌟 QUAN TRỌNG: Đơn online thanh toán thành công chuyển payment_status = 'paid'.
+    // Nhưng status VẪN LÀ 'pending' để xuất hiện trong mục "Chờ xác nhận" của Lễ tân!
+    // Chỉ khi Lễ tân bấm "Xác nhận" và gán phòng thì mới đổi thành 'confirmed'.
     await client.query(
       `UPDATE public.booking
        SET payment_status = 'paid',
-           status = 'confirmed',
-           confirmed_at = COALESCE(confirmed_at, NOW()),
+           status = CASE 
+                      WHEN room_number IS NOT NULL AND TRIM(room_number) <> '' THEN 'confirmed'::public.booking_status_enum
+                      ELSE 'pending'::public.booking_status_enum
+                    END,
+           confirmed_at = CASE 
+                            WHEN room_number IS NOT NULL AND TRIM(room_number) <> '' THEN NOW()
+                            ELSE NULL 
+                          END,
            updated_at = NOW()
        WHERE id = $1`,
       [booking.id],

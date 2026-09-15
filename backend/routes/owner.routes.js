@@ -38,6 +38,20 @@ const safeRoute = (method, path, handler) => {
 // Lấy sơ đồ phòng
 safeRoute("get", "/room-map", ownerController.getRoomMapData);
 
+// 🌟 Lấy danh sách đơn online đã thanh toán đang chờ lễ tân xác nhận & gán phòng
+safeRoute(
+  "get",
+  "/bookings/pending-online",
+  ownerController.getPendingOnlineBookings,
+);
+
+// 🌟 Lễ tân chọn phòng & bấm "Xác nhận" -> chuyển sang trạng thái "Đã đặt trước"
+safeRoute(
+  "post",
+  "/bookings/confirm-assign-room",
+  ownerController.confirmAndAssignRoom,
+);
+
 // Nhận phòng / Đặt phòng tại quầy (Walk-in)
 safeRoute("post", "/bookings/walk-in", ownerController.createWalkInBooking);
 safeRoute("post", "/bookings/walkin", ownerController.createWalkInBooking);
@@ -49,10 +63,10 @@ safeRoute(
   ownerController.handleOwnerCheckOut,
 );
 
-// 🌟 Lễ tân xác nhận ĐÃ DỌN PHÒNG (Cleaned)
+// Lễ tân xác nhận ĐÃ DỌN PHÒNG (Cleaned)
 safeRoute("post", "/rooms/mark-cleaned", ownerController.markRoomCleaned);
 
-// 🌟 LỄ TÂN BÁO CẦN DỌN PHÒNG (Dirty) -> ĐÃ THÊM DÒNG NÀY ĐỂ HẾT LỖI 404
+// Lễ tân báo CẦN DỌN PHÒNG (Dirty)
 safeRoute("post", "/rooms/mark-dirty", ownerController.markRoomDirty);
 
 // Đổi phòng cho khách

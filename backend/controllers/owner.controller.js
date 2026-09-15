@@ -63,7 +63,6 @@ async function getOwnerStats(req, res, next) {
     let startDate, endDate;
     let dayCount = 1;
 
-    // 🌟 XÁC ĐỊNH MỐC THỜI GIAN VÀ SỐ NGÀY THỰC TẾ
     if (range === "today") {
       startDate = now.toLocaleDateString("en-CA");
       endDate = startDate;
@@ -87,14 +86,12 @@ async function getOwnerStats(req, res, next) {
       endDate = lastDay.toLocaleDateString("en-CA");
       dayCount = lastDay.getDate();
     } else {
-      // this_month
       const firstDay = new Date(currentYear, currentMonth, 1);
       startDate = firstDay.toLocaleDateString("en-CA");
       endDate = now.toLocaleDateString("en-CA");
       dayCount = Math.max(1, todayDateNum);
     }
 
-    // 1. TỔNG SỐ PHÒNG ĐANG HOẠT ĐỘNG
     const roomsRes = await pool.query(
       `SELECT COALESCE(SUM(r.amount), 0)::int AS total_rooms 
        FROM public.room r 
@@ -104,7 +101,6 @@ async function getOwnerStats(req, res, next) {
     );
     const totalRooms = Number(roomsRes.rows[0]?.total_rooms || 0);
 
-    // 2. CÔNG SUẤT TỨC THỜI HIỆN TẠI (CHỈ TÍNH PHÒNG CHECKED_IN ĐANG CÓ KHÁCH Ở)
     let occupiedCount = 0;
     let vacantCount = totalRooms;
     let currentRate = 0;
@@ -132,7 +128,6 @@ async function getOwnerStats(req, res, next) {
       vacantRate = Math.max(0, 100 - currentRate);
     }
 
-    // 2.1. SỐ KHÁCH ĐANG Ở HIỆN TẠI
     const stayingRes = await pool.query(
       `SELECT 
          COALESCE(SUM(COALESCE(b.adult_total, 1)), 0)::int AS adults,
@@ -147,7 +142,6 @@ async function getOwnerStats(req, res, next) {
     const stayingChildren = Number(stayingRes.rows[0]?.children || 0);
     const totalGuests = stayingAdults + stayingChildren;
 
-    // 2.2. BUỒNG PHÒNG
     const waitingCleanRes = await pool
       .query(
         `SELECT COUNT(DISTINCT ru.id)::int AS waiting_clean
@@ -186,7 +180,6 @@ async function getOwnerStats(req, res, next) {
     const pStart = timeParams.length - 1;
     const pEnd = timeParams.length;
 
-    // 3. TÍNH GIÁ TRỊ ĐẶT PHÒNG THEO KÊNH BÁN
     const channelQuery = await pool.query(
       `SELECT 
          CASE 
@@ -270,12 +263,6 @@ async function getOwnerStats(req, res, next) {
       ],
     };
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // 🌟 4. TÍNH CÔNG SUẤT PHÒNG CHUẨN XÁC THEO TỪNG NGÀY THỰC TẾ
-    // (Mỗi phòng trong 1 ngày chỉ được tính TỐI ĐA 1 LẦN để không bao giờ bị nổ >100%)
-    // ═══════════════════════════════════════════════════════════════════════
-
-    // Bảng CTE lọc phòng có khách trong từng ngày riêng biệt (DISTINCT loại trừ trùng lặp)
     const dailyOccupiedCTE = `
       WITH period_days AS (
         SELECT generate_series($${pStart}::date, $${pEnd}::date, '1 day'::interval)::date AS day_date
@@ -301,7 +288,6 @@ async function getOwnerStats(req, res, next) {
       )
     `;
 
-    // (A) Tính công suất theo từng Hạng phòng
     const roomTypeOccupancyRes = await pool.query(
       ` ${dailyOccupiedCTE}
         SELECT 
@@ -321,11 +307,10 @@ async function getOwnerStats(req, res, next) {
     let totalHotelUsedRoomDays = 0;
     const occupancyByRoomType = roomTypeOccupancyRes.rows.map((r) => {
       const roomTotal = Number(r.total_rooms || 1);
-      const roomCapacity = roomTotal * dayCount; // Tổng số ngày phòng của hạng này trong kỳ
+      const roomCapacity = roomTotal * dayCount;
       const usedDays = Number(r.used_room_days || 0);
       totalHotelUsedRoomDays += usedDays;
 
-      // Tính tỷ lệ % chuẩn xác, tối đa 100%
       const rate =
         roomCapacity > 0
           ? Number(Math.min(100, (usedDays / roomCapacity) * 100).toFixed(2))
@@ -336,8 +321,6 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
-    // (B) 🌟 CÔNG SUẤT TRUNG BÌNH CỦA KHÁCH SẠN TRONG KỲ:
-    // = (Tổng số ngày phòng thực tế đã có khách) / (Tổng số phòng * số ngày trong kỳ) * 100
     const totalHotelCapacity = Math.max(1, totalRooms * dayCount);
     const avgOccupancyRate =
       totalHotelUsedRoomDays > 0
@@ -349,7 +332,6 @@ async function getOwnerStats(req, res, next) {
           )
         : 0;
 
-    // (C) Tính công suất theo từng Khu vực
     const areaOccupancyRes = await pool
       .query(
         ` ${dailyOccupiedCTE}
@@ -381,7 +363,6 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
-    // (D) 🌟 BIỂU ĐỒ THEO NGÀY: CHỈ HIỆN CÁC NGÀY THỰC TẾ
     let occupancyTimelineDay = [];
     if (range === "today") {
       const todayFormatted = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
@@ -394,7 +375,6 @@ async function getOwnerStats(req, res, next) {
       const yestFormatted = `${String(yest.getDate()).padStart(2, "0")}/${String(yest.getMonth() + 1).padStart(2, "0")}/${yest.getFullYear()}`;
       occupancyTimelineDay = [{ label: yestFormatted, rate: avgOccupancyRate }];
     } else {
-      // 7 ngày qua hoặc tháng: chỉ lấy các ngày có khách ở
       const timelineSql = `
         ${dailyOccupiedCTE}
         SELECT 
@@ -422,7 +402,6 @@ async function getOwnerStats(req, res, next) {
         .filter((item) => item.rate > 0);
     }
 
-    // (E) 🌟 BIỂU ĐỒ THEO THỨ: CHỌN "HÔM NAY" THÌ CHỈ CÓ 1 MỐC THỨ HÔM NAY!
     let occupancyWeekday = [];
     const weekdayMapNames = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
@@ -467,7 +446,6 @@ async function getOwnerStats(req, res, next) {
         .filter((item) => item.rate > 0);
     }
 
-    // 5. KIỂM TOÁN TÁCH BIỆT
     const auditRes = await pool.query(
       `SELECT 
          b.id,
@@ -639,7 +617,7 @@ async function getOwnerBookings(req, res, next) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN THỜI GIAN THỰC ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN THỜI GIAN THỰC (ĐÃ BỎ AUTO-ASSIGN BỪA BÃI) ───
 async function getRoomMapData(req, res, next) {
   try {
     const userId = req.user?.id || req.user?.userId || req.auth?.sub;
@@ -785,10 +763,14 @@ async function getRoomMapData(req, res, next) {
       }
     };
 
+    // 🌟 CHỈ GẮN BOOKING VÀO PHÒNG KHI ĐƠN ĐÃ ĐƯỢC XÁC NHẬN VÀ CÓ SỐ PHÒNG CỤ THỂ
+    // TUYỆT ĐỐI KHÔNG GÁN BỪA CÁC ĐƠN PENDING (CHỜ XÁC NHẬN) VÀO SƠ ĐỒ PHÒNG
     for (const room of roomList) {
       const cleanRoomDigits = String(room.room_number).replace(/[^0-9]/g, "");
       const match = activeBookings.find((b) => {
         if (usedBookingIds.has(b.id) || !b.room_number) return false;
+        if (b.status === "pending") return false; // Đang chờ lễ tân chọn phòng thì chưa hiển thị
+
         const bCleanDigits = String(b.room_number).replace(/[^0-9]/g, "");
         return (
           String(b.room_number).trim().toLowerCase() ===
@@ -800,30 +782,6 @@ async function getRoomMapData(req, res, next) {
       if (match) {
         usedBookingIds.add(match.id);
         attachBooking(room, match);
-      }
-    }
-
-    for (const b of activeBookings) {
-      if (usedBookingIds.has(b.id)) continue;
-
-      const availableRoom =
-        roomList.find(
-          (r) =>
-            !r.booking &&
-            (String(r.room_type_id) === String(b.booked_room_type_id) ||
-              !b.booked_room_type_id),
-        ) || roomList.find((r) => !r.booking);
-
-      if (availableRoom) {
-        usedBookingIds.add(b.id);
-        attachBooking(availableRoom, b);
-
-        pool
-          .query(
-            `UPDATE public.booking SET room_number = $1 WHERE id = $2 AND (room_number IS NULL OR room_number = '')`,
-            [availableRoom.room_number, b.id],
-          )
-          .catch(() => {});
       }
     }
 
@@ -850,6 +808,108 @@ async function getRoomMapData(req, res, next) {
   } catch (error) {
     console.error("❌ LỖI GET_ROOM_MAP:", error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─── 3.1. LẤY DANH SÁCH ĐƠN ONLINE CHỜ XÁC NHẬN (Ảnh 1) ───
+async function getPendingOnlineBookings(req, res, next) {
+  try {
+    const hotelId = req.query.hotel_id;
+    if (!hotelId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Thiếu hotel_id." });
+    }
+
+    const result = await pool.query(
+      `SELECT 
+         b.id,
+         b.booking_code,
+         b.customer_name,
+         b.guest_phone,
+         b.guest_email,
+         b.checkin_date,
+         b.checkout_date,
+         b.adult_total,
+         b.children_total,
+         b.total_price,
+         b.created_at,
+         b.payment_status,
+         COALESCE(p.paid_amount, CASE WHEN b.payment_status = 'paid' THEN b.total_price ELSE 0 END) AS paid_amount,
+         COALESCE(br.room_name, r.name, 'Phòng tiêu chuẩn') AS room_type_name,
+         COALESCE(br.room_id, r.id) AS room_type_id
+       FROM public.booking b
+       LEFT JOIN public.booking_room br ON br.booking_id = b.id
+       LEFT JOIN public.room r ON r.id = br.room_id
+       LEFT JOIN public.payment p ON p.booking_id = b.id
+       WHERE b.hotel_id::text = $1
+         AND b.status = 'pending'
+         AND (b.room_number IS NULL OR b.room_number = '')
+       ORDER BY b.created_at DESC`,
+      [hotelId],
+    );
+
+    return res.json({
+      success: true,
+      data: result.rows || [],
+    });
+  } catch (err) {
+    console.error("❌ LỖI GET_PENDING_ONLINE_BOOKINGS:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+// ─── 3.2. LỄ TÂN CHỌN PHÒNG & XÁC NHẬN ĐƠN (Ảnh 2 -> Chuyển thành Ảnh 3) ───
+async function confirmAndAssignRoom(req, res, next) {
+  const client = await pool.connect();
+  try {
+    const { booking_id, room_number, hotel_id } = req.body;
+
+    if (!booking_id || !room_number) {
+      return res.status(400).json({
+        success: false,
+        message: "Vui lòng chọn số phòng cho khách!",
+      });
+    }
+
+    await client.query("BEGIN");
+
+    const bRes = await client.query(
+      `SELECT * FROM public.booking WHERE (id::text = $1 OR booking_code = $1) LIMIT 1 FOR UPDATE`,
+      [booking_id],
+    );
+    const booking = bRes.rows[0];
+    if (!booking) {
+      await client.query("ROLLBACK");
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn đặt phòng." });
+    }
+
+    const updateRes = await client.query(
+      `UPDATE public.booking 
+       SET room_number = $1,
+           status = 'confirmed'::public.booking_status_enum,
+           confirmed_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [room_number.trim(), booking.id],
+    );
+
+    await client.query("COMMIT");
+
+    return res.json({
+      success: true,
+      message: `✓ Đã xác nhận đơn ${booking.booking_code} và xếp vào phòng ${room_number}!`,
+      booking: updateRes.rows[0],
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("❌ LỖI CONFIRM_AND_ASSIGN_ROOM:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 }
 
@@ -1490,6 +1550,8 @@ module.exports = {
   getOwnerStats,
   getOwnerBookings,
   getRoomMapData,
+  getPendingOnlineBookings,
+  confirmAndAssignRoom,
   createWalkInBooking,
   handleOwnerCheckOut,
   markRoomCleaned,
