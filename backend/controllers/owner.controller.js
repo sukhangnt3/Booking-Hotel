@@ -186,27 +186,34 @@ async function getOwnerStats(req, res, next) {
     const pStart = timeParams.length - 1;
     const pEnd = timeParams.length;
 
-    // 3. TÍNH GIÁ TRỊ ĐẶT PHÒNG THEO KÊNH BÁN
+    // 3. TÍNH GIÁ TRỊ ĐẶT PHÒNG THEO KÊNH BÁN (ĐÃ CHUẨN HÓA GROUP BY)
     const channelQuery = await pool.query(
-      `SELECT 
-         CASE 
-           WHEN b.booking_code LIKE 'DP%' 
-             OR b.guest_email ILIKE '%walkin%' 
-             OR b.customer_name ILIKE '%Khách lẻ%'
-           THEN 'direct'
-           ELSE 'online'
-         END AS channel,
-         COALESCE(SUM(b.total_price), 0)::bigint AS total_money,
-         COUNT(b.id)::int AS order_count
-       FROM public.booking b
-       JOIN public.hotel h ON h.id = b.hotel_id
-       WHERE ${hotelFilter}
-         AND b.status IN ('checked_in', 'checked_out', 'confirmed')
-         AND (
-           (b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date)
-           OR (b.checkin_date >= $${pStart}::date AND b.checkin_date <= $${pEnd}::date)
-         )
-       GROUP BY 1`,
+      `WITH booking_channels AS (
+         SELECT 
+           CASE 
+             WHEN b.booking_code LIKE 'DP%' 
+               OR b.guest_email ILIKE '%walkin%' 
+               OR b.customer_name ILIKE '%Khách lẻ%'
+             THEN 'direct'
+             ELSE 'online'
+           END AS channel,
+           b.total_price,
+           b.id
+         FROM public.booking b
+         JOIN public.hotel h ON h.id = b.hotel_id
+         WHERE ${hotelFilter}
+           AND b.status IN ('checked_in', 'checked_out', 'confirmed')
+           AND (
+             (b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date)
+             OR (b.checkin_date >= $${pStart}::date AND b.checkin_date <= $${pEnd}::date)
+           )
+       )
+       SELECT 
+         channel,
+         COALESCE(SUM(total_price), 0)::bigint AS total_money,
+         COUNT(id)::int AS order_count
+       FROM booking_channels
+       GROUP BY channel`,
       timeParams,
     );
 
@@ -235,8 +242,7 @@ async function getOwnerStats(req, res, next) {
          AND (
            (b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date)
            OR (b.checkin_date >= $${pStart}::date AND b.checkin_date <= $${pEnd}::date)
-         )
-       GROUP BY 1`,
+         )`,
       timeParams,
     );
     const cancelledAmount = Number(
@@ -271,7 +277,7 @@ async function getOwnerStats(req, res, next) {
       ],
     };
 
-    // 4. TÍNH CÔNG SUẤT PHÒNG
+    // 4. BẢNG CTE LỌC PHÒNG CÓ KHÁCH TRONG TỪNG NGÀY
     const dailyOccupiedCTE = `
       WITH period_days AS (
         SELECT generate_series($${pStart}::date, $${pEnd}::date, '1 day'::interval)::date AS day_date
@@ -294,21 +300,28 @@ async function getOwnerStats(req, res, next) {
         LEFT JOIN public.room r ON r.hotel_id = b.hotel_id AND (r.name ILIKE b.room_number OR b.room_number ILIKE '%' || r.code || '%')
         LEFT JOIN public.room_unit ru ON ru.hotel_id = b.hotel_id AND (ru.room_number = b.room_number OR ru.room_number ILIKE '%' || b.room_number || '%')
         WHERE ${hotelFilter}
+      ),
+      room_units_count AS (
+        SELECT room_id, COUNT(id)::int AS unit_count 
+        FROM public.room_unit 
+        GROUP BY room_id
       )
     `;
 
+    // (A) 🌟 ĐÃ SỬA TRIỆT ĐỂ LỖI AGGREGATE FUNCTION IN GROUP BY TẠI ĐÂY:
     const roomTypeOccupancyRes = await pool.query(
       ` ${dailyOccupiedCTE}
         SELECT 
           r.id,
           r.name,
-          COALESCE(r.amount, (SELECT COUNT(ru.id) FROM public.room_unit ru WHERE ru.room_id = r.id), 1)::int AS total_rooms,
+          COALESCE(r.amount, ruc.unit_count, 1)::int AS total_rooms,
           COUNT(dor.day_date)::int AS used_room_days
         FROM public.room r
         JOIN public.hotel h ON h.id = r.hotel_id
+        LEFT JOIN room_units_count ruc ON ruc.room_id = r.id
         LEFT JOIN daily_occupied_rooms dor ON dor.room_type_id = r.id
         WHERE ${hotelFilter} AND r.is_active = true
-        GROUP BY r.id, r.name, r.amount
+        GROUP BY r.id, r.name, r.amount, ruc.unit_count, r.base_price
         ORDER BY r.base_price ASC`,
       timeParams,
     );
@@ -341,6 +354,7 @@ async function getOwnerStats(req, res, next) {
           )
         : 0;
 
+    // (C) Tính công suất theo Khu vực
     const areaOccupancyRes = await pool
       .query(
         ` ${dailyOccupiedCTE}
@@ -352,8 +366,8 @@ async function getOwnerStats(req, res, next) {
         JOIN public.hotel h ON h.id = ru.hotel_id
         LEFT JOIN daily_occupied_rooms dor ON dor.room_num = ru.room_number
         WHERE ${hotelFilter}
-        GROUP BY ru.area
-        ORDER BY ru.area ASC`,
+        GROUP BY COALESCE(ru.area, 'Tầng 1')
+        ORDER BY area_name ASC`,
         timeParams,
       )
       .catch(() => ({ rows: [] }));
@@ -455,7 +469,7 @@ async function getOwnerStats(req, res, next) {
         .filter((item) => item.rate > 0);
     }
 
-    // 5. KIỂM TOÁN
+    // 5. KIỂM TOÁN TÁCH BIỆT
     const auditRes = await pool.query(
       `SELECT 
          b.id,
@@ -775,7 +789,7 @@ async function getRoomMapData(req, res, next) {
       }
     };
 
-    // 🌟 CHỈ GẮN PHÒNG KHI ĐÃ CÓ SỐ PHÒNG TRÙNG KHỚP (KHÔNG TỰ TIỆN GÁN ĐƠN PENDING)
+    // 🌟 CHỈ GẮN PHÒNG KHI ĐÃ CÓ SỐ PHÒNG TRÙNG KHỚP
     for (const room of roomList) {
       const cleanRoomDigits = String(room.room_number).replace(/[^0-9]/g, "");
       const match = activeBookings.find((b) => {
@@ -822,15 +836,13 @@ async function getRoomMapData(req, res, next) {
   }
 }
 
-// ─── 3.1. LẤY DANH SÁCH ĐƠN ONLINE ĐANG CHỜ LỄ TÂN XẾP PHÒNG (SIÊU LINH HOẠT) ───
+// ─── 3.1. LẤY DANH SÁCH ĐƠN ONLINE ĐANG CHỜ LỄ TÂN XẾP PHÒNG ───
 async function getPendingOnlineBookings(req, res, next) {
   try {
     const rawHotelId = req.query.hotel_id
       ? String(req.query.hotel_id).trim()
       : "";
 
-    // 🌟 TÌM KIẾM TOÀN BỘ ĐƠN ONLINE CHƯA XẾP PHÒNG
-    // Cho phép tìm theo hotel_id nếu có, hoặc nếu không truyền thì lấy tất cả đơn của hệ thống chưa bị gán phòng
     const querySql = `
       SELECT 
          b.id,
@@ -871,12 +883,6 @@ async function getPendingOnlineBookings(req, res, next) {
     console.log(
       `📋 [LỄ TÂN API]: Tìm thấy ${result.rows.length} đơn đang chờ xếp phòng (hotel_id filter: "${rawHotelId}")`,
     );
-    if (result.rows.length > 0) {
-      console.log(
-        `👉 Danh sách mã đơn tìm được:`,
-        result.rows.map((r) => r.booking_code).join(", "),
-      );
-    }
 
     return res.json({
       success: true,
