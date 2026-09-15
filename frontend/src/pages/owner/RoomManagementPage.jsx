@@ -26,6 +26,7 @@ import {
   Sparkles,
   Check,
   Building2,
+  Search,
 } from "lucide-react";
 import { LoadingSpinner } from "@/components/common";
 import apiClient from "@/services/apiClient";
@@ -97,7 +98,7 @@ const MountainPlaceholderIcon = () => (
     viewBox="0 0 48 38"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className="w-9 h-7 text-gray-300"
+    className="w-10 h-8 text-gray-300"
   >
     <path
       d="M1 35L15 13L24 26L31 16L47 35H1Z"
@@ -109,41 +110,11 @@ const MountainPlaceholderIcon = () => (
   </svg>
 );
 
-const normalizeAmenityKey = (val) => {
-  if (!val) return "";
-  const s = String(val).toLowerCase().trim();
-
-  if (
-    s === "máy lạnh" ||
-    s === "điều hòa" ||
-    s === "máy điều hòa" ||
-    s === "điều hòa máy lạnh" ||
-    s === "air_conditioner"
-  ) {
-    return "air_conditioner";
-  }
-
-  if (s === "bình nóng lạnh" || s === "nước nóng" || s === "hot_water") {
-    return "hot_water";
-  }
-
-  if (s === "tủ lạnh" || s === "refrigerator" || s === "fridge") {
-    return "refrigerator";
-  }
-
-  if (s === "máy sấy tóc" || s === "hair_dryer") {
-    return "hair_dryer";
-  }
-
-  return s;
-};
-
 const isSameAmenity = (a, item) => {
   if (!a || !item) return false;
-  const keyA = normalizeAmenityKey(a);
-  const keyItemId = normalizeAmenityKey(item.id);
-  const keyItemLabel = normalizeAmenityKey(item.label);
-
+  const keyA = String(a).toLowerCase().trim();
+  const keyItemId = String(item.id).toLowerCase().trim();
+  const keyItemLabel = String(item.label).toLowerCase().trim();
   return keyA === keyItemId || keyA === keyItemLabel;
 };
 
@@ -162,19 +133,24 @@ export default function RoomManagementPage() {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const addMenuRef = useRef(null);
   const imageScrollRef = useRef(null);
-  const roomUnitImageScrollRef = useRef(null);
   const fileInputRef = useRef(null);
-  const roomUnitFileInputRef = useRef(null);
 
   const [expandedRowId, setExpandedRowId] = useState(null);
+  const [expandedUnitId, setExpandedUnitId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
   const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(true);
   const [selectedIds, setSelectedIds] = useState([]);
 
+  // MODAL HẠNG PHÒNG
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("info");
   const [editingRoom, setEditingRoom] = useState(null);
+
+  // Danh sách phòng cụ thể bên trong Hạng phòng
+  const [formRoomUnits, setFormRoomUnits] = useState([]);
+  const [newRoomUnitInput, setNewRoomUnitInput] = useState("");
+  const [newRoomUnitArea, setNewRoomUnitArea] = useState("Tầng 8");
 
   const initialFormState = {
     hotel_id: "",
@@ -187,13 +163,14 @@ export default function RoomManagementPage() {
     standard_children: 1,
     max_adults: 1,
     max_children: 1,
-    hourly_price: "",
-    base_price: "",
-    overnight_price: "",
+    base_price: "", // Giá ngày đêm (không có dấu *)
+    overnight_price: "", // Qua đêm
+    half_day_price: "", // Buổi
+    hourly_price: "", // Giờ
     early_checkin_fee: "",
     late_checkout_fee: "",
     description: "",
-    amount: 2,
+    amount: 4,
     bed_type: "1 Giường đôi King",
     room_area: 28,
     status: "active",
@@ -202,33 +179,39 @@ export default function RoomManagementPage() {
   };
   const [formData, setFormData] = useState(initialFormState);
 
+  // MODAL PHÒNG CỤ THỂ (GỌN GÀNG, KHÔNG CẦN ẢNH)
   const [isRoomUnitModalOpen, setIsRoomUnitModalOpen] = useState(false);
   const [editingRoomUnit, setEditingRoomUnit] = useState(null);
   const [areasList, setAreasList] = useState([
     "Tầng 1",
     "Tầng 2",
     "Tầng 3",
-    "Khu A",
-    "Khu B",
+    "Tầng 4",
+    "Tầng 5",
+    "Tầng 8",
+    "Khu VIP",
   ]);
 
   const initialRoomUnitForm = {
     name: "",
-    area: "",
+    area: "Tầng 8",
     room_id: "",
     start_date: new Date().toISOString().slice(0, 10),
-    hourly_price: "",
-    daily_price: "",
-    overnight_price: "",
-    early_checkin_fee: "",
-    late_checkout_fee: "",
     note: "",
-    images: [],
   };
   const [roomUnitFormData, setRoomUnitFormData] = useState(initialRoomUnitForm);
   const [roomUnitsList, setRoomUnitsList] = useState([]);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN");
+
+  const getHotelName = useCallback(
+    (hotelId) => {
+      const targetId = hotelId || selectedHotelId;
+      const found = hotels.find((h) => String(h.id) === String(targetId));
+      return found?.name || "Chi nhánh trung tâm";
+    },
+    [hotels, selectedHotelId],
+  );
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -273,8 +256,7 @@ export default function RoomManagementPage() {
         `/rooms?hotel_id=${selectedHotelId}&_t=${Date.now()}`,
       );
       const list = res?.data || res?.rooms || res || [];
-      const loadedRooms = Array.isArray(list) ? list : [];
-      setRooms(loadedRooms);
+      setRooms(Array.isArray(list) ? list : []);
 
       try {
         const resUnits = await apiClient.get(
@@ -342,29 +324,11 @@ export default function RoomManagementPage() {
     }
   };
 
-  const handleRoomUnitFileChange = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    try {
-      const compressedList = [];
-      for (const file of files) {
-        const base64 = await compressImageFile(file);
-        if (base64) compressedList.push(base64);
-      }
-      setRoomUnitFormData((prev) => ({
-        ...prev,
-        images: [...prev.images, ...compressedList],
-      }));
-    } catch (err) {
-      alert("Không thể đọc ảnh.");
-    } finally {
-      e.target.value = "";
-    }
-  };
-
   const handleOpenAddModal = () => {
     setEditingRoom(null);
     setModalTab("info");
+    setFormRoomUnits([]);
+    setNewRoomUnitInput("");
     setFormData({
       ...initialFormState,
       hotel_id: selectedHotelId || (hotels[0]?.id ? String(hotels[0].id) : ""),
@@ -378,45 +342,41 @@ export default function RoomManagementPage() {
 
   const handleOpenEditRoomModal = (room, roomCode) => {
     const baseP = Number(room.base_price || 0);
+    const overnightP =
+      Number(room.overnight_price || 0) > 0
+        ? Number(room.overnight_price)
+        : baseP;
+    const halfDayP =
+      Number(room.half_day_price || 0) > 0
+        ? Number(room.half_day_price)
+        : Math.round(baseP * 0.8);
     const hourlyP =
-      Number(room.hourly_price) > 0
+      Number(room.hourly_price || 0) > 0
         ? Number(room.hourly_price)
         : Math.round(baseP * 0.25);
-    const overnightP =
-      Number(room.overnight_price) > 0 ? Number(room.overnight_price) : baseP;
 
-    let parsedAmenities = [];
-    if (Array.isArray(room.amenities)) {
-      parsedAmenities = room.amenities.filter(
-        (a) =>
-          a && a !== "null" && a !== "undefined" && a !== "{}" && a !== "[]",
-      );
-    } else if (typeof room.amenities === "string") {
-      const cleanStr = room.amenities.trim();
-      if (
-        cleanStr &&
-        cleanStr !== "{}" &&
-        cleanStr !== "[]" &&
-        cleanStr !== "null" &&
-        cleanStr !== "undefined"
-      ) {
-        try {
-          const parsed = JSON.parse(cleanStr);
-          parsedAmenities = Array.isArray(parsed)
-            ? parsed.filter((a) => a && a !== "null" && a !== "undefined")
+    let parsedAmenities = Array.isArray(room.amenities) ? room.amenities : [];
+
+    const roomImgList =
+      Array.isArray(room.images) && room.images.length > 0
+        ? room.images
+        : room.thumbnail
+          ? [room.thumbnail]
+          : room.image
+            ? [room.image]
             : [];
-        } catch {
-          parsedAmenities = cleanStr
-            .replace(/^\{|\}$/g, "")
-            .replace(/["']/g, "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s) => s && s !== "null" && s !== "undefined");
-        }
-      }
-    } else {
-      parsedAmenities = [];
-    }
+
+    const relatedUnits = roomUnitsList.filter(
+      (u) => String(u.room_id) === String(room.id),
+    );
+    setFormRoomUnits(
+      relatedUnits.map((u) => ({
+        id: u.id,
+        name: u.name,
+        area: u.area || "Tầng 8",
+        status: u.status || "available",
+      })),
+    );
 
     setEditingRoom(room);
     setFormData({
@@ -424,8 +384,9 @@ export default function RoomManagementPage() {
       hotel_id: String(room.hotel_id || selectedHotelId),
       code: roomCode,
       base_price: baseP,
-      hourly_price: hourlyP,
       overnight_price: overnightP,
+      half_day_price: halfDayP,
+      hourly_price: hourlyP,
       early_checkin_fee: room.early_checkin_fee || "",
       late_checkout_fee: room.late_checkout_fee || "",
       standard_adults: room.standard_adults || 1,
@@ -433,29 +394,44 @@ export default function RoomManagementPage() {
       max_adults: room.max_adults || room.capacity || 1,
       max_children: room.max_children ?? 1,
       amenities: parsedAmenities,
-      images:
-        room.thumbnail || room.image ? [room.thumbnail || room.image] : [],
+      images: roomImgList,
     });
     setModalTab("info");
     setIsModalOpen(true);
   };
 
-  const handleDeleteRoom = async (roomId, roomName) => {
-    const confirmMsg = roomName
-      ? `Bạn có chắc chắn muốn xóa hạng phòng "${roomName}"?`
-      : "Bạn có chắc chắn muốn xóa hạng phòng này?";
-    if (!window.confirm(confirmMsg)) return;
+  const handleAddUnitToForm = () => {
+    if (!newRoomUnitInput.trim()) return;
+    const trimmed = newRoomUnitInput.trim();
+    if (
+      formRoomUnits.some((u) => u.name.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      return alert("Phòng này đã có trong danh sách!");
+    }
+    setFormRoomUnits((prev) => [
+      ...prev,
+      {
+        id: `temp_${Date.now()}`,
+        name: trimmed,
+        area: newRoomUnitArea || "Tầng 8",
+        status: "available",
+      },
+    ]);
+    setNewRoomUnitInput("");
+  };
 
+  const handleRemoveUnitFromForm = (idx) => {
+    setFormRoomUnits((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleDeleteRoom = async (roomId, roomName) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa hạng phòng "${roomName}"?`))
+      return;
     try {
       const res = await apiClient.delete(`/rooms/${roomId}`);
       alert(res?.message || "Đã xóa hạng phòng thành công!");
-      setRooms((prev) => prev.filter((r) => r.id !== roomId));
-      setSelectedIds((prev) => prev.filter((id) => id !== roomId));
-      setRoomUnitsList((prev) => prev.filter((u) => u.room_id !== roomId));
-      if (editingRoom && editingRoom.id === roomId) {
-        setIsModalOpen(false);
-      }
       fetchRoomsByHotel();
+      setIsModalOpen(false);
     } catch (err) {
       alert(`Lỗi khi xóa: ${err.response?.data?.message || err.message}`);
     }
@@ -465,81 +441,31 @@ export default function RoomManagementPage() {
     if (selectedIds.length === 0) return;
     if (
       !window.confirm(
-        `Bạn có chắc chắn muốn xóa ${selectedIds.length} hạng phòng đã chọn?`,
+        `Bạn có chắc muốn xóa ${selectedIds.length} hạng phòng đã chọn?`,
       )
-    ) {
+    )
       return;
-    }
-
     try {
       for (const id of selectedIds) {
         await apiClient.delete(`/rooms/${id}`);
       }
       alert("Đã xóa thành công các hạng phòng đã chọn!");
-      setRooms((prev) => prev.filter((r) => !selectedIds.includes(r.id)));
       setSelectedIds([]);
       fetchRoomsByHotel();
     } catch (err) {
       alert(`Lỗi khi xóa: ${err.response?.data?.message || err.message}`);
-      fetchRoomsByHotel();
     }
   };
 
   const handleDeleteRoomUnit = async (unitId, unitName) => {
     if (!window.confirm(`Bạn có chắc muốn xóa phòng "${unitName}"?`)) return;
-
     try {
       await apiClient.delete(`/rooms/units/${unitId}`);
-      setRoomUnitsList((prev) => prev.filter((u) => u.id !== unitId));
-      if (editingRoomUnit && editingRoomUnit.id === unitId) {
-        setIsRoomUnitModalOpen(false);
-      }
-      alert(`✓ Đã xóa phòng "${unitName}" khỏi hệ thống!`);
+      alert(`✓ Đã xóa phòng "${unitName}" thành công!`);
       fetchRoomsByHotel();
+      setIsRoomUnitModalOpen(false);
     } catch (err) {
       alert("Lỗi khi xóa phòng: " + err.message);
-    }
-  };
-
-  const handleSelectRoomTypeForUnit = (selectedRoomId) => {
-    if (!selectedRoomId) {
-      setRoomUnitFormData((prev) => ({
-        ...prev,
-        room_id: "",
-        hourly_price: "",
-        daily_price: "",
-        overnight_price: "",
-        early_checkin_fee: "",
-        late_checkout_fee: "",
-      }));
-      return;
-    }
-
-    const selectedRoom = rooms.find(
-      (r) =>
-        String(r.id) === String(selectedRoomId) ||
-        String(r.name) === String(selectedRoomId),
-    );
-
-    if (selectedRoom) {
-      const daily = Number(selectedRoom.base_price || 0);
-      const hourly =
-        Number(selectedRoom.hourly_price) || Math.round(daily * 0.25);
-      const overnight = Number(selectedRoom.overnight_price) || daily;
-      const early = Number(selectedRoom.early_checkin_fee || 0);
-      const late = Number(selectedRoom.late_checkout_fee || 0);
-
-      setRoomUnitFormData((prev) => ({
-        ...prev,
-        room_id: selectedRoom.id,
-        hourly_price: hourly,
-        daily_price: daily,
-        overnight_price: overnight,
-        early_checkin_fee: early,
-        late_checkout_fee: late,
-      }));
-    } else {
-      setRoomUnitFormData((prev) => ({ ...prev, room_id: selectedRoomId }));
     }
   };
 
@@ -547,99 +473,68 @@ export default function RoomManagementPage() {
     setIsAddMenuOpen(false);
     if (unit) {
       setEditingRoomUnit(unit);
-      const parentRoom = rooms.find(
-        (r) => String(r.id) === String(unit.room_id),
-      );
       setRoomUnitFormData({
         name: unit.name || "",
-        area: unit.area || "Tầng 1",
-        room_id: unit.room_id || (parentRoom ? parentRoom.id : ""),
+        area: unit.area || "Tầng 8",
+        room_id: unit.room_id || "",
         start_date: new Date().toISOString().slice(0, 10),
-        hourly_price: unit.hourly_price ?? (parentRoom?.hourly_price || ""),
-        daily_price: unit.daily_price ?? (parentRoom?.base_price || ""),
-        overnight_price:
-          unit.overnight_price ?? (parentRoom?.overnight_price || ""),
-        early_checkin_fee: parentRoom?.early_checkin_fee || 0,
-        late_checkout_fee: parentRoom?.late_checkout_fee || 0,
         note: "",
-        images: [],
       });
     } else {
       setEditingRoomUnit(null);
-      const firstRoom = rooms[0];
-      const daily = Number(firstRoom?.base_price || 0);
-      const hourly =
-        Number(firstRoom?.hourly_price) || Math.round(daily * 0.25);
-      const overnight = Number(firstRoom?.overnight_price) || daily;
-
       setRoomUnitFormData({
         ...initialRoomUnitForm,
-        room_id: firstRoom ? firstRoom.id : "",
-        hourly_price: hourly || "",
-        daily_price: daily || "",
-        overnight_price: overnight || "",
-        early_checkin_fee: Number(firstRoom?.early_checkin_fee || 0),
-        late_checkout_fee: Number(firstRoom?.late_checkout_fee || 0),
+        room_id: rooms[0]?.id || "",
       });
     }
     setIsRoomUnitModalOpen(true);
   };
 
-  const handleSaveRoom = async (e, keepOpen = false) => {
+  const handleSaveRoom = async (e) => {
     if (e) e.preventDefault();
     const targetHotelId = formData.hotel_id || selectedHotelId;
 
-    if (!targetHotelId) {
-      alert("Vui lòng chọn một Chi nhánh / Khách sạn trước!");
-      return;
-    }
-    if (!formData.name.trim()) {
-      alert("Vui lòng nhập Tên hạng phòng!");
-      return;
-    }
+    if (!targetHotelId) return alert("Vui lòng chọn Khách sạn!");
+    if (!formData.name.trim()) return alert("Vui lòng nhập Tên hạng phòng!");
+
     const dailyPrice = Number(formData.base_price);
     if (!dailyPrice || dailyPrice <= 0) {
-      alert("Giá theo ngày bắt buộc phải lớn hơn 0!");
-      return;
+      return alert("Giá ngày đêm bắt buộc phải lớn hơn 0!");
     }
 
     try {
       const selectedImg =
         formData.images.length > 0 ? formData.images[0] : null;
-
-      const hourlyPrice =
-        formData.hourly_price !== "" &&
-        formData.hourly_price !== null &&
-        Number(formData.hourly_price) > 0
-          ? Number(formData.hourly_price)
-          : Math.round(dailyPrice * 0.25);
-
-      const overnightPrice =
-        formData.overnight_price !== "" &&
-        formData.overnight_price !== null &&
-        Number(formData.overnight_price) > 0
-          ? Number(formData.overnight_price)
-          : dailyPrice;
+      const finalAmount =
+        formRoomUnits.length > 0
+          ? formRoomUnits.length
+          : Number(formData.amount || 1);
 
       const payload = {
         hotel_id: targetHotelId,
         name: formData.name.trim(),
+        code: formData.code?.trim(),
         capacity: Number(formData.max_adults || formData.capacity || 2),
         standard_adults: Number(formData.standard_adults || 1),
         standard_children: Number(formData.standard_children || 0),
         max_adults: Number(formData.max_adults || 2),
         max_children: Number(formData.max_children || 1),
         base_price: dailyPrice,
-        hourly_price: hourlyPrice,
-        overnight_price: overnightPrice,
+        overnight_price: Number(formData.overnight_price) || dailyPrice,
+        half_day_price:
+          Number(formData.half_day_price) || Math.round(dailyPrice * 0.8),
+        hourly_price:
+          Number(formData.hourly_price) || Math.round(dailyPrice * 0.25),
         early_checkin_fee: Number(formData.early_checkin_fee || 0),
         late_checkout_fee: Number(formData.late_checkout_fee || 0),
-        amount: Number(formData.amount || 2),
+        amount: finalAmount,
+        room_units: formRoomUnits,
         type: formData.type || "Tiêu chuẩn",
         bed_type: formData.bed_type || "1 Giường đôi King",
         room_area: Number(formData.room_area || 28),
         description: formData.description || "",
         image: selectedImg,
+        images: formData.images,
         amenities: Array.isArray(formData.amenities) ? formData.amenities : [],
       };
 
@@ -649,41 +544,19 @@ export default function RoomManagementPage() {
         await apiClient.post("/rooms", payload);
       }
 
-      if (targetHotelId !== selectedHotelId) {
-        setSelectedHotelId(targetHotelId);
-        setSearchParams({ hotelId: targetHotelId });
-      } else {
-        await fetchRoomsByHotel();
-      }
-
-      if (keepOpen) {
-        setFormData({
-          ...initialFormState,
-          hotel_id: targetHotelId,
-          code: "",
-          amenities: [],
-          images: [],
-        });
-        setEditingRoom(null);
-      } else {
-        setIsModalOpen(false);
-      }
+      alert("✓ Đã lưu hạng phòng và cập nhật danh sách phòng thành công!");
+      await fetchRoomsByHotel();
+      setIsModalOpen(false);
     } catch (err) {
       alert(`Lỗi: ${err.response?.data?.message || err.message}`);
     }
   };
 
-  // 🌟 ĐÃ SỬA: GỬI ĐẦY ĐỦ GIÁ TIỀN ĐỂ ĐỔI GIÁ PHÒNG THÀNH CÔNG 100%
-  const handleSaveRoomUnit = async (e, keepOpen = false) => {
+  // 🌟 LƯU PHÒNG CỤ THỂ (KHÔNG CẦN UP ẢNH)
+  const handleSaveRoomUnit = async (e) => {
     if (e) e.preventDefault();
-    if (!roomUnitFormData.name.trim()) {
-      alert("Vui lòng nhập Tên phòng!");
-      return;
-    }
-    if (!roomUnitFormData.room_id) {
-      alert("Vui lòng chọn Hạng phòng!");
-      return;
-    }
+    if (!roomUnitFormData.name.trim()) return alert("Vui lòng nhập Tên phòng!");
+    if (!roomUnitFormData.room_id) return alert("Vui lòng chọn Hạng phòng!");
 
     try {
       await apiClient.post("/rooms/units", {
@@ -691,66 +564,46 @@ export default function RoomManagementPage() {
         room_id: roomUnitFormData.room_id,
         hotel_id: selectedHotelId,
         name: roomUnitFormData.name.trim(),
-        area: roomUnitFormData.area || "Tầng 1",
-        // 🌟 GỬI ĐẦY ĐỦ CÁC MỨC GIÁ LÊN SERVER:
-        daily_price: Number(roomUnitFormData.daily_price || 0),
-        hourly_price: Number(roomUnitFormData.hourly_price || 0),
-        overnight_price: Number(roomUnitFormData.overnight_price || 0),
-        early_checkin_fee: Number(roomUnitFormData.early_checkin_fee || 0),
-        late_checkout_fee: Number(roomUnitFormData.late_checkout_fee || 0),
+        area: roomUnitFormData.area || "Tầng 8",
       });
 
-      alert(
-        `✓ Đã lưu phòng "${roomUnitFormData.name}" và cập nhật giá thành công!`,
-      );
-
+      alert(`✓ Đã lưu phòng "${roomUnitFormData.name}" thành công!`);
       await fetchRoomsByHotel();
-
-      if (keepOpen) {
-        setRoomUnitFormData((prev) => ({
-          ...prev,
-          name: "",
-          images: [],
-        }));
-        setEditingRoomUnit(null);
-      } else {
-        setIsRoomUnitModalOpen(false);
-      }
+      setIsRoomUnitModalOpen(false);
     } catch (err) {
       alert(`Lỗi lưu phòng: ${err.response?.data?.message || err.message}`);
     }
   };
 
-  const handleToggleRowExpand = (roomId) => {
-    setExpandedRowId((prev) => (prev === roomId ? null : roomId));
-  };
+  const selectedParentRoom = rooms.find(
+    (r) => String(r.id) === String(roomUnitFormData.room_id),
+  );
 
   return (
-    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* HEADER THEO PHONG CÁCH GOSTAY */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
+    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-3 sm:p-5 lg:p-6 space-y-5">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
         <div>
           <div className="text-xs font-black text-[#006ce4] uppercase tracking-wider mb-1">
             Hệ thống Quản trị GoStay
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-[#0a2540] tracking-tight">
+          <h1 className="text-2xl font-black text-[#0a2540] tracking-tight">
             Hạng phòng & Phòng
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 font-normal mt-0.5">
-            Quản lý các loại hạng phòng, thiết lập số lượng phòng thực tế và cơ
+          <p className="text-xs text-gray-500 font-normal mt-0.5">
+            Quản lý các loại hạng phòng, thiết lập danh sách phòng vật lý và cơ
             cấu giá
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2">
           {selectedIds.length > 0 && activeTab === "room_types" && (
             <button
               type="button"
               onClick={handleBulkDelete}
               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
-              <Trash2 size={14} />
-              <span>Xóa ({selectedIds.length})</span>
+              <Trash2 size={14} /> <span>Xóa ({selectedIds.length})</span>
             </button>
           )}
 
@@ -758,12 +611,12 @@ export default function RoomManagementPage() {
             <button
               type="button"
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
-              className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95"
+              className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95"
             >
-              <Plus size={16} strokeWidth={2.5} />
-              <span>Thêm mới</span>
+              <Plus size={15} strokeWidth={2.5} />
+              <span>+ Hạng phòng & Phòng</span>
               <ChevronDown
-                size={14}
+                size={13}
                 className={`transition-transform ${isAddMenuOpen ? "rotate-180" : ""}`}
               />
             </button>
@@ -798,65 +651,64 @@ export default function RoomManagementPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+      {/* LƯỚI BẢNG DÀN ĐỀU VỪA KHÍT MÀN HÌNH */}
+      <div className="grid grid-cols-1 md:grid-cols-12 xl:grid-cols-12 gap-5 items-start">
         {/* BỘ LỌC CỘT TRÁI */}
-        <div className="md:col-span-3 space-y-4">
-          <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-2">
-            <label className="block text-xs font-black uppercase text-[#0a2540] tracking-wider">
+        <div className="md:col-span-3 xl:col-span-2 space-y-3.5">
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-1.5">
+            <label className="block text-[11px] font-black uppercase text-[#0a2540] tracking-wider">
               Tìm kiếm
             </label>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm theo tên hạng phòng..."
-              className="w-full text-xs py-2 px-3 bg-gray-50 border border-gray-200 rounded-xl outline-none placeholder:text-gray-400 focus:border-[#003580] focus:bg-white transition"
+              placeholder="Tìm theo tên/mã..."
+              className="w-full text-xs py-1.5 px-2.5 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-[#003580] focus:bg-white transition"
             />
           </div>
 
-          <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-3">
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-2">
             <div
               onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
               className="flex justify-between items-center cursor-pointer select-none"
             >
               <div className="flex items-center gap-1.5">
-                <Building2 size={16} className="text-[#006ce4]" />
-                <span className="text-xs font-black uppercase text-[#0a2540] tracking-wider">
+                <Building2 size={15} className="text-[#006ce4]" />
+                <span className="text-[11px] font-black uppercase text-[#0a2540] tracking-wider">
                   Chi nhánh
                 </span>
               </div>
               <ChevronDown
-                size={14}
+                size={13}
                 className={`text-gray-400 transition-transform ${isBranchDropdownOpen ? "rotate-180" : ""}`}
               />
             </div>
 
             {isBranchDropdownOpen && (
-              <div className="pt-1">
-                <select
-                  value={selectedHotelId}
-                  onChange={(e) => {
-                    const newId = e.target.value;
-                    setSelectedHotelId(newId);
-                    setSearchParams({ hotelId: newId });
-                  }}
-                  className="w-full text-xs font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-xl p-2.5 outline-none cursor-pointer focus:border-[#003580]"
-                >
-                  {hotels.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      🏨 {h.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={selectedHotelId}
+                onChange={(e) => {
+                  const newId = e.target.value;
+                  setSelectedHotelId(newId);
+                  setSearchParams({ hotelId: newId });
+                }}
+                className="w-full text-xs font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-lg p-2 outline-none cursor-pointer focus:border-[#003580]"
+              >
+                {hotels.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    🏨 {h.name}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
-          <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-3">
-            <span className="block text-xs font-black uppercase text-[#0a2540] tracking-wider">
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-2">
+            <span className="block text-[11px] font-black uppercase text-[#0a2540] tracking-wider">
               Trạng thái
             </span>
-            <div className="space-y-2.5 text-xs font-semibold text-gray-700">
+            <div className="space-y-2 text-xs font-semibold text-gray-700">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="radio"
@@ -894,44 +746,45 @@ export default function RoomManagementPage() {
           </div>
         </div>
 
-        {/* BẢNG CỘT PHẢI */}
-        <div className="md:col-span-9 space-y-0">
-          <div className="flex items-center gap-1.5 border-b border-transparent">
+        {/* BẢNG BÊN PHẢI (HIỂN THỊ ĐỦ TRONG 1 KHUNG NHÌN) */}
+        <div className="md:col-span-9 xl:col-span-10 space-y-0">
+          <div className="flex items-center gap-1 border-b border-transparent">
             <button
               type="button"
               onClick={() => setActiveTab("room_types")}
-              className={`px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-2xl transition cursor-pointer ${
+              className={`px-5 py-2 text-xs font-black uppercase tracking-wider rounded-t-xl transition cursor-pointer ${
                 activeTab === "room_types"
                   ? "bg-[#003580] text-white shadow-xs"
                   : "bg-gray-200/70 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              Hạng phòng ({filteredRooms.length})
+              HẠNG PHÒNG ({filteredRooms.length})
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("room_units")}
-              className={`px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-2xl transition cursor-pointer ${
+              className={`px-5 py-2 text-xs font-black uppercase tracking-wider rounded-t-xl transition cursor-pointer ${
                 activeTab === "room_units"
                   ? "bg-[#003580] text-white shadow-xs"
                   : "bg-gray-200/70 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              Danh sách phòng ({roomUnitsList.length})
+              PHÒNG ({roomUnitsList.length})
             </button>
           </div>
 
-          <div className="bg-white rounded-b-3xl rounded-tr-3xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-b-2xl rounded-tr-2xl border border-gray-200 shadow-sm overflow-hidden">
             {loading ? (
-              <div className="py-24 flex justify-center">
+              <div className="py-20 flex justify-center">
                 <LoadingSpinner size="md" label="Đang tải dữ liệu phòng..." />
               </div>
             ) : activeTab === "room_types" ? (
-              <div className="overflow-x-auto">
+              /* ══════════════ TAB 1: BẢNG HẠNG PHÒNG ══════════════ */
+              <div className="w-full overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
-                      <th className="py-4 px-3 w-8 text-center">
+                    <tr className="bg-gray-50 text-gray-600 font-bold border-b border-gray-200 text-xs">
+                      <th className="py-3 px-2.5 w-8 text-center">
                         <input
                           type="checkbox"
                           checked={
@@ -948,384 +801,520 @@ export default function RoomManagementPage() {
                           className="cursor-pointer rounded accent-[#003580]"
                         />
                       </th>
-                      <th className="py-4 px-1 w-7 text-center">
-                        <Star size={13} className="text-gray-300 inline" />
-                      </th>
-                      <th className="py-4 px-3 font-bold whitespace-nowrap">
+                      <th className="py-3 px-2 font-bold whitespace-nowrap">
                         Mã hạng phòng
                       </th>
-                      <th className="py-4 px-3 font-bold whitespace-nowrap">
+                      <th className="py-3 px-2.5 font-bold whitespace-nowrap">
                         Tên hạng phòng
                       </th>
-                      <th className="py-4 px-3 font-bold text-center whitespace-nowrap">
+                      <th className="py-3 px-2 font-bold text-center whitespace-nowrap">
                         SL phòng
                       </th>
-                      <th className="py-4 px-3 font-bold text-right whitespace-nowrap">
-                        Giá theo giờ
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
+                        Giá ngày đêm
                       </th>
-                      <th className="py-4 px-3 font-bold text-right whitespace-nowrap">
-                        Giá theo ngày
-                      </th>
-                      <th className="py-4 px-3 font-bold text-right whitespace-nowrap">
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
                         Giá qua đêm
                       </th>
-                      <th className="py-4 px-3 font-bold whitespace-nowrap">
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
+                        Giá buổi
+                      </th>
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
+                        Giá giờ
+                      </th>
+                      <th className="py-3 px-2.5 font-bold text-center whitespace-nowrap">
                         Trạng thái
                       </th>
-                      <th className="py-4 px-2 w-16 text-center">Thao tác</th>
+                      <th className="py-3 px-2.5 font-bold text-center whitespace-nowrap">
+                        Chi nhánh
+                      </th>
                     </tr>
                   </thead>
-
                   <tbody className="divide-y divide-gray-100">
-                    {filteredRooms.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={10}
-                          className="py-16 text-center text-gray-400"
-                        >
-                          Chưa có hạng phòng nào trong chi nhánh này.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredRooms.map((room, idx) => {
-                        const isChecked = selectedIds.includes(room.id);
-                        const isExpanded = expandedRowId === room.id;
-                        const roomCode =
-                          room.code || `P00${filteredRooms.length - idx}`;
-                        const roomImg = room.thumbnail || room.image || "";
+                    {filteredRooms.map((room) => {
+                      const isExpanded = expandedRowId === room.id;
+                      const roomCode = room.code || "P001";
+                      const roomImg =
+                        room.thumbnail ||
+                        room.image ||
+                        (Array.isArray(room.images) && room.images[0]) ||
+                        "";
 
-                        return (
-                          <React.Fragment key={room.id}>
-                            <tr
-                              onClick={() => handleToggleRowExpand(room.id)}
-                              className={`transition cursor-pointer select-none ${
-                                isExpanded
-                                  ? "bg-blue-50/70 border-t-2 border-[#003580]"
-                                  : isChecked
-                                    ? "bg-blue-50/40"
-                                    : "hover:bg-gray-50/80"
-                              }`}
+                      return (
+                        <React.Fragment key={room.id}>
+                          <tr
+                            onClick={() =>
+                              setExpandedRowId(isExpanded ? null : room.id)
+                            }
+                            className={`transition cursor-pointer select-none ${
+                              isExpanded
+                                ? "bg-blue-50/70 border-t-2 border-[#003580]"
+                                : "hover:bg-gray-50/80"
+                            }`}
+                          >
+                            <td
+                              className="py-3 px-2.5 text-center"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <td
-                                className="py-3 px-3 text-center"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() =>
-                                    setSelectedIds((prev) =>
-                                      prev.includes(room.id)
-                                        ? prev.filter((i) => i !== room.id)
-                                        : [...prev, room.id],
-                                    )
-                                  }
-                                  className="cursor-pointer rounded accent-[#003580]"
-                                />
-                              </td>
-                              <td className="py-3 px-1 text-center">
-                                <Star size={14} className="text-gray-300" />
-                              </td>
-                              <td className="py-3 px-3 font-bold text-[#003580]">
-                                {roomCode}
-                              </td>
-                              <td className="py-3 px-3 font-bold text-gray-900">
-                                {room.name}
-                              </td>
-                              <td className="py-3 px-3 text-center font-bold text-gray-900">
-                                {room.amount || 2}
-                              </td>
-                              <td className="py-3 px-3 text-right font-medium text-gray-700 tabular-nums">
-                                {formatVND(room.hourly_price)}
-                              </td>
-                              <td className="py-3 px-3 text-right font-bold text-[#ff6a00] tabular-nums">
-                                {formatVND(room.base_price)}
-                              </td>
-                              <td className="py-3 px-3 text-right font-medium text-gray-700 tabular-nums">
-                                {formatVND(room.overnight_price)}
-                              </td>
-                              <td className="py-3 px-3 whitespace-nowrap">
-                                <span
-                                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                                    room.is_active === false
-                                      ? "bg-gray-100 text-gray-600"
-                                      : "bg-emerald-50 text-emerald-800"
-                                  }`}
-                                >
-                                  {room.is_active === false
-                                    ? "Ngừng kinh doanh"
-                                    : "Đang kinh doanh"}
-                                </span>
-                              </td>
-                              <td className="py-3 px-2 text-center whitespace-nowrap">
-                                <div className="flex items-center justify-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.includes(room.id)}
+                                onChange={() =>
+                                  setSelectedIds((prev) =>
+                                    prev.includes(room.id)
+                                      ? prev.filter((i) => i !== room.id)
+                                      : [...prev, room.id],
+                                  )
+                                }
+                                className="cursor-pointer rounded accent-[#003580]"
+                              />
+                            </td>
+                            <td className="py-3 px-2 font-black text-[#003580] whitespace-nowrap">
+                              {roomCode}
+                            </td>
+                            <td className="py-3 px-2.5 font-black text-gray-900 whitespace-nowrap">
+                              {room.name}
+                            </td>
+                            <td className="py-3 px-2 text-center font-bold text-gray-900">
+                              {room.amount || 2}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(room.base_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(room.overnight_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(room.half_day_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(room.hourly_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                              <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {room.is_active === false
+                                  ? "Ngừng kinh doanh"
+                                  : "Đang kinh doanh"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2.5 text-center text-gray-700 font-bold whitespace-nowrap">
+                              {room.hotel_name || getHotelName(room.hotel_id)}
+                            </td>
+                          </tr>
+
+                          {/* 🌟 MỞ RỘNG CHI TIẾT HẠNG PHÒNG: ĐÃ BỎ TAB MÔ TẢ & DANH SÁCH PHÒNG THEO Ý BẠN 🌟 */}
+                          {isExpanded && (
+                            <tr className="bg-white border-b-2 border-[#003580]">
+                              <td colSpan={10} className="p-5 space-y-4">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-center gap-3.5">
+                                    {/* ẢNH DUY NHẤT CỦA HẠNG PHÒNG */}
+                                    <div className="w-20 h-16 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 shrink-0 flex items-center justify-center shadow-xs">
+                                      {roomImg ? (
+                                        <img
+                                          src={roomImg}
+                                          alt={room.name}
+                                          className="w-full h-full object-cover"
+                                          onError={(e) => {
+                                            e.target.style.display = "none";
+                                          }}
+                                        />
+                                      ) : (
+                                        <MountainPlaceholderIcon />
+                                      )}
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <h4 className="text-sm font-black text-gray-900">
+                                          {room.name}
+                                        </h4>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                                          Đang kinh doanh
+                                        </span>
+                                      </div>
+                                      <div className="text-gray-400 text-[11px] mt-0.5">
+                                        🏷️ {roomCode}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className="text-xs text-gray-700 font-bold">
+                                    {room.hotel_name ||
+                                      getHotelName(room.hotel_id)}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs border-b border-gray-100 pb-4">
+                                  <div>
+                                    <span className="text-gray-500 block">
+                                      Số lượng phòng
+                                    </span>
+                                    <b className="text-gray-900 text-sm">
+                                      {room.amount || 2}
+                                    </b>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 block">
+                                      Sức chứa tiêu chuẩn
+                                    </span>
+                                    <b className="text-gray-900">
+                                      {room.standard_adults || 1} người lớn,{" "}
+                                      {room.standard_children || 1} trẻ em
+                                    </b>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 block">
+                                      Sức chứa tối đa
+                                    </span>
+                                    <b className="text-gray-900">
+                                      {room.max_adults || 1} người lớn,{" "}
+                                      {room.max_children || 1} trẻ em
+                                    </b>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 block">
+                                      Phụ thu thêm giờ
+                                    </span>
+                                    <span className="text-gray-800 font-medium">
+                                      Không tự động tính phụ thu
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* BẢNG 4 MỨC GIÁ CƠ SỞ CHUẨN */}
+                                <div className="w-full max-w-lg text-xs space-y-1.5">
+                                  <div className="flex justify-between border-b border-gray-200 pb-1.5 text-gray-500 font-bold">
+                                    <span>Loại hình lưu trú</span>
+                                    <span>Giá cơ sở</span>
+                                  </div>
+                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
+                                    <span className="text-gray-700">
+                                      Ngày đêm
+                                    </span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(room.base_price)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
+                                    <span className="text-gray-700">
+                                      Qua đêm
+                                    </span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(room.overnight_price)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
+                                    <span className="text-gray-700">Buổi</span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(room.half_day_price)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between py-1 font-semibold">
+                                    <span className="text-gray-700">Giờ</span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(room.hourly_price)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex justify-between items-center pt-3 border-t border-gray-100">
                                   <button
                                     type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenEditRoomModal(room, roomCode);
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-[#003580] cursor-pointer transition"
-                                    title="Chỉnh sửa"
+                                    onClick={() =>
+                                      handleDeleteRoom(room.id, room.name)
+                                    }
+                                    className="text-gray-500 hover:text-rose-600 flex items-center gap-1.5 font-bold cursor-pointer"
                                   >
-                                    <Edit2 size={13} />
+                                    <Trash2 size={13} /> <span>Xóa</span>
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteRoom(room.id, room.name);
-                                    }}
-                                    className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer transition"
-                                    title="Xóa"
+                                    onClick={() =>
+                                      handleOpenEditRoomModal(room, roomCode)
+                                    }
+                                    className="px-4 py-1.5 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition"
                                   >
-                                    <Trash2 size={13} />
+                                    <Edit2 size={13} /> <span>Chỉnh sửa</span>
                                   </button>
                                 </div>
                               </td>
                             </tr>
-
-                            {isExpanded && (
-                              <tr className="bg-white border-b-2 border-[#003580]">
-                                <td colSpan={10} className="p-5">
-                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6 text-xs">
-                                    <div className="md:col-span-4 flex gap-2">
-                                      <div className="w-48 h-32 bg-gray-100 rounded-2xl border border-gray-200 overflow-hidden flex items-center justify-center">
-                                        {roomImg ? (
-                                          <img
-                                            src={roomImg}
-                                            alt={room.name}
-                                            className="w-full h-full object-cover"
-                                          />
-                                        ) : (
-                                          <MountainPlaceholderIcon />
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="md:col-span-4 space-y-1.5">
-                                      <div>
-                                        Mã:{" "}
-                                        <b className="text-gray-900">
-                                          {roomCode}
-                                        </b>
-                                      </div>
-                                      <div>
-                                        Tên:{" "}
-                                        <b className="text-gray-900">
-                                          {room.name}
-                                        </b>
-                                      </div>
-                                      <div>
-                                        Số lượng:{" "}
-                                        <b className="text-gray-900">
-                                          {room.amount || 2} phòng
-                                        </b>
-                                      </div>
-                                      <div>
-                                        Sức chứa tiêu chuẩn:{" "}
-                                        <b>
-                                          {room.standard_adults || 1} lớn,{" "}
-                                          {room.standard_children || 1} trẻ
-                                        </b>
-                                      </div>
-                                      <div>
-                                        Sức chứa tối đa:{" "}
-                                        <b>
-                                          {room.max_adults || 1} lớn,{" "}
-                                          {room.max_children || 1} trẻ
-                                        </b>
-                                      </div>
-                                      <div>
-                                        Giá theo ngày:{" "}
-                                        <b className="text-[#ff6a00] tabular-nums">
-                                          {formatVND(room.base_price)} đ
-                                        </b>
-                                      </div>
-                                    </div>
-                                    <div className="md:col-span-4 border-l border-gray-200 pl-5">
-                                      <span className="font-bold text-gray-900">
-                                        Mô tả
-                                      </span>
-                                      <p className="text-gray-500 mt-1 leading-relaxed">
-                                        {room.description ||
-                                          "Chưa có mô tả chi tiết."}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })
-                    )}
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              /* ══════════════ TAB 2: BẢNG PHÒNG CỤ THỂ ══════════════ */
+              <div className="w-full overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
-                      <th className="py-4 px-4 font-bold">Số phòng</th>
-                      <th className="py-4 px-4 font-bold">Khu vực</th>
-                      <th className="py-4 px-4 font-bold">Thuộc hạng phòng</th>
-                      <th className="py-4 px-4 font-bold text-right">
-                        Giá theo giờ
+                    <tr className="bg-gray-50 text-gray-600 font-bold border-b border-gray-200 text-xs">
+                      <th className="py-3 px-2.5 w-8 text-center">
+                        <input
+                          type="checkbox"
+                          className="rounded accent-[#003580]"
+                        />
                       </th>
-                      <th className="py-4 px-4 font-bold text-right">
-                        Giá theo ngày
+                      <th className="py-3 px-2 font-bold whitespace-nowrap">
+                        Tên phòng
                       </th>
-                      <th className="py-4 px-4 font-bold text-right">
+                      <th className="py-3 px-2.5 font-bold whitespace-nowrap">
+                        Tên hạng phòng
+                      </th>
+                      <th className="py-3 px-2 font-bold whitespace-nowrap">
+                        Khu vực
+                      </th>
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
+                        Giá ngày đêm
+                      </th>
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
                         Giá qua đêm
                       </th>
-                      <th className="py-4 px-4 font-bold text-center">
-                        Thao tác
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
+                        Giá buổi
+                      </th>
+                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
+                        Giá giờ
+                      </th>
+                      <th className="py-3 px-2.5 font-bold text-center whitespace-nowrap">
+                        Trạng thái
+                      </th>
+                      <th className="py-3 px-2.5 font-bold text-center whitespace-nowrap">
+                        Chi nhánh
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {roomUnitsList.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={7}
-                          className="py-16 text-center text-gray-400"
-                        >
-                          Chưa có phòng vật lý nào trong chi nhánh này.
-                        </td>
-                      </tr>
-                    ) : (
-                      roomUnitsList.map((unit) => (
-                        <tr
-                          key={unit.id}
-                          onClick={() => handleOpenAddRoomUnitModal(unit)}
-                          className="hover:bg-blue-50/40 cursor-pointer transition"
-                        >
-                          <td className="py-3 px-4 font-bold text-[#003580] flex items-center gap-1.5">
-                            <Key size={14} className="text-[#006ce4]" />
-                            <span>Phòng {unit.name}</span>
-                          </td>
-                          <td className="py-3 px-4 font-medium text-gray-700">
-                            <span className="px-2.5 py-0.5 bg-blue-50 text-[#003580] font-bold rounded-md border border-blue-100">
-                              {unit.area || "Tầng 1"}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-bold text-gray-900">
-                            {unit.room_type_name}
-                          </td>
-                          <td className="py-3 px-4 text-right font-medium text-gray-700 tabular-nums">
-                            {formatVND(unit.hourly_price)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-bold text-[#ff6a00] tabular-nums">
-                            {formatVND(unit.daily_price)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-medium text-gray-700 tabular-nums">
-                            {formatVND(unit.overnight_price)}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenAddRoomUnitModal(unit);
-                                }}
-                                className="p-1 hover:text-[#003580] cursor-pointer text-gray-400"
-                                title="Chỉnh sửa"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteRoomUnit(unit.id, unit.name);
-                                }}
-                                className="p-1 hover:text-rose-600 cursor-pointer text-gray-400"
-                                title="Xóa phòng"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                    {roomUnitsList.map((unit) => {
+                      const isExpanded = expandedUnitId === unit.id;
+
+                      return (
+                        <React.Fragment key={unit.id}>
+                          <tr
+                            onClick={() =>
+                              setExpandedUnitId(isExpanded ? null : unit.id)
+                            }
+                            className={`hover:bg-blue-50/40 cursor-pointer transition ${
+                              isExpanded
+                                ? "bg-blue-50/70 border-t-2 border-[#003580]"
+                                : ""
+                            }`}
+                          >
+                            <td
+                              className="py-3 px-2.5 text-center"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                className="rounded accent-[#003580]"
+                              />
+                            </td>
+                            <td className="py-3 px-2 font-black text-[#003580] whitespace-nowrap">
+                              {unit.name}
+                            </td>
+                            <td className="py-3 px-2.5 font-black text-gray-900 whitespace-nowrap">
+                              {unit.room_type_name}
+                            </td>
+                            <td className="py-3 px-2 font-medium text-gray-700 whitespace-nowrap">
+                              {unit.area || "Tầng 8"}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(unit.daily_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(unit.overnight_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(unit.half_day_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                              {formatVND(unit.hourly_price)}
+                            </td>
+                            <td className="py-3 px-2.5 text-center whitespace-nowrap">
+                              <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                Đang kinh doanh
+                              </span>
+                            </td>
+                            <td className="py-3 px-2.5 text-center text-gray-700 font-bold whitespace-nowrap">
+                              {unit.hotel_name || getHotelName(unit.hotel_id)}
+                            </td>
+                          </tr>
+
+                          {/* 🌟 MỞ RỘNG PHÒNG CON: ĐÃ BỎ KHUNG ẢNH VÀ XÓA HẲN 3 TAB LỊCH SỬ THEO Ý BẠN 🌟 */}
+                          {isExpanded && (
+                            <tr className="bg-white border-b-2 border-[#003580]">
+                              <td colSpan={10} className="p-5 space-y-4">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-[#003580] flex items-center justify-center font-black">
+                                      <Key size={18} />
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <h4 className="text-sm font-black text-gray-900">
+                                          {unit.name}
+                                        </h4>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                                          Đang kinh doanh
+                                        </span>
+                                      </div>
+                                      <div className="text-gray-500 text-[11px] mt-0.5 flex items-center gap-3 font-semibold">
+                                        <span>🛏️ {unit.room_type_name}</span>
+                                        <span>📍 {unit.area || "Tầng 8"}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className="text-xs text-gray-700 font-bold">
+                                    {unit.hotel_name ||
+                                      getHotelName(unit.hotel_id)}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 text-xs border-b border-gray-100 pb-4">
+                                  <div>
+                                    <span className="text-gray-500 block">
+                                      Ngày bắt đầu sử dụng
+                                    </span>
+                                    <b className="text-gray-900">15/09/2026</b>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500 block">
+                                      Phụ thu thêm giờ
+                                    </span>
+                                    <span className="text-gray-800 font-medium">
+                                      Không tự động tính phụ thu
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* BẢNG 4 MỨC GIÁ THỪA HƯỞNG TRỰC TIẾP */}
+                                <div className="w-full max-w-lg text-xs space-y-1.5">
+                                  <div className="flex justify-between border-b border-gray-200 pb-1.5 text-gray-500 font-bold">
+                                    <span>Loại hình lưu trú</span>
+                                    <span>Giá cơ sở</span>
+                                  </div>
+                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
+                                    <span className="text-gray-700">
+                                      Ngày đêm
+                                    </span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(unit.daily_price)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
+                                    <span className="text-gray-700">
+                                      Qua Đêm
+                                    </span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(unit.overnight_price)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
+                                    <span className="text-gray-700">Buổi</span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(unit.half_day_price)}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between py-1 font-semibold">
+                                    <span className="text-gray-700">Giờ</span>
+                                    <span className="font-bold text-gray-900 tabular-nums">
+                                      {formatVND(unit.hourly_price)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+                                  <div className="flex items-center gap-4 text-xs text-gray-500">
+                                    <span>
+                                      Ghi chú: {unit.note || "Chưa có"}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenAddRoomUnitModal(unit)
+                                    }
+                                    className="px-4 py-1.5 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 transition"
+                                  >
+                                    <Edit2 size={13} /> <span>Chỉnh sửa</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
-
-            <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 font-semibold bg-white">
-              <span>
-                Tổng cộng:{" "}
-                <b>
-                  {activeTab === "room_types"
-                    ? filteredRooms.length
-                    : roomUnitsList.length}
-                </b>{" "}
-                bản ghi
-              </span>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* MODAL HẠNG PHÒNG */}
+      {/* ══════════════ MODAL HẠNG PHÒNG: CÓ UP ẢNH & 4 TAB ══════════════ */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-gray-200 flex flex-col max-h-[92vh] overflow-hidden font-sans">
-            <input
-              id="room-image-upload-input"
-              type="file"
-              ref={fileInputRef}
-              multiple
-              accept="image/*"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-
-            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 my-auto">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white shrink-0">
               <h3 className="font-black text-base text-[#0a2540]">
-                {editingRoom ? "Chỉnh Sửa Hạng Phòng" : "Thêm Hạng Phòng Mới"}
+                {editingRoom ? "Sửa hạng phòng" : "Thêm hạng phòng mới"}
               </h3>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1"
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
-            <div className="flex items-center gap-8 px-6 border-b border-gray-200 text-xs font-bold text-gray-500 bg-white select-none">
+            <div className="flex items-center gap-6 px-6 border-b border-gray-200 text-xs font-bold text-gray-500 bg-white shrink-0 select-none">
               <button
                 type="button"
                 onClick={() => setModalTab("info")}
                 className={`py-3 transition relative cursor-pointer ${
                   modalTab === "info"
-                    ? "text-[#003580] font-black"
+                    ? "text-[#006ce4] font-black"
                     : "hover:text-gray-900"
                 }`}
               >
-                Thông tin cơ bản
+                Thông tin
                 {modalTab === "info" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#006ce4]" />
                 )}
               </button>
 
               <button
                 type="button"
-                onClick={() => setModalTab("description")}
+                onClick={() => setModalTab("images")}
                 className={`py-3 transition relative cursor-pointer ${
-                  modalTab === "description"
-                    ? "text-[#003580] font-black"
+                  modalTab === "images"
+                    ? "text-[#006ce4] font-black"
                     : "hover:text-gray-900"
                 }`}
               >
-                Mô tả & Tiện nghi
-                {modalTab === "description" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
+                Hình ảnh, mô tả
+                {modalTab === "images" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#006ce4]" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModalTab("amenities")}
+                className={`py-3 transition relative cursor-pointer ${
+                  modalTab === "amenities"
+                    ? "text-[#006ce4] font-black"
+                    : "hover:text-gray-900"
+                }`}
+              >
+                Tiện ích
+                {modalTab === "amenities" && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#006ce4]" />
                 )}
               </button>
 
@@ -1334,28 +1323,28 @@ export default function RoomManagementPage() {
                 onClick={() => setModalTab("units")}
                 className={`py-3 transition relative cursor-pointer ${
                   modalTab === "units"
-                    ? "text-[#003580] font-black"
+                    ? "text-[#006ce4] font-black"
                     : "hover:text-gray-900"
                 }`}
               >
-                Số lượng phòng
+                Danh sách phòng ({formRoomUnits.length})
                 {modalTab === "units" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-[#006ce4]" />
                 )}
               </button>
             </div>
 
             <form
-              onSubmit={(e) => handleSaveRoom(e, false)}
-              className="flex-1 overflow-y-auto p-6 space-y-6 text-xs"
+              onSubmit={handleSaveRoom}
+              className="flex-1 overflow-y-auto p-6 space-y-6 text-xs bg-white"
             >
               {modalTab === "info" && (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 items-start pt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4 items-start pt-1">
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
                         <label className="w-28 text-gray-700 font-bold">
-                          Chi nhánh <b className="text-rose-500">*</b>
+                          Chi nhánh
                         </label>
                         <select
                           required
@@ -1385,14 +1374,14 @@ export default function RoomManagementPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, code: e.target.value })
                           }
-                          placeholder="Tự động sinh nếu để trống"
+                          placeholder="VD: P001"
                           className="flex-1 py-1.5 border-b border-gray-300 outline-none text-gray-900 bg-transparent font-mono"
                         />
                       </div>
 
                       <div className="flex items-center gap-3">
                         <label className="w-28 text-gray-700 font-bold">
-                          Tên hạng phòng <b className="text-rose-500">*</b>
+                          Tên hạng phòng
                         </label>
                         <input
                           required
@@ -1400,7 +1389,7 @@ export default function RoomManagementPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, name: e.target.value })
                           }
-                          placeholder="VD: Deluxe Hướng Biển"
+                          placeholder="VD: PHÒNG KHÁNH HOÀ"
                           className="flex-1 py-1.5 border-b border-[#003580] outline-none text-gray-900 font-bold bg-transparent"
                         />
                       </div>
@@ -1409,27 +1398,7 @@ export default function RoomManagementPage() {
                     <div className="space-y-3.5">
                       <div className="flex items-center justify-between">
                         <span className="text-gray-700 font-medium">
-                          Giá theo giờ
-                        </span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={formatNumberWithDots(formData.hourly_price)}
-                          onChange={(e) => {
-                            const val = parseDotsToNumber(e.target.value);
-                            setFormData((prev) => ({
-                              ...prev,
-                              hourly_price: val,
-                            }));
-                          }}
-                          placeholder="0"
-                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-700 font-bold">
-                          Giá theo ngày <b className="text-rose-500">*</b>
+                          Giá ngày đêm
                         </span>
                         <input
                           required
@@ -1438,29 +1407,20 @@ export default function RoomManagementPage() {
                           value={formatNumberWithDots(formData.base_price)}
                           onChange={(e) => {
                             const val = parseDotsToNumber(e.target.value);
-                            setFormData((prev) => {
-                              const updated = { ...prev, base_price: val };
-                              if (
-                                !prev.hourly_price ||
-                                Number(prev.hourly_price) === 0
-                              ) {
-                                updated.hourly_price = val
-                                  ? Math.round(Number(val) * 0.25)
-                                  : "";
-                              }
-                              if (
-                                !prev.overnight_price ||
-                                Number(prev.overnight_price) === 0
-                              ) {
-                                updated.overnight_price = val
-                                  ? Number(val)
-                                  : "";
-                              }
-                              return updated;
-                            });
+                            setFormData((prev) => ({
+                              ...prev,
+                              base_price: val,
+                              overnight_price: prev.overnight_price || val,
+                              half_day_price:
+                                prev.half_day_price ||
+                                (val ? Math.round(Number(val) * 0.8) : ""),
+                              hourly_price:
+                                prev.hourly_price ||
+                                (val ? Math.round(Number(val) * 0.25) : ""),
+                            }));
                           }}
                           placeholder="0"
-                          className="w-28 text-right py-1 border-b border-[#003580] outline-none text-[#ff6a00] font-black bg-transparent"
+                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
                       </div>
 
@@ -1472,13 +1432,14 @@ export default function RoomManagementPage() {
                           type="text"
                           inputMode="numeric"
                           value={formatNumberWithDots(formData.overnight_price)}
-                          onChange={(e) => {
-                            const val = parseDotsToNumber(e.target.value);
-                            setFormData((prev) => ({
-                              ...prev,
-                              overnight_price: val,
-                            }));
-                          }}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              overnight_price: parseDotsToNumber(
+                                e.target.value,
+                              ),
+                            })
+                          }
                           placeholder="0"
                           className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
@@ -1486,126 +1447,52 @@ export default function RoomManagementPage() {
 
                       <div className="flex items-center justify-between">
                         <span className="text-gray-700 font-medium">
-                          Phụ thu nhận sớm
+                          Giá buổi
                         </span>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={formatNumberWithDots(
-                              formData.early_checkin_fee,
-                            )}
-                            onChange={(e) => {
-                              const val = parseDotsToNumber(e.target.value);
-                              setFormData((prev) => ({
-                                ...prev,
-                                early_checkin_fee: val,
-                              }));
-                            }}
-                            placeholder="0"
-                            className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 bg-transparent font-semibold"
-                          />
-                          <span className="text-gray-400">/giờ</span>
-                        </div>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={formatNumberWithDots(formData.half_day_price)}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              half_day_price: parseDotsToNumber(e.target.value),
+                            })
+                          }
+                          placeholder="0"
+                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
+                        />
                       </div>
 
                       <div className="flex items-center justify-between">
                         <span className="text-gray-700 font-medium">
-                          Phụ thu trả muộn
+                          Giá giờ
                         </span>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={formatNumberWithDots(
-                              formData.late_checkout_fee,
-                            )}
-                            onChange={(e) => {
-                              const val = parseDotsToNumber(e.target.value);
-                              setFormData((prev) => ({
-                                ...prev,
-                                late_checkout_fee: val,
-                              }));
-                            }}
-                            placeholder="0"
-                            className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 bg-transparent font-semibold"
-                          />
-                          <span className="text-gray-400">/giờ</span>
-                        </div>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={formatNumberWithDots(formData.hourly_price)}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              hourly_price: parseDotsToNumber(e.target.value),
+                            })
+                          }
+                          placeholder="0"
+                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
+                        />
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => scrollImages("left", imageScrollRef)}
-                      className="p-1 text-gray-300 hover:text-gray-600 cursor-pointer flex-shrink-0"
-                    >
-                      <ChevronLeft size={20} />
-                    </button>
-
-                    <div
-                      ref={imageScrollRef}
-                      className="flex-1 flex gap-2 overflow-x-auto py-1 scroll-smooth scrollbar-none items-center"
-                    >
-                      {formData.images.map((imgSrc, idx) => (
-                        <div
-                          key={idx}
-                          className="relative group w-16 h-14 rounded-xl border border-gray-200 overflow-hidden flex-shrink-0 bg-gray-50"
-                        >
-                          <img
-                            src={imgSrc}
-                            alt="preview"
-                            className="w-full h-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFormData((prev) => ({
-                                ...prev,
-                                images: prev.images.filter((_, i) => i !== idx),
-                              }));
-                            }}
-                            className="absolute top-0.5 right-0.5 bg-rose-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition cursor-pointer"
-                          >
-                            <X size={10} strokeWidth={3} />
-                          </button>
-                        </div>
-                      ))}
-
-                      {[...Array(Math.max(1, 8 - formData.images.length))].map(
-                        (_, i) => (
-                          <label
-                            key={i}
-                            htmlFor="room-image-upload-input"
-                            className="w-16 h-14 rounded-xl border border-dashed border-gray-300 bg-white hover:border-[#003580] cursor-pointer flex items-center justify-center flex-shrink-0 transition"
-                            title="Tải ảnh"
-                          >
-                            <MountainPlaceholderIcon />
-                          </label>
-                        ),
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => scrollImages("right", imageScrollRef)}
-                      className="p-1 text-gray-300 hover:text-gray-600 cursor-pointer flex-shrink-0"
-                    >
-                      <ChevronRight size={20} />
-                    </button>
-                  </div>
-
-                  <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white mt-4">
-                    <div className="bg-gray-50 px-4 py-2.5 font-black uppercase tracking-wider text-gray-800 text-xs border-b border-gray-200">
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white mt-2">
+                    <div className="bg-gray-50 px-4 py-2 font-black uppercase tracking-wider text-gray-800 text-xs border-b border-gray-200">
                       Sức chứa phòng
                     </div>
-                    <div className="p-4 space-y-3.5 text-xs">
+                    <div className="p-4 space-y-3 text-xs">
                       <div className="flex items-center gap-6">
-                        <span className="w-20 font-bold text-gray-700">
-                          Tiêu chuẩn
+                        <span className="w-24 font-bold text-gray-700">
+                          Tiêu chuẩn:
                         </span>
                         <div className="flex items-center gap-2">
                           <input
@@ -1638,8 +1525,8 @@ export default function RoomManagementPage() {
                       </div>
 
                       <div className="flex items-center gap-6">
-                        <span className="w-20 font-bold text-gray-700">
-                          Tối đa
+                        <span className="w-24 font-bold text-gray-700">
+                          Tối đa:
                         </span>
                         <div className="flex items-center gap-2">
                           <input
@@ -1676,9 +1563,83 @@ export default function RoomManagementPage() {
                 </div>
               )}
 
-              {modalTab === "description" && (
+              {modalTab === "images" && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <input
+                    id="room-image-upload-input"
+                    type="file"
+                    ref={fileInputRef}
+                    multiple
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-2">
+                      Ảnh đại diện & thư viện ảnh:
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => scrollImages("left", imageScrollRef)}
+                        className="p-1 text-gray-300 hover:text-gray-600 cursor-pointer shrink-0"
+                      >
+                        <ChevronLeft size={20} />
+                      </button>
+
+                      <div
+                        ref={imageScrollRef}
+                        className="flex-1 flex gap-2 overflow-x-auto py-1 scroll-smooth scrollbar-none items-center"
+                      >
+                        {formData.images.map((imgSrc, idx) => (
+                          <div
+                            key={idx}
+                            className="relative group w-20 h-16 rounded-xl border border-gray-200 overflow-hidden shrink-0 bg-gray-50"
+                          >
+                            <img
+                              src={imgSrc}
+                              alt="preview"
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  images: prev.images.filter(
+                                    (_, i) => i !== idx,
+                                  ),
+                                }));
+                              }}
+                              className="absolute top-0.5 right-0.5 bg-rose-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                            >
+                              <X size={10} strokeWidth={3} />
+                            </button>
+                          </div>
+                        ))}
+
+                        <label
+                          htmlFor="room-image-upload-input"
+                          className="w-20 h-16 rounded-xl border border-dashed border-gray-300 bg-white hover:border-[#003580] cursor-pointer flex items-center justify-center shrink-0 transition"
+                          title="Tải ảnh từ máy tính"
+                        >
+                          <MountainPlaceholderIcon />
+                        </label>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => scrollImages("right", imageScrollRef)}
+                        className="p-1 text-gray-300 hover:text-gray-600 cursor-pointer shrink-0"
+                      >
+                        <ChevronRight size={20} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-2">
                     <div>
                       <label className="block text-gray-700 font-bold mb-1">
                         Loại giường
@@ -1709,522 +1670,432 @@ export default function RoomManagementPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="font-bold text-gray-800 flex items-center gap-1">
-                        <Sparkles size={14} className="text-amber-500" /> Tiện
-                        nghi hạng phòng:
-                      </label>
+                  <div>
+                    <label className="block text-gray-700 font-bold mb-1">
+                      Mô tả hạng phòng
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
+                      placeholder="Nhập mô tả về hạng phòng..."
+                      className="w-full p-2.5 border border-gray-200 rounded-xl outline-none focus:border-[#003580]"
+                    />
+                  </div>
+                </div>
+              )}
 
-                      {Array.isArray(formData.amenities) &&
-                        formData.amenities.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                amenities: [],
-                              }))
-                            }
-                            className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 px-2 py-0.5 rounded-lg cursor-pointer transition flex items-center gap-1"
-                          >
-                            <Trash2 size={12} />
-                            <span>
-                              Xóa tất cả ({formData.amenities.length})
-                            </span>
-                          </button>
-                        )}
-                    </div>
+              {modalTab === "amenities" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-gray-800 flex items-center gap-1">
+                      <Sparkles size={14} className="text-amber-500" /> Chọn
+                      tiện ích có sẵn:
+                    </label>
 
                     {Array.isArray(formData.amenities) &&
                       formData.amenities.length > 0 && (
-                        <div className="p-2.5 bg-blue-50/50 border border-blue-100 rounded-2xl">
-                          <span className="text-[10px] font-black text-[#003580] block mb-1 uppercase tracking-wider">
-                            Đang chọn ({formData.amenities.length}):
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {formData.amenities.map((item, idx) => (
-                              <span
-                                key={idx}
-                                className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-white border border-blue-200 text-[#003580] text-[11px] font-bold rounded-lg"
-                              >
-                                <span>{item}</span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      amenities: prev.amenities.filter(
-                                        (_, i) => i !== idx,
-                                      ),
-                                    }))
-                                  }
-                                  className="text-gray-400 hover:text-rose-600 cursor-pointer ml-0.5"
-                                >
-                                  ✕
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev) => ({ ...prev, amenities: [] }))
+                          }
+                          className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 px-2.5 py-0.5 rounded-lg cursor-pointer transition flex items-center gap-1"
+                        >
+                          <Trash2 size={12} />{" "}
+                          <span>Xóa tất cả ({formData.amenities.length})</span>
+                        </button>
                       )}
+                  </div>
 
-                    <div className="grid grid-cols-2 gap-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200 max-h-48 overflow-y-auto">
-                      {ROOM_AMENITIES_LIST.map((item) => {
-                        const currentAmenities = Array.isArray(
-                          formData.amenities,
-                        )
-                          ? formData.amenities
-                          : [];
-
-                        const isChecked = currentAmenities.some((a) =>
-                          isSameAmenity(a, item),
-                        );
-
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              setFormData((prev) => {
-                                const list = Array.isArray(prev.amenities)
-                                  ? prev.amenities
-                                  : [];
-                                const checked = list.some((a) =>
-                                  isSameAmenity(a, item),
-                                );
-                                return {
+                  {Array.isArray(formData.amenities) &&
+                    formData.amenities.length > 0 && (
+                      <div className="p-2.5 bg-blue-50/50 border border-blue-100 rounded-2xl flex flex-wrap gap-1.5">
+                        {formData.amenities.map((item, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-white border border-blue-200 text-[#003580] text-[11px] font-bold rounded-lg"
+                          >
+                            <span>{item}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setFormData((prev) => ({
                                   ...prev,
-                                  amenities: checked
-                                    ? list.filter(
-                                        (a) => !isSameAmenity(a, item),
-                                      )
-                                    : [...list, item.label],
-                                };
-                              });
-                            }}
-                            className={`flex items-center gap-2 p-2 rounded-xl cursor-pointer select-none text-[11px] text-left transition ${
+                                  amenities: prev.amenities.filter(
+                                    (_, i) => i !== idx,
+                                  ),
+                                }))
+                              }
+                              className="text-gray-400 hover:text-rose-600 cursor-pointer ml-0.5"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                  <div className="grid grid-cols-2 gap-2 bg-gray-50 p-3 rounded-2xl border border-gray-200 max-h-56 overflow-y-auto">
+                    {ROOM_AMENITIES_LIST.map((item) => {
+                      const currentAmenities = Array.isArray(formData.amenities)
+                        ? formData.amenities
+                        : [];
+                      const isChecked = currentAmenities.some((a) =>
+                        isSameAmenity(a, item),
+                      );
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setFormData((prev) => {
+                              const list = Array.isArray(prev.amenities)
+                                ? prev.amenities
+                                : [];
+                              const checked = list.some((a) =>
+                                isSameAmenity(a, item),
+                              );
+                              return {
+                                ...prev,
+                                amenities: checked
+                                  ? list.filter((a) => !isSameAmenity(a, item))
+                                  : [...list, item.label],
+                              };
+                            });
+                          }}
+                          className={`flex items-center gap-2 p-2 rounded-xl cursor-pointer select-none text-[11px] text-left transition ${
+                            isChecked
+                              ? "bg-blue-50 text-[#003580] font-bold border border-blue-200"
+                              : "hover:bg-white text-gray-700"
+                          }`}
+                        >
+                          <div
+                            className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
                               isChecked
-                                ? "bg-blue-50 text-[#003580] font-bold border border-blue-200"
-                                : "hover:bg-white text-gray-700"
+                                ? "bg-[#003580] border-[#003580] text-white"
+                                : "border-gray-300 bg-white"
                             }`}
                           >
-                            <div
-                              className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
-                                isChecked
-                                  ? "bg-[#003580] border-[#003580] text-white"
-                                  : "border-gray-300 bg-white"
-                              }`}
-                            >
-                              {isChecked && <Check size={10} strokeWidth={3} />}
-                            </div>
-                            <span className="truncate">{item.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                            {isChecked && <Check size={10} strokeWidth={3} />}
+                          </div>
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               {modalTab === "units" && (
-                <div className="space-y-3">
-                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-2">
-                    <label className="font-bold text-gray-800">
-                      Số lượng phòng thực tế:
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.amount}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          amount: Number(e.target.value),
-                        })
-                      }
-                      className="w-24 p-2 border border-gray-200 rounded-xl outline-none bg-white font-bold text-gray-900"
-                    />
-                    <p className="text-[11px] text-gray-500">
-                      Hệ thống sẽ đồng bộ số lượng phòng vật lý tương ứng vào
-                      chi nhánh này.
-                    </p>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-center border border-gray-300 rounded-2xl px-3.5 py-2 bg-white focus-within:border-[#006ce4] shadow-2xs">
+                      <Search
+                        size={15}
+                        className="text-gray-400 mr-2 shrink-0"
+                      />
+                      <input
+                        type="text"
+                        value={newRoomUnitInput}
+                        onChange={(e) => setNewRoomUnitInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddUnitToForm();
+                          }
+                        }}
+                        placeholder="Thêm phòng vào hạng phòng (VD: EXE801, 101...)"
+                        className="w-full text-xs font-semibold outline-none bg-transparent"
+                      />
+                    </div>
+                    <select
+                      value={newRoomUnitArea}
+                      onChange={(e) => setNewRoomUnitArea(e.target.value)}
+                      className="border border-gray-300 rounded-2xl px-3 py-2 text-xs font-bold text-gray-700 bg-white outline-none cursor-pointer"
+                    >
+                      {areasList.map((a, i) => (
+                        <option key={i} value={a}>
+                          {a}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddUnitToForm}
+                      className="px-4 py-2 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-2xs cursor-pointer transition active:scale-95 shrink-0"
+                    >
+                      + Thêm
+                    </button>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100/70 text-gray-600 font-bold border-b border-gray-200">
+                          <th className="py-3 px-4 w-12 text-center">STT</th>
+                          <th className="py-3 px-4 font-bold">Tên phòng</th>
+                          <th className="py-3 px-4 font-bold">Khu vực</th>
+                          <th className="py-3 px-4 font-bold">Trạng thái</th>
+                          <th className="py-3 px-4 w-12 text-center"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {formRoomUnits.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={5}
+                              className="py-12 text-center text-gray-400"
+                            >
+                              Chưa có phòng nào trong hạng phòng này. Nhập tên
+                              phòng ở trên để thêm vào!
+                            </td>
+                          </tr>
+                        ) : (
+                          formRoomUnits.map((unit, idx) => (
+                            <tr
+                              key={idx}
+                              className="hover:bg-gray-50/80 transition"
+                            >
+                              <td className="py-3.5 px-4 text-center font-bold text-gray-500">
+                                {idx + 1}
+                              </td>
+                              <td className="py-3.5 px-4 font-bold text-gray-900">
+                                {unit.name}
+                              </td>
+                              <td className="py-3.5 px-4 font-medium text-gray-700">
+                                {unit.area || "Tầng 8"}
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Đang kinh doanh
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-4 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveUnitFromForm(idx)}
+                                  className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition border border-gray-200 cursor-pointer"
+                                  title="Xóa phòng này"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="text-[11px] text-gray-500 font-medium">
+                    💡 Số lượng phòng sẽ tự động cập nhật là{" "}
+                    <b>{formRoomUnits.length} phòng</b>.
                   </div>
                 </div>
               )}
-
-              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                {editingRoom ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDeleteRoom(editingRoom.id, editingRoom.name)
-                    }
-                    className="px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition active:scale-95"
-                  >
-                    <Trash2 size={14} />
-                    <span>Xóa hạng phòng</span>
-                  </button>
-                ) : (
-                  <div />
-                )}
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
-                  >
-                    <Save size={14} />
-                    <span>Lưu</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => handleSaveRoom(e, true)}
-                    className="px-5 py-2 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
-                  >
-                    <Save size={14} />
-                    <span>Lưu & Thêm tiếp</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
-                  >
-                    <Ban size={14} />
-                    <span>Hủy</span>
-                  </button>
-                </div>
-              </div>
             </form>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-6 py-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs cursor-pointer transition"
+              >
+                Bỏ qua
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRoom}
+                className="px-8 py-2.5 rounded-full bg-[#006ce4] hover:bg-blue-600 text-white font-bold text-xs shadow-md cursor-pointer transition active:scale-95"
+              >
+                Lưu
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* MODAL PHÒNG VẬT LÝ CỤ THỂ */}
+      {/* ══════════════ MODAL PHÒNG CỤ THỂ (GỌN GÀNG, KHÔNG CẦN ẢNH) ══════════════ */}
       {isRoomUnitModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-gray-200 flex flex-col max-h-[92vh] overflow-hidden font-sans">
-            <input
-              id="room-unit-image-upload"
-              type="file"
-              ref={roomUnitFileInputRef}
-              multiple
-              accept="image/*"
-              onChange={handleRoomUnitFileChange}
-              className="hidden"
-            />
-
-            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
+          <div className="bg-white rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 my-auto">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white shrink-0">
               <h3 className="font-black text-base text-[#0a2540]">
                 {editingRoomUnit
-                  ? `Chỉnh Sửa Phòng ${editingRoomUnit.name}`
+                  ? `Chỉnh Sửa Phòng: ${editingRoomUnit.name}`
                   : "Thêm Phòng Cụ Thể"}
               </h3>
               <button
                 type="button"
                 onClick={() => setIsRoomUnitModalOpen(false)}
-                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1"
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
             <form
-              onSubmit={(e) => handleSaveRoomUnit(e, false)}
-              className="flex-1 overflow-y-auto p-6 space-y-6 text-xs"
+              onSubmit={handleSaveRoomUnit}
+              className="flex-1 overflow-y-auto p-6 space-y-4 text-xs bg-white"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 items-start pt-1">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <label className="w-24 text-gray-700 font-bold">
-                      Tên phòng <b className="text-rose-500">*</b>
-                    </label>
-                    <input
-                      required
-                      value={roomUnitFormData.name}
-                      onChange={(e) =>
-                        setRoomUnitFormData({
-                          ...roomUnitFormData,
-                          name: e.target.value,
-                        })
-                      }
-                      placeholder="VD: 101, 201..."
-                      className="flex-1 py-1.5 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
-                    />
-                  </div>
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">
+                  Tên phòng (VD: EXE804, 101...){" "}
+                  <b className="text-rose-500">*</b>
+                </label>
+                <input
+                  required
+                  value={roomUnitFormData.name}
+                  onChange={(e) =>
+                    setRoomUnitFormData({
+                      ...roomUnitFormData,
+                      name: e.target.value,
+                    })
+                  }
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-bold text-gray-900 outline-none focus:border-[#003580]"
+                />
+              </div>
 
-                  <div className="flex items-center gap-3">
-                    <label className="w-24 text-gray-700 font-bold">
-                      Khu vực
-                    </label>
-                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
-                      <select
-                        value={roomUnitFormData.area}
-                        onChange={(e) =>
-                          setRoomUnitFormData({
-                            ...roomUnitFormData,
-                            area: e.target.value,
-                          })
-                        }
-                        className="flex-1 outline-none text-[#003580] bg-transparent cursor-pointer font-bold"
-                      >
-                        <option value="">-- Lựa chọn --</option>
-                        {areasList.map((area, idx) => (
-                          <option key={idx} value={area}>
-                            {area}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const areaName = window.prompt(
-                            "Nhập tên khu vực mới (VD: Tầng 4, Khu VIP):",
-                          );
-                          if (areaName && areaName.trim()) {
-                            setAreasList((prev) => [...prev, areaName.trim()]);
-                            setRoomUnitFormData((prev) => ({
-                              ...prev,
-                              area: areaName.trim(),
-                            }));
-                          }
-                        }}
-                        className="text-[#006ce4] font-bold px-1.5 cursor-pointer text-sm"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <label className="w-24 text-gray-700 font-bold">
-                      Hạng phòng <b className="text-rose-500">*</b>
-                    </label>
-                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
-                      <select
-                        required
-                        value={roomUnitFormData.room_id}
-                        onChange={(e) =>
-                          handleSelectRoomTypeForUnit(e.target.value)
-                        }
-                        className="flex-1 outline-none text-gray-900 font-bold bg-transparent cursor-pointer"
-                      >
-                        <option value="">-- Lựa chọn --</option>
-                        {rooms.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <label className="w-24 text-gray-700 font-bold">
-                      Bắt đầu dùng
-                    </label>
-                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
-                      <input
-                        type="date"
-                        value={roomUnitFormData.start_date}
-                        onChange={(e) =>
-                          setRoomUnitFormData({
-                            ...roomUnitFormData,
-                            start_date: e.target.value,
-                          })
-                        }
-                        className="flex-1 outline-none text-gray-900 bg-transparent text-xs font-semibold"
-                      />
-                      <Calendar size={14} className="text-gray-400" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-700 font-medium">
-                      Giá theo giờ
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={formatNumberWithDots(
-                        roomUnitFormData.hourly_price,
-                      )}
-                      onChange={(e) => {
-                        const val = parseDotsToNumber(e.target.value);
-                        setRoomUnitFormData((prev) => ({
-                          ...prev,
-                          hourly_price: val,
-                        }));
-                      }}
-                      placeholder="0"
-                      className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-bold bg-transparent"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-700 font-bold">
-                      Giá theo ngày
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={formatNumberWithDots(roomUnitFormData.daily_price)}
-                      onChange={(e) => {
-                        const val = parseDotsToNumber(e.target.value);
-                        setRoomUnitFormData((prev) => ({
-                          ...prev,
-                          daily_price: val,
-                        }));
-                      }}
-                      placeholder="0"
-                      className="w-28 text-right py-1 border-b border-[#003580] outline-none text-[#ff6a00] text-xs font-black bg-transparent"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-700 font-medium">
-                      Giá qua đêm
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={formatNumberWithDots(
-                        roomUnitFormData.overnight_price,
-                      )}
-                      onChange={(e) => {
-                        const val = parseDotsToNumber(e.target.value);
-                        setRoomUnitFormData((prev) => ({
-                          ...prev,
-                          overnight_price: val,
-                        }));
-                      }}
-                      placeholder="0"
-                      className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-bold bg-transparent"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-700 font-medium">
-                      Phụ thu nhận sớm
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={formatNumberWithDots(
-                          roomUnitFormData.early_checkin_fee,
-                        )}
-                        onChange={(e) => {
-                          const val = parseDotsToNumber(e.target.value);
-                          setRoomUnitFormData((prev) => ({
-                            ...prev,
-                            early_checkin_fee: val,
-                          }));
-                        }}
-                        placeholder="0"
-                        className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-semibold bg-transparent"
-                      />
-                      <span className="text-gray-400 text-xs">/giờ</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-700 font-medium">
-                      Phụ thu trả muộn
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={formatNumberWithDots(
-                          roomUnitFormData.late_checkout_fee,
-                        )}
-                        onChange={(e) => {
-                          const val = parseDotsToNumber(e.target.value);
-                          setRoomUnitFormData((prev) => ({
-                            ...prev,
-                            late_checkout_fee: val,
-                          }));
-                        }}
-                        placeholder="0"
-                        className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-semibold bg-transparent"
-                      />
-                      <span className="text-gray-400 text-xs">/giờ</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <span className="w-20 text-gray-700 font-bold">
-                      Ghi chú
-                    </span>
-                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
-                      <input
-                        value={roomUnitFormData.note}
-                        onChange={(e) =>
-                          setRoomUnitFormData({
-                            ...roomUnitFormData,
-                            note: e.target.value,
-                          })
-                        }
-                        placeholder="Ghi chú vị trí hoặc tình trạng..."
-                        className="flex-1 outline-none text-gray-800 bg-transparent text-xs"
-                      />
-                    </div>
-                  </div>
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">
+                  Khu vực
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={roomUnitFormData.area}
+                    onChange={(e) =>
+                      setRoomUnitFormData({
+                        ...roomUnitFormData,
+                        area: e.target.value,
+                      })
+                    }
+                    className="flex-1 p-2.5 border border-gray-200 rounded-xl font-bold text-gray-900 outline-none"
+                  >
+                    {areasList.map((a, i) => (
+                      <option key={i} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const name = window.prompt("Nhập tên khu vực mới:");
+                      if (name?.trim())
+                        setAreasList((prev) => [...prev, name.trim()]);
+                    }}
+                    className="p-2 border border-gray-200 rounded-xl font-bold text-[#006ce4] hover:bg-blue-50"
+                  >
+                    +
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                {editingRoomUnit ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDeleteRoomUnit(
-                        editingRoomUnit.id,
-                        editingRoomUnit.name,
-                      )
-                    }
-                    className="px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition active:scale-95"
-                  >
-                    <Trash2 size={14} />
-                    <span>Xóa phòng</span>
-                  </button>
-                ) : (
-                  <div />
-                )}
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">
+                  Thuộc Hạng phòng <b className="text-rose-500">*</b>
+                </label>
+                <select
+                  required
+                  value={roomUnitFormData.room_id}
+                  onChange={(e) =>
+                    setRoomUnitFormData({
+                      ...roomUnitFormData,
+                      room_id: e.target.value,
+                    })
+                  }
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-bold text-[#003580] outline-none"
+                >
+                  <option value="">-- Chọn hạng phòng --</option>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({formatVND(r.base_price)} đ/ngày)
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
-                  >
-                    <Save size={14} />
-                    <span>Lưu</span>
-                  </button>
+              {/* BẢNG GIÁ THỪA HƯỞNG TỪ HẠNG PHÒNG */}
+              <div className="space-y-2.5 bg-gray-50/80 p-4 rounded-2xl border border-gray-200">
+                <span className="font-bold text-gray-600 text-xs block uppercase">
+                  Bảng giá thừa hưởng từ "
+                  {selectedParentRoom?.name || "Hạng phòng"}"
+                </span>
 
-                  <button
-                    type="button"
-                    onClick={(e) => handleSaveRoomUnit(e, true)}
-                    className="px-5 py-2 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
-                  >
-                    <Save size={14} />
-                    <span>Lưu & Thêm tiếp</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsRoomUnitModalOpen(false)}
-                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
-                  >
-                    <Ban size={14} />
-                    <span>Hủy</span>
-                  </button>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-600 font-medium">
+                    Giá ngày đêm:
+                  </span>
+                  <b className="text-gray-900 tabular-nums font-bold">
+                    {formatVND(selectedParentRoom?.base_price || 0)} đ
+                  </b>
                 </div>
+
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-600 font-medium">
+                    Giá qua đêm:
+                  </span>
+                  <b className="text-gray-900 tabular-nums font-bold">
+                    {formatVND(selectedParentRoom?.overnight_price || 0)} đ
+                  </b>
+                </div>
+
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-600 font-medium">Giá buổi:</span>
+                  <b className="text-gray-900 tabular-nums font-bold">
+                    {formatVND(selectedParentRoom?.half_day_price || 0)} đ
+                  </b>
+                </div>
+
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-600 font-medium">Giá giờ:</span>
+                  <b className="text-gray-900 tabular-nums font-bold">
+                    {formatVND(selectedParentRoom?.hourly_price || 0)} đ
+                  </b>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">
+                  Ghi chú
+                </label>
+                <input
+                  value={roomUnitFormData.note}
+                  onChange={(e) =>
+                    setRoomUnitFormData({
+                      ...roomUnitFormData,
+                      note: e.target.value,
+                    })
+                  }
+                  placeholder="Ghi chú vị trí hoặc tình trạng..."
+                  className="w-full p-2.5 border border-gray-200 rounded-xl outline-none focus:border-[#003580]"
+                />
               </div>
             </form>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsRoomUnitModalOpen(false)}
+                className="px-6 py-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs cursor-pointer transition"
+              >
+                Bỏ qua
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRoomUnit}
+                className="px-8 py-2.5 rounded-full bg-[#006ce4] hover:bg-blue-600 text-white font-bold text-xs shadow-md cursor-pointer transition active:scale-95"
+              >
+                Lưu
+              </button>
+            </div>
           </div>
         </div>
       )}
