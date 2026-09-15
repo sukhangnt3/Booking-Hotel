@@ -1,5 +1,5 @@
 // src/pages/reception/components/QuickBookingModal.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Search,
   Plus,
@@ -10,14 +10,166 @@ import {
   Trash2,
   Minus,
   RotateCw,
-  Store,
   X,
   UserCheck,
   CalendarCheck,
-  Building2,
   Users,
   CheckCircle2,
+  AlertTriangle,
+  Clock,
+  Calendar as CalendarIcon,
+  Lock,
 } from "lucide-react";
+
+// --- HỖ TRỢ CHUYỂN DATE THÀNH CHUỖI DATETIME-LOCAL ---
+const formatToLocalISO = (date) => {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+};
+
+// Định dạng hiển thị chuẩn: "15 Thg 09, 16:16"
+const formatDisplayDateTime = (isoStr) => {
+  if (!isoStr) return "";
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const mins = String(d.getMinutes()).padStart(2, "0");
+  return `${day} Thg ${month}, ${hours}:${mins}`;
+};
+
+// Kiểm tra xem ngày có phải là ngày mai hoặc tương lai không
+const isDateInFuture = (dateStr) => {
+  if (!dateStr) return false;
+  const checkin = new Date(dateStr);
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return checkin.getTime() > today.getTime();
+};
+
+// 🌟 BỘ CHỌN GIỜ SIÊU GỌN - ĐÃ CỐ ĐỊNH KÍCH THƯỚC ĐỀU NHAU (W-[178PX])
+function SlimDateTimePicker({ value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const dateInputRef = useRef(null);
+
+  const selectedDateStr = value ? value.split("T")[0] : "";
+  const selectedTimeStr = value
+    ? value.split("T")[1]?.slice(0, 5) || "14:00"
+    : "14:00";
+
+  // Mốc giờ mỗi 30 phút: 00:00 -> 23:30
+  const timeSlots = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const hh = String(h).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      timeSlots.push(`${hh}:${mm}`);
+    }
+  }
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+    }
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isOpen]);
+
+  const handleSelectTime = (timeStr) => {
+    const datePart = selectedDateStr || new Date().toISOString().slice(0, 10);
+    onChange(`${datePart}T${timeStr}`);
+    setIsOpen(false);
+  };
+
+  const handleDateChange = (e) => {
+    const newDatePart = e.target.value;
+    if (newDatePart) {
+      onChange(`${newDatePart}T${selectedTimeStr}`);
+    }
+  };
+
+  return (
+    <div className="relative w-[178px]" ref={dropdownRef}>
+      <div
+        className={`flex items-center justify-between w-full border rounded-xl px-2.5 py-1.5 bg-white text-xs font-bold transition select-none cursor-pointer ${
+          isOpen
+            ? "border-[#003580] ring-2 ring-blue-100 text-[#003580]"
+            : "border-gray-200 hover:border-gray-300 text-gray-800"
+        }`}
+      >
+        <span
+          onClick={() => setIsOpen(!isOpen)}
+          className="truncate cursor-pointer"
+        >
+          {formatDisplayDateTime(value)}
+        </span>
+
+        <div className="flex items-center gap-1.5 text-gray-400 pl-1.5 border-l border-gray-100 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (dateInputRef.current) {
+                dateInputRef.current.showPicker?.() ||
+                  dateInputRef.current.focus();
+              }
+            }}
+            className="hover:text-[#003580] cursor-pointer"
+            title="Đổi ngày"
+          >
+            <CalendarIcon size={13} />
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={selectedDateStr}
+            onChange={handleDateChange}
+            className="sr-only"
+          />
+
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="hover:text-[#003580] cursor-pointer"
+            title="Chọn giờ"
+          >
+            <Clock size={13} />
+          </button>
+        </div>
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-2xl shadow-xl z-[9999] py-1 max-h-52 overflow-y-auto animate-fadeIn scrollbar-thin divide-y divide-gray-50 text-xs">
+          {timeSlots.map((slot) => {
+            const isSelected = selectedTimeStr === slot;
+            return (
+              <button
+                key={slot}
+                type="button"
+                onClick={() => handleSelectTime(slot)}
+                className={`w-full text-center py-1.5 font-bold transition cursor-pointer text-xs ${
+                  isSelected
+                    ? "bg-[#003580] text-white"
+                    : "hover:bg-blue-50 text-gray-700 hover:text-[#003580]"
+                }`}
+              >
+                {slot}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function QuickBookingModal({
   isOpen,
@@ -26,10 +178,17 @@ export default function QuickBookingModal({
   bookingData,
   setBookingData,
   onConfirmBooking,
-  formatVND,
+  formatVND: propFormatVND,
   calculateDurationAndPrice,
-  toDatetimeLocal,
+  toDatetimeLocal: propToDatetimeLocal,
 }) {
+  const toDatetimeLocal = propToDatetimeLocal || formatToLocalISO;
+  const formatVND = (num) =>
+    propFormatVND
+      ? propFormatVND(num)
+      : Number(num || 0).toLocaleString("vi-VN") + " ₫";
+
+  // 1. STATE KHÁCH HÀNG (ĐẦY ĐỦ 100% CỦA FILE GỐC)
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState({
     name: "",
@@ -45,16 +204,15 @@ export default function QuickBookingModal({
     note: "",
   });
 
+  // 2. STATE SỐ KHÁCH (MẶC ĐỊNH 2 LỚN, 0 TRẺ NHƯ CODE GỐC)
   const [isGuestStayOpen, setIsGuestStayOpen] = useState(false);
-
-  // 🌟 Lấy số lượng khách hiện có trong bookingData hoặc mặc định
   const [tempGuestCount, setTempGuestCount] = useState({
     adult: 2,
     children: 0,
   });
-
   const [guestStayList, setGuestStayList] = useState([]);
 
+  // 3. STATE KHAI BÁO CCCD (ĐẦY ĐỦ 100% CỦA FILE GỐC)
   const [isAddGuestDocOpen, setIsAddGuestDocOpen] = useState(false);
   const initialGuestDocForm = {
     room_number: "",
@@ -70,12 +228,348 @@ export default function QuickBookingModal({
   };
   const [guestDocForm, setGuestDocForm] = useState(initialGuestDocForm);
 
+  // Kiểm tra ngày nhận ở tương lai
+  const hasFutureCheckin = (bookingData?.rooms || []).some((r) =>
+    isDateInFuture(r.checkin_date),
+  );
+
+  // TẠO THỜI GIAN THEO TỪNG HÌNH THỨC
+  const getDefaultDatesForType = (rentalType, checkinMode = "Quy định") => {
+    const now = new Date();
+
+    if (rentalType === "Giờ") {
+      const start = new Date(now);
+      const end = new Date(start);
+      end.setHours(end.getHours() + 1);
+      return {
+        checkin: toDatetimeLocal(start),
+        checkout: toDatetimeLocal(end),
+      };
+    }
+
+    if (rentalType === "Đêm") {
+      const start = new Date(now);
+      if (checkinMode !== "Hiện tại") {
+        start.setHours(22, 0, 0, 0);
+      }
+      const end = new Date(start);
+      if (start.getHours() >= 22) {
+        end.setDate(end.getDate() + 1);
+      }
+      end.setHours(12, 0, 0, 0);
+      return {
+        checkin: toDatetimeLocal(start),
+        checkout: toDatetimeLocal(end),
+      };
+    }
+
+    if (rentalType === "Buổi") {
+      const start = new Date(now);
+      if (checkinMode !== "Hiện tại") {
+        start.setHours(12, 0, 0, 0);
+      }
+      const end = new Date(start);
+      end.setHours(21, 0, 0, 0);
+      return {
+        checkin: toDatetimeLocal(start),
+        checkout: toDatetimeLocal(end),
+      };
+    }
+
+    // THEO NGÀY: 14h hôm nay -> 12h hôm sau
+    const start = new Date(now);
+    if (checkinMode !== "Hiện tại") {
+      start.setHours(14, 0, 0, 0);
+    }
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    end.setHours(12, 0, 0, 0);
+    return {
+      checkin: toDatetimeLocal(start),
+      checkout: toDatetimeLocal(end),
+    };
+  };
+
+  // 🌟 TÍNH TOÁN GIÁ & GỌN NHẸ "DỰ KIẾN" (1 ĐÊM, 1 BUỔI, 1 NGÀY)
+  const calculateDurationAndPriceLogic = (
+    checkinStr,
+    checkoutStr,
+    rentalType,
+    roomInfo,
+  ) => {
+    if (!checkinStr || !checkoutStr) {
+      return {
+        durationLabel: "0 giờ",
+        price: 0,
+        earlyWarning: "",
+        lateWarning: "",
+        earlySurcharge: 0,
+        lateSurcharge: 0,
+      };
+    }
+
+    const checkin = new Date(checkinStr);
+    const checkout = new Date(checkoutStr);
+
+    const basePrice = Number(roomInfo?.base_price || 200000);
+    const overnightPrice =
+      Number(roomInfo?.overnight_price) > 0
+        ? Number(roomInfo.overnight_price)
+        : basePrice;
+    const halfDayPrice =
+      Number(roomInfo?.half_day_price) > 0
+        ? Number(roomInfo.half_day_price)
+        : Math.round(basePrice * 0.8);
+    const hourlyPrice =
+      Number(roomInfo?.hourly_price) > 0
+        ? Number(roomInfo.hourly_price)
+        : Math.round(basePrice * 0.25);
+
+    const autoSurcharge = roomInfo?.auto_surcharge !== false;
+    const surchargeType = roomInfo?.surcharge_type || "tiered";
+    const earlyCheckinFee = Number(roomInfo?.early_checkin_fee || 0);
+    const lateCheckoutFee = Number(roomInfo?.late_checkout_fee || 0);
+    const earlyTiers = roomInfo?.early_surcharge_tiers || [
+      { hours: 1, percent: 10 },
+      { hours: 2, percent: 30 },
+    ];
+    const lateTiers = roomInfo?.late_surcharge_tiers || [
+      { hours: 1, percent: 10 },
+      { hours: 2, percent: 30 },
+    ];
+
+    const computeTierFee = (hours, tiers, baseP) => {
+      if (!tiers || tiers.length === 0 || hours <= 0) return 0;
+      const sorted = [...tiers].sort(
+        (a, b) => Number(a.hours) - Number(b.hours),
+      );
+      let matchPercent = 0;
+      for (const t of sorted) {
+        if (hours >= Number(t.hours)) {
+          matchPercent = Number(t.percent);
+        }
+      }
+      if (matchPercent === 0 && sorted.length > 0 && hours > 0) {
+        matchPercent = Number(sorted[0].percent);
+      }
+      return Math.round((baseP * matchPercent) / 100);
+    };
+
+    let durationLabel = "";
+    let roomPrice = 0;
+    let earlySurcharge = 0;
+    let lateSurcharge = 0;
+    let earlyHours = 0;
+    let lateHours = 0;
+    let earlyWarning = "";
+    let lateWarning = "";
+
+    const diffMs = checkout - checkin;
+    const totalMinutes = Math.max(0, Math.round(diffMs / (1000 * 60)));
+    const diffHours = Math.floor(totalMinutes / 60);
+    const remainMins = totalMinutes % 60;
+
+    // 1. THEO GIỜ (Giữ nguyên hiển thị số giờ thực tế)
+    if (rentalType === "Giờ") {
+      const billedHours = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60)));
+      roomPrice = billedHours * hourlyPrice;
+
+      if (remainMins > 0) {
+        durationLabel = `${diffHours} giờ ${remainMins} phút`;
+      } else {
+        durationLabel = `${diffHours || 1} giờ`;
+      }
+
+      return {
+        durationLabel,
+        price: roomPrice,
+        earlyWarning: "",
+        lateWarning: "",
+        earlySurcharge: 0,
+        lateSurcharge: 0,
+      };
+    }
+
+    // 2. QUA ĐÊM (🌟 Chỉ hiển thị "1 đêm")
+    if (rentalType === "Đêm") {
+      roomPrice = overnightPrice;
+      const stdCheckin = new Date(checkin);
+      stdCheckin.setHours(22, 0, 0, 0);
+
+      if (checkin < stdCheckin) {
+        earlyHours = Math.ceil((stdCheckin - checkin) / (1000 * 60 * 60));
+      }
+
+      const stdCheckout = new Date(checkout);
+      stdCheckout.setHours(12, 0, 0, 0);
+      if (checkout > stdCheckout) {
+        lateHours = Math.ceil((checkout - stdCheckout) / (1000 * 60 * 60));
+      }
+
+      if (autoSurcharge) {
+        if (earlyHours > 0) {
+          earlySurcharge =
+            surchargeType === "tiered"
+              ? computeTierFee(earlyHours, earlyTiers, basePrice)
+              : earlyHours * earlyCheckinFee;
+        }
+        if (lateHours > 0) {
+          lateSurcharge =
+            surchargeType === "tiered"
+              ? computeTierFee(lateHours, lateTiers, basePrice)
+              : lateHours * lateCheckoutFee;
+        }
+      }
+
+      if (earlyHours >= 2) {
+        earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước 22h)`;
+      } else if (earlyHours > 0) {
+        earlyWarning = `Nhận sớm ${earlyHours}h`;
+      }
+
+      if (lateHours >= 2) {
+        lateWarning = `⚠️ Trả muộn ${lateHours}h (sau 12h)`;
+      } else if (lateHours > 0) {
+        lateWarning = `Trả muộn ${lateHours}h`;
+      }
+
+      durationLabel = "1 đêm";
+
+      return {
+        durationLabel,
+        price: roomPrice + earlySurcharge + lateSurcharge,
+        earlyWarning,
+        lateWarning,
+        earlySurcharge,
+        lateSurcharge,
+      };
+    }
+
+    // 3. THEO BUỔI (🌟 Chỉ hiển thị "1 buổi")
+    if (rentalType === "Buổi") {
+      roomPrice = halfDayPrice;
+      const stdCheckin = new Date(checkin);
+      stdCheckin.setHours(12, 0, 0, 0);
+
+      if (checkin < stdCheckin) {
+        earlyHours = Math.ceil((stdCheckin - checkin) / (1000 * 60 * 60));
+      }
+
+      const stdCheckout = new Date(checkout);
+      stdCheckout.setHours(21, 0, 0, 0);
+      if (checkout > stdCheckout) {
+        lateHours = Math.ceil((checkout - stdCheckout) / (1000 * 60 * 60));
+      }
+
+      if (autoSurcharge) {
+        if (earlyHours > 0) {
+          earlySurcharge =
+            surchargeType === "tiered"
+              ? computeTierFee(earlyHours, earlyTiers, basePrice)
+              : earlyHours * earlyCheckinFee;
+        }
+        if (lateHours > 0) {
+          lateSurcharge =
+            surchargeType === "tiered"
+              ? computeTierFee(lateHours, lateTiers, basePrice)
+              : lateHours * lateCheckoutFee;
+        }
+      }
+
+      if (earlyHours >= 2) {
+        earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước 12h)`;
+      } else if (earlyHours > 0) {
+        earlyWarning = `Nhận sớm ${earlyHours}h`;
+      }
+
+      if (lateHours >= 2) {
+        lateWarning = `⚠️ Trả muộn ${lateHours}h (sau 21h)`;
+      } else if (lateHours > 0) {
+        lateWarning = `Trả muộn ${lateHours}h`;
+      }
+
+      durationLabel = "1 buổi";
+
+      return {
+        durationLabel,
+        price: roomPrice + earlySurcharge + lateSurcharge,
+        earlyWarning,
+        lateWarning,
+        earlySurcharge,
+        lateSurcharge,
+      };
+    }
+
+    // 4. THEO NGÀY (🌟 Hiển thị "1 ngày")
+    const days = Math.max(1, Math.round(totalMinutes / (24 * 60)) || 1);
+    roomPrice = days * basePrice;
+
+    const stdCheckin = new Date(checkin);
+    stdCheckin.setHours(14, 0, 0, 0);
+
+    if (checkin < stdCheckin) {
+      earlyHours = Math.ceil((stdCheckin - checkin) / (1000 * 60 * 60));
+    }
+
+    const stdCheckout = new Date(checkout);
+    stdCheckout.setHours(12, 0, 0, 0);
+    if (checkout > stdCheckout) {
+      lateHours = Math.ceil((checkout - stdCheckout) / (1000 * 60 * 60));
+    }
+
+    if (autoSurcharge) {
+      if (earlyHours > 0) {
+        earlySurcharge =
+          surchargeType === "tiered"
+            ? computeTierFee(earlyHours, earlyTiers, basePrice)
+            : earlyHours * earlyCheckinFee;
+      }
+      if (lateHours > 0) {
+        lateSurcharge =
+          surchargeType === "tiered"
+            ? computeTierFee(lateHours, lateTiers, basePrice)
+            : lateHours * lateCheckoutFee;
+      }
+    }
+
+    if (earlyHours >= 2) {
+      earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước 14:00)`;
+    } else if (earlyHours > 0) {
+      earlyWarning = `Nhận sớm ${earlyHours}h`;
+    }
+
+    if (lateHours >= 2) {
+      lateWarning = `⚠️ Trả muộn ${lateHours}h (sau 12:00)`;
+    } else if (lateHours > 0) {
+      lateWarning = `Trả muộn ${lateHours}h`;
+    }
+
+    durationLabel = `${days} ngày`;
+    return {
+      durationLabel,
+      price: roomPrice + earlySurcharge + lateSurcharge,
+      earlyWarning,
+      lateWarning,
+      earlySurcharge,
+      lateSurcharge,
+    };
+  };
+
   const totalAmount = (bookingData?.rooms || []).reduce(
     (sum, r) => sum + (Number(r.price) || 0),
     0,
   );
 
-  // Đồng bộ số khách khi modal mở lên
+  const totalEarlySurcharge = (bookingData?.rooms || []).reduce(
+    (sum, r) => sum + (Number(r.early_surcharge) || 0),
+    0,
+  );
+  const totalLateSurcharge = (bookingData?.rooms || []).reduce(
+    (sum, r) => sum + (Number(r.late_surcharge) || 0),
+    0,
+  );
+
+  // ĐỒNG BỘ MẶC ĐỊNH 2 LỚN, 0 TRẺ NHƯ CODE GỐC
   useEffect(() => {
     if (isOpen) {
       const currentAdults = Number(
@@ -95,7 +589,6 @@ export default function QuickBookingModal({
         children: currentChildren,
       });
 
-      // Tự động gán phẳng các trường ngay khi mở modal
       setBookingData((prev) => ({
         ...prev,
         adult_total: currentAdults,
@@ -106,6 +599,7 @@ export default function QuickBookingModal({
     }
   }, [isOpen]);
 
+  // ĐỒNG BỘ THU ĐỦ 100% TIỀN PHÒNG NHƯ CODE GỐC
   useEffect(() => {
     if (isOpen && totalAmount > 0) {
       setBookingData((prev) => ({
@@ -127,17 +621,10 @@ export default function QuickBookingModal({
 
     if (!available) return;
 
-    const today = new Date();
-    today.setHours(14, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-    tomorrow.setHours(12, 0, 0, 0);
-
-    const checkinVal = toDatetimeLocal(today);
-    const checkoutVal = toDatetimeLocal(tomorrow);
-    const { durationLabel, price } = calculateDurationAndPrice(
-      checkinVal,
-      checkoutVal,
+    const { checkin, checkout } = getDefaultDatesForType("Ngày", "Quy định");
+    const calc = calculateDurationAndPriceLogic(
+      checkin,
+      checkout,
       "Ngày",
       available,
     );
@@ -145,13 +632,17 @@ export default function QuickBookingModal({
     const newItem = {
       room_id: available.id,
       room_number: available.room_number,
-      type_name: available.type_name,
+      type_name: available.type_name || available.name || "Tiêu chuẩn",
       rental_type: "Ngày",
       checkin_mode: "Quy định",
-      checkin_date: checkinVal,
-      checkout_date: checkoutVal,
-      duration_label: durationLabel,
-      price: price,
+      checkin_date: checkin,
+      checkout_date: checkout,
+      duration_label: calc.durationLabel,
+      price: calc.price,
+      early_warning: calc.earlyWarning,
+      late_warning: calc.lateWarning,
+      early_surcharge: calc.earlySurcharge,
+      late_surcharge: calc.lateSurcharge,
     };
 
     setBookingData((prev) => {
@@ -171,32 +662,39 @@ export default function QuickBookingModal({
       const item = { ...updatedRooms[index], [field]: value };
       const roomInfo = rooms.find((r) => r.id === item.room_id) || {};
 
-      if (field === "checkin_mode") {
-        const now = new Date();
-        if (value === "Hiện tại") {
-          item.checkin_date = toDatetimeLocal(now);
-        } else {
-          now.setHours(14, 0, 0, 0);
-          item.checkin_date = toDatetimeLocal(now);
-        }
-      }
-
       if (field === "room_id") {
         const sel = rooms.find((r) => r.id === value);
         if (sel) {
           item.room_number = sel.room_number;
-          item.type_name = sel.type_name;
+          item.type_name = sel.type_name || sel.name;
         }
       }
 
-      const { durationLabel, price } = calculateDurationAndPrice(
+      if (field === "rental_type") {
+        const dates = getDefaultDatesForType(value, item.checkin_mode);
+        item.checkin_date = dates.checkin;
+        item.checkout_date = dates.checkout;
+      }
+
+      if (field === "checkin_mode") {
+        const dates = getDefaultDatesForType(item.rental_type, value);
+        item.checkin_date = dates.checkin;
+        item.checkout_date = dates.checkout;
+      }
+
+      const calc = calculateDurationAndPriceLogic(
         item.checkin_date,
         item.checkout_date,
         item.rental_type,
         roomInfo,
       );
-      item.duration_label = durationLabel;
-      item.price = price;
+
+      item.duration_label = calc.durationLabel;
+      item.price = calc.price;
+      item.early_warning = calc.earlyWarning;
+      item.late_warning = calc.lateWarning;
+      item.early_surcharge = calc.earlySurcharge;
+      item.late_surcharge = calc.lateSurcharge;
 
       updatedRooms[index] = item;
       const newTotal = updatedRooms.reduce(
@@ -212,21 +710,29 @@ export default function QuickBookingModal({
     });
   };
 
-  // 🌟 Hàm xác nhận đặt phòng đảm bảo gửi ĐỦ cả người lớn và trẻ em
   const handleExecuteConfirm = (isCheckInNow) => {
+    if (isCheckInNow && hasFutureCheckin) {
+      alert(
+        "⚠️ Ngày nhận phòng là ngày mai hoặc tương lai! Bạn không thể nhận phòng ngay lúc này, vui lòng chọn 'Đặt trước'.",
+      );
+      return;
+    }
+
     const finalAdult = Number(tempGuestCount.adult ?? 2);
     const finalChildren = Number(tempGuestCount.children ?? 0);
 
     setBookingData((prev) => ({
       ...prev,
-      adult_total: finalAdult,
+      adult: finalAdult,
       adults: finalAdult,
-      children_total: finalChildren,
+      adult_total: finalAdult,
       children: finalChildren,
+      children_total: finalChildren,
       guest_count: {
         ...(prev.guest_count || {}),
         adult: finalAdult,
         children: finalChildren,
+        id_cards: guestStayList.length,
       },
     }));
 
@@ -237,11 +743,11 @@ export default function QuickBookingModal({
 
   return (
     <>
-      {/* MODAL CHÍNH ĐẶT PHÒNG NHANH */}
-      <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-        <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
-          {/* 1. HEADER CỐ ĐỊNH */}
-          <div className="flex justify-between items-center px-6 py-4 bg-[#003580] text-white shadow-xs shrink-0">
+      {/* ─── MODAL CONTAINER CHÍNH ─── */}
+      <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
+        <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-gray-200 overflow-visible text-xs text-gray-900 animate-scaleUp my-auto">
+          {/* 1. HEADER XANH GOSTAY GỐC */}
+          <div className="flex justify-between items-center px-6 py-4 bg-[#003580] text-white shadow-xs shrink-0 rounded-t-3xl">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
                 <CalendarCheck size={20} />
@@ -256,7 +762,7 @@ export default function QuickBookingModal({
                   </span>
                 </div>
                 <p className="text-[11px] text-blue-100/80 font-medium mt-1 leading-none">
-                  0% hoa hồng sàn • Toàn bộ doanh thu ghi nhận cho khách sạn
+                  0% hoa hồng sàn • Tự động phụ thu nhận sớm & trả muộn
                 </p>
               </div>
             </div>
@@ -270,9 +776,9 @@ export default function QuickBookingModal({
             </button>
           </div>
 
-          {/* 2. THÂN FORM CÓ THANH CUỘN */}
+          {/* 2. BODY KHÔNG BỊ CLIP */}
           <div className="p-6 space-y-4 overflow-y-auto flex-1 bg-white">
-            {/* THÔNG TIN KHÁCH HÀNG & SỐ LƯỢNG KHÁCH */}
+            {/* TÌM KIẾM KHÁCH & SỐ KHÁCH */}
             <div className="flex items-center gap-3 flex-wrap">
               {bookingData.customer_name ? (
                 <div className="flex items-center justify-between border border-blue-200 rounded-xl px-3.5 py-2 bg-blue-50/60 shadow-2xs min-w-[160px]">
@@ -295,7 +801,7 @@ export default function QuickBookingModal({
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus-within:bg-white focus-within:border-[#003580] shadow-2xs w-72 transition">
+                <div className="flex items-center border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus-within:bg-white focus-within:border-[#003580] shadow-2xs w-80 transition">
                   <Search size={14} className="text-gray-400 mr-2 shrink-0" />
                   <input
                     type="text"
@@ -320,40 +826,15 @@ export default function QuickBookingModal({
                 </div>
               )}
 
-              {/* 🌟 NÚT THIẾT LẬP SỐ KHÁCH & CCCD (ĐÃ HIỂN THỊ CHUẨN XÁC) */}
+              {/* Pill số khách & CCCD */}
               <div
-                onClick={() => {
-                  setTempGuestCount({
-                    adult: Number(
-                      bookingData?.guest_count?.adult ??
-                        bookingData?.adult_total ??
-                        2,
-                    ),
-                    children: Number(
-                      bookingData?.guest_count?.children ??
-                        bookingData?.children_total ??
-                        0,
-                    ),
-                  });
-                  setIsGuestStayOpen(true);
-                }}
+                onClick={() => setIsGuestStayOpen(true)}
                 className="flex items-center gap-2 border border-gray-200 rounded-xl px-3.5 py-2 bg-gray-50 hover:bg-blue-50/60 font-bold text-gray-700 cursor-pointer shadow-2xs select-none transition"
               >
                 <Users size={14} className="text-[#006ce4]" />
-                <span>
-                  {bookingData?.guest_count?.adult ??
-                    bookingData?.adult_total ??
-                    tempGuestCount.adult}{" "}
-                  lớn
-                </span>
+                <span>{tempGuestCount.adult} lớn</span>
                 <span className="text-gray-300">|</span>
-                <span>
-                  👶{" "}
-                  {bookingData?.guest_count?.children ??
-                    bookingData?.children_total ??
-                    tempGuestCount.children}{" "}
-                  trẻ
-                </span>
+                <span>👶 {tempGuestCount.children} trẻ</span>
                 <span className="text-gray-300">|</span>
                 <CreditCard size={13} className="text-gray-500" />
                 <span className="font-mono">{guestStayList.length} CCCD</span>
@@ -367,22 +848,24 @@ export default function QuickBookingModal({
               )}
             </div>
 
-            {/* BẢNG DANH SÁCH PHÒNG CHỌN */}
-            <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+            {/* BẢNG DANH SÁCH PHÒNG CHỌN (TẤT CẢ CÁC CỘT ĐỀU CĂN ALIGN-MIDDLE PHẲNG PHIU) */}
+            <div className="border border-gray-200 rounded-2xl bg-white shadow-2xs overflow-visible">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 border-b border-gray-200 text-xs font-bold uppercase tracking-wider">
-                    <th className="py-3 px-3.5">Hạng phòng</th>
-                    <th className="py-3 px-3.5">
+                    <th className="py-3.5 px-3.5 align-middle">Hạng phòng</th>
+                    <th className="py-3.5 px-3.5 align-middle">
                       Phòng{" "}
                       <span className="bg-[#003580] text-white px-2 py-0.2 rounded-full text-[10px] font-black">
                         {bookingData.rooms?.length || 0}
                       </span>
                     </th>
-                    <th className="py-3 px-3.5">Hình thức</th>
-                    <th className="py-3 px-3.5">
+                    <th className="py-3.5 px-3.5 align-middle">Hình thức</th>
+
+                    {/* CỘT NHẬN PHÒNG */}
+                    <th className="py-3.5 px-3.5 w-[200px] align-middle">
                       <div className="flex items-center gap-1.5">
-                        <span>Nhận phòng</span>
+                        <span>Nhận</span>
                         <button
                           type="button"
                           onClick={() =>
@@ -411,25 +894,37 @@ export default function QuickBookingModal({
                         </button>
                       </div>
                     </th>
-                    <th className="py-3 px-3.5">Trả phòng</th>
-                    <th className="py-3 px-3.5">Dự kiến</th>
-                    <th className="py-3 px-3.5 text-right">Thành tiền</th>
-                    <th className="py-3 px-2 w-8 text-center"></th>
+
+                    {/* CỘT TRẢ PHÒNG CÂN ĐỐI */}
+                    <th className="py-3.5 px-3.5 w-[200px] align-middle">
+                      Trả phòng
+                    </th>
+                    <th className="py-3.5 px-3.5 text-center align-middle whitespace-nowrap">
+                      Dự kiến
+                    </th>
+                    <th className="py-3.5 px-3.5 text-right align-middle whitespace-nowrap">
+                      Thành tiền
+                    </th>
+                    <th className="py-3.5 px-2 w-8 text-center align-middle"></th>
                   </tr>
                 </thead>
+
                 <tbody className="divide-y divide-gray-100 text-xs">
                   {(bookingData.rooms || []).map((item, idx) => (
                     <tr key={idx} className="hover:bg-blue-50/40 transition">
-                      <td className="py-3.5 px-3.5 font-bold text-gray-900">
+                      {/* 1. Hạng phòng */}
+                      <td className="py-3 px-3.5 font-bold text-gray-900 align-middle">
                         {item.type_name}
                       </td>
-                      <td className="py-3.5 px-3.5">
+
+                      {/* 2. Phòng */}
+                      <td className="py-3 px-3.5 align-middle">
                         <select
                           value={item.room_id}
                           onChange={(e) =>
                             handleUpdateRoom(idx, "room_id", e.target.value)
                           }
-                          className="border border-gray-200 rounded-xl px-2.5 py-1 outline-none font-black text-[#003580] bg-white focus:border-[#003580] cursor-pointer"
+                          className="border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none font-black text-[#003580] bg-white focus:border-[#003580] cursor-pointer"
                         >
                           {rooms.map((r) => (
                             <option key={r.id} value={r.id}>
@@ -438,56 +933,84 @@ export default function QuickBookingModal({
                           ))}
                         </select>
                       </td>
-                      <td className="py-3.5 px-3.5">
+
+                      {/* 3. Hình thức */}
+                      <td className="py-3 px-3.5 align-middle">
                         <select
                           value={item.rental_type}
                           onChange={(e) =>
                             handleUpdateRoom(idx, "rental_type", e.target.value)
                           }
-                          className="border border-gray-200 rounded-xl px-2.5 py-1 outline-none font-bold text-gray-800 bg-white focus:border-[#003580] cursor-pointer"
+                          className="border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none font-bold text-gray-800 bg-white focus:border-[#003580] cursor-pointer"
                         >
                           <option value="Ngày">Theo ngày</option>
                           <option value="Giờ">Theo giờ</option>
                           <option value="Đêm">Qua đêm</option>
+                          <option value="Buổi">Theo buổi</option>
                         </select>
                       </td>
-                      <td className="py-3.5 px-3.5">
-                        <input
-                          type="datetime-local"
-                          value={item.checkin_date}
-                          onChange={(e) =>
-                            handleUpdateRoom(
-                              idx,
-                              "checkin_date",
-                              e.target.value,
-                            )
-                          }
-                          className="border border-gray-200 rounded-xl px-2 py-1 outline-none font-bold text-gray-900 bg-white focus:border-[#003580]"
-                        />
+
+                      {/* 4. Nhận phòng & Cảnh báo (Align-middle phẳng phiu) */}
+                      <td className="py-3 px-3.5 align-middle">
+                        <div className="flex flex-col items-start gap-1">
+                          <SlimDateTimePicker
+                            value={item.checkin_date}
+                            onChange={(newVal) =>
+                              handleUpdateRoom(idx, "checkin_date", newVal)
+                            }
+                          />
+
+                          {item.early_warning && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 w-fit animate-fadeIn">
+                              <AlertTriangle size={11} className="shrink-0" />
+                              <span>{item.early_warning}</span>
+                            </div>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-3.5 px-3.5">
-                        <input
-                          type="datetime-local"
-                          value={item.checkout_date}
-                          onChange={(e) =>
-                            handleUpdateRoom(
-                              idx,
-                              "checkout_date",
-                              e.target.value,
-                            )
-                          }
-                          className="border border-gray-200 rounded-xl px-2 py-1 outline-none font-bold text-gray-900 bg-white focus:border-[#003580]"
-                        />
+
+                      {/* 5. Trả phòng & Cảnh báo (Align-middle phẳng phiu) */}
+                      <td className="py-3 px-3.5 align-middle">
+                        <div className="flex flex-col items-start gap-1">
+                          <SlimDateTimePicker
+                            value={item.checkout_date}
+                            onChange={(newVal) =>
+                              handleUpdateRoom(idx, "checkout_date", newVal)
+                            }
+                          />
+
+                          {item.late_warning && (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 w-fit animate-fadeIn">
+                              <AlertTriangle size={11} className="shrink-0" />
+                              <span>{item.late_warning}</span>
+                            </div>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-3.5 px-3.5">
+
+                      {/* 6. Dự kiến (Gọn gàng 1 đêm, 1 buổi, 1 ngày) */}
+                      <td className="py-3 px-3.5 text-center align-middle whitespace-nowrap">
                         <span className="px-2.5 py-1 rounded-md bg-blue-50 text-[#003580] font-bold border border-blue-100 whitespace-nowrap">
                           {item.duration_label}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3.5 font-black text-right text-[#003580] text-sm tabular-nums">
-                        {formatVND(item.price)}
+
+                      {/* 7. Thành tiền */}
+                      <td className="py-3 px-3.5 font-black text-right text-[#003580] text-sm tabular-nums whitespace-nowrap align-middle">
+                        <div>{formatVND(item.price)}</div>
+                        {(item.early_surcharge > 0 ||
+                          item.late_surcharge > 0) && (
+                          <div className="text-[10px] text-amber-700 font-bold font-sans">
+                            {item.early_surcharge > 0 &&
+                              `+ Sớm: ${formatVND(item.early_surcharge)} `}
+                            {item.late_surcharge > 0 &&
+                              `+ Trễ: ${formatVND(item.late_surcharge)}`}
+                          </div>
+                        )}
                       </td>
-                      <td className="py-3.5 px-2 text-center">
+
+                      {/* 8. Nút xóa */}
+                      <td className="py-3 px-2 text-center align-middle">
                         <button
                           type="button"
                           onClick={() => {
@@ -507,7 +1030,7 @@ export default function QuickBookingModal({
               </table>
             </div>
 
-            {/* GHI CHÚ & BẢNG TÍNH TIỀN */}
+            {/* GHI CHÚ & BẢNG THU TIỀN TONE GỐC */}
             <div className="flex items-start justify-between gap-6 pt-2 flex-wrap">
               <div className="space-y-3 flex-1 min-w-[280px]">
                 <button
@@ -534,8 +1057,8 @@ export default function QuickBookingModal({
                 </div>
               </div>
 
-              {/* BẢNG THU TIỀN */}
-              <div className="w-80 space-y-2.5 text-right bg-blue-50/60 p-4 rounded-2xl border border-blue-200">
+              {/* BẢNG THU TIỀN CHUẨN MÀU CODE GỐC */}
+              <div className="w-84 space-y-2.5 text-right bg-blue-50/60 p-4 rounded-2xl border border-blue-200">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-gray-700">
                     Tổng tiền phòng:
@@ -545,7 +1068,28 @@ export default function QuickBookingModal({
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center text-xs pt-2.5 border-t border-blue-200">
+                {(totalEarlySurcharge > 0 || totalLateSurcharge > 0) && (
+                  <div className="space-y-1 py-1 border-t border-blue-100 text-[11px]">
+                    {totalEarlySurcharge > 0 && (
+                      <div className="flex justify-between items-center text-amber-800 font-semibold">
+                        <span>Phụ thu nhận sớm:</span>
+                        <span className="tabular-nums font-bold">
+                          +{formatVND(totalEarlySurcharge)}
+                        </span>
+                      </div>
+                    )}
+                    {totalLateSurcharge > 0 && (
+                      <div className="flex justify-between items-center text-rose-800 font-semibold">
+                        <span>Phụ thu trả muộn:</span>
+                        <span className="tabular-nums font-bold">
+                          +{formatVND(totalLateSurcharge)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center text-xs pt-2 border-t border-blue-200">
                   <span className="font-black text-[#003580] flex items-center gap-1">
                     Thu lúc nhận phòng:
                   </span>
@@ -579,28 +1123,61 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* 3. FOOTER CỐ ĐỊNH */}
-          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/70 flex items-center justify-end gap-3 shrink-0">
+          {/* 3. FOOTER CỐ ĐỊNH CHUẨN TONE GOSTAY */}
+          <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/70 flex items-center justify-between shrink-0 rounded-b-3xl">
             <button
               type="button"
-              onClick={() => handleExecuteConfirm(false)}
-              className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl shadow-xs cursor-pointer transition active:scale-95 text-xs"
+              className="text-xs text-gray-500 font-bold hover:text-gray-800 cursor-pointer"
             >
-              Đặt trước
+              Thêm tùy chọn
             </button>
-            <button
-              type="button"
-              onClick={() => handleExecuteConfirm(true)}
-              className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 text-xs flex items-center gap-1.5"
-            >
-              <CheckCircle2 size={16} />
-              <span>Nhận phòng ngay</span>
-            </button>
+
+            <div className="flex items-center gap-3">
+              {hasFutureCheckin && (
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 animate-fadeIn">
+                  <Lock size={13} className="text-amber-600" />
+                  <span>Ngày nhận ở tương lai: Chỉ áp dụng Đặt trước</span>
+                </div>
+              )}
+
+              {/* NÚT ĐẶT TRƯỚC (CAM HỔ PHÁCH NHƯ GỐC) */}
+              <button
+                type="button"
+                onClick={() => handleExecuteConfirm(false)}
+                className={`px-6 py-2.5 font-black rounded-xl text-xs transition cursor-pointer shadow-xs active:scale-95 ${
+                  hasFutureCheckin
+                    ? "bg-amber-600 hover:bg-amber-700 text-white ring-2 ring-amber-400 ring-offset-1"
+                    : "bg-amber-600 hover:bg-amber-700 text-white"
+                }`}
+              >
+                Đặt trước
+              </button>
+
+              {/* NÚT NHẬN PHÒNG NGAY (XANH NAVY #003580 NHƯ GỐC, KHÓA NẾU NGÀY MAI) */}
+              <button
+                type="button"
+                disabled={hasFutureCheckin}
+                onClick={() => handleExecuteConfirm(true)}
+                className={`px-6 py-2.5 font-black rounded-xl text-xs transition flex items-center gap-1.5 ${
+                  hasFutureCheckin
+                    ? "bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300 opacity-60 shadow-none"
+                    : "bg-[#003580] hover:bg-blue-900 text-white shadow-md cursor-pointer active:scale-95"
+                }`}
+                title={
+                  hasFutureCheckin
+                    ? "Không thể nhận phòng trước ngày hôm nay. Vui lòng chọn Đặt trước!"
+                    : "Xác nhận nhận phòng ngay"
+                }
+              >
+                <CheckCircle2 size={16} />
+                <span>Nhận phòng ngay</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ─── MODAL THÊM KHÁCH HÀNG MỚI ─── */}
+      {/* ─── MODAL 1: THÊM KHÁCH HÀNG (100% CỦA CODE GỐC) ─── */}
       {isAddCustomerOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
@@ -845,7 +1422,7 @@ export default function QuickBookingModal({
         </div>
       )}
 
-      {/* ─── MODAL DANH SÁCH KHÁCH LƯU TRÚ (ĐÃ ĐỒNG BỘ ĐẦY ĐỦ TẤT CẢ CÁC TRƯỜNG) ─── */}
+      {/* ─── MODAL 2: KHÁCH LƯU TRÚ (100% CỦA CODE GỐC) ─── */}
       {isGuestStayOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
@@ -1052,7 +1629,6 @@ export default function QuickBookingModal({
               </div>
             </div>
 
-            {/* 🌟 NÚT XÁC NHẬN SỐ LƯỢNG - ĐỒNG BỘ MỌI TÊN BIẾN (KHÔNG ĐỂ SƠ HỞ BẤT KỲ TÊN NÀO) */}
             <div className="p-4 border-t border-gray-100 bg-gray-50/70 flex justify-end shrink-0">
               <button
                 type="button"
@@ -1062,13 +1638,11 @@ export default function QuickBookingModal({
 
                   setBookingData((prev) => ({
                     ...prev,
-                    // 🌟 Gán phẳng trực tiếp ra ngoài:
                     adult: finalAdult,
                     adults: finalAdult,
                     adult_total: finalAdult,
                     children: finalChildren,
                     children_total: finalChildren,
-                    // 🌟 Đồng thời giữ cả object guest_count:
                     guest_count: {
                       ...(prev.guest_count || {}),
                       adult: finalAdult,
@@ -1087,7 +1661,7 @@ export default function QuickBookingModal({
         </div>
       )}
 
-      {/* ─── MODAL KHAI BÁO GIẤY TỜ CCCD CHO QUICK BOOKING ─── */}
+      {/* ─── MODAL 3: KHAI BÁO CCCD (100% CỦA CODE GỐC) ─── */}
       {isAddGuestDocOpen && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
@@ -1259,6 +1833,7 @@ export default function QuickBookingModal({
                   Số giấy tờ *
                 </label>
                 <input
+                  required
                   value={guestDocForm.id_number}
                   onChange={(e) =>
                     setGuestDocForm({

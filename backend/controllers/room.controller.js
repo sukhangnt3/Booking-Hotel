@@ -8,6 +8,10 @@ const { formatRoom } = require("../utils/formatters");
     await pool.query(`
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS hourly_tiers jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS half_day_price numeric;
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS auto_surcharge boolean DEFAULT true;
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS surcharge_type text DEFAULT 'tiered';
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS early_surcharge_tiers jsonb DEFAULT '[]'::jsonb;
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS late_surcharge_tiers jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.room_unit ADD COLUMN IF NOT EXISTS images jsonb DEFAULT '[]'::jsonb;
     `);
   } catch (err) {
@@ -15,7 +19,7 @@ const { formatRoom } = require("../utils/formatters");
   }
 })();
 
-// ─── 1. LẤY DANH SÁCH HẠNG PHÒNG (LẤY ĐÚNG TÊN CHI NHÁNH VÀ ẢNH TỪ BẢNG IMAGE) ───
+// ─── 1. LẤY DANH SÁCH HẠNG PHÒNG ───
 async function listRooms(req, res, next) {
   try {
     const hotelId = req.query.hotel_id || req.params.hotelId || req.params.id;
@@ -39,6 +43,10 @@ async function listRooms(req, res, next) {
          COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
          COALESCE(r.early_checkin_fee, 0) AS early_checkin_fee,
          COALESCE(r.late_checkout_fee, 0) AS late_checkout_fee,
+         COALESCE(r.auto_surcharge, true) AS auto_surcharge,
+         COALESCE(r.surcharge_type, 'tiered') AS surcharge_type,
+         COALESCE(r.early_surcharge_tiers, '[]'::jsonb) AS early_surcharge_tiers,
+         COALESCE(r.late_surcharge_tiers, '[]'::jsonb) AS late_surcharge_tiers,
          r.description,
          r.type,
          r.bed_type,
@@ -80,6 +88,8 @@ async function listRooms(req, res, next) {
         ...row,
         ...formatted,
         hourly_tiers: row.hourly_tiers || [],
+        early_surcharge_tiers: row.early_surcharge_tiers || [],
+        late_surcharge_tiers: row.late_surcharge_tiers || [],
         amount: Number(row.amount || 1),
         base_price: Number(row.base_price || 0),
         overnight_price: Number(row.overnight_price || row.base_price),
@@ -122,6 +132,10 @@ async function getRoomById(req, res, next) {
          COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
          COALESCE(r.early_checkin_fee, 0) AS early_checkin_fee,
          COALESCE(r.late_checkout_fee, 0) AS late_checkout_fee,
+         COALESCE(r.auto_surcharge, true) AS auto_surcharge,
+         COALESCE(r.surcharge_type, 'tiered') AS surcharge_type,
+         COALESCE(r.early_surcharge_tiers, '[]'::jsonb) AS early_surcharge_tiers,
+         COALESCE(r.late_surcharge_tiers, '[]'::jsonb) AS late_surcharge_tiers,
          r.description,
          r.type,
          r.bed_type,
@@ -166,14 +180,16 @@ async function getRoomById(req, res, next) {
       ...room,
       ...formatted,
       hourly_tiers: room.hourly_tiers || [],
+      early_surcharge_tiers: room.early_surcharge_tiers || [],
+      late_surcharge_tiers: room.late_surcharge_tiers || [],
       amount: Number(room.amount || 1),
       base_price: Number(room.base_price || 0),
-      overnight_price: Number(room.overnight_price || room.base_price),
+      overnight_price: Number(row.overnight_price || row.base_price),
       half_day_price: Number(
-        room.half_day_price || Math.round(room.base_price * 0.8),
+        row.half_day_price || Math.round(row.base_price * 0.8),
       ),
       hourly_price: Number(
-        room.hourly_price || Math.round(room.base_price * 0.25),
+        row.hourly_price || Math.round(row.base_price * 0.25),
       ),
     };
 
@@ -187,7 +203,7 @@ async function getRoomById(req, res, next) {
   }
 }
 
-// ─── 3. TẠO HẠNG PHÒNG MỚI ───
+// ─── 3. TẠO HẠNG PHÒNG MỚI (LƯU BẬC THANG % VÀO DB) ───
 async function createRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -201,8 +217,13 @@ async function createRoom(req, res, next) {
       half_day_price,
       hourly_price,
       hourly_tiers = [],
+      auto_surcharge = true,
+      surcharge_type = "tiered",
       early_checkin_fee,
       late_checkout_fee,
+      early_surcharge_tiers = [],
+      late_surcharge_tiers = [],
+      apply_to_all_rooms = false,
       amount,
       room_units = [],
       type,
@@ -255,10 +276,14 @@ async function createRoom(req, res, next) {
     const result = await client.query(
       `INSERT INTO public.room (
          id, hotel_id, code, name, capacity, base_price, overnight_price, half_day_price, hourly_price, hourly_tiers,
-         early_checkin_fee, late_checkout_fee, amount, type, bed_type, room_area,
-         description, is_active, created_at, updated_at
+         auto_surcharge, surcharge_type, early_checkin_fee, late_checkout_fee, early_surcharge_tiers, late_surcharge_tiers,
+         amount, type, bed_type, room_area, description, is_active, created_at, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, true, NOW(), NOW())
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+         $11, $12, $13, $14, $15::jsonb, $16::jsonb,
+         $17, $18, $19, $20, $21, true, NOW(), NOW()
+       )
        RETURNING *`,
       [
         newRoomId,
@@ -271,8 +296,12 @@ async function createRoom(req, res, next) {
         parsedHalfDayPrice,
         parsedHourlyPrice,
         JSON.stringify(hourly_tiers || []),
+        Boolean(auto_surcharge),
+        surcharge_type || "tiered",
         parsedEarlyFee,
         parsedLateFee,
+        JSON.stringify(early_surcharge_tiers || []),
+        JSON.stringify(late_surcharge_tiers || []),
         finalAmount,
         type || "Tiêu chuẩn",
         bed_type || "1 Giường đôi King",
@@ -283,7 +312,26 @@ async function createRoom(req, res, next) {
 
     const newRoom = result.rows[0];
 
-    // Tạo danh sách phòng con từ mảng room_units
+    // Áp dụng phụ thu bậc thang cho toàn bộ hạng phòng khác nếu có chọn checkbox
+    if (apply_to_all_rooms) {
+      await client.query(
+        `UPDATE public.room 
+         SET auto_surcharge = $1, surcharge_type = $2, early_checkin_fee = $3, late_checkout_fee = $4,
+             early_surcharge_tiers = $5::jsonb, late_surcharge_tiers = $6::jsonb, updated_at = NOW() 
+         WHERE hotel_id = $7 AND id <> $8`,
+        [
+          Boolean(auto_surcharge),
+          surcharge_type || "tiered",
+          parsedEarlyFee,
+          parsedLateFee,
+          JSON.stringify(early_surcharge_tiers || []),
+          JSON.stringify(late_surcharge_tiers || []),
+          hotel_id,
+          newRoomId,
+        ],
+      );
+    }
+
     if (Array.isArray(room_units) && room_units.length > 0) {
       for (const u of room_units) {
         if (!u.name) continue;
@@ -305,7 +353,6 @@ async function createRoom(req, res, next) {
       }
     }
 
-    // Lưu ảnh vào bảng public.image
     const allImgsToSave =
       Array.isArray(images) && images.length > 0
         ? images
@@ -378,8 +425,13 @@ async function updateRoom(req, res, next) {
       half_day_price,
       hourly_price,
       hourly_tiers,
+      auto_surcharge,
+      surcharge_type,
       early_checkin_fee,
       late_checkout_fee,
+      early_surcharge_tiers,
+      late_surcharge_tiers,
+      apply_to_all_rooms,
       amount,
       room_units,
       type,
@@ -429,19 +481,22 @@ async function updateRoom(req, res, next) {
         ? Number(hourly_price)
         : Number(currentRoom.hourly_price || Math.round(finalBasePrice * 0.25));
 
-    const finalEarlyFee =
-      early_checkin_fee !== undefined &&
-      early_checkin_fee !== null &&
-      early_checkin_fee !== ""
-        ? Number(early_checkin_fee)
-        : Number(currentRoom.early_checkin_fee || 0);
+    const finalAutoSurcharge =
+      auto_surcharge !== undefined
+        ? Boolean(auto_surcharge)
+        : Boolean(currentRoom.auto_surcharge);
 
-    const finalLateFee =
-      late_checkout_fee !== undefined &&
-      late_checkout_fee !== null &&
-      late_checkout_fee !== ""
-        ? Number(late_checkout_fee)
-        : Number(currentRoom.late_checkout_fee || 0);
+    const finalEarlyFee = finalAutoSurcharge
+      ? early_checkin_fee !== undefined
+        ? Number(early_checkin_fee || 0)
+        : Number(currentRoom.early_checkin_fee || 0)
+      : 0;
+
+    const finalLateFee = finalAutoSurcharge
+      ? late_checkout_fee !== undefined
+        ? Number(late_checkout_fee || 0)
+        : Number(currentRoom.late_checkout_fee || 0)
+      : 0;
 
     const finalAmount = Array.isArray(room_units)
       ? room_units.length
@@ -456,16 +511,20 @@ async function updateRoom(req, res, next) {
            overnight_price = $5,
            half_day_price = $6,
            hourly_price = $7,
-           early_checkin_fee = $8,
-           late_checkout_fee = $9,
-           amount = $10,
-           type = COALESCE($11, type),
-           bed_type = COALESCE($12, bed_type),
-           room_area = COALESCE($13, room_area),
-           description = COALESCE($14, description),
-           hourly_tiers = COALESCE($15::jsonb, hourly_tiers),
+           auto_surcharge = $8,
+           surcharge_type = COALESCE($9, surcharge_type),
+           early_checkin_fee = $10,
+           late_checkout_fee = $11,
+           early_surcharge_tiers = COALESCE($12::jsonb, early_surcharge_tiers),
+           late_surcharge_tiers = COALESCE($13::jsonb, late_surcharge_tiers),
+           amount = $14,
+           type = COALESCE($15, type),
+           bed_type = COALESCE($16, bed_type),
+           room_area = COALESCE($17, room_area),
+           description = COALESCE($18, description),
+           hourly_tiers = COALESCE($19::jsonb, hourly_tiers),
            updated_at = NOW()
-       WHERE id::text = $16
+       WHERE id::text = $20
        RETURNING *`,
       [
         code ? code.trim() : null,
@@ -475,8 +534,12 @@ async function updateRoom(req, res, next) {
         finalOvernightPrice,
         finalHalfDayPrice,
         finalHourlyPrice,
+        finalAutoSurcharge,
+        surcharge_type || "tiered",
         finalEarlyFee,
         finalLateFee,
+        early_surcharge_tiers ? JSON.stringify(early_surcharge_tiers) : null,
+        late_surcharge_tiers ? JSON.stringify(late_surcharge_tiers) : null,
         finalAmount,
         type,
         bed_type,
@@ -487,7 +550,28 @@ async function updateRoom(req, res, next) {
       ],
     );
 
-    // Đồng bộ danh sách phòng con vào room_unit
+    // Đồng bộ sang toàn bộ hạng phòng khác nếu người dùng chọn
+    if (apply_to_all_rooms) {
+      await client.query(
+        `UPDATE public.room 
+         SET auto_surcharge = $1, surcharge_type = $2, early_checkin_fee = $3, late_checkout_fee = $4,
+             early_surcharge_tiers = COALESCE($5::jsonb, early_surcharge_tiers),
+             late_surcharge_tiers = COALESCE($6::jsonb, late_surcharge_tiers),
+             updated_at = NOW() 
+         WHERE hotel_id = $7 AND id <> $8`,
+        [
+          finalAutoSurcharge,
+          surcharge_type || "tiered",
+          finalEarlyFee,
+          finalLateFee,
+          early_surcharge_tiers ? JSON.stringify(early_surcharge_tiers) : null,
+          late_surcharge_tiers ? JSON.stringify(late_surcharge_tiers) : null,
+          currentRoom.hotel_id,
+          id,
+        ],
+      );
+    }
+
     if (Array.isArray(room_units)) {
       const activeNames = room_units.map((u) => u.name?.trim()).filter(Boolean);
 
@@ -527,7 +611,6 @@ async function updateRoom(req, res, next) {
       }
     }
 
-    // Cập nhật ảnh đại diện và thư viện ảnh
     const allImgsToSave =
       Array.isArray(images) && images.length > 0
         ? images
@@ -581,7 +664,7 @@ async function updateRoom(req, res, next) {
 
     return res.json({
       success: true,
-      message: "Cập nhật giá và danh sách phòng thành công!",
+      message: "Cập nhật giá và cấu hình phụ thu bậc thang thành công!",
       room: result.rows[0],
     });
   } catch (error) {
@@ -885,7 +968,7 @@ async function releaseTemporaryLock(req, res, next) {
   }
 }
 
-// ─── 12. LẤY DANH SÁCH PHÒNG VẬT LÝ (LẤY KÈM TÊN CHI NHÁNH VÀ ẢNH) ───
+// ─── 12. LẤY DANH SÁCH PHÒNG VẬT LÝ ───
 async function listRoomUnits(req, res, next) {
   try {
     const hotelId = req.query.hotel_id;
@@ -973,8 +1056,7 @@ async function upsertRoomUnit(req, res, next) {
     } else {
       const insertRes = await client.query(
         `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, area, status, images, created_at, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'available', $5::jsonb, NOW(), NOW())
-         RETURNING *`,
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'available', $5::jsonb, NOW(), NOW())`,
         [
           targetHotelId,
           room_id,

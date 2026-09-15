@@ -12,6 +12,8 @@ import {
   X,
   TrendingDown,
   ChevronRight,
+  LineChart as LineIcon,
+  BarChart2,
 } from "lucide-react";
 import {
   BarChart,
@@ -76,7 +78,7 @@ function TimeRangeDropdown({ value, onChange }) {
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="inline-flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-full hover:bg-gray-50 transition cursor-pointer shadow-2xs"
+        className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition cursor-pointer shadow-2xs"
       >
         <span>{currentLabel}</span>
         <ChevronDown
@@ -86,7 +88,7 @@ function TimeRangeDropdown({ value, onChange }) {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1.5 z-40 bg-white shadow-xl border border-gray-100 rounded-2xl py-1.5 min-w-[140px] text-xs">
+        <div className="absolute right-0 top-full mt-1.5 z-40 bg-white shadow-xl border border-gray-100 rounded-xl py-1.5 min-w-[130px] text-xs">
           {TIME_OPTIONS.map((item) => (
             <button
               type="button"
@@ -118,7 +120,6 @@ export default function OwnerDashboardPage() {
   const [selectedHotelId, setSelectedHotelId] = useState("all");
   const [timeRange, setTimeRange] = useState("this_month");
 
-  // Tab công suất phòng (trái: ngày/thứ, phải: hạng phòng/khu vực)
   const [occupancyLeftTab, setOccupancyLeftTab] = useState("day");
   const [occupancyRightTab, setOccupancyRightTab] = useState("room_type");
 
@@ -151,35 +152,24 @@ export default function OwnerDashboardPage() {
       totalUnpaidAmount: 0,
       potentialLeakTotal: 0,
     },
-    // Dữ liệu Giá trị đặt phòng theo kênh bán
     channelStats: {
-      directAmount: 23950000,
-      directCount: 10,
-      directPercent: 95,
-      onlineAmount: 1200000,
-      onlineCount: 1,
-      onlinePercent: 5,
+      directAmount: 0,
+      directCount: 0,
+      directPercent: 0,
+      onlineAmount: 0,
+      onlineCount: 0,
+      onlinePercent: 0,
       cancelledAmount: 0,
       cancelledCount: 0,
-      chartData: [
-        { name: "Khách đến trực tiếp", booked: 23950000, cancelled: 0 },
-        { name: "Đặt phòng online", booked: 1200000, cancelled: 0 },
-      ],
+      chartData: [],
     },
-    // Dữ liệu Công suất phòng
     occupancyAnalytics: {
-      avgRate: 4.8,
+      hasData: false,
+      avgRate: null,
       timelineDay: [],
       timelineWeekday: [],
-      byRoomType: [
-        { name: "Superior", rate: 11 },
-        { name: "Standard", rate: 6.64 },
-        { name: "Deluxe", rate: 1.56 },
-      ],
-      byArea: [
-        { name: "Tầng 1", rate: 6 },
-        { name: "Tầng 2", rate: 4 },
-      ],
+      byRoomType: [],
+      byArea: [],
     },
   });
 
@@ -228,52 +218,23 @@ export default function OwnerDashboardPage() {
           potentialLeakTotal: 0,
         },
         channelStats: res.channelStats || {
-          directAmount: res.revenueTotal
-            ? Math.round(res.revenueTotal * 0.95)
-            : 23950000,
-          directCount: res.invoiceCount
-            ? Math.max(1, res.invoiceCount - 1)
-            : 10,
-          directPercent: 95,
-          onlineAmount: res.revenueTotal
-            ? Math.round(res.revenueTotal * 0.05)
-            : 1200000,
-          onlineCount: 1,
-          onlinePercent: 5,
+          directAmount: 0,
+          directCount: 0,
+          directPercent: 0,
+          onlineAmount: 0,
+          onlineCount: 0,
+          onlinePercent: 0,
           cancelledAmount: 0,
           cancelledCount: 0,
-          chartData: [
-            {
-              name: "Khách đến trực tiếp",
-              booked: res.revenueTotal
-                ? Math.round(res.revenueTotal * 0.95)
-                : 23950000,
-              cancelled: 0,
-            },
-            {
-              name: "Đặt phòng online",
-              booked: res.revenueTotal
-                ? Math.round(res.revenueTotal * 0.05)
-                : 1200000,
-              cancelled: 0,
-            },
-          ],
+          chartData: [],
         },
         occupancyAnalytics: res.occupancyAnalytics || {
-          avgRate: res.occupancyCurrent?.rate || 4.8,
-          timelineDay: Array.isArray(res.occupancyTimeline)
-            ? res.occupancyTimeline
-            : [],
-          timelineWeekday: res.occupancyWeekday || [],
-          byRoomType: res.occupancyByRoomType || [
-            { name: "Superior", rate: 11 },
-            { name: "Standard", rate: 6.64 },
-            { name: "Deluxe", rate: 1.56 },
-          ],
-          byArea: res.occupancyByArea || [
-            { name: "Tầng 1", rate: 6 },
-            { name: "Tầng 2", rate: 4 },
-          ],
+          hasData: false,
+          avgRate: null,
+          timelineDay: [],
+          timelineWeekday: [],
+          byRoomType: [],
+          byArea: [],
         },
       });
     } catch (err) {
@@ -291,11 +252,10 @@ export default function OwnerDashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
-  // Tính trục Y cho Biểu đồ Kênh bán (chuẩn thang đo 5tr, 10tr, 15tr, 20tr, 25tr...)
   const maxBookingVal = Math.max(
     Number(stats.channelStats.directAmount || 0),
     Number(stats.channelStats.onlineAmount || 0),
-    25000000,
+    2000000,
   );
   const { maxDomain: channelMaxDomain, ticks: channelTicks } =
     calculateSmartTicks(maxBookingVal);
@@ -544,7 +504,7 @@ export default function OwnerDashboardPage() {
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* 🌟 BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG THEO KÊNH BÁN (ĐÚNG 100% NHƯ ẢNH MỚI) 🌟 */}
+          {/* 🌟 2. BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG THEO KÊNH BÁN 🌟 */}
           {/* ═══════════════════════════════════════════════════════════════════════ */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
@@ -554,16 +514,14 @@ export default function OwnerDashboardPage() {
               <TimeRangeDropdown value={timeRange} onChange={setTimeRange} />
             </div>
 
-            {/* Tab: Theo kênh bán (Đã bỏ hoàn toàn tab ngày lưu trú) */}
             <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold pt-1">
               <span className="pb-2.5 text-[#006ce4] font-bold relative after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#006ce4] cursor-default">
                 Theo kênh bán
               </span>
             </div>
 
-            {/* 🌟 3 THẺ CHỈ SỐ THEO KÊNH BÁN (ĐÚNG 1:1 NHƯ ẢNH) */}
+            {/* 3 THẺ CHỈ SỐ KÊNH BÁN */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Thẻ 1: Khách đến trực tiếp */}
               <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
                 <div className="flex items-center gap-1 text-xs text-gray-600 font-bold">
                   <span>Khách đến trực tiếp</span>
@@ -576,18 +534,17 @@ export default function OwnerDashboardPage() {
                     ).toLocaleString("vi-VN")}
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
-                    {stats.channelStats.directPercent || 95}%
+                    {stats.channelStats.directPercent || 0}%
                   </span>
                   <span className="text-[11px] text-gray-500 font-medium">
                     Tổng giá trị đặt
                   </span>
                 </div>
                 <div className="text-[11px] text-gray-500 font-medium">
-                  {stats.channelStats.directCount || 10} đặt phòng
+                  {stats.channelStats.directCount || 0} đặt phòng
                 </div>
               </div>
 
-              {/* Thẻ 2: Đặt phòng online (Kênh bán khác) */}
               <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
                 <div className="text-xs text-gray-600 font-bold">
                   Kênh bán khác
@@ -599,18 +556,17 @@ export default function OwnerDashboardPage() {
                     ).toLocaleString("vi-VN")}
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
-                    {stats.channelStats.onlinePercent || 5}%
+                    {stats.channelStats.onlinePercent || 0}%
                   </span>
                   <span className="text-[11px] text-gray-500 font-medium">
                     Tổng giá trị đặt
                   </span>
                 </div>
                 <div className="text-[11px] text-gray-500 font-medium">
-                  {stats.channelStats.onlineCount || 1} đặt phòng
+                  {stats.channelStats.onlineCount || 0} đặt phòng
                 </div>
               </div>
 
-              {/* Thẻ 3: Đã hủy */}
               <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
                 <div className="text-xs text-gray-600 font-bold">Đã hủy</div>
                 <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
@@ -624,7 +580,7 @@ export default function OwnerDashboardPage() {
               </div>
             </div>
 
-            {/* BIỂU ĐỒ CỘT KÊNH BÁN CÓ NỀN MỜ VÀ ĐẦU CỘT BO TRÒN */}
+            {/* BIỂU ĐỒ CỘT KÊNH BÁN */}
             <div className="h-64 w-full pt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -696,7 +652,6 @@ export default function OwnerDashboardPage() {
               </ResponsiveContainer>
             </div>
 
-            {/* CHÚ THÍCH DƯỚI ĐÁY */}
             <div className="flex items-center justify-center gap-6 pt-2 text-xs font-semibold text-gray-600">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4]" />
@@ -710,7 +665,7 @@ export default function OwnerDashboardPage() {
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* 🌟 BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG (ĐÚNG 100% NHƯ ẢNH MỚI) 🌟 */}
+          {/* 🌟 3. BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG (LOGIC CHUẨN XÁC THEO TỪNG KỲ) 🌟 */}
           {/* ═══════════════════════════════════════════════════════════════════════ */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
@@ -723,19 +678,21 @@ export default function OwnerDashboardPage() {
               <TimeRangeDropdown value={timeRange} onChange={setTimeRange} />
             </div>
 
-            {/* Thẻ con: Trung bình công suất */}
+            {/* Thẻ con: Trung bình công suất (Nếu không có dữ liệu hiện "—" đúng Ảnh 4) */}
             <div className="w-fit min-w-[170px] p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl space-y-1">
               <div className="text-xs text-gray-600 font-medium">
                 Trung bình
               </div>
               <div className="text-2xl font-black text-gray-900 tracking-tight tabular-nums">
-                {stats.occupancyAnalytics.avgRate}%
+                {stats.occupancyAnalytics.avgRate !== null
+                  ? `${stats.occupancyAnalytics.avgRate}%`
+                  : "—"}
               </div>
             </div>
 
-            {/* Bố cục 2 Cột: Trái (Biểu đồ đường lượn sóng) - Phải (Thanh ngang theo hạng phòng) */}
+            {/* Bố cục 2 Cột */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
-              {/* CỘT TRÁI (7 PHẦN): THEO NGÀY / THEO THỨ */}
+              {/* CỘT TRÁI: THEO NGÀY / THEO THỨ */}
               <div className="lg:col-span-7 space-y-3 border-r border-gray-100 pr-0 lg:pr-6">
                 <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold">
                   <button
@@ -763,78 +720,91 @@ export default function OwnerDashboardPage() {
                 </div>
 
                 <div className="h-60 w-full pt-2">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart
-                      data={currentOccupancyLineData}
-                      margin={{ top: 10, right: 20, left: -20, bottom: 5 }}
-                    >
-                      <defs>
-                        <linearGradient
-                          id="occupancyGrad"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor="#006ce4"
-                            stopOpacity={0.25}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor="#006ce4"
-                            stopOpacity={0.0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#f1f5f9"
-                      />
-                      <XAxis
-                        dataKey="label"
-                        stroke="#94a3b8"
-                        fontSize={10}
-                        interval={0}
-                        axisLine={{ stroke: "#e2e8f0" }}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        stroke="#94a3b8"
-                        fontSize={11}
-                        domain={[0, 100]}
-                        ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
-                        interval={0}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip
-                        formatter={(v) => [`${v}%`, "Công suất"]}
-                        contentStyle={{
-                          backgroundColor: "#003580",
-                          borderRadius: "10px",
-                          border: "none",
-                          color: "#fff",
-                          fontSize: "11px",
-                          fontWeight: "bold",
-                        }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="rate"
-                        stroke="#006ce4"
-                        strokeWidth={2}
-                        fillOpacity={1}
-                        fill="url(#occupancyGrad)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  {currentOccupancyLineData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={currentOccupancyLineData}
+                        margin={{ top: 10, right: 25, left: -20, bottom: 5 }}
+                      >
+                        <defs>
+                          <linearGradient
+                            id="occupancyGrad"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#006ce4"
+                              stopOpacity={0.25}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#006ce4"
+                              stopOpacity={0.0}
+                            />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="#f1f5f9"
+                        />
+                        <XAxis
+                          dataKey="label"
+                          stroke="#94a3b8"
+                          fontSize={10}
+                          interval={0}
+                          axisLine={{ stroke: "#e2e8f0" }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          stroke="#94a3b8"
+                          fontSize={11}
+                          domain={[0, 100]}
+                          ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
+                          interval={0}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <Tooltip
+                          formatter={(v) => [`${v}%`, "Công suất"]}
+                          contentStyle={{
+                            backgroundColor: "#003580",
+                            borderRadius: "10px",
+                            border: "none",
+                            color: "#fff",
+                            fontSize: "11px",
+                            fontWeight: "bold",
+                          }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="rate"
+                          stroke="#006ce4"
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#occupancyGrad)"
+                          dot={{ r: 3.5, fill: "#006ce4" }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    /* KHUNG BÁO RỖNG ĐÚNG Y HỆT ẢNH 4 */
+                    <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2">
+                      <div className="w-12 h-12 rounded-full bg-blue-50/60 flex items-center justify-center text-[#006ce4]">
+                        <LineIcon size={24} />
+                      </div>
+                      <div className="text-xs font-semibold">
+                        Không có dữ liệu trong kỳ này.
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* CỘT PHẢI (5 PHẦN): THEO HẠNG PHÒNG / THEO KHU VỰC */}
+              {/* CỘT PHẢI: THEO HẠNG PHÒNG / THEO KHU VỰC */}
               <div className="lg:col-span-5 space-y-4 pl-0 lg:pl-2">
                 <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold">
                   <button
@@ -861,26 +831,38 @@ export default function OwnerDashboardPage() {
                   </button>
                 </div>
 
-                {/* Danh sách thanh tiến độ bo tròn theo đúng mẫu: Superior 11%, Standard 6.64%, Deluxe 1.56% */}
                 <div className="space-y-4 pt-2">
-                  {currentOccupancyBarData.map((item, idx) => (
-                    <div key={idx} className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs font-medium text-gray-800">
-                        <span>{item.name}</span>
-                        <span className="font-bold text-gray-900 tabular-nums">
-                          {item.rate}%
-                        </span>
+                  {stats.occupancyAnalytics.hasData &&
+                  currentOccupancyBarData.length > 0 ? (
+                    currentOccupancyBarData.map((item, idx) => (
+                      <div key={idx} className="space-y-1.5">
+                        <div className="flex justify-between items-center text-xs font-medium text-gray-800">
+                          <span>{item.name}</span>
+                          <span className="font-bold text-gray-900 tabular-nums">
+                            {item.rate}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-[#f1f5f9] h-4 rounded-full overflow-hidden p-0.5">
+                          <div
+                            className="bg-[#006ce4] h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${Math.min(100, Math.max(0, item.rate))}%`,
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div className="w-full bg-[#f1f5f9] h-4 rounded-full overflow-hidden p-0.5">
-                        <div
-                          className="bg-[#006ce4] h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${Math.min(100, Math.max(0, item.rate))}%`,
-                          }}
-                        />
+                    ))
+                  ) : (
+                    /* KHUNG BÁO RỖNG ĐÚNG Y HỆT ẢNH 4 */
+                    <div className="h-48 flex flex-col items-center justify-center text-gray-400 space-y-2">
+                      <div className="w-12 h-12 rounded-full bg-blue-50/60 flex items-center justify-center text-[#006ce4]">
+                        <BarChart2 size={24} />
+                      </div>
+                      <div className="text-xs font-semibold">
+                        Không có dữ liệu trong kỳ này.
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>

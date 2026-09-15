@@ -27,6 +27,7 @@ import {
   Check,
   Building2,
   Search,
+  Percent,
 } from "lucide-react";
 import { LoadingSpinner } from "@/components/common";
 import apiClient from "@/services/apiClient";
@@ -147,11 +148,11 @@ export default function RoomManagementPage() {
   const [modalTab, setModalTab] = useState("info");
   const [editingRoom, setEditingRoom] = useState(null);
 
-  // Danh sách phòng cụ thể bên trong Hạng phòng
   const [formRoomUnits, setFormRoomUnits] = useState([]);
   const [newRoomUnitInput, setNewRoomUnitInput] = useState("");
   const [newRoomUnitArea, setNewRoomUnitArea] = useState("Tầng 8");
 
+  // 🌟 KHỞI TẠO STATE CÓ CẢ PHỤ THU CỐ ĐỊNH VÀ BẬC THANG %
   const initialFormState = {
     hotel_id: "",
     code: "",
@@ -163,12 +164,25 @@ export default function RoomManagementPage() {
     standard_children: 1,
     max_adults: 1,
     max_children: 1,
-    base_price: "", // Giá ngày đêm (không có dấu *)
+    base_price: "", // Giá ngày đêm
     overnight_price: "", // Qua đêm
     half_day_price: "", // Buổi
     hourly_price: "", // Giờ
-    early_checkin_fee: "",
-    late_checkout_fee: "",
+    // 🌟 CẤU HÌNH PHỤ THU:
+    auto_surcharge: true, // Bật/Tắt
+    surcharge_type: "tiered", // "hourly" (mỗi giờ) hoặc "tiered" (bậc thang %)
+    early_checkin_fee: "", // Nhận sớm (cố định đ/giờ)
+    late_checkout_fee: "", // Trả muộn (cố định đ/giờ)
+    // 🌟 DANH SÁCH BẬC THANG THEO % GIÁ PHÒNG:
+    early_surcharge_tiers: [
+      { hours: 1, percent: 10 },
+      { hours: 2, percent: 30 },
+    ],
+    late_surcharge_tiers: [
+      { hours: 1, percent: 10 },
+      { hours: 2, percent: 30 },
+    ],
+    apply_to_all_rooms: false,
     description: "",
     amount: 4,
     bed_type: "1 Giường đôi King",
@@ -179,7 +193,7 @@ export default function RoomManagementPage() {
   };
   const [formData, setFormData] = useState(initialFormState);
 
-  // MODAL PHÒNG CỤ THỂ (GỌN GÀNG, KHÔNG CẦN ẢNH)
+  // MODAL PHÒNG CỤ THỂ
   const [isRoomUnitModalOpen, setIsRoomUnitModalOpen] = useState(false);
   const [editingRoomUnit, setEditingRoomUnit] = useState(null);
   const [areasList, setAreasList] = useState([
@@ -378,6 +392,25 @@ export default function RoomManagementPage() {
       })),
     );
 
+    // Đọc bậc thang từ database nếu có
+    const earlyTiers =
+      Array.isArray(room.early_surcharge_tiers) &&
+      room.early_surcharge_tiers.length > 0
+        ? room.early_surcharge_tiers
+        : [
+            { hours: 1, percent: 10 },
+            { hours: 2, percent: 30 },
+          ];
+
+    const lateTiers =
+      Array.isArray(room.late_surcharge_tiers) &&
+      room.late_surcharge_tiers.length > 0
+        ? room.late_surcharge_tiers
+        : [
+            { hours: 1, percent: 10 },
+            { hours: 2, percent: 30 },
+          ];
+
     setEditingRoom(room);
     setFormData({
       ...room,
@@ -387,8 +420,14 @@ export default function RoomManagementPage() {
       overnight_price: overnightP,
       half_day_price: halfDayP,
       hourly_price: hourlyP,
+      auto_surcharge:
+        room.auto_surcharge !== undefined ? Boolean(room.auto_surcharge) : true,
+      surcharge_type: room.surcharge_type || "tiered",
       early_checkin_fee: room.early_checkin_fee || "",
       late_checkout_fee: room.late_checkout_fee || "",
+      early_surcharge_tiers: earlyTiers,
+      late_surcharge_tiers: lateTiers,
+      apply_to_all_rooms: false,
       standard_adults: room.standard_adults || 1,
       standard_children: room.standard_children ?? 1,
       max_adults: room.max_adults || room.capacity || 1,
@@ -398,6 +437,76 @@ export default function RoomManagementPage() {
     });
     setModalTab("info");
     setIsModalOpen(true);
+  };
+
+  // 🌟 THAO TÁC THÊM/XÓA BẬC THANG NHẬN SỚM
+  const handleAddEarlyTier = () => {
+    setFormData((prev) => {
+      const currentTiers = prev.early_surcharge_tiers || [];
+      const nextHour =
+        currentTiers.length > 0
+          ? Number(currentTiers[currentTiers.length - 1].hours) + 1
+          : 1;
+      return {
+        ...prev,
+        early_surcharge_tiers: [
+          ...currentTiers,
+          { hours: nextHour, percent: 0 },
+        ],
+      };
+    });
+  };
+
+  const handleUpdateEarlyTier = (idx, field, value) => {
+    setFormData((prev) => {
+      const updated = [...(prev.early_surcharge_tiers || [])];
+      updated[idx] = { ...updated[idx], [field]: Number(value || 0) };
+      return { ...prev, early_surcharge_tiers: updated };
+    });
+  };
+
+  const handleRemoveEarlyTier = (idx) => {
+    setFormData((prev) => ({
+      ...prev,
+      early_surcharge_tiers: prev.early_surcharge_tiers.filter(
+        (_, i) => i !== idx,
+      ),
+    }));
+  };
+
+  // 🌟 THAO TÁC THÊM/XÓA BẬC THANG TRẢ MUỘN
+  const handleAddLateTier = () => {
+    setFormData((prev) => {
+      const currentTiers = prev.late_surcharge_tiers || [];
+      const nextHour =
+        currentTiers.length > 0
+          ? Number(currentTiers[currentTiers.length - 1].hours) + 1
+          : 1;
+      return {
+        ...prev,
+        late_surcharge_tiers: [
+          ...currentTiers,
+          { hours: nextHour, percent: 0 },
+        ],
+      };
+    });
+  };
+
+  const handleUpdateLateTier = (idx, field, value) => {
+    setFormData((prev) => {
+      const updated = [...(prev.late_surcharge_tiers || [])];
+      updated[idx] = { ...updated[idx], [field]: Number(value || 0) };
+      return { ...prev, late_surcharge_tiers: updated };
+    });
+  };
+
+  const handleRemoveLateTier = (idx) => {
+    setFormData((prev) => ({
+      ...prev,
+      late_surcharge_tiers: prev.late_surcharge_tiers.filter(
+        (_, i) => i !== idx,
+      ),
+    }));
   };
 
   const handleAddUnitToForm = () => {
@@ -490,6 +599,7 @@ export default function RoomManagementPage() {
     setIsRoomUnitModalOpen(true);
   };
 
+  // 🌟 LƯU HẠNG PHÒNG VÀ LƯU CẢ CẤU HÌNH BẬC THANG %
   const handleSaveRoom = async (e) => {
     if (e) e.preventDefault();
     const targetHotelId = formData.hotel_id || selectedHotelId;
@@ -510,6 +620,13 @@ export default function RoomManagementPage() {
           ? formRoomUnits.length
           : Number(formData.amount || 1);
 
+      const earlyFee = formData.auto_surcharge
+        ? Number(formData.early_checkin_fee || 0)
+        : 0;
+      const lateFee = formData.auto_surcharge
+        ? Number(formData.late_checkout_fee || 0)
+        : 0;
+
       const payload = {
         hotel_id: targetHotelId,
         name: formData.name.trim(),
@@ -525,8 +642,14 @@ export default function RoomManagementPage() {
           Number(formData.half_day_price) || Math.round(dailyPrice * 0.8),
         hourly_price:
           Number(formData.hourly_price) || Math.round(dailyPrice * 0.25),
-        early_checkin_fee: Number(formData.early_checkin_fee || 0),
-        late_checkout_fee: Number(formData.late_checkout_fee || 0),
+        // 🌟 CẤU HÌNH BẬC THANG VÀ PHỤ THU:
+        auto_surcharge: Boolean(formData.auto_surcharge),
+        surcharge_type: formData.surcharge_type,
+        early_checkin_fee: earlyFee,
+        late_checkout_fee: lateFee,
+        early_surcharge_tiers: formData.early_surcharge_tiers || [],
+        late_surcharge_tiers: formData.late_surcharge_tiers || [],
+        apply_to_all_rooms: Boolean(formData.apply_to_all_rooms),
         amount: finalAmount,
         room_units: formRoomUnits,
         type: formData.type || "Tiêu chuẩn",
@@ -544,7 +667,7 @@ export default function RoomManagementPage() {
         await apiClient.post("/rooms", payload);
       }
 
-      alert("✓ Đã lưu hạng phòng và cập nhật danh sách phòng thành công!");
+      alert("✓ Đã lưu hạng phòng và cài đặt phụ thu thành công!");
       await fetchRoomsByHotel();
       setIsModalOpen(false);
     } catch (err) {
@@ -552,7 +675,6 @@ export default function RoomManagementPage() {
     }
   };
 
-  // 🌟 LƯU PHÒNG CỤ THỂ (KHÔNG CẦN UP ẢNH)
   const handleSaveRoomUnit = async (e) => {
     if (e) e.preventDefault();
     if (!roomUnitFormData.name.trim()) return alert("Vui lòng nhập Tên phòng!");
@@ -651,10 +773,23 @@ export default function RoomManagementPage() {
         </div>
       )}
 
-      {/* LƯỚI BẢNG DÀN ĐỀU VỪA KHÍT MÀN HÌNH */}
+      {/* LƯỚI BẢNG CHÍNH */}
       <div className="grid grid-cols-1 md:grid-cols-12 xl:grid-cols-12 gap-5 items-start">
-        {/* BỘ LỌC CỘT TRÁI */}
+        {/* BỘ LỌC BÊN TRÁI */}
         <div className="md:col-span-3 xl:col-span-2 space-y-3.5">
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-1.5">
+            <label className="block text-[11px] font-black uppercase text-[#0a2540] tracking-wider">
+              Tìm kiếm
+            </label>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm theo tên/mã..."
+              className="w-full text-xs py-1.5 px-2.5 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-[#003580] focus:bg-white transition"
+            />
+          </div>
+
           <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-2">
             <div
               onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
@@ -733,7 +868,7 @@ export default function RoomManagementPage() {
           </div>
         </div>
 
-        {/* BẢNG BÊN PHẢI (HIỂN THỊ ĐỦ TRONG 1 KHUNG NHÌN) */}
+        {/* BẢNG BÊN PHẢI */}
         <div className="md:col-span-9 xl:col-span-10 space-y-0">
           <div className="flex items-center gap-1 border-b border-transparent">
             <button
@@ -766,7 +901,7 @@ export default function RoomManagementPage() {
                 <LoadingSpinner size="md" label="Đang tải dữ liệu phòng..." />
               </div>
             ) : activeTab === "room_types" ? (
-              /* ══════════════ TAB 1: BẢNG HẠNG PHÒNG ══════════════ */
+              /* TAB 1: BẢNG HẠNG PHÒNG */
               <div className="w-full overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -889,13 +1024,12 @@ export default function RoomManagementPage() {
                             </td>
                           </tr>
 
-                          {/* 🌟 MỞ RỘNG CHI TIẾT HẠNG PHÒNG: ĐÃ BỎ TAB MÔ TẢ & DANH SÁCH PHÒNG THEO Ý BẠN 🌟 */}
+                          {/* MỞ RỘNG CHI TIẾT */}
                           {isExpanded && (
                             <tr className="bg-white border-b-2 border-[#003580]">
                               <td colSpan={10} className="p-5 space-y-4">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-center gap-3.5">
-                                    {/* ẢNH DUY NHẤT CỦA HẠNG PHÒNG */}
                                     <div className="w-20 h-16 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 shrink-0 flex items-center justify-center shadow-xs">
                                       {roomImg ? (
                                         <img
@@ -962,7 +1096,19 @@ export default function RoomManagementPage() {
                                       Phụ thu thêm giờ
                                     </span>
                                     <span className="text-gray-800 font-medium">
-                                      Không tự động tính phụ thu
+                                      {room.auto_surcharge ? (
+                                        room.surcharge_type === "tiered" ? (
+                                          <span className="text-[#006ce4] font-bold">
+                                            Theo bậc thang (%)
+                                          </span>
+                                        ) : (
+                                          <span className="text-[#006ce4] font-bold">
+                                            Theo giờ cố định
+                                          </span>
+                                        )
+                                      ) : (
+                                        "Không tự động tính phụ thu"
+                                      )}
                                     </span>
                                   </div>
                                 </div>
@@ -1033,7 +1179,7 @@ export default function RoomManagementPage() {
                 </table>
               </div>
             ) : (
-              /* ══════════════ TAB 2: BẢNG PHÒNG CỤ THỂ ══════════════ */
+              /* TAB 2: BẢNG PHÒNG CỤ THỂ */
               <div className="w-full overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -1129,7 +1275,7 @@ export default function RoomManagementPage() {
                             </td>
                           </tr>
 
-                          {/* 🌟 MỞ RỘNG PHÒNG CON: ĐÃ BỎ KHUNG ẢNH VÀ XÓA HẲN 3 TAB LỊCH SỬ THEO Ý BẠN 🌟 */}
+                          {/* MỞ RỘNG PHÒNG CON */}
                           {isExpanded && (
                             <tr className="bg-white border-b-2 border-[#003580]">
                               <td colSpan={10} className="p-5 space-y-4">
@@ -1171,7 +1317,7 @@ export default function RoomManagementPage() {
                                       Phụ thu thêm giờ
                                     </span>
                                     <span className="text-gray-800 font-medium">
-                                      Không tự động tính phụ thu
+                                      Thừa hưởng từ hạng phòng
                                     </span>
                                   </div>
                                 </div>
@@ -1242,7 +1388,7 @@ export default function RoomManagementPage() {
         </div>
       </div>
 
-      {/* ══════════════ MODAL HẠNG PHÒNG: CÓ UP ẢNH & 4 TAB ══════════════ */}
+      {/* ══════════════ MODAL HẠNG PHÒNG (CÓ PHỤ THU BẬC THANG %) ══════════════ */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 my-auto">
@@ -1326,7 +1472,7 @@ export default function RoomManagementPage() {
               className="flex-1 overflow-y-auto p-6 space-y-6 text-xs bg-white"
             >
               {modalTab === "info" && (
-                <div className="space-y-6">
+                <div className="space-y-5">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4 items-start pt-1">
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
@@ -1382,9 +1528,10 @@ export default function RoomManagementPage() {
                       </div>
                     </div>
 
+                    {/* 4 MỨC GIÁ */}
                     <div className="space-y-3.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-gray-700 font-medium">
+                        <span className="text-gray-700 font-bold">
                           Giá ngày đêm
                         </span>
                         <input
@@ -1406,8 +1553,8 @@ export default function RoomManagementPage() {
                                 (val ? Math.round(Number(val) * 0.25) : ""),
                             }));
                           }}
-                          placeholder="0"
-                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
+                          placeholder="200.000"
+                          className="w-28 text-right py-1 border-b border-[#003580] outline-none text-[#ff6a00] font-black bg-transparent"
                         />
                       </div>
 
@@ -1427,7 +1574,7 @@ export default function RoomManagementPage() {
                               ),
                             })
                           }
-                          placeholder="0"
+                          placeholder="100.000"
                           className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
                       </div>
@@ -1446,7 +1593,7 @@ export default function RoomManagementPage() {
                               half_day_price: parseDotsToNumber(e.target.value),
                             })
                           }
-                          placeholder="0"
+                          placeholder="160.000"
                           className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
                       </div>
@@ -1465,14 +1612,15 @@ export default function RoomManagementPage() {
                               hourly_price: parseDotsToNumber(e.target.value),
                             })
                           }
-                          placeholder="0"
+                          placeholder="100.000"
                           className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
                       </div>
                     </div>
                   </div>
 
-                  <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white mt-2">
+                  {/* SỨC CHỨA PHÒNG */}
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white">
                     <div className="bg-gray-50 px-4 py-2 font-black uppercase tracking-wider text-gray-800 text-xs border-b border-gray-200">
                       Sức chứa phòng
                     </div>
@@ -1547,9 +1695,333 @@ export default function RoomManagementPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* ═══════════════════════════════════════════════════════════════════════ */}
+                  {/* 🌟 KHỐI PHỤ THU THÊM GIỜ: BẬC THANG THEO % GIÁ PHÒNG VÀ NÚT "+ THÊM GIỜ" 🌟 */}
+                  {/* ═══════════════════════════════════════════════════════════════════════ */}
+                  <div className="border border-gray-200 rounded-2xl p-4 sm:p-5 bg-white shadow-2xs space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-black text-gray-900 tracking-tight">
+                          Phụ thu thêm giờ
+                        </h4>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          Tự động tính phụ thu khi khách nhận sớm hoặc trả muộn
+                          so với giờ quy định
+                        </p>
+                      </div>
+
+                      {/* NÚT BẬT TẮT TOGGLE */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            auto_surcharge: !prev.auto_surcharge,
+                          }))
+                        }
+                        className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
+                          formData.auto_surcharge
+                            ? "bg-[#006ce4]"
+                            : "bg-gray-300"
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                            formData.auto_surcharge
+                              ? "translate-x-5"
+                              : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {formData.auto_surcharge && (
+                      <div className="space-y-4 pt-1 animate-fadeIn">
+                        <div>
+                          <label className="text-gray-700 font-bold block mb-1 text-[11px]">
+                            Cách tính phụ thu
+                          </label>
+                          <select
+                            value={formData.surcharge_type}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                surcharge_type: e.target.value,
+                              })
+                            }
+                            className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 outline-none focus:border-[#003580] cursor-pointer"
+                          >
+                            <option value="tiered">
+                              Tính phụ thu theo bậc thang (% giá phòng)
+                            </option>
+                            <option value="hourly">
+                              Tính phụ thu cho mỗi giờ (cố định đ/giờ)
+                            </option>
+                          </select>
+                        </div>
+
+                        {/* 🌟 NẾU CHỌN BẬC THANG THEO % GIÁ PHÒNG (ĐÚNG YÊU CẦU BẠN NÊU) 🌟 */}
+                        {formData.surcharge_type === "tiered" ? (
+                          <div className="space-y-4">
+                            {/* 1. NHẬN SỚM THEO BẬC THANG */}
+                            <div className="p-3.5 bg-gray-50/70 border border-gray-200 rounded-2xl space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                                  <span>1.</span> <span>Nhận sớm</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleAddEarlyTier}
+                                  className="text-[11px] font-bold text-[#006ce4] hover:underline cursor-pointer flex items-center gap-1"
+                                >
+                                  <Plus size={13} /> <span>Thêm giờ</span>
+                                </button>
+                              </div>
+
+                              <div className="space-y-2">
+                                {(formData.early_surcharge_tiers || []).map(
+                                  (tier, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center gap-2 bg-white p-2 border border-gray-200 rounded-xl"
+                                    >
+                                      <span className="text-gray-500 shrink-0">
+                                        Từ
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={tier.hours}
+                                        onChange={(e) =>
+                                          handleUpdateEarlyTier(
+                                            idx,
+                                            "hours",
+                                            e.target.value,
+                                          )
+                                        }
+                                        className="w-12 text-center p-1 border border-gray-300 rounded-lg font-bold text-gray-900 outline-none"
+                                      />
+                                      <span className="text-gray-500 shrink-0">
+                                        giờ
+                                      </span>
+                                      <span className="text-gray-300">|</span>
+                                      <span className="text-gray-500 shrink-0">
+                                        Phụ thu
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={tier.percent}
+                                        onChange={(e) =>
+                                          handleUpdateEarlyTier(
+                                            idx,
+                                            "percent",
+                                            e.target.value,
+                                          )
+                                        }
+                                        className="w-14 text-center p-1 border border-gray-300 rounded-lg font-black text-[#003580] outline-none"
+                                      />
+                                      <span className="font-bold text-gray-700 shrink-0">
+                                        %
+                                      </span>
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleRemoveEarlyTier(idx)
+                                        }
+                                        className="p-1 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 ml-auto cursor-pointer"
+                                        title="Xóa nấc này"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  ),
+                                )}
+
+                                {(formData.early_surcharge_tiers || [])
+                                  .length === 0 && (
+                                  <div className="text-[11px] text-gray-400 italic">
+                                    Chưa có nấc nhận sớm. Bấm "+ Thêm giờ" để
+                                    tạo.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 2. TRẢ MUỘN THEO BẬC THANG */}
+                            <div className="p-3.5 bg-gray-50/70 border border-gray-200 rounded-2xl space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                                  <span>2.</span> <span>Trả muộn</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleAddLateTier}
+                                  className="text-[11px] font-bold text-[#006ce4] hover:underline cursor-pointer flex items-center gap-1"
+                                >
+                                  <Plus size={13} /> <span>Thêm giờ</span>
+                                </button>
+                              </div>
+
+                              <div className="space-y-2">
+                                {(formData.late_surcharge_tiers || []).map(
+                                  (tier, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center gap-2 bg-white p-2 border border-gray-200 rounded-xl"
+                                    >
+                                      <span className="text-gray-500 shrink-0">
+                                        Từ
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={tier.hours}
+                                        onChange={(e) =>
+                                          handleUpdateLateTier(
+                                            idx,
+                                            "hours",
+                                            e.target.value,
+                                          )
+                                        }
+                                        className="w-12 text-center p-1 border border-gray-300 rounded-lg font-bold text-gray-900 outline-none"
+                                      />
+                                      <span className="text-gray-500 shrink-0">
+                                        giờ
+                                      </span>
+                                      <span className="text-gray-300">|</span>
+                                      <span className="text-gray-500 shrink-0">
+                                        Phụ thu
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={tier.percent}
+                                        onChange={(e) =>
+                                          handleUpdateLateTier(
+                                            idx,
+                                            "percent",
+                                            e.target.value,
+                                          )
+                                        }
+                                        className="w-14 text-center p-1 border border-gray-300 rounded-lg font-black text-[#003580] outline-none"
+                                      />
+                                      <span className="font-bold text-gray-700 shrink-0">
+                                        %
+                                      </span>
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleRemoveLateTier(idx)
+                                        }
+                                        className="p-1 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 ml-auto cursor-pointer"
+                                        title="Xóa nấc này"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  ),
+                                )}
+
+                                {(formData.late_surcharge_tiers || [])
+                                  .length === 0 && (
+                                  <div className="text-[11px] text-gray-400 italic">
+                                    Chưa có nấc trả muộn. Bấm "+ Thêm giờ" để
+                                    tạo.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          /* NẾU CHỌN TÍNH CỐ ĐỊNH THEO MỖI GIỜ (Đ/GIỜ) */
+                          <div className="space-y-3">
+                            <div className="p-3 bg-gray-50/70 border border-gray-200 rounded-xl flex items-center justify-between gap-4">
+                              <span className="font-bold text-gray-800 text-xs">
+                                1. Nhận sớm
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatNumberWithDots(
+                                    formData.early_checkin_fee,
+                                  )}
+                                  onChange={(e) =>
+                                    setFormData({
+                                      ...formData,
+                                      early_checkin_fee: parseDotsToNumber(
+                                        e.target.value,
+                                      ),
+                                    })
+                                  }
+                                  placeholder="0"
+                                  className="w-24 p-1.5 bg-white border border-gray-300 rounded-lg text-right font-black text-gray-900 outline-none tabular-nums"
+                                />
+                                <span className="text-gray-600 font-medium">
+                                  mỗi giờ
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="p-3 bg-gray-50/70 border border-gray-200 rounded-xl flex items-center justify-between gap-4">
+                              <span className="font-bold text-gray-800 text-xs">
+                                2. Trả muộn
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatNumberWithDots(
+                                    formData.late_checkout_fee,
+                                  )}
+                                  onChange={(e) =>
+                                    setFormData({
+                                      ...formData,
+                                      late_checkout_fee: parseDotsToNumber(
+                                        e.target.value,
+                                      ),
+                                    })
+                                  }
+                                  placeholder="0"
+                                  className="w-24 p-1.5 bg-white border border-gray-300 rounded-lg text-right font-black text-gray-900 outline-none tabular-nums"
+                                />
+                                <span className="text-gray-600 font-medium">
+                                  mỗi giờ
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <label className="flex items-center gap-2 pt-1 cursor-pointer select-none text-gray-700 font-medium text-xs">
+                          <input
+                            type="checkbox"
+                            checked={formData.apply_to_all_rooms}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                apply_to_all_rooms: e.target.checked,
+                              })
+                            }
+                            className="rounded accent-[#006ce4] w-4 h-4 cursor-pointer"
+                          />
+                          <span>
+                            Áp dụng mức phụ thu cho các hạng phòng khác
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
+              {/* TAB 2: HÌNH ẢNH & MÔ TẢ */}
               {modalTab === "images" && (
                 <div className="space-y-4">
                   <input
@@ -1677,6 +2149,7 @@ export default function RoomManagementPage() {
                 </div>
               )}
 
+              {/* TAB 3: TIỆN ÍCH */}
               {modalTab === "amenities" && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1780,6 +2253,7 @@ export default function RoomManagementPage() {
                 </div>
               )}
 
+              {/* TAB 4: DANH SÁCH PHÒNG */}
               {modalTab === "units" && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
@@ -1909,7 +2383,7 @@ export default function RoomManagementPage() {
         </div>
       )}
 
-      {/* ══════════════ MODAL PHÒNG CỤ THỂ (GỌN GÀNG, KHÔNG CẦN ẢNH) ══════════════ */}
+      {/* ══════════════ MODAL PHÒNG CỤ THỂ ══════════════ */}
       {isRoomUnitModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 my-auto">
@@ -2009,7 +2483,7 @@ export default function RoomManagementPage() {
                 </select>
               </div>
 
-              {/* BẢNG GIÁ THỪA HƯỞNG TỪ HẠNG PHÒNG */}
+              {/* BẢNG GIÁ THỪA HƯỞNG */}
               <div className="space-y-2.5 bg-gray-50/80 p-4 rounded-2xl border border-gray-200">
                 <span className="font-bold text-gray-600 text-xs block uppercase">
                   Bảng giá thừa hưởng từ "
@@ -2020,7 +2494,7 @@ export default function RoomManagementPage() {
                   <span className="text-gray-600 font-medium">
                     Giá ngày đêm:
                   </span>
-                  <b className="text-gray-900 tabular-nums font-bold">
+                  <b className="text-[#ff6a00] tabular-nums font-black text-sm">
                     {formatVND(selectedParentRoom?.base_price || 0)} đ
                   </b>
                 </div>
@@ -2061,7 +2535,7 @@ export default function RoomManagementPage() {
                       note: e.target.value,
                     })
                   }
-                  placeholder="Ghi chú vị trí hoặc tình trạng..."
+                  placeholder="Nhập ghi chú vị trí hoặc tình trạng..."
                   className="w-full p-2.5 border border-gray-200 rounded-xl outline-none focus:border-[#003580]"
                 />
               </div>
