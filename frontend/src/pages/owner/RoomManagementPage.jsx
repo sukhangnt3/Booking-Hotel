@@ -655,19 +655,6 @@ export default function RoomManagementPage() {
       <div className="grid grid-cols-1 md:grid-cols-12 xl:grid-cols-12 gap-5 items-start">
         {/* BỘ LỌC CỘT TRÁI */}
         <div className="md:col-span-3 xl:col-span-2 space-y-3.5">
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-1.5">
-            <label className="block text-[11px] font-black uppercase text-[#0a2540] tracking-wider">
-              Tìm kiếm
-            </label>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm theo tên/mã..."
-              className="w-full text-xs py-1.5 px-2.5 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-[#003580] focus:bg-white transition"
-            />
-          </div>
-
           <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-2">
             <div
               onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}

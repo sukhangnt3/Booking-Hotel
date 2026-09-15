@@ -1,5 +1,5 @@
 // src/pages/reception/components/OccupiedRoomModal.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Calendar,
   Clock,
@@ -82,6 +82,45 @@ export default function OccupiedRoomModal({
   );
 
   const now = new Date();
+
+  // 🌟 THUẬT TOÁN TÍNH THỜI GIAN ĐÃ Ở THỰC TẾ (KHÔNG BAO GIỜ BỊ CỐ ĐỊNH 1 NGÀY)
+  const actualStayDuration = useMemo(() => {
+    const b = bookingDetail || room.booking;
+    const checkinSource =
+      b?.confirmed_at ||
+      b?.created_at ||
+      room?.booking?.created_at ||
+      b?.checkin_date ||
+      room?.booking?.checkin_date;
+
+    if (!checkinSource) {
+      return room.booking?.stay_duration || "Vừa nhận phòng";
+    }
+
+    const checkinTime = new Date(checkinSource);
+    if (isNaN(checkinTime.getTime())) {
+      return room.booking?.stay_duration || "Vừa nhận phòng";
+    }
+
+    const diffMs = Math.max(0, now.getTime() - checkinTime.getTime());
+    const totalMinutes = Math.floor(diffMs / (1000 * 60));
+    const totalHours = Math.floor(totalMinutes / 60);
+    const remainingMinutes = totalMinutes % 60;
+    const days = Math.floor(totalHours / 24);
+    const remainingHours = totalHours % 24;
+
+    if (totalMinutes < 1) {
+      return "Vừa nhận phòng";
+    }
+    if (totalHours < 1) {
+      return `${totalMinutes} phút`;
+    }
+    if (days < 1) {
+      return `${totalHours} giờ ${remainingMinutes > 0 ? `${remainingMinutes} phút` : ""}`.trim();
+    }
+    return `${days} ngày ${remainingHours > 0 ? `${remainingHours} giờ` : ""}`.trim();
+  }, [bookingDetail, room.booking, now]);
+
   const scheduledCheckout = new Date(
     bookingDetail?.checkout_date || room.booking?.checkout_date || now,
   );
@@ -229,7 +268,7 @@ export default function OccupiedRoomModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
       <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl border border-gray-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col text-gray-900">
-        {/* ─── HEADER MODAL THEO CHUẨN GHOSTAY NAVY #003580 ─── */}
+        {/* ─── HEADER MODAL ─── */}
         <div className="flex justify-between items-center px-6 py-4 bg-[#003580] text-white shadow-xs shrink-0 flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
@@ -298,7 +337,8 @@ export default function OccupiedRoomModal({
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 border-b border-gray-200 text-xs font-bold uppercase tracking-wider">
                     <th className="py-3 px-4">Thông tin phòng / Dịch vụ</th>
-                    <th className="py-3 px-4 text-center">Thời gian</th>
+                    {/* 🌟 CỘT THỜI GIAN ĐÃ Ở THỰC TẾ */}
+                    <th className="py-3 px-4 text-center">Thời gian đã ở</th>
                     <th className="py-3 px-4 text-right">Đơn giá</th>
                     <th className="py-3 px-4 text-right">Thành tiền</th>
                   </tr>
@@ -333,8 +373,8 @@ export default function OccupiedRoomModal({
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-center font-semibold text-gray-700">
-                          {leg.duration_text}
+                        <td className="py-3 px-4 text-center font-bold text-[#003580]">
+                          {leg.duration_text || actualStayDuration}
                         </td>
                         <td className="py-3 px-4 text-right font-medium text-gray-600 tabular-nums">
                           {formatVND(leg.unit_price)}
@@ -359,8 +399,9 @@ export default function OccupiedRoomModal({
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center font-semibold text-gray-700">
-                        {b?.stay_duration || "1 Ngày"}
+                      {/* 🌟 ĐÃ THAY BẰNG THỜI GIAN THỰC TẾ (PHÚT / GIỜ / NGÀY) */}
+                      <td className="py-3 px-4 text-center font-bold text-[#003580]">
+                        {actualStayDuration}
                       </td>
                       <td className="py-3 px-4 text-right font-medium text-gray-600 tabular-nums">
                         {formatVND(room.daily_price || baseRoomPrice)}
@@ -371,7 +412,7 @@ export default function OccupiedRoomModal({
                     </tr>
                   )}
 
-                  {/* DÒNG PHỤ THU TRẢ MUỘN NẾU CÓ */}
+                  {/* PHỤ THU TRẢ MUỘN NẾU CÓ */}
                   {overtimeFee > 0 && (
                     <tr className="bg-amber-50/60 hover:bg-amber-50 text-amber-950 border-t border-amber-200">
                       <td className="py-3 px-4">
@@ -402,7 +443,7 @@ export default function OccupiedRoomModal({
             </div>
           </div>
 
-          {/* CỘT PHẢI: BẢNG QUYẾT TOÁN TIỀN THÔNG MINH */}
+          {/* CỘT PHẢI: BẢNG QUYẾT TOÁN TIỀN */}
           <div className="lg:col-span-5 border-l border-gray-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-gray-600 font-bold border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 text-xs">
@@ -472,7 +513,7 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* NẾU ĐÃ THANH TOÁN ĐỦ (REMAINING = 0) */}
+              {/* TRẠNG THÁI THANH TOÁN */}
               {remainingAmount === 0 ? (
                 <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-center space-y-1 mt-2 shadow-2xs">
                   <div className="font-black text-xs flex items-center justify-center gap-1.5 text-emerald-800">
@@ -485,7 +526,6 @@ export default function OccupiedRoomModal({
                   </p>
                 </div>
               ) : (
-                /* NẾU CÓ PHỤ THU HOẶC CẦN THU NỐT TIỀN PHÒNG */
                 <div className="space-y-2.5 pt-2">
                   <div className="flex justify-between items-center">
                     <span className="font-black text-[#0a2540] flex items-center gap-1.5">
