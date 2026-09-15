@@ -28,7 +28,6 @@ import {
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import apiClient from "@/services/apiClient";
 
-// Đồng bộ 100% với PostgreSQL: public.hotel_status_enum
 const STATUS_TABS = [
   { id: "pending", label: "Chờ phê duyệt" },
   { id: "active", label: "Đang mở bán" },
@@ -68,12 +67,11 @@ export default function HotelApprovalPage() {
   // Modal chi tiết chuyên sâu
   const [selectedHotel, setSelectedHotel] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [activeModalTab, setActiveModalTab] = useState("overview"); // "overview" | "rooms" | "photos" | "policy"
+  const [activeModalTab, setActiveModalTab] = useState("overview");
 
   const formatVND = (price) =>
     Number(price || 0).toLocaleString("vi-VN") + " ₫";
 
-  // Lấy danh sách tổng quát từ backend
   const fetchHotelsFromDB = useCallback(async () => {
     setLoading(true);
     setApiError("");
@@ -98,7 +96,6 @@ export default function HotelApprovalPage() {
     fetchHotelsFromDB();
   }, [fetchHotelsFromDB]);
 
-  // Khi click xem chi tiết -> Gọi API lấy trọn vẹn Rooms, Images, Amenities
   const handleOpenDetailModal = async (hotel) => {
     setSelectedHotel(hotel);
     setActiveModalTab("overview");
@@ -150,26 +147,26 @@ export default function HotelApprovalPage() {
   );
 
   return (
-    <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* HEADER QUẢN TRỊ */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* ─── HEADER QUẢN TRỊ THEO CHUẨN GHOSTAY ─── */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2 text-[#003580] font-black text-xs uppercase tracking-wider mb-1">
-            <ShieldCheck size={16} className="text-[#006ce4]" /> Phân Hệ Quản
-            Trị Hệ Thống
+          <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
+            <ShieldCheck size={16} /> Phân Hệ Quản Trị Hệ Thống GoStay
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0a2540] tracking-tight">
             Xét Duyệt Hồ Sơ Cơ Sở Lưu Trú ({hotels.length})
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-gray-500 mt-1">
             Thẩm định tính hợp pháp, hạng phòng, bảng giá và hình ảnh trước khi
             mở bán công khai
           </p>
         </div>
 
         <button
+          type="button"
           onClick={fetchHotelsFromDB}
-          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-[#003580] font-black text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+          className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-[#003580] font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
         >
           <RefreshCw size={14} /> Làm mới dữ liệu
         </button>
@@ -182,8 +179,8 @@ export default function HotelApprovalPage() {
         </div>
       )}
 
-      {/* TABS LỌC TRẠNG THÁI */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex items-center gap-2 overflow-x-auto no-scrollbar">
+      {/* ─── TABS LỌC TRẠNG THÁI ─── */}
+      <div className="bg-white p-3 rounded-3xl border border-gray-200 shadow-xs flex items-center gap-2 overflow-x-auto no-scrollbar">
         {STATUS_TABS.map((tab) => {
           const count = hotels.filter((h) =>
             tab.id === "all" ? true : h.status === tab.id,
@@ -191,11 +188,12 @@ export default function HotelApprovalPage() {
           return (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setStatusFilter(tab.id)}
               className={`px-5 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-2 ${
                 statusFilter === tab.id
-                  ? "bg-[#003580] text-white shadow-md"
-                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  ? "bg-[#003580] text-white shadow-sm"
+                  : "bg-gray-50 text-gray-600 hover:bg-gray-100"
               }`}
             >
               <span>{tab.label}</span>
@@ -203,7 +201,7 @@ export default function HotelApprovalPage() {
                 className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
                   statusFilter === tab.id
                     ? "bg-white/20 text-white"
-                    : "bg-slate-200 text-slate-700"
+                    : "bg-gray-200 text-gray-700"
                 }`}
               >
                 {count}
@@ -213,9 +211,9 @@ export default function HotelApprovalPage() {
         })}
       </div>
 
-      {/* LƯỚI KHÁCH SẠN */}
+      {/* ─── LƯỚI KHÁCH SẠN ─── */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border border-slate-200">
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
           <LoadingSpinner
             size="lg"
             label="Đang truy vấn dữ liệu hồ sơ đối tác..."
@@ -234,10 +232,10 @@ export default function HotelApprovalPage() {
             return (
               <div
                 key={h.id}
-                className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between"
+                className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between"
               >
                 <div>
-                  <div className="relative h-48 w-full bg-slate-100">
+                  <div className="relative h-48 w-full bg-gray-100">
                     <img
                       src={coverImage}
                       alt={h.name}
@@ -250,8 +248,8 @@ export default function HotelApprovalPage() {
                           : h.status === "rejected"
                             ? "bg-rose-600"
                             : h.status === "suspended"
-                              ? "bg-slate-700"
-                              : "bg-amber-500 animate-pulse"
+                              ? "bg-gray-800"
+                              : "bg-amber-500"
                       }`}
                     >
                       {h.status === "pending"
@@ -263,14 +261,14 @@ export default function HotelApprovalPage() {
                             : "Đình chỉ"}
                     </span>
 
-                    <span className="absolute bottom-3 left-3 text-[10px] font-black uppercase bg-black/60 text-white px-2.5 py-1 rounded-md backdrop-blur-xs">
+                    <span className="absolute bottom-3 left-3 text-[10px] font-black uppercase bg-[#003580]/80 text-white px-2.5 py-1 rounded-md backdrop-blur-xs">
                       {h.property_type || "Khách sạn"}
                     </span>
                   </div>
 
                   <div className="p-5 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-base font-black text-slate-900 line-clamp-1">
+                      <h3 className="text-base font-black text-[#0a2540] line-clamp-1">
                         {h.name}
                       </h3>
                       <div className="flex text-amber-400 shrink-0">
@@ -280,13 +278,13 @@ export default function HotelApprovalPage() {
                       </div>
                     </div>
 
-                    <p className="text-xs text-slate-500 flex items-center gap-1.5 line-clamp-1 font-medium">
-                      <MapPin size={13} className="text-[#006ce4] shrink-0" />{" "}
+                    <p className="text-xs text-gray-500 flex items-center gap-1.5 line-clamp-1 font-medium">
+                      <MapPin size={14} className="text-[#006ce4] shrink-0" />{" "}
                       {h.address ? `${h.address}, ` : ""}
                       {h.city || "Việt Nam"}
                     </p>
 
-                    <div className="text-xs text-slate-600 flex justify-between pt-2 border-t border-slate-100">
+                    <div className="text-xs text-gray-600 flex justify-between pt-2.5 border-t border-gray-100">
                       <span>Hoa hồng sàn:</span>
                       <span className="font-bold text-[#003580]">
                         {h.commission_rate ?? 18}%
@@ -304,33 +302,36 @@ export default function HotelApprovalPage() {
                 <div className="p-5 pt-0 space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <button
+                      type="button"
                       onClick={() => handleUpdateStatus(h.id, "active")}
                       disabled={h.status === "active"}
-                      className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs disabled:opacity-30 cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                      className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs disabled:opacity-30 cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs transition active:scale-95"
                     >
                       <CheckCircle2 size={15} /> Duyệt mở bán
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         const reason = window.prompt(
-                          "Nhập lý do từ chối hồ sơ (thiếu GPKD, ảnh mờ, giá sai...):",
+                          "Nhập lý do từ chối hồ sơ (thiếu GPKD, ảnh mờ, sai giá...):",
                           "Hồ sơ pháp lý hoặc hình ảnh chưa đạt tiêu chuẩn kiểm duyệt.",
                         );
                         if (reason)
                           handleUpdateStatus(h.id, "rejected", reason);
                       }}
                       disabled={h.status === "rejected"}
-                      className="py-2.5 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-black disabled:opacity-30 cursor-pointer flex items-center justify-center gap-1.5"
+                      className="py-2.5 border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-black disabled:opacity-30 cursor-pointer flex items-center justify-center gap-1.5 transition"
                     >
                       <XCircle size={15} /> Từ chối
                     </button>
                   </div>
                   <button
+                    type="button"
                     onClick={() => handleOpenDetailModal(h)}
-                    className="w-full py-2.5 bg-[#e8f2ff] hover:bg-blue-100 text-[#003580] font-black text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition"
+                    className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-[#003580] font-black text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1.5 transition"
                   >
-                    <Eye size={15} className="text-[#006ce4]" /> Xem Chi Tiết
-                    Toàn Bộ Hồ Sơ
+                    <Eye size={15} className="text-[#006ce4]" /> Xem Chi Tiết Hồ
+                    Sơ
                   </button>
                 </div>
               </div>
@@ -345,17 +346,15 @@ export default function HotelApprovalPage() {
         />
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          MODAL XEM CHI TIẾT TOÀN DIỆN (FULL AUDIT DETAIL INSPECTION)
-      ════════════════════════════════════════════════════════════════════════ */}
+      {/* ─── MODAL XEM CHI TIẾT TOÀN DIỆN ─── */}
       {selectedHotel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[92vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden text-slate-800">
+          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[92vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden text-gray-900">
             {/* MODAL HEADER */}
             <div className="p-5 sm:p-6 bg-[#003580] text-white flex items-center justify-between shrink-0">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-black uppercase bg-blue-500/40 text-white px-2.5 py-0.5 rounded-full">
+                  <span className="text-[10px] font-black uppercase bg-white/20 text-white px-2.5 py-0.5 rounded-full">
                     {selectedHotel.property_type || "Hotel"}
                   </span>
                   <div className="flex text-amber-400">
@@ -372,7 +371,7 @@ export default function HotelApprovalPage() {
                         : selectedHotel.status === "rejected"
                           ? "bg-rose-600 text-white"
                           : selectedHotel.status === "suspended"
-                            ? "bg-slate-700 text-white"
+                            ? "bg-gray-800 text-white"
                             : "bg-amber-400 text-slate-900"
                     }`}
                   >
@@ -391,6 +390,7 @@ export default function HotelApprovalPage() {
               </div>
 
               <button
+                type="button"
                 onClick={() => setSelectedHotel(null)}
                 className="p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer"
               >
@@ -398,8 +398,8 @@ export default function HotelApprovalPage() {
               </button>
             </div>
 
-            {/* TAB BAR BÊN TRONG MODAL */}
-            <div className="px-6 bg-slate-50 border-b border-slate-200 flex gap-2 overflow-x-auto no-scrollbar shrink-0 text-xs font-black">
+            {/* TAB BAR TRONG MODAL */}
+            <div className="px-6 bg-gray-50 border-b border-gray-200 flex gap-2 overflow-x-auto no-scrollbar shrink-0 text-xs font-black">
               {[
                 {
                   id: "overview",
@@ -423,11 +423,12 @@ export default function HotelApprovalPage() {
                 return (
                   <button
                     key={tab.id}
+                    type="button"
                     onClick={() => setActiveModalTab(tab.id)}
                     className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap ${
                       isActive
-                        ? "border-[#006ce4] text-[#003580]"
-                        : "border-transparent text-slate-500 hover:text-slate-900"
+                        ? "border-[#003580] text-[#003580]"
+                        : "border-transparent text-gray-500 hover:text-gray-900"
                     }`}
                   >
                     <Icon
@@ -448,17 +449,16 @@ export default function HotelApprovalPage() {
                 </div>
               ) : (
                 <>
-                  {/* ── TAB 1: TỔNG QUAN & PHÁP LÝ ── */}
+                  {/* TAB 1: TỔNG QUAN & PHÁP LÝ */}
                   {activeModalTab === "overview" && (
                     <div className="space-y-4 animate-fadeIn">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* THÔNG TIN CHỦ CƠ SỞ */}
-                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                          <h4 className="font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 text-xs">
+                        <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-2">
+                          <h4 className="font-black text-[#0a2540] uppercase tracking-wider flex items-center gap-1.5 text-xs">
                             <User size={15} className="text-[#006ce4]" /> Người
                             đại diện / Host
                           </h4>
-                          <div className="space-y-1 text-slate-600">
+                          <div className="space-y-1 text-gray-600">
                             <p>
                               <b>Họ tên:</b>{" "}
                               {selectedHotel.owner_name ||
@@ -480,13 +480,12 @@ export default function HotelApprovalPage() {
                           </div>
                         </div>
 
-                        {/* TÀI KHOẢN NGÂN HÀNG QUYẾT TOÁN */}
-                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                          <h4 className="font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 text-xs">
+                        <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-2">
+                          <h4 className="font-black text-[#0a2540] uppercase tracking-wider flex items-center gap-1.5 text-xs">
                             <CreditCard size={15} className="text-[#006ce4]" />{" "}
                             Tài khoản thụ hưởng Napas
                           </h4>
-                          <div className="space-y-1 text-slate-600">
+                          <div className="space-y-1 text-gray-600">
                             <p>
                               <b>Ngân hàng:</b>{" "}
                               {selectedHotel.bank_name || "---"}
@@ -503,23 +502,22 @@ export default function HotelApprovalPage() {
                         </div>
                       </div>
 
-                      {/* PHÁP LÝ & MÃ SỐ THUẾ */}
-                      <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2.5">
-                        <h4 className="font-black text-slate-900 uppercase tracking-wider text-xs flex items-center gap-1.5">
+                      <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-2.5">
+                        <h4 className="font-black text-[#0a2540] uppercase tracking-wider text-xs flex items-center gap-1.5">
                           <ShieldCheck size={15} className="text-emerald-600" />{" "}
                           Hồ sơ pháp lý & Thuế
                         </h4>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div>
-                            <span className="text-slate-500 block">
+                            <span className="text-gray-400 block">
                               Mã số thuế:
                             </span>
-                            <span className="font-mono font-bold text-slate-900 text-sm">
+                            <span className="font-mono font-bold text-gray-900 text-sm">
                               {selectedHotel.tax_code || "Chưa cập nhật"}
                             </span>
                           </div>
                           <div>
-                            <span className="text-slate-500 block">
+                            <span className="text-gray-400 block">
                               Hoa hồng cam kết:
                             </span>
                             <span className="font-bold text-[#003580] text-sm">
@@ -527,7 +525,7 @@ export default function HotelApprovalPage() {
                             </span>
                           </div>
                           <div>
-                            <span className="text-slate-500 block">
+                            <span className="text-gray-400 block">
                               Giấy phép đăng ký kinh doanh:
                             </span>
                             {selectedHotel.business_license_url ? (
@@ -541,7 +539,7 @@ export default function HotelApprovalPage() {
                                 GPKD
                               </a>
                             ) : (
-                              <span className="text-slate-400 italic">
+                              <span className="text-gray-400 italic">
                                 Chưa tải tệp
                               </span>
                             )}
@@ -549,12 +547,11 @@ export default function HotelApprovalPage() {
                         </div>
                       </div>
 
-                      {/* MÔ TẢ CHỖ NGHỈ */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                        <span className="font-black text-slate-800 uppercase tracking-wider block">
+                      <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-1.5">
+                        <span className="font-black text-gray-800 uppercase tracking-wider block">
                           Mô tả giới thiệu cơ sở lưu trú:
                         </span>
-                        <p className="text-slate-600 leading-relaxed whitespace-pre-line">
+                        <p className="text-gray-600 leading-relaxed whitespace-pre-line">
                           {selectedHotel.description ||
                             "Chưa có mô tả chi tiết."}
                         </p>
@@ -562,7 +559,7 @@ export default function HotelApprovalPage() {
                     </div>
                   )}
 
-                  {/* ── TAB 2: DANH MỤC HẠNG PHÒNG & GIÁ ── */}
+                  {/* TAB 2: DANH MỤC HẠNG PHÒNG & GIÁ */}
                   {activeModalTab === "rooms" && (
                     <div className="space-y-4 animate-fadeIn">
                       {Array.isArray(selectedHotel.rooms) &&
@@ -576,27 +573,27 @@ export default function HotelApprovalPage() {
                             return (
                               <div
                                 key={room.id || idx}
-                                className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-[#006ce4] transition shadow-xs flex flex-col sm:flex-row justify-between gap-4"
+                                className="p-4 rounded-2xl border border-gray-200 bg-white hover:border-[#003580] transition shadow-xs flex flex-col sm:flex-row justify-between gap-4"
                               >
                                 <div className="space-y-2 flex-1">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="w-5 h-5 rounded bg-[#003580] text-white text-[11px] font-black flex items-center justify-center">
+                                    <span className="w-5 h-5 rounded-md bg-[#003580] text-white text-[11px] font-black flex items-center justify-center">
                                       {idx + 1}
                                     </span>
-                                    <h4 className="text-sm font-black text-slate-900">
+                                    <h4 className="text-sm font-black text-[#0a2540]">
                                       {room.name || "Phòng nghỉ"}
                                     </h4>
-                                    <span className="text-[10px] font-bold uppercase bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                                    <span className="text-[10px] font-bold uppercase bg-blue-50 text-[#003580] px-2 py-0.5 rounded border border-blue-100">
                                       {room.type || "Deluxe"}
                                     </span>
                                     {room.room_view && (
-                                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
                                         {room.room_view}
                                       </span>
                                     )}
                                   </div>
 
-                                  <div className="text-slate-600 space-y-1">
+                                  <div className="text-gray-600 space-y-1">
                                     <p>
                                       🛏️ {room.bed_type || "1 Giường đôi lớn"}
                                     </p>
@@ -610,13 +607,12 @@ export default function HotelApprovalPage() {
                                     </p>
                                   </div>
 
-                                  {/* Tiện nghi phòng */}
                                   {roomAmenities.length > 0 && (
                                     <div className="pt-2 flex flex-wrap gap-1.5">
                                       {roomAmenities.map((am, aIdx) => (
                                         <span
                                           key={aIdx}
-                                          className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium"
+                                          className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[10px] font-medium"
                                         >
                                           ✓ {AMENITY_MAP[am] || am}
                                         </span>
@@ -627,10 +623,10 @@ export default function HotelApprovalPage() {
 
                                 <div className="sm:text-right flex sm:flex-col justify-between items-end shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0">
                                   <div>
-                                    <span className="text-slate-400 block text-[10px]">
+                                    <span className="text-gray-400 block text-[10px]">
                                       Giá niêm yết / đêm
                                     </span>
-                                    <span className="text-base font-black text-[#ff6a00]">
+                                    <span className="text-base font-black text-[#ff6a00] tabular-nums">
                                       {formatVND(
                                         room.base_price ||
                                           room.sell_price ||
@@ -643,7 +639,7 @@ export default function HotelApprovalPage() {
                                     <img
                                       src={room.image || room.thumbnail}
                                       alt=""
-                                      className="w-20 h-14 object-cover rounded-xl border border-slate-200"
+                                      className="w-20 h-14 object-cover rounded-xl border border-gray-200"
                                     />
                                   ) : null}
                                 </div>
@@ -652,14 +648,14 @@ export default function HotelApprovalPage() {
                           })}
                         </div>
                       ) : (
-                        <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-2xl border">
+                        <div className="p-8 text-center text-gray-400 bg-gray-50 rounded-2xl border border-gray-200">
                           Chưa có thông tin hạng phòng.
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* ── TAB 3: THƯ VIỆN HÌNH ẢNH ── */}
+                  {/* TAB 3: HÌNH ẢNH */}
                   {activeModalTab === "photos" && (
                     <div className="space-y-4 animate-fadeIn">
                       {Array.isArray(selectedHotel.images) &&
@@ -668,7 +664,7 @@ export default function HotelApprovalPage() {
                           {selectedHotel.images.map((img, i) => (
                             <div
                               key={img.id || i}
-                              className="group relative h-36 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100"
+                              className="group relative h-36 rounded-2xl overflow-hidden border border-gray-200 bg-gray-100"
                             >
                               <img
                                 src={img.path || img.url}
@@ -689,7 +685,7 @@ export default function HotelApprovalPage() {
                           ))}
                         </div>
                       ) : selectedHotel.image ? (
-                        <div className="h-64 w-full rounded-2xl overflow-hidden border">
+                        <div className="h-64 w-full rounded-2xl overflow-hidden border border-gray-200">
                           <img
                             src={selectedHotel.image}
                             alt=""
@@ -697,23 +693,22 @@ export default function HotelApprovalPage() {
                           />
                         </div>
                       ) : (
-                        <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-2xl border">
+                        <div className="p-8 text-center text-gray-400 bg-gray-50 rounded-2xl border border-gray-200">
                           Chưa có hình ảnh nào được tải lên.
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* ── TAB 4: QUY ĐỊNH & TIỆN NGHI ── */}
+                  {/* TAB 4: QUY ĐỊNH & TIỆN NGHI */}
                   {activeModalTab === "policy" && (
                     <div className="space-y-4 animate-fadeIn">
-                      {/* GIỜ NHẬN TRẢ PHÒNG */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
-                          <span className="text-slate-500 block">
+                          <span className="text-gray-500 block">
                             Nhận phòng (Check-in):
                           </span>
-                          <strong className="text-sm font-black text-slate-900">
+                          <strong className="text-sm font-black text-gray-900">
                             Từ{" "}
                             {String(
                               selectedHotel.checkin_time || "14:00",
@@ -721,10 +716,10 @@ export default function HotelApprovalPage() {
                           </strong>
                         </div>
                         <div>
-                          <span className="text-slate-500 block">
+                          <span className="text-gray-500 block">
                             Trả phòng (Check-out):
                           </span>
-                          <strong className="text-sm font-black text-slate-900">
+                          <strong className="text-sm font-black text-gray-900">
                             Trước{" "}
                             {String(
                               selectedHotel.checkout_time || "12:00",
@@ -732,8 +727,8 @@ export default function HotelApprovalPage() {
                           </strong>
                         </div>
                         <div>
-                          <span className="text-slate-500 block">
-                            Chính sách hủy phòng:
+                          <span className="text-gray-500 block">
+                            Chính sách hủy:
                           </span>
                           <strong className="text-sm font-black text-emerald-700">
                             {selectedHotel.cancellation_deadline_hours
@@ -743,9 +738,8 @@ export default function HotelApprovalPage() {
                         </div>
                       </div>
 
-                      {/* TIỆN NGHI CHỖ NGHỈ */}
-                      <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
-                        <span className="font-black text-slate-900 uppercase tracking-wider block">
+                      <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-3">
+                        <span className="font-black text-gray-900 uppercase tracking-wider block">
                           Tiện nghi & Dịch vụ cơ sở lưu trú:
                         </span>
                         {Array.isArray(selectedHotel.amenities) &&
@@ -754,7 +748,7 @@ export default function HotelApprovalPage() {
                             {selectedHotel.amenities.map((am, i) => (
                               <div
                                 key={i}
-                                className="flex items-center gap-1.5 text-slate-700"
+                                className="flex items-center gap-1.5 text-gray-700"
                               >
                                 <Check
                                   size={14}
@@ -765,7 +759,7 @@ export default function HotelApprovalPage() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-slate-400 italic">
+                          <p className="text-gray-400 italic">
                             Chưa cập nhật danh mục tiện nghi.
                           </p>
                         )}
@@ -776,11 +770,12 @@ export default function HotelApprovalPage() {
               )}
             </div>
 
-            {/* MODAL FOOTER - THANH HÀNH ĐỘNG CỦA ADMIN */}
-            <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
+            {/* MODAL FOOTER */}
+            <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
               <div>
                 {selectedHotel.status === "active" && (
                   <button
+                    type="button"
                     onClick={() => {
                       const reason = window.prompt(
                         "Nhập lý do đình chỉ hoạt động chỗ nghỉ:",
@@ -793,7 +788,7 @@ export default function HotelApprovalPage() {
                           reason,
                         );
                     }}
-                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold flex items-center gap-1.5 cursor-pointer text-xs"
+                    className="px-4 py-2 bg-gray-900 hover:bg-black text-white rounded-xl font-bold flex items-center gap-1.5 cursor-pointer text-xs transition"
                   >
                     <Ban size={14} /> Đình chỉ kinh doanh
                   </button>
@@ -802,13 +797,15 @@ export default function HotelApprovalPage() {
 
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
+                  type="button"
                   onClick={() => setSelectedHotel(null)}
-                  className="px-5 py-2.5 border border-slate-300 hover:bg-white text-slate-700 rounded-xl font-bold text-xs cursor-pointer"
+                  className="px-5 py-2.5 border border-gray-200 bg-white hover:bg-gray-100 text-gray-700 rounded-xl font-bold text-xs cursor-pointer transition"
                 >
                   Đóng
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     const reason = window.prompt(
                       "Nhập lý do từ chối phê duyệt hồ sơ:",
@@ -818,15 +815,16 @@ export default function HotelApprovalPage() {
                       handleUpdateStatus(selectedHotel.id, "rejected", reason);
                   }}
                   disabled={selectedHotel.status === "rejected"}
-                  className="px-5 py-2.5 border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-black text-xs cursor-pointer disabled:opacity-30 flex items-center gap-1.5"
+                  className="px-5 py-2.5 border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-black text-xs cursor-pointer disabled:opacity-30 flex items-center gap-1.5 transition"
                 >
                   <XCircle size={14} /> Từ chối
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => handleUpdateStatus(selectedHotel.id, "active")}
                   disabled={selectedHotel.status === "active"}
-                  className="px-7 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs cursor-pointer shadow-lg disabled:opacity-30 flex items-center gap-1.5"
+                  className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white rounded-xl font-black text-xs cursor-pointer shadow-sm disabled:opacity-30 flex items-center gap-1.5 transition active:scale-95"
                 >
                   <CheckCircle2 size={15} /> Duyệt mở bán ngay
                 </button>

@@ -26,9 +26,6 @@ import {
 import apiClient from "@/services/apiClient";
 import { LoadingSpinner } from "@/components/common";
 
-// =========================================================================
-// CÁC HÀM TIỆN ÍCH ĐỊNH DẠNG SỐ TIỀN
-// =========================================================================
 const formatNumberWithDots = (val) => {
   if (val === undefined || val === null || val === "") return "0";
   const digits = String(val).replace(/\D/g, "");
@@ -42,9 +39,6 @@ const parseDotsToNumber = (val) => {
   return Number(cleanDigits) || 0;
 };
 
-// =========================================================================
-// COMPONENT CHỌN GIỜ (TIMEPICKER DROPDOWN) - GIỮ NGUYÊN 100%
-// =========================================================================
 function TimePickerDropdown({ value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value || "12:00");
@@ -98,7 +92,7 @@ function TimePickerDropdown({ value, onChange }) {
   return (
     <div className="relative inline-block" ref={containerRef}>
       <div
-        className="flex items-center gap-1.5 border-b border-slate-300 pb-0.5 cursor-pointer hover:border-slate-500 transition"
+        className="flex items-center gap-1.5 border-b border-gray-300 pb-0.5 cursor-pointer hover:border-[#003580] transition"
         onClick={() => setIsOpen(!isOpen)}
       >
         <input
@@ -106,14 +100,14 @@ function TimePickerDropdown({ value, onChange }) {
           value={inputValue}
           onChange={handleManualInput}
           onFocus={() => setIsOpen(true)}
-          className="w-12 text-xs font-semibold text-slate-900 outline-none bg-transparent cursor-text"
+          className="w-12 text-xs font-bold text-gray-900 outline-none bg-transparent cursor-text"
           placeholder="12:00"
         />
-        <Clock size={13} className="text-slate-500 cursor-pointer" />
+        <Clock size={13} className="text-[#006ce4] cursor-pointer" />
       </div>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-28 bg-white border border-slate-200 rounded-lg shadow-xl py-1 z-50 max-h-48 overflow-y-auto animate-fadeIn">
+        <div className="absolute top-full left-0 mt-1 w-28 bg-white border border-gray-200 rounded-2xl shadow-xl py-1 z-50 max-h-48 overflow-y-auto">
           {timesList.map((t) => {
             const isSelected = t === inputValue;
             return (
@@ -123,15 +117,15 @@ function TimePickerDropdown({ value, onChange }) {
                 onClick={() => handleSelect(t)}
                 className={`px-3 py-1.5 flex items-center justify-between text-xs cursor-pointer transition ${
                   isSelected
-                    ? "font-bold text-slate-900 bg-slate-50"
-                    : "text-slate-700 hover:bg-slate-100"
+                    ? "font-bold text-[#003580] bg-blue-50"
+                    : "text-gray-700 hover:bg-gray-50"
                 }`}
               >
                 <span>{t}</span>
                 {isSelected && (
                   <Check
                     size={13}
-                    className="text-blue-600"
+                    className="text-[#003580]"
                     strokeWidth={2.5}
                   />
                 )}
@@ -144,20 +138,14 @@ function TimePickerDropdown({ value, onChange }) {
   );
 }
 
-// =========================================================================
-// TRANG CHÍNH: BẢNG GIÁ PHÒNG & THIẾT LẬP GIỜ NHẬN / TRẢ GỘP CHUNG
-// =========================================================================
 export default function RoomPricingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-
-  // Tab chính điều khiển hiển thị: "pricing" (Bảng giá) hoặc "time_settings" (Thiết lập giờ)
   const currentTab = searchParams.get("tab") || "pricing";
 
   const handleTabChange = (tabName) => {
     setSearchParams({ tab: tabName });
   };
 
-  // State chung
   const [loading, setLoading] = useState(true);
   const [hotels, setHotels] = useState([]);
   const [selectedHotelId, setSelectedHotelId] = useState(
@@ -166,15 +154,11 @@ export default function RoomPricingPage() {
   const [availableRooms, setAvailableRooms] = useState([]);
   const [toastMsg, setToastMsg] = useState("");
 
-  // -------------------------------------------------------------
-  // STATE CỦA PHẦN 1: BẢNG GIÁ PHÒNG
-  // -------------------------------------------------------------
   const [priceBooks, setPriceBooks] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [expandedSubTab, setExpandedSubTab] = useState("info");
 
-  // Modal Bảng giá
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState("info");
   const [editingPriceBook, setEditingPriceBook] = useState(null);
@@ -200,9 +184,6 @@ export default function RoomPricingPage() {
   const [isRoomDropdownOpen, setIsRoomDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // -------------------------------------------------------------
-  // STATE CỦA PHẦN 2: THIẾT LẬP GIỜ NHẬN / TRẢ
-  // -------------------------------------------------------------
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
   const [timeSettings, setTimeSettings] = useState({
@@ -219,7 +200,6 @@ export default function RoomPricingPage() {
     setTimeout(() => setToastMsg(""), 3500);
   };
 
-  // Đóng dropdown chọn phòng khi bấm ra ngoài
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -230,9 +210,6 @@ export default function RoomPricingPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // -------------------------------------------------------------
-  // 1. TẢI DỮ LIỆU CẤU HÌNH THỜI GIAN CỦA KHÁCH SẠN
-  // -------------------------------------------------------------
   const fetchHotelDetails = useCallback(async (hotelId) => {
     if (!hotelId) return;
     try {
@@ -260,9 +237,6 @@ export default function RoomPricingPage() {
     }
   }, []);
 
-  // -------------------------------------------------------------
-  // 2. KHỞI TẠO TẤT CẢ DỮ LIỆU
-  // -------------------------------------------------------------
   const fetchInitData = useCallback(async () => {
     try {
       setLoading(true);
@@ -275,16 +249,13 @@ export default function RoomPricingPage() {
       setSelectedHotelId(targetHId);
 
       if (targetHId) {
-        // Tải thiết lập giờ
         await fetchHotelDetails(targetHId);
 
-        // Tải danh sách phòng
         const resR = await apiClient.get(`/rooms?hotel_id=${targetHId}`);
         const rList = resR?.data?.rooms || resR?.data || [];
         const validRooms = Array.isArray(rList) ? rList : [];
         setAvailableRooms(validRooms);
 
-        // Tạo sẵn 1 bảng giá tiêu chuẩn từ DB
         const defaultBook = {
           id: "default_pb",
           code: "BG000001",
@@ -327,9 +298,6 @@ export default function RoomPricingPage() {
     fetchInitData();
   }, [fetchInitData]);
 
-  // -------------------------------------------------------------
-  // 3. CÁC HÀM XỬ LÝ BẢNG GIÁ PHÒNG
-  // -------------------------------------------------------------
   const handleOpenAddModal = () => {
     setEditingPriceBook(null);
     setModalTab("info");
@@ -390,10 +358,7 @@ export default function RoomPricingPage() {
       showToast("Đã lưu bảng giá vào Database thành công!");
 
       if (keepOpen) {
-        setFormData({
-          ...initialFormState,
-          code: "",
-        });
+        setFormData({ ...initialFormState, code: "" });
         setEditingPriceBook(null);
       } else {
         setIsPricingModalOpen(false);
@@ -402,8 +367,7 @@ export default function RoomPricingPage() {
       await fetchInitData();
     } catch (err) {
       alert(
-        "Lỗi lưu bảng giá vào DB: " +
-          (err.response?.data?.message || err.message),
+        "Lỗi lưu bảng giá: " + (err.response?.data?.message || err.message),
       );
     }
   };
@@ -520,9 +484,6 @@ export default function RoomPricingPage() {
     );
   }, [priceBooks, searchQuery]);
 
-  // -------------------------------------------------------------
-  // 4. CÁC HÀM XỬ LÝ THIẾT LẬP THỜI GIAN NHẬN / TRẢ PHÒNG
-  // -------------------------------------------------------------
   const handleSaveSettings = async (e) => {
     e.preventDefault();
     try {
@@ -553,26 +514,24 @@ export default function RoomPricingPage() {
   }
 
   return (
-    <div className="bg-[#f0f2f5] min-h-screen font-sans text-slate-800 -m-4 sm:-m-6 p-4 sm:p-6 pb-28 relative">
-      {/* Toast thông báo chung */}
+    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
       {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#2e7d32] text-white px-4 py-2.5 rounded shadow-lg flex items-center gap-2.5 text-xs font-semibold animate-fadeIn">
-          <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
-            <Check size={14} strokeWidth={3} />
-          </div>
+        <div className="fixed bottom-6 right-6 z-50 bg-[#003580] text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold animate-fadeIn">
+          <Check size={16} strokeWidth={3} />
           <span>{toastMsg}</span>
         </div>
       )}
 
-      {/* THANH ĐIỀU HƯỚNG TAB CHÍNH (GỘP CẢ 2 PHẦN) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 mb-5 gap-3">
-        <div className="flex items-center gap-3">
+      {/* THANH ĐIỀU HƯỚNG TAB CHÍNH */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-200 gap-3">
+        <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => handleTabChange("pricing")}
-            className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-lg transition flex items-center gap-2 cursor-pointer ${
+            className={`px-4 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition flex items-center gap-2 cursor-pointer ${
               currentTab === "pricing"
-                ? "bg-[#2e7d32] text-white shadow-xs"
-                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                ? "bg-[#003580] text-white shadow-xs"
+                : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
             }`}
           >
             <Tags size={16} />
@@ -580,11 +539,12 @@ export default function RoomPricingPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => handleTabChange("time_settings")}
-            className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-lg transition flex items-center gap-2 cursor-pointer ${
+            className={`px-4 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition flex items-center gap-2 cursor-pointer ${
               currentTab === "time_settings"
-                ? "bg-[#2e7d32] text-white shadow-xs"
-                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                ? "bg-[#003580] text-white shadow-xs"
+                : "bg-white text-gray-600 hover:bg-gray-100 border border-gray-200"
             }`}
           >
             <Clock size={16} />
@@ -593,8 +553,8 @@ export default function RoomPricingPage() {
         </div>
 
         {hotels.length > 1 && (
-          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-slate-300 shadow-2xs self-start sm:self-auto">
-            <span className="text-xs text-slate-500 font-medium">
+          <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-gray-200 shadow-xs self-start sm:self-auto">
+            <span className="text-xs text-gray-400 font-medium">
               Chi nhánh:
             </span>
             <select
@@ -604,11 +564,11 @@ export default function RoomPricingPage() {
                 setSelectedHotelId(newId);
                 fetchHotelDetails(newId);
               }}
-              className="text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer"
+              className="text-xs font-bold text-gray-800 bg-transparent outline-none cursor-pointer"
             >
               {hotels.map((h) => (
                 <option key={h.id} value={h.id}>
-                  {h.name}
+                  🏨 {h.name}
                 </option>
               ))}
             </select>
@@ -616,329 +576,316 @@ export default function RoomPricingPage() {
         )}
       </div>
 
-      {/* =====================================================================
-          HIỂN THỊ NỘI DUNG THEO TAB ĐƯỢC CHỌN
-      ===================================================================== */}
       {currentTab === "pricing" ? (
-        /* ======================== TAB 1: BẢNG GIÁ PHÒNG ======================== */
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-          {/* CỘT TRÁI: BỘ LỌC TÌM KIẾM */}
-          <div className="md:col-span-3 space-y-3.5">
-            <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-2xs space-y-2">
-              <label className="block text-xs font-bold text-slate-800">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+          <div className="md:col-span-3 space-y-4">
+            <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-2">
+              <label className="block text-xs font-black uppercase text-[#0a2540] tracking-wider">
                 Tìm kiếm
               </label>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Theo tên bảng giá"
-                className="w-full text-xs py-1.5 border-b border-slate-200 outline-none placeholder:text-slate-400 focus:border-blue-500 transition"
+                placeholder="Theo tên bảng giá..."
+                className="w-full text-xs py-2 px-3 bg-gray-50 border border-gray-200 rounded-xl outline-none placeholder:text-gray-400 focus:border-[#003580] focus:bg-white transition"
               />
             </div>
           </div>
 
-          {/* CỘT PHẢI: DANH SÁCH BẢNG GIÁ */}
-          <div className="md:col-span-9 space-y-3">
+          <div className="md:col-span-9 space-y-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight">
-                Bảng giá phòng
-              </h1>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black text-[#0a2540] tracking-tight">
+                  Danh Sách Bảng Giá
+                </h1>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Thiết lập các khung giá giờ, giá qua đêm và giá ngày theo từng
+                  mùa
+                </p>
+              </div>
 
               <button
+                type="button"
                 onClick={handleOpenAddModal}
-                className="px-4 py-2 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold text-xs rounded-md shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95"
               >
-                <Plus size={14} strokeWidth={2.5} />
-                <span>Thiết lập bảng giá</span>
+                <Plus size={16} strokeWidth={2.5} />
+                <span>Thiết lập bảng giá mới</span>
               </button>
             </div>
 
-            {/* Khung Bảng */}
-            <div className="bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#e0f2fe] text-slate-700 border-b border-slate-200 select-none">
-                    <th className="py-3 px-4 font-bold whitespace-nowrap w-44">
-                      Mã bảng giá
-                    </th>
-                    <th className="py-3 px-4 font-bold whitespace-nowrap">
-                      Tên bảng giá
-                    </th>
-                    <th className="py-3 px-4 font-bold whitespace-nowrap w-36">
-                      Trạng thái
-                    </th>
-                    <th className="py-3 px-4 font-bold whitespace-nowrap text-right w-52">
-                      Thời gian hiệu lực
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredPriceBooks.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-16 text-center">
-                        <div className="flex flex-col items-center justify-center text-slate-400 space-y-2">
-                          <Inbox
-                            size={40}
-                            strokeWidth={1.2}
-                            className="text-slate-300"
-                          />
-                          <span className="text-xs font-medium">
-                            Không tìm thấy bảng giá nào phù hợp
-                          </span>
-                        </div>
-                      </td>
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200 select-none">
+                      <th className="py-4 px-4 font-bold whitespace-nowrap w-44">
+                        Mã bảng giá
+                      </th>
+                      <th className="py-4 px-4 font-bold whitespace-nowrap">
+                        Tên bảng giá
+                      </th>
+                      <th className="py-4 px-4 font-bold whitespace-nowrap w-36">
+                        Trạng thái
+                      </th>
+                      <th className="py-4 px-4 font-bold whitespace-nowrap text-right w-52">
+                        Thời gian hiệu lực
+                      </th>
                     </tr>
-                  ) : (
-                    filteredPriceBooks.map((item) => {
-                      const isExpanded = expandedRowId === item.id;
-                      const startDateStr = item.start_date
-                        ? item.start_date.slice(0, 10)
-                        : "Toàn thời gian";
-                      const endDateStr = item.end_date
-                        ? item.end_date.slice(0, 10)
-                        : "Không thời hạn";
+                  </thead>
 
-                      return (
-                        <React.Fragment key={item.id}>
-                          <tr
-                            onClick={() => handleToggleRowExpand(item.id)}
-                            className={`transition cursor-pointer select-none ${
-                              isExpanded
-                                ? "bg-[#e8f5e9] border-t-2 border-l-2 border-r-2 border-[#2e7d32] font-semibold"
-                                : "border-b border-slate-100 hover:bg-slate-50"
-                            }`}
-                          >
-                            <td className="py-3 px-4 font-bold text-slate-800">
-                              {item.code}
-                            </td>
-                            <td className="py-3 px-4 font-semibold text-slate-800">
-                              {item.name}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="inline-block text-xs text-emerald-700 font-bold">
-                                Đang hoạt động
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right text-slate-700">
-                              {startDateStr} đến {endDateStr}
-                            </td>
-                          </tr>
+                  <tbody>
+                    {filteredPriceBooks.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-16 text-center">
+                          <div className="flex flex-col items-center justify-center text-gray-400 space-y-2">
+                            <Inbox
+                              size={40}
+                              strokeWidth={1.2}
+                              className="text-gray-300"
+                            />
+                            <span className="text-xs font-medium">
+                              Không tìm thấy bảng giá nào phù hợp
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredPriceBooks.map((item) => {
+                        const isExpanded = expandedRowId === item.id;
+                        const startDateStr = item.start_date
+                          ? item.start_date.slice(0, 10)
+                          : "Toàn thời gian";
+                        const endDateStr = item.end_date
+                          ? item.end_date.slice(0, 10)
+                          : "Không thời hạn";
 
-                          {isExpanded && (
-                            <tr className="border-b-2 border-l-2 border-r-2 border-[#2e7d32] bg-white">
-                              <td colSpan={4} className="p-0">
-                                <div className="bg-white">
-                                  <div className="flex items-center gap-1 px-4 pt-2 bg-[#e8f5e9] border-b border-slate-200">
-                                    <button
-                                      type="button"
-                                      onClick={() => setExpandedSubTab("info")}
-                                      className={`px-5 py-1.5 text-xs font-bold rounded-t transition cursor-pointer border-t border-x ${
-                                        expandedSubTab === "info"
-                                          ? "bg-white text-slate-800 border-slate-300 border-b-white -mb-[1px]"
-                                          : "bg-transparent text-slate-600 border-transparent hover:text-slate-900"
-                                      }`}
-                                    >
-                                      Thông tin
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setExpandedSubTab("prices")
-                                      }
-                                      className={`px-5 py-1.5 text-xs font-bold rounded-t transition cursor-pointer border-t border-x ${
-                                        expandedSubTab === "prices"
-                                          ? "bg-white text-slate-800 border-slate-300 border-b-white -mb-[1px]"
-                                          : "bg-transparent text-slate-600 border-transparent hover:text-slate-900"
-                                      }`}
-                                    >
-                                      Giá phòng
-                                    </button>
-                                  </div>
-
-                                  {expandedSubTab === "info" ? (
-                                    <div className="p-6 space-y-6">
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3 text-xs">
-                                        <div className="space-y-3">
-                                          <div className="flex items-center border-b border-slate-100 pb-1.5">
-                                            <span className="w-36 text-slate-600 font-normal">
-                                              Mã bảng giá:
-                                            </span>
-                                            <span className="font-bold text-slate-800">
-                                              {item.code}
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center border-b border-slate-100 pb-1.5">
-                                            <span className="w-36 text-slate-600 font-normal">
-                                              Tên bảng giá:
-                                            </span>
-                                            <span className="font-bold text-slate-800">
-                                              {item.name}
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center border-b border-slate-100 pb-1.5">
-                                            <span className="w-36 text-slate-600 font-normal">
-                                              Thời gian hiệu lực:
-                                            </span>
-                                            <span className="font-medium text-slate-800">
-                                              {startDateStr} đến {endDateStr}
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center pb-1.5">
-                                            <span className="w-36 text-slate-600 font-normal">
-                                              Trạng thái:
-                                            </span>
-                                            <span className="font-bold text-emerald-700">
-                                              Đang hoạt động
-                                            </span>
-                                          </div>
-                                        </div>
-
-                                        <div className="space-y-3">
-                                          <div className="flex items-center border-b border-slate-100 pb-1.5">
-                                            <span className="w-32 text-slate-600 font-normal">
-                                              Chi nhánh:
-                                            </span>
-                                            <span className="font-medium text-slate-800">
-                                              Toàn hệ thống
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center border-b border-slate-100 pb-1.5">
-                                            <span className="w-32 text-slate-600 font-normal">
-                                              Khách hàng:
-                                            </span>
-                                            <span className="font-medium text-slate-800">
-                                              Toàn bộ khách hàng
-                                            </span>
-                                          </div>
-                                          <div className="flex items-center pb-1.5">
-                                            <span className="w-32 text-slate-600 font-normal">
-                                              Ghi chú:
-                                            </span>
-                                            <span className="font-medium text-slate-700">
-                                              {item.note || ""}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-                                        <button
-                                          type="button"
-                                          onClick={(e) =>
-                                            handleOpenEditModal(item, e)
-                                          }
-                                          className="px-4 py-1.5 bg-[#2e7d32] hover:bg-[#256628] text-white font-bold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
-                                        >
-                                          <CheckSquare size={14} />
-                                          <span>Cập nhật</span>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={(e) =>
-                                            handleDeletePriceBook(item.id, e)
-                                          }
-                                          className="px-4 py-1.5 bg-[#e53e3e] hover:bg-[#c53030] text-white font-bold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
-                                        >
-                                          <Trash2 size={14} />
-                                          <span>Xóa</span>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="p-4 space-y-3">
-                                      <div className="border border-slate-200 rounded overflow-hidden">
-                                        <table className="w-full text-left text-xs border-collapse">
-                                          <thead>
-                                            <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
-                                              <th className="py-2.5 px-3 font-bold">
-                                                Mã phòng
-                                              </th>
-                                              <th className="py-2.5 px-3 font-bold">
-                                                Tên hạng phòng
-                                              </th>
-                                              <th className="py-2.5 px-3 font-bold text-right">
-                                                Giá giờ đầu
-                                              </th>
-                                              <th className="py-2.5 px-3 font-bold text-right">
-                                                Giá đêm
-                                              </th>
-                                              <th className="py-2.5 px-3 font-bold text-right">
-                                                Giá ngày
-                                              </th>
-                                            </tr>
-                                          </thead>
-                                          <tbody className="divide-y divide-slate-100">
-                                            {(item.room_prices || []).map(
-                                              (rp, idx) => (
-                                                <tr
-                                                  key={idx}
-                                                  className="hover:bg-slate-50"
-                                                >
-                                                  <td className="py-2.5 px-3 font-bold text-slate-800">
-                                                    {rp.code}
-                                                  </td>
-                                                  <td className="py-2.5 px-3 font-medium text-slate-800">
-                                                    {rp.name}
-                                                  </td>
-                                                  <td className="py-2.5 px-3 text-right font-semibold text-slate-700">
-                                                    {formatNumberWithDots(
-                                                      rp.hourly_tiers?.[0]
-                                                        ?.price ||
-                                                        rp.hourly_price,
-                                                    )}{" "}
-                                                    đ
-                                                  </td>
-                                                  <td className="py-2.5 px-3 text-right font-semibold text-slate-700">
-                                                    {formatNumberWithDots(
-                                                      rp.overnight_price,
-                                                    )}{" "}
-                                                    đ
-                                                  </td>
-                                                  <td className="py-2.5 px-3 text-right font-semibold text-slate-700">
-                                                    {formatNumberWithDots(
-                                                      rp.daily_price,
-                                                    )}{" "}
-                                                    đ
-                                                  </td>
-                                                </tr>
-                                              ),
-                                            )}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
+                        return (
+                          <React.Fragment key={item.id}>
+                            <tr
+                              onClick={() => handleToggleRowExpand(item.id)}
+                              className={`transition cursor-pointer select-none ${
+                                isExpanded
+                                  ? "bg-blue-50/70 border-t-2 border-l-2 border-r-2 border-[#003580] font-semibold"
+                                  : "border-b border-gray-100 hover:bg-gray-50"
+                              }`}
+                            >
+                              <td className="py-3 px-4 font-bold text-[#003580]">
+                                {item.code}
+                              </td>
+                              <td className="py-3 px-4 font-bold text-gray-900">
+                                {item.name}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="inline-block text-xs text-emerald-700 font-bold px-2 py-0.5 bg-emerald-50 rounded-md border border-emerald-200">
+                                  Đang áp dụng
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right text-gray-600 font-mono">
+                                {startDateStr} đến {endDateStr}
                               </td>
                             </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+
+                            {isExpanded && (
+                              <tr className="border-b-2 border-l-2 border-r-2 border-[#003580] bg-white">
+                                <td colSpan={4} className="p-0">
+                                  <div className="bg-white">
+                                    <div className="flex items-center gap-1 px-5 pt-3 bg-blue-50/50 border-b border-gray-200">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setExpandedSubTab("info")
+                                        }
+                                        className={`px-5 py-2 text-xs font-bold rounded-t-xl transition cursor-pointer border-t border-x ${
+                                          expandedSubTab === "info"
+                                            ? "bg-white text-[#003580] border-gray-200 border-b-white -mb-[1px]"
+                                            : "bg-transparent text-gray-500 border-transparent hover:text-gray-900"
+                                        }`}
+                                      >
+                                        Thông tin chung
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setExpandedSubTab("prices")
+                                        }
+                                        className={`px-5 py-2 text-xs font-bold rounded-t-xl transition cursor-pointer border-t border-x ${
+                                          expandedSubTab === "prices"
+                                            ? "bg-white text-[#003580] border-gray-200 border-b-white -mb-[1px]"
+                                            : "bg-transparent text-gray-500 border-transparent hover:text-gray-900"
+                                        }`}
+                                      >
+                                        Chi tiết giá phòng
+                                      </button>
+                                    </div>
+
+                                    {expandedSubTab === "info" ? (
+                                      <div className="p-6 space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3 text-xs">
+                                          <div className="space-y-3">
+                                            <div className="flex items-center border-b border-gray-100 pb-2">
+                                              <span className="w-36 text-gray-500 font-medium">
+                                                Mã bảng giá:
+                                              </span>
+                                              <span className="font-bold text-gray-900">
+                                                {item.code}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center border-b border-gray-100 pb-2">
+                                              <span className="w-36 text-gray-500 font-medium">
+                                                Tên bảng giá:
+                                              </span>
+                                              <span className="font-bold text-gray-900">
+                                                {item.name}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center border-b border-gray-100 pb-2">
+                                              <span className="w-36 text-gray-500 font-medium">
+                                                Hiệu lực:
+                                              </span>
+                                              <span className="font-semibold text-gray-800">
+                                                {startDateStr} đến {endDateStr}
+                                              </span>
+                                            </div>
+                                          </div>
+
+                                          <div className="space-y-3">
+                                            <div className="flex items-center border-b border-gray-100 pb-2">
+                                              <span className="w-32 text-gray-500 font-medium">
+                                                Chi nhánh:
+                                              </span>
+                                              <span className="font-bold text-gray-900">
+                                                Toàn bộ hệ thống
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center border-b border-gray-100 pb-2">
+                                              <span className="w-32 text-gray-500 font-medium">
+                                                Ghi chú:
+                                              </span>
+                                              <span className="font-medium text-gray-700">
+                                                {item.note || "---"}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
+                                          <button
+                                            type="button"
+                                            onClick={(e) =>
+                                              handleOpenEditModal(item, e)
+                                            }
+                                            className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                                          >
+                                            <CheckSquare size={14} />
+                                            <span>Chỉnh sửa</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) =>
+                                              handleDeletePriceBook(item.id, e)
+                                            }
+                                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                                          >
+                                            <Trash2 size={14} />
+                                            <span>Xóa</span>
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="p-5 space-y-3">
+                                        <div className="border border-gray-200 rounded-2xl overflow-hidden">
+                                          <table className="w-full text-left text-xs border-collapse">
+                                            <thead>
+                                              <tr className="bg-gray-50 text-gray-700 border-b border-gray-200">
+                                                <th className="py-3 px-4 font-bold">
+                                                  Mã phòng
+                                                </th>
+                                                <th className="py-3 px-4 font-bold">
+                                                  Tên hạng phòng
+                                                </th>
+                                                <th className="py-3 px-4 font-bold text-right">
+                                                  Giá giờ đầu
+                                                </th>
+                                                <th className="py-3 px-4 font-bold text-right">
+                                                  Giá đêm
+                                                </th>
+                                                <th className="py-3 px-4 font-bold text-right">
+                                                  Giá ngày
+                                                </th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                              {(item.room_prices || []).map(
+                                                (rp, idx) => (
+                                                  <tr
+                                                    key={idx}
+                                                    className="hover:bg-blue-50/40"
+                                                  >
+                                                    <td className="py-3 px-4 font-bold text-[#003580]">
+                                                      {rp.code}
+                                                    </td>
+                                                    <td className="py-3 px-4 font-bold text-gray-900">
+                                                      {rp.name}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right font-medium text-gray-700 tabular-nums">
+                                                      {formatNumberWithDots(
+                                                        rp.hourly_tiers?.[0]
+                                                          ?.price ||
+                                                          rp.hourly_price,
+                                                      )}{" "}
+                                                      đ
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right font-medium text-gray-700 tabular-nums">
+                                                      {formatNumberWithDots(
+                                                        rp.overnight_price,
+                                                      )}{" "}
+                                                      đ
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right font-bold text-[#ff6a00] tabular-nums">
+                                                      {formatNumberWithDots(
+                                                        rp.daily_price,
+                                                      )}{" "}
+                                                      đ
+                                                    </td>
+                                                  </tr>
+                                                ),
+                                              )}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
       ) : (
-        /* ======================== TAB 2: THIẾT LẬP GIỜ NHẬN / TRẢ ======================== */
         <div className="space-y-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-black text-[#0a2540] tracking-tight">
               Thiết lập phòng
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-gray-500 mt-0.5">
               Cấu hình mốc giờ nhận/trả phòng và cách tính phụ thu thời gian sử
               dụng
             </p>
           </div>
 
           {saveSuccess && (
-            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center gap-2 font-semibold animate-fadeIn">
+            <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-2xl flex items-center gap-2 font-bold animate-fadeIn">
               <CheckCircle2 size={16} className="text-emerald-600" />
               <span>
                 Đã lưu thành công thiết lập thời gian sử dụng phòng vào
@@ -947,42 +894,42 @@ export default function RoomPricingPage() {
             </div>
           )}
 
-          <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-5">
-            <h2 className="text-base font-bold text-slate-800 mb-4">
-              Cài đặt quy chuẩn
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6">
+            <h2 className="text-base font-black text-[#0a2540] mb-4">
+              Cài đặt quy chuẩn thời gian
             </h2>
 
-            <div className="border border-slate-200 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-slate-300 transition bg-white">
-              <div className="flex items-start gap-3.5">
-                <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Calendar size={20} />
+            <div className="border border-gray-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-gray-300 transition bg-white">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#003580] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Calendar size={22} />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-slate-800">
+                  <h3 className="text-xs font-black uppercase text-gray-900 tracking-wider">
                     Thiết lập thời gian sử dụng phòng
                   </h3>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
+                  <p className="text-xs text-gray-500 mt-1">
                     Quy định thời gian nhận phòng, trả phòng, tính thêm giờ khi
                     sử dụng quá thời gian...
                   </p>
 
-                  <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-3 text-[11px] text-slate-600">
-                    <div className="bg-slate-50 border border-slate-100 px-2.5 py-1 rounded">
+                  <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-gray-600">
+                    <div className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-xl">
                       Theo giờ:{" "}
-                      <b className="text-slate-800">
+                      <b className="text-gray-900">
                         Quá {timeSettings.hourly_grace_minutes}p tính 1h
                       </b>
                     </div>
-                    <div className="bg-slate-50 border border-slate-100 px-2.5 py-1 rounded">
+                    <div className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-xl">
                       Qua đêm:{" "}
-                      <b className="text-slate-800">
+                      <b className="text-gray-900">
                         {timeSettings.overnight_checkin} -{" "}
                         {timeSettings.overnight_checkout}
                       </b>
                     </div>
-                    <div className="bg-slate-50 border border-slate-100 px-2.5 py-1 rounded">
+                    <div className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-xl">
                       Cả ngày:{" "}
-                      <b className="text-slate-800">
+                      <b className="text-gray-900">
                         {timeSettings.daily_checkin} -{" "}
                         {timeSettings.daily_checkout}
                       </b>
@@ -994,7 +941,7 @@ export default function RoomPricingPage() {
               <button
                 type="button"
                 onClick={() => setIsTimeModalOpen(true)}
-                className="px-5 py-2 border border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold text-xs rounded-md transition cursor-pointer flex-shrink-0 active:scale-95 self-end sm:self-center"
+                className="px-5 py-2.5 border border-[#003580] text-[#003580] hover:bg-blue-50 font-bold text-xs rounded-xl transition cursor-pointer flex-shrink-0 active:scale-95 self-end sm:self-center"
               >
                 Chi tiết
               </button>
@@ -1003,50 +950,51 @@ export default function RoomPricingPage() {
         </div>
       )}
 
-      {/* ─── MODAL 1: THÊM / SỬA BẢNG GIÁ PHÒNG ─── */}
+      {/* MODAL THIẾT LẬP BẢNG GIÁ */}
       {isPricingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-fadeIn">
-          <div className="bg-white rounded-md w-full max-w-4xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
-            <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-100">
-              <h3 className="font-semibold text-sm text-slate-800 tracking-tight">
-                {editingPriceBook ? "Cập nhật bảng giá" : "Thêm bảng giá"}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-gray-200 flex flex-col max-h-[92vh] overflow-hidden font-sans">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
+              <h3 className="font-black text-base text-[#0a2540]">
+                {editingPriceBook ? "Cập Nhật Bảng Giá" : "Thêm Bảng Giá Mới"}
               </h3>
               <button
+                type="button"
                 onClick={() => setIsPricingModalOpen(false)}
-                className="cursor-pointer text-slate-400 hover:text-slate-600 transition text-lg"
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex items-center gap-8 px-6 border-b border-slate-200 text-xs font-medium text-slate-500 bg-white select-none">
+            <div className="flex items-center gap-8 px-6 border-b border-gray-200 text-xs font-bold text-gray-500 bg-white select-none">
               <button
                 type="button"
                 onClick={() => setModalTab("info")}
-                className={`py-2.5 transition relative cursor-pointer ${
+                className={`py-3 transition relative cursor-pointer ${
                   modalTab === "info"
-                    ? "text-slate-800 font-semibold"
-                    : "hover:text-slate-800"
+                    ? "text-[#003580] font-black"
+                    : "hover:text-gray-900"
                 }`}
               >
-                Thông tin
+                Thông tin chung
                 {modalTab === "info" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2e7d32]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
                 )}
               </button>
 
               <button
                 type="button"
                 onClick={() => setModalTab("price_details")}
-                className={`py-2.5 transition relative cursor-pointer ${
+                className={`py-3 transition relative cursor-pointer ${
                   modalTab === "price_details"
-                    ? "text-slate-800 font-semibold"
-                    : "hover:text-slate-800"
+                    ? "text-[#003580] font-black"
+                    : "hover:text-gray-900"
                 }`}
               >
                 Chi tiết giá phòng
                 {modalTab === "price_details" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2e7d32]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
                 )}
               </button>
             </div>
@@ -1056,9 +1004,9 @@ export default function RoomPricingPage() {
               className="flex-1 overflow-y-auto p-6 space-y-6 text-xs"
             >
               {modalTab === "info" && (
-                <div className="space-y-5 pt-1">
+                <div className="space-y-4 pt-1">
                   <div className="flex items-center gap-4">
-                    <label className="w-28 text-slate-700 font-normal">
+                    <label className="w-28 text-gray-700 font-bold">
                       Mã bảng giá
                     </label>
                     <input
@@ -1066,14 +1014,14 @@ export default function RoomPricingPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, code: e.target.value })
                       }
-                      placeholder="Mã bảng giá tự động"
-                      className="flex-1 py-1 border-b border-slate-300 outline-none text-slate-800 font-medium bg-transparent"
+                      placeholder="Mã tự động"
+                      className="flex-1 py-1.5 border-b border-gray-300 outline-none text-gray-900 font-mono bg-transparent"
                     />
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <label className="w-28 text-slate-700 font-normal">
-                      Tên bảng giá <b className="text-rose-500">*</b>
+                    <label className="w-28 text-gray-700 font-bold">
+                      Tên bảng giá *
                     </label>
                     <input
                       required
@@ -1082,157 +1030,49 @@ export default function RoomPricingPage() {
                         setFormData({ ...formData, name: e.target.value })
                       }
                       placeholder="Nhập tên bảng giá..."
-                      className="flex-1 py-1 border-b border-[#2e7d32] outline-none text-slate-800 font-medium bg-transparent"
+                      className="flex-1 py-1.5 border-b border-[#003580] outline-none text-gray-900 font-bold bg-transparent"
                     />
                   </div>
 
                   <div className="flex items-center gap-4">
-                    <label className="w-28 flex items-center gap-1.5 text-slate-700 font-normal">
-                      <span>Ghi chú</span>
-                      <Edit2 size={12} className="text-slate-400" />
+                    <label className="w-28 text-gray-700 font-bold">
+                      Ghi chú
                     </label>
                     <input
                       value={formData.note}
                       onChange={(e) =>
                         setFormData({ ...formData, note: e.target.value })
                       }
-                      placeholder="Thêm ghi chú nếu có..."
-                      className="flex-1 py-1 border-b border-slate-300 outline-none text-slate-800 bg-transparent"
+                      placeholder="Ghi chú áp dụng..."
+                      className="flex-1 py-1.5 border-b border-gray-300 outline-none text-gray-800 bg-transparent"
                     />
                   </div>
 
-                  <div className="flex items-center gap-4 pt-1">
-                    <label className="w-28 text-slate-700 font-normal">
+                  <div className="flex items-center gap-4 pt-2">
+                    <label className="w-28 text-gray-700 font-bold">
                       Hiệu lực
                     </label>
                     <div className="flex-1 flex items-center gap-4 flex-wrap">
-                      <div className="flex items-center gap-2 border-b border-slate-300 pb-0.5">
-                        <input
-                          type="datetime-local"
-                          value={formData.start_date}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              start_date: e.target.value,
-                            })
-                          }
-                          className="outline-none text-slate-800 font-medium bg-transparent"
-                        />
-                        <Calendar size={13} className="text-slate-400" />
-                      </div>
-                      <span className="text-slate-500">Đến</span>
-                      <div className="flex items-center gap-2 border-b border-slate-300 pb-0.5">
-                        <input
-                          type="datetime-local"
-                          value={formData.end_date}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              end_date: e.target.value,
-                            })
-                          }
-                          className="outline-none text-slate-800 font-medium bg-transparent"
-                        />
-                        <Calendar size={13} className="text-slate-400" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-2">
-                    <label className="block text-slate-700 font-medium">
-                      Phạm vi áp dụng
-                    </label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="space-y-2.5">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="scope_branch"
-                            checked={formData.scope_branch === "all"}
-                            onChange={() =>
-                              setFormData({ ...formData, scope_branch: "all" })
-                            }
-                            className="accent-[#2e7d32]"
-                          />
-                          <span>Toàn hệ thống</span>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
-                            <input
-                              type="radio"
-                              name="scope_branch"
-                              checked={formData.scope_branch === "custom"}
-                              onChange={() =>
-                                setFormData({
-                                  ...formData,
-                                  scope_branch: "custom",
-                                })
-                              }
-                              className="accent-[#2e7d32]"
-                            />
-                            <span>Chi nhánh</span>
-                          </label>
-                          <input
-                            disabled={formData.scope_branch !== "custom"}
-                            value={formData.branch_name}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                branch_name: e.target.value,
-                              })
-                            }
-                            placeholder="Chọn chi nhánh áp dụng"
-                            className="flex-1 py-1 border-b border-slate-300 outline-none text-slate-700 disabled:opacity-40 bg-transparent"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-2.5">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="scope_customer"
-                            checked={formData.scope_customer === "all"}
-                            onChange={() =>
-                              setFormData({
-                                ...formData,
-                                scope_customer: "all",
-                              })
-                            }
-                            className="accent-[#2e7d32]"
-                          />
-                          <span>Toàn bộ khách hàng</span>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
-                            <input
-                              type="radio"
-                              name="scope_customer"
-                              checked={formData.scope_customer === "custom"}
-                              onChange={() =>
-                                setFormData({
-                                  ...formData,
-                                  scope_customer: "custom",
-                                })
-                              }
-                              className="accent-[#2e7d32]"
-                            />
-                            <span>Nhóm khách hàng</span>
-                          </label>
-                          <input
-                            disabled={formData.scope_customer !== "custom"}
-                            value={formData.customer_group}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                customer_group: e.target.value,
-                              })
-                            }
-                            placeholder="Chọn nhóm khách hàng áp dụng"
-                            className="flex-1 py-1 border-b border-slate-300 outline-none text-slate-700 disabled:opacity-40 bg-transparent"
-                          />
-                        </div>
-                      </div>
+                      <input
+                        type="datetime-local"
+                        value={formData.start_date}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            start_date: e.target.value,
+                          })
+                        }
+                        className="py-1 border-b border-gray-300 outline-none text-gray-900 font-semibold bg-transparent"
+                      />
+                      <span className="text-gray-400">đến</span>
+                      <input
+                        type="datetime-local"
+                        value={formData.end_date}
+                        onChange={(e) =>
+                          setFormData({ ...formData, end_date: e.target.value })
+                        }
+                        className="py-1 border-b border-gray-300 outline-none text-gray-900 font-semibold bg-transparent"
+                      />
                     </div>
                   </div>
                 </div>
@@ -1241,20 +1081,20 @@ export default function RoomPricingPage() {
               {modalTab === "price_details" && (
                 <div className="space-y-4">
                   <div className="relative" ref={dropdownRef}>
-                    <div className="flex items-center gap-2 border-b border-slate-300 pb-1">
-                      <Search size={14} className="text-slate-400" />
+                    <div className="flex items-center gap-2 border-b border-gray-300 pb-1.5">
+                      <Search size={14} className="text-gray-400" />
                       <input
                         type="text"
                         value={roomSearchKey}
                         onFocus={() => setIsRoomDropdownOpen(true)}
                         onChange={(e) => setRoomSearchKey(e.target.value)}
-                        placeholder="Thêm hạng phòng vào bảng giá"
-                        className="w-full outline-none text-slate-800 text-xs placeholder:text-slate-400 bg-transparent"
+                        placeholder="Tìm & thêm hạng phòng vào bảng giá..."
+                        className="w-full outline-none text-gray-900 text-xs bg-transparent"
                       />
                     </div>
 
                     {isRoomDropdownOpen && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg z-30 max-h-48 overflow-y-auto">
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-2xl shadow-xl z-30 max-h-48 overflow-y-auto">
                         {availableRooms
                           .filter((r) =>
                             r.name
@@ -1265,12 +1105,12 @@ export default function RoomPricingPage() {
                             <div
                               key={r.id}
                               onClick={() => handleAddRoomToPrice(r)}
-                              className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center text-xs border-b border-slate-100"
+                              className="px-4 py-2.5 hover:bg-blue-50 cursor-pointer flex justify-between items-center text-xs border-b border-gray-100"
                             >
-                              <span className="font-semibold text-slate-800">
+                              <span className="font-bold text-gray-900">
                                 {r.code || r.name} - {r.name}
                               </span>
-                              <span className="text-slate-500 font-medium">
+                              <span className="text-[#ff6a00] font-black">
                                 {formatNumberWithDots(r.base_price)} đ
                               </span>
                             </div>
@@ -1279,24 +1119,19 @@ export default function RoomPricingPage() {
                     )}
                   </div>
 
-                  <div className="border border-slate-200 rounded-md overflow-hidden">
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
-                        <tr className="bg-[#e0f2fe] text-slate-700 border-b border-slate-200">
-                          <th className="py-2.5 px-3 font-bold w-48">
+                        <tr className="bg-gray-50 text-gray-700 border-b border-gray-200">
+                          <th className="py-3 px-4 font-bold w-48">
                             Hạng phòng
                           </th>
-                          <th className="py-2.5 px-3 font-bold w-28">
-                            Ngày lưu trú
-                          </th>
-                          <th className="py-2.5 px-3 font-bold w-24">
-                            Loại giá
-                          </th>
-                          <th className="py-2.5 px-3 font-bold">Mức giá</th>
+                          <th className="py-3 px-4 font-bold w-24">Loại giá</th>
+                          <th className="py-3 px-4 font-bold">Mức giá</th>
                         </tr>
                       </thead>
 
-                      <tbody className="divide-y divide-slate-200">
+                      <tbody className="divide-y divide-gray-200">
                         {formData.room_prices.map((rp, roomIdx) => {
                           const tiers = rp.hourly_tiers || [
                             {
@@ -1311,35 +1146,29 @@ export default function RoomPricingPage() {
                               key={rp.room_id || roomIdx}
                               className="align-top bg-white"
                             >
-                              <td className="py-3 px-3">
+                              <td className="py-3 px-4">
                                 <div className="flex items-start gap-2">
                                   <button
                                     type="button"
                                     onClick={() =>
                                       handleRemoveRoomFromPrice(rp.room_id)
                                     }
-                                    className="text-slate-400 hover:text-rose-600 p-0.5 cursor-pointer mt-0.5"
+                                    className="text-gray-400 hover:text-rose-600 p-0.5 cursor-pointer mt-0.5"
                                   >
                                     <Trash2 size={13} />
                                   </button>
                                   <div>
-                                    <span className="font-bold text-slate-800 block">
+                                    <span className="font-bold text-[#003580] block">
                                       {rp.code}
                                     </span>
-                                    <span className="text-slate-600 text-[11px] block">
+                                    <span className="text-gray-600 text-[11px] block">
                                       {rp.name}
                                     </span>
                                   </div>
                                 </div>
                               </td>
 
-                              <td className="py-3 px-3">
-                                <span className="font-medium text-slate-700 block mb-3">
-                                  Mặc định
-                                </span>
-                              </td>
-
-                              <td className="py-3 px-3 text-slate-600">
+                              <td className="py-3 px-4 text-gray-500 font-semibold">
                                 <div
                                   style={{
                                     height: `${tiers.length * 32}px`,
@@ -1352,7 +1181,7 @@ export default function RoomPricingPage() {
                                 <div className="py-1.5">Giá ngày</div>
                               </td>
 
-                              <td className="py-3 px-3 space-y-2.5">
+                              <td className="py-3 px-4 space-y-2.5">
                                 <div className="space-y-2">
                                   {tiers.map((tier, tierIdx) => {
                                     const isLastTier =
@@ -1363,7 +1192,7 @@ export default function RoomPricingPage() {
                                         key={tierIdx}
                                         className="flex items-center gap-2 flex-wrap"
                                       >
-                                        <span className="text-slate-600">
+                                        <span className="text-gray-500">
                                           Từ giờ thứ
                                         </span>
                                         <input
@@ -1377,16 +1206,11 @@ export default function RoomPricingPage() {
                                               Number(e.target.value),
                                             )
                                           }
-                                          className="w-10 text-center py-0.5 border-b border-slate-300 outline-none text-xs font-semibold"
+                                          className="w-10 text-center py-0.5 border-b border-gray-300 outline-none text-xs font-bold"
                                         />
-
-                                        <span className="text-slate-600">
+                                        <span className="text-gray-500">
                                           giá
                                         </span>
-                                        <span className="font-medium text-slate-700">
-                                          Mỗi giờ
-                                        </span>
-
                                         <input
                                           type="text"
                                           inputMode="numeric"
@@ -1401,9 +1225,8 @@ export default function RoomPricingPage() {
                                               parseDotsToNumber(e.target.value),
                                             )
                                           }
-                                          className="w-24 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] font-semibold text-slate-800 text-xs"
+                                          className="w-24 text-right py-0.5 border-b border-gray-300 outline-none focus:border-[#003580] font-bold text-gray-900 text-xs"
                                         />
-
                                         {tiers.length > 1 && (
                                           <button
                                             type="button"
@@ -1418,14 +1241,13 @@ export default function RoomPricingPage() {
                                             ✕
                                           </button>
                                         )}
-
                                         {isLastTier && (
                                           <button
                                             type="button"
                                             onClick={() =>
                                               handleAddHourlyTier(roomIdx)
                                             }
-                                            className="text-blue-600 hover:text-blue-800 p-0.5 cursor-pointer font-bold text-base ml-0.5"
+                                            className="text-[#006ce4] hover:text-blue-800 p-0.5 cursor-pointer font-bold text-base"
                                           >
                                             +
                                           </button>
@@ -1459,7 +1281,7 @@ export default function RoomPricingPage() {
                                         ),
                                       }));
                                     }}
-                                    className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] font-semibold text-slate-800 text-xs"
+                                    className="w-28 text-right py-0.5 border-b border-gray-300 outline-none focus:border-[#003580] font-bold text-gray-900 text-xs"
                                   />
                                 </div>
 
@@ -1482,7 +1304,7 @@ export default function RoomPricingPage() {
                                         ),
                                       }));
                                     }}
-                                    className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] font-semibold text-slate-800 text-xs"
+                                    className="w-28 text-right py-0.5 border-b border-[#003580] outline-none text-[#ff6a00] font-black text-xs"
                                   />
                                 </div>
                               </td>
@@ -1495,28 +1317,19 @@ export default function RoomPricingPage() {
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
                 >
                   <Save size={14} />
-                  <span>Lưu</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => handleSavePriceBook(e, true)}
-                  className="px-4 py-1.5 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
-                >
-                  <Save size={14} />
-                  <span>Lưu & Thêm mới</span>
+                  <span>Lưu bảng giá</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIsPricingModalOpen(false)}
-                  className="px-4 py-1.5 bg-[#718096] hover:bg-[#4a5568] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
                 >
                   <Ban size={14} />
                   <span>Bỏ qua</span>
@@ -1527,17 +1340,18 @@ export default function RoomPricingPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: THIẾT LẬP THỜI GIAN SỬ DỤNG PHÒNG ─── */}
+      {/* MODAL THIẾT LẬP THỜI GIAN SỬ DỤNG PHÒNG */}
       {isTimeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-2xs animate-fadeIn">
-          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl border border-slate-200 flex flex-col animate-scaleUp">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-white">
-              <h3 className="font-bold text-sm text-slate-900 tracking-tight">
-                Thiết lập thời gian sử dụng phòng
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-gray-200 flex flex-col font-sans">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
+              <h3 className="font-black text-base text-[#0a2540]">
+                Thiết Lập Thời Gian Sử Dụng Phòng
               </h3>
               <button
+                type="button"
                 onClick={() => setIsTimeModalOpen(false)}
-                className="cursor-pointer text-slate-400 hover:text-slate-600 transition"
+                className="cursor-pointer text-gray-400 hover:text-gray-600 transition"
               >
                 <X size={18} />
               </button>
@@ -1548,10 +1362,12 @@ export default function RoomPricingPage() {
               className="p-6 space-y-6 text-xs font-sans"
             >
               <div className="space-y-3">
-                <h4 className="font-bold text-slate-800 text-xs">Theo giờ</h4>
+                <h4 className="font-black text-gray-900 uppercase tracking-wider text-xs">
+                  Theo giờ
+                </h4>
                 <div className="flex items-center justify-between pl-2">
-                  <span className="text-slate-700">
-                    • Tính thêm <b className="text-slate-900">1 giờ</b> khi sử
+                  <span className="text-gray-700">
+                    • Tính thêm <b className="text-gray-900">1 giờ</b> khi sử
                     dụng quá
                   </span>
                   <select
@@ -1562,7 +1378,7 @@ export default function RoomPricingPage() {
                         hourly_grace_minutes: Number(e.target.value),
                       })
                     }
-                    className="w-32 py-1 px-2 border-b border-slate-300 outline-none focus:border-blue-600 font-medium text-slate-800 bg-transparent cursor-pointer text-right"
+                    className="w-32 py-1 px-2 border-b border-gray-300 outline-none focus:border-[#003580] font-bold text-gray-900 bg-transparent cursor-pointer text-right"
                   >
                     <option value={15}>15 phút</option>
                     <option value={30}>30 phút</option>
@@ -1573,9 +1389,11 @@ export default function RoomPricingPage() {
               </div>
 
               <div className="space-y-3">
-                <h4 className="font-bold text-slate-800 text-xs">Qua đêm</h4>
+                <h4 className="font-black text-gray-900 uppercase tracking-wider text-xs">
+                  Qua đêm
+                </h4>
                 <div className="flex items-center justify-between pl-2">
-                  <span className="text-slate-700">
+                  <span className="text-gray-700">
                     • Giờ nhận - trả quy định
                   </span>
                   <div className="flex items-center gap-2">
@@ -1588,7 +1406,7 @@ export default function RoomPricingPage() {
                         }))
                       }
                     />
-                    <span className="text-slate-500 font-normal">đến</span>
+                    <span className="text-gray-400">đến</span>
                     <TimePickerDropdown
                       value={timeSettings.overnight_checkout}
                       onChange={(val) =>
@@ -1603,9 +1421,11 @@ export default function RoomPricingPage() {
               </div>
 
               <div className="space-y-3">
-                <h4 className="font-bold text-slate-800 text-xs">Cả ngày</h4>
+                <h4 className="font-black text-gray-900 uppercase tracking-wider text-xs">
+                  Cả ngày
+                </h4>
                 <div className="flex items-center justify-between pl-2">
-                  <span className="text-slate-700">
+                  <span className="text-gray-700">
                     • Giờ nhận - trả quy định
                   </span>
                   <div className="flex items-center gap-2">
@@ -1618,7 +1438,7 @@ export default function RoomPricingPage() {
                         }))
                       }
                     />
-                    <span className="text-slate-500 font-normal">đến</span>
+                    <span className="text-gray-400">đến</span>
                     <TimePickerDropdown
                       value={timeSettings.daily_checkout}
                       onChange={(val) =>
@@ -1632,8 +1452,8 @@ export default function RoomPricingPage() {
                 </div>
 
                 <div className="flex items-center justify-between pl-2 pt-1">
-                  <span className="text-slate-700">
-                    • Tính thêm <b className="text-slate-900">1 ngày</b> khi sử
+                  <span className="text-gray-700">
+                    • Tính thêm <b className="text-gray-900">1 ngày</b> khi sử
                     dụng quá
                   </span>
                   <select
@@ -1644,7 +1464,7 @@ export default function RoomPricingPage() {
                         daily_grace_hours: Number(e.target.value),
                       })
                     }
-                    className="w-32 py-1 px-2 border-b border-slate-300 outline-none focus:border-blue-600 font-medium text-slate-800 bg-transparent cursor-pointer text-right"
+                    className="w-32 py-1 px-2 border-b border-gray-300 outline-none focus:border-[#003580] font-bold text-gray-900 bg-transparent cursor-pointer text-right"
                   >
                     <option value={4}>4 giờ</option>
                     <option value={5}>5 giờ</option>
@@ -1654,19 +1474,19 @@ export default function RoomPricingPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-[#2e7d32] hover:bg-[#256628] text-white font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                  className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
                 >
                   <Save size={14} />
-                  <span>Lưu</span>
+                  <span>Lưu cấu hình</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIsTimeModalOpen(false)}
-                  className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
                 >
                   <Ban size={14} />
                   <span>Bỏ qua</span>

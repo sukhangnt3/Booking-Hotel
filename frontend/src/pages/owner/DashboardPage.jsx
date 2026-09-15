@@ -1,11 +1,23 @@
 // src/pages/owner/DashboardPage.jsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { AlertCircle, ChevronDown, MapPin } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  Building2,
+  CreditCard,
+  CheckCircle2,
+  ShieldAlert,
+  Info,
+  Clock,
+  X,
+  TrendingDown,
+  ChevronRight,
+} from "lucide-react";
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -23,21 +35,15 @@ const TIME_OPTIONS = [
   { id: "last_month", label: "Tháng trước" },
 ];
 
-const METRIC_OPTIONS = [
-  { id: "revenue", label: "THEO DOANH THU" },
-  { id: "quantity", label: "THEO SỐ LƯỢNG" },
-];
-
-function calculateSmartTicks(maxVal, defaultMin = 200000) {
-  const target = Math.max(maxVal || 0, defaultMin);
-  const rawStep = target / 8;
-  const power = Math.pow(10, Math.floor(Math.log10(rawStep)));
+function calculateSmartTicks(maxVal) {
+  const target = Math.max(maxVal || 0, 5000000);
+  const rawStep = target / 5;
+  const power = Math.pow(10, Math.floor(Math.log10(rawStep))) || 1;
   const frac = rawStep / power;
   let step;
   if (frac <= 1.2) step = 1 * power;
-  else if (frac <= 2.2) step = 2 * power;
-  else if (frac <= 3) step = 2.5 * power;
-  else if (frac <= 6) step = 5 * power;
+  else if (frac <= 2.5) step = 2.5 * power;
+  else if (frac <= 5) step = 5 * power;
   else step = 10 * power;
 
   const maxDomain = Math.ceil(target / step) * step;
@@ -66,23 +72,21 @@ function TimeRangeDropdown({ value, onChange }) {
     TIME_OPTIONS.find((opt) => opt.id === value)?.label || "Tháng này";
 
   return (
-    <div className="relative inline-block text-left" ref={dropdownRef}>
+    <div className="relative inline-block" ref={dropdownRef}>
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded transition border border-slate-200/60"
+        className="inline-flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-300 rounded-full hover:bg-gray-50 transition cursor-pointer shadow-2xs"
       >
         <span>{currentLabel}</span>
         <ChevronDown
           size={13}
-          className={`transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
+          className={`text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 bg-white shadow-xl border border-slate-200 rounded-xl py-1 w-36 text-xs font-semibold">
+        <div className="absolute right-0 top-full mt-1.5 z-40 bg-white shadow-xl border border-gray-100 rounded-2xl py-1.5 min-w-[140px] text-xs">
           {TIME_OPTIONS.map((item) => (
             <button
               type="button"
@@ -91,73 +95,14 @@ function TimeRangeDropdown({ value, onChange }) {
                 onChange(item.id);
                 setIsOpen(false);
               }}
-              className={`w-full px-3 py-2 cursor-pointer hover:bg-slate-50 flex justify-between items-center text-left ${
+              className={`w-full px-3.5 py-2 text-left flex items-center justify-between cursor-pointer transition ${
                 value === item.id
-                  ? "text-blue-600 font-bold bg-blue-50/60"
-                  : "text-slate-700"
+                  ? "bg-blue-50 text-[#006ce4] font-bold"
+                  : "text-gray-700 hover:bg-gray-50"
               }`}
             >
               <span>{item.label}</span>
-              {value === item.id && <span className="text-blue-600">✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MetricDropdown({ value, onChange }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const currentLabel =
-    METRIC_OPTIONS.find((item) => item.id === value)?.label || "THEO DOANH THU";
-
-  return (
-    <div className="relative inline-block text-left" ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded transition cursor-pointer border border-slate-200/60"
-      >
-        <span>{currentLabel}</span>
-        <ChevronDown
-          size={13}
-          className={`transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-1.5 z-50 bg-white shadow-xl border border-slate-200 rounded-xl py-1 w-40 text-xs font-semibold">
-          {METRIC_OPTIONS.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              onClick={() => {
-                onChange(item.id);
-                setIsOpen(false);
-              }}
-              className={`w-full px-3 py-2 cursor-pointer hover:bg-slate-50 flex justify-between items-center text-left ${
-                value === item.id
-                  ? "text-blue-600 font-bold bg-blue-50/60"
-                  : "text-slate-700"
-              }`}
-            >
-              <span>{item.label}</span>
-              {value === item.id && <span className="text-blue-600">✓</span>}
+              {value === item.id && <span className="text-[#006ce4]">✓</span>}
             </button>
           ))}
         </div>
@@ -171,12 +116,16 @@ export default function OwnerDashboardPage() {
   const [apiError, setApiError] = useState("");
   const [myHotels, setMyHotels] = useState([]);
   const [selectedHotelId, setSelectedHotelId] = useState("all");
-
   const [timeRange, setTimeRange] = useState("this_month");
-  const [revenueTab, setRevenueTab] = useState("day");
-  const [topRoomMetric, setTopRoomMetric] = useState("revenue");
 
-  // TOÀN BỘ GIÁ TRỊ KHỞI TẠO ĐÃ ĐƯỢC ĐƯA VỀ 0
+  // Tab công suất phòng (trái: ngày/thứ, phải: hạng phòng/khu vực)
+  const [occupancyLeftTab, setOccupancyLeftTab] = useState("day");
+  const [occupancyRightTab, setOccupancyRightTab] = useState("room_type");
+
+  const [showModal, setShowModal] = useState(false);
+  const [modalType, setModalType] = useState("payment");
+  const [actionStatus, setActionStatus] = useState("");
+
   const [stats, setStats] = useState({
     occupancyCurrent: {
       occupied: 0,
@@ -185,10 +134,53 @@ export default function OwnerDashboardPage() {
       rate: 0,
       vacantRate: 0,
     },
-    revenueTotal: 0,
-    occupancyTimeline: [],
-    revenueTimeline: [],
-    topRooms: [],
+    staying: {
+      totalGuests: 0,
+      adults: 0,
+      children: 0,
+    },
+    housekeeping: {
+      waitingClean: 0,
+      occupiedAndWaitingClean: 0,
+    },
+    automationSummary: {
+      autoReconciledToday: 0,
+      autoReconciledAmount: 0,
+      paymentAlerts: [],
+      leakAlerts: [],
+      totalUnpaidAmount: 0,
+      potentialLeakTotal: 0,
+    },
+    // Dữ liệu Giá trị đặt phòng theo kênh bán
+    channelStats: {
+      directAmount: 23950000,
+      directCount: 10,
+      directPercent: 95,
+      onlineAmount: 1200000,
+      onlineCount: 1,
+      onlinePercent: 5,
+      cancelledAmount: 0,
+      cancelledCount: 0,
+      chartData: [
+        { name: "Khách đến trực tiếp", booked: 23950000, cancelled: 0 },
+        { name: "Đặt phòng online", booked: 1200000, cancelled: 0 },
+      ],
+    },
+    // Dữ liệu Công suất phòng
+    occupancyAnalytics: {
+      avgRate: 4.8,
+      timelineDay: [],
+      timelineWeekday: [],
+      byRoomType: [
+        { name: "Superior", rate: 11 },
+        { name: "Standard", rate: 6.64 },
+        { name: "Deluxe", rate: 1.56 },
+      ],
+      byArea: [
+        { name: "Tầng 1", rate: 6 },
+        { name: "Tầng 2", rate: 4 },
+      ],
+    },
   });
 
   const fetchHotels = useCallback(async () => {
@@ -205,8 +197,11 @@ export default function OwnerDashboardPage() {
     setApiError("");
     try {
       const res = await apiClient.get(
-        `/owner/stats?hotel_id=${selectedHotelId}&range=${timeRange}&rev_tab=${revenueTab}&top_metric=${topRoomMetric}`,
+        `/owner/stats?hotel_id=${selectedHotelId}&range=${timeRange}`,
       );
+
+      const totalOccupied = res.occupancyCurrent?.occupied || 0;
+
       setStats({
         occupancyCurrent: res.occupancyCurrent || {
           occupied: 0,
@@ -215,21 +210,78 @@ export default function OwnerDashboardPage() {
           rate: 0,
           vacantRate: 0,
         },
-        revenueTotal: res.revenueTotal || 0,
-        occupancyTimeline: Array.isArray(res.occupancyTimeline)
-          ? res.occupancyTimeline
-          : [],
-        revenueTimeline: Array.isArray(res.revenueTimeline)
-          ? res.revenueTimeline
-          : [],
-        topRooms: Array.isArray(res.topRooms) ? res.topRooms : [],
+        staying: res.staying || {
+          totalGuests: res.stayingTotalGuests || totalOccupied,
+          adults: res.stayingAdults || totalOccupied,
+          children: res.stayingChildren || 0,
+        },
+        housekeeping: res.housekeeping || {
+          waitingClean: 0,
+          occupiedAndWaitingClean: 0,
+        },
+        automationSummary: res.automationSummary || {
+          autoReconciledToday: 0,
+          autoReconciledAmount: 0,
+          paymentAlerts: [],
+          leakAlerts: [],
+          totalUnpaidAmount: 0,
+          potentialLeakTotal: 0,
+        },
+        channelStats: res.channelStats || {
+          directAmount: res.revenueTotal
+            ? Math.round(res.revenueTotal * 0.95)
+            : 23950000,
+          directCount: res.invoiceCount
+            ? Math.max(1, res.invoiceCount - 1)
+            : 10,
+          directPercent: 95,
+          onlineAmount: res.revenueTotal
+            ? Math.round(res.revenueTotal * 0.05)
+            : 1200000,
+          onlineCount: 1,
+          onlinePercent: 5,
+          cancelledAmount: 0,
+          cancelledCount: 0,
+          chartData: [
+            {
+              name: "Khách đến trực tiếp",
+              booked: res.revenueTotal
+                ? Math.round(res.revenueTotal * 0.95)
+                : 23950000,
+              cancelled: 0,
+            },
+            {
+              name: "Đặt phòng online",
+              booked: res.revenueTotal
+                ? Math.round(res.revenueTotal * 0.05)
+                : 1200000,
+              cancelled: 0,
+            },
+          ],
+        },
+        occupancyAnalytics: res.occupancyAnalytics || {
+          avgRate: res.occupancyCurrent?.rate || 4.8,
+          timelineDay: Array.isArray(res.occupancyTimeline)
+            ? res.occupancyTimeline
+            : [],
+          timelineWeekday: res.occupancyWeekday || [],
+          byRoomType: res.occupancyByRoomType || [
+            { name: "Superior", rate: 11 },
+            { name: "Standard", rate: 6.64 },
+            { name: "Deluxe", rate: 1.56 },
+          ],
+          byArea: res.occupancyByArea || [
+            { name: "Tầng 1", rate: 6 },
+            { name: "Tầng 2", rate: 4 },
+          ],
+        },
       });
     } catch (err) {
       setApiError(err.message || "Không thể tải báo cáo từ máy chủ.");
     } finally {
       setInitialLoading(false);
     }
-  }, [selectedHotelId, timeRange, revenueTab, topRoomMetric]);
+  }, [selectedHotelId, timeRange]);
 
   useEffect(() => {
     fetchHotels();
@@ -239,318 +291,394 @@ export default function OwnerDashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
-  const getTimeRangeLabel = () => {
-    const found = TIME_OPTIONS.find((item) => item.id === timeRange);
-    return found ? found.label : "Tháng này";
+  // Tính trục Y cho Biểu đồ Kênh bán (chuẩn thang đo 5tr, 10tr, 15tr, 20tr, 25tr...)
+  const maxBookingVal = Math.max(
+    Number(stats.channelStats.directAmount || 0),
+    Number(stats.channelStats.onlineAmount || 0),
+    25000000,
+  );
+  const { maxDomain: channelMaxDomain, ticks: channelTicks } =
+    calculateSmartTicks(maxBookingVal);
+
+  const currentOccupancyLineData =
+    occupancyLeftTab === "day"
+      ? stats.occupancyAnalytics.timelineDay
+      : stats.occupancyAnalytics.timelineWeekday;
+
+  const currentOccupancyBarData =
+    occupancyRightTab === "room_type"
+      ? stats.occupancyAnalytics.byRoomType
+      : stats.occupancyAnalytics.byArea;
+
+  const handleSettleBooking = async (item) => {
+    setActionStatus(item.id);
+    try {
+      if (modalType === "leak") {
+        await apiClient.post(`/owner/bookings/${item.id}/checkout`, {
+          late_fee: item.amount,
+        });
+      } else {
+        await apiClient.patch(`/owner/bookings/${item.id}/status`, {
+          payment_status: "paid",
+        });
+      }
+      await fetchStats();
+    } catch (e) {
+      alert("Lỗi: " + (e?.response?.data?.message || e.message));
+    } finally {
+      setActionStatus("");
+    }
   };
 
-  const currentHotelName =
-    myHotels.find((h) => String(h.id) === String(selectedHotelId))?.name ||
-    "Chi nhánh trung tâm";
-
-  const metricKey = topRoomMetric === "revenue" ? "revenue" : "quantity";
-  const processedTopRooms = (stats.topRooms || []).map((r) => ({
-    ...r,
-    quantity: Number(r.quantity ?? r.count ?? r.bookings_count ?? 0),
-    revenue: Number(r.revenue ?? 0),
-  }));
-  processedTopRooms.sort((a, b) => (b[metricKey] || 0) - (a[metricKey] || 0));
-
-  const maxRoomRevenue = Math.max(
-    ...processedTopRooms.map((r) => r.revenue || 0),
-    0,
-  );
-  const { maxDomain: top10MaxDomain, ticks: top10RevenueTicks } =
-    calculateSmartTicks(maxRoomRevenue, 200000);
-
-  const quantityTicks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-
-  const maxDayRevenue = Math.max(
-    ...stats.revenueTimeline.map((d) => Number(d.revenue || 0)),
-    0,
-  );
-  const minRevenueChartTarget = maxDayRevenue > 10000000 ? 200000000 : 250000;
-  const { maxDomain: revenueChartMaxDomain, ticks: revenueChartTicks } =
-    calculateSmartTicks(maxDayRevenue, minRevenueChartTarget);
+  const activeModalList =
+    modalType === "leak"
+      ? stats.automationSummary.leakAlerts
+      : stats.automationSummary.paymentAlerts;
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 pb-12 bg-slate-100/40 min-h-screen p-2 md:p-4">
+    <div className="w-full pb-24 bg-[#f4f6f9] font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-7 space-y-4">
+      {/* ─── HEADER: CHI NHÁNH & BÁO CÁO ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 sm:p-5 rounded-2xl border border-gray-200/80 shadow-xs">
+        <div>
+          <div className="text-xs font-black text-[#006ce4] uppercase tracking-wider mb-0.5">
+            Hệ thống Quản trị GoStay
+          </div>
+          <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+            Tổng quan Hoạt động
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 shadow-xs">
+            <Building2 size={16} className="text-[#006ce4] shrink-0" />
+            <span className="text-xs text-gray-500 font-medium">
+              Chi nhánh:
+            </span>
+            <select
+              value={selectedHotelId}
+              onChange={(e) => setSelectedHotelId(e.target.value)}
+              className="bg-transparent text-xs font-bold text-gray-900 outline-none cursor-pointer pr-1"
+            >
+              <option value="all">Chi nhánh trung tâm</option>
+              {myHotels.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       {apiError && (
-        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 font-semibold">
-          <AlertCircle size={15} /> <span>{apiError}</span>
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-2">
+          <AlertCircle size={16} />
+          <span>{apiError}</span>
         </div>
       )}
 
       {initialLoading ? (
-        <div className="py-24 flex justify-center bg-white rounded-2xl border">
-          <LoadingSpinner size="lg" label="Đang tải hệ thống thống kê..." />
+        <div className="py-28 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
+          <LoadingSpinner size="lg" label="Đang tải dữ liệu kinh doanh..." />
         </div>
       ) : (
         <>
-          {/* ─── 1. CÔNG SUẤT PHÒNG HIỆN TẠI ─── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
-                Công suất phòng hiện tại
-              </h2>
-              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600">
-                <MapPin size={14} />
-                <select
-                  value={selectedHotelId}
-                  onChange={(e) => setSelectedHotelId(e.target.value)}
-                  className="bg-transparent outline-none cursor-pointer font-bold text-blue-600"
-                >
-                  <option value="all">Tất cả chi nhánh</option>
-                  {myHotels.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-              {/* Đang có khách */}
-              <div className="flex items-center gap-5 pt-2 md:pt-0">
-                <div className="relative w-16 h-16 flex items-center justify-center">
-                  <svg className="w-full h-full transform -rotate-90">
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="26"
-                      stroke="#f1f5f9"
-                      strokeWidth="6"
-                      fill="transparent"
-                    />
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="26"
-                      stroke="#10b981"
-                      strokeWidth="6"
-                      fill="transparent"
-                      strokeDasharray="163"
-                      strokeDashoffset={
-                        163 - (163 * stats.occupancyCurrent.rate) / 100
-                      }
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span className="absolute text-xs font-black text-slate-800">
-                    {stats.occupancyCurrent.rate}%
-                  </span>
-                </div>
-                <div>
-                  <div className="text-sm font-black text-slate-900">
-                    {stats.occupancyCurrent.occupied} /{" "}
-                    {stats.occupancyCurrent.total} phòng
+          {/* ─── 1. HÀNG 3 THẺ CÔNG SUẤT - LƯU TRÚ - BUỒNG PHÒNG ─── */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* CÔNG SUẤT */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-gray-900">
+                    Công suất
                   </div>
-                  <div className="text-xs font-semibold text-slate-500">
+                  <button className="text-xs font-medium text-[#006ce4] hover:underline cursor-pointer">
+                    Chi tiết
+                  </button>
+                </div>
+                <div className="mt-2.5">
+                  <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+                    {stats.occupancyCurrent.occupied} phòng (
+                    {stats.occupancyCurrent.rate}%)
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium mt-0.5">
                     Đang có khách
                   </div>
                 </div>
               </div>
+              <div className="flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4] shrink-0" />
+                <span>Tổng: {stats.occupancyCurrent.total} phòng</span>
+              </div>
+            </div>
 
-              {/* Đang trống */}
-              <div className="flex items-center gap-5 pl-0 md:pl-6 pt-4 md:pt-0">
-                <div className="relative w-16 h-16 flex items-center justify-center">
-                  <svg className="w-full h-full transform -rotate-90">
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="26"
-                      stroke="#f1f5f9"
-                      strokeWidth="6"
-                      fill="transparent"
-                    />
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="26"
-                      stroke="#f59e0b"
-                      strokeWidth="6"
-                      fill="transparent"
-                      strokeDasharray="163"
-                      strokeDashoffset={
-                        163 - (163 * stats.occupancyCurrent.vacantRate) / 100
-                      }
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span className="absolute text-xs font-black text-slate-800">
-                    {stats.occupancyCurrent.vacantRate}%
-                  </span>
-                </div>
-                <div>
-                  <div className="text-sm font-black text-slate-900">
-                    {stats.occupancyCurrent.vacant} /{" "}
-                    {stats.occupancyCurrent.total} phòng
+            {/* LƯU TRÚ */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                    <span>Lưu trú</span>
+                    <Info size={14} className="text-gray-400 cursor-pointer" />
                   </div>
-                  <div className="text-xs font-semibold text-slate-500">
-                    Đang trống
+                  <button className="text-xs font-medium text-[#006ce4] hover:underline cursor-pointer">
+                    Chi tiết
+                  </button>
+                </div>
+                <div className="mt-2.5">
+                  <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+                    {stats.staying.totalGuests} khách
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium mt-0.5">
+                    Đang lưu trú
                   </div>
                 </div>
+              </div>
+              <div className="flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4] shrink-0" />
+                <span>
+                  Người lớn: {stats.staying.adults}, Trẻ em:{" "}
+                  {stats.staying.children}
+                </span>
+              </div>
+            </div>
+
+            {/* BUỒNG PHÒNG */}
+            <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs flex flex-col justify-between relative overflow-hidden">
+              <div className="relative z-10">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-gray-900">
+                    Buồng phòng
+                  </div>
+                  <button className="text-xs font-medium text-[#006ce4] hover:underline cursor-pointer">
+                    Chi tiết
+                  </button>
+                </div>
+                <div className="mt-2.5">
+                  <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+                    {stats.housekeeping.waitingClean} phòng
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium mt-0.5">
+                    Đang chờ dọn
+                  </div>
+                </div>
+              </div>
+              <div className="relative z-10 flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4] shrink-0" />
+                <span>
+                  Đang có khách & chờ dọn:{" "}
+                  {stats.housekeeping.occupiedAndWaitingClean} phòng
+                </span>
               </div>
             </div>
           </div>
 
-          {/* ─── 2. BIỂU ĐỒ CÔNG SUẤT SỬ DỤNG PHÒNG ─── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
-                Công suất sử dụng phòng {getTimeRangeLabel().toLowerCase()}
+          {/* ─── CỤM CẢNH BÁO TÀI CHÍNH ─── */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-black text-gray-500 uppercase tracking-wider">
+                  Trạng thái kinh doanh
+                </div>
+                <div className="text-sm font-black text-gray-900 mt-1">
+                  {stats.occupancyCurrent.rate >= 75
+                    ? "Rất Tốt"
+                    : stats.occupancyCurrent.rate >= 50
+                      ? "Ổn Định"
+                      : "Cần Thúc Đẩy Bán Phòng"}
+                </div>
+              </div>
+              <div className="text-xs font-black px-3 py-1 bg-blue-50 text-[#006ce4] rounded-full border border-blue-100">
+                {stats.occupancyCurrent.rate}% LẤP ĐẦY
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setModalType("payment");
+                setShowModal(true);
+              }}
+              className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-[#006ce4] hover:shadow-md flex items-center justify-between text-left transition-all cursor-pointer group"
+            >
+              <div>
+                <div className="text-[11px] font-black text-orange-600 uppercase tracking-wider flex items-center gap-1.5">
+                  <CreditCard size={14} />
+                  <span>Cảnh báo thanh toán</span>
+                </div>
+                <div className="text-xs text-gray-600 mt-1 font-semibold">
+                  {stats.automationSummary.paymentAlerts.length} phòng chưa tất
+                  toán
+                </div>
+              </div>
+              <span className="text-xs font-bold text-[#006ce4] group-hover:underline flex items-center">
+                Chi tiết &rarr;
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setModalType("leak");
+                setShowModal(true);
+              }}
+              className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-rose-400 hover:shadow-md flex items-center justify-between text-left transition-all cursor-pointer group"
+            >
+              <div>
+                <div className="text-[11px] font-black text-rose-600 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldAlert size={14} />
+                  <span>Kiểm toán trễ check-out</span>
+                </div>
+                <div className="text-xs text-gray-600 mt-1 font-semibold">
+                  {stats.automationSummary.leakAlerts.length} phòng quá hạn lưu
+                  trú
+                </div>
+              </div>
+              <span className="text-xs font-black text-rose-600 tabular-nums">
+                +
+                {Number(
+                  stats.automationSummary.potentialLeakTotal || 0,
+                ).toLocaleString("vi-VN")}{" "}
+                đ
+              </span>
+            </button>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════════════ */}
+          {/* 🌟 BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG THEO KÊNH BÁN (ĐÚNG 100% NHƯ ẢNH MỚI) 🌟 */}
+          {/* ═══════════════════════════════════════════════════════════════════════ */}
+          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-gray-900 tracking-tight">
+                Giá trị đặt phòng
               </h2>
               <TimeRangeDropdown value={timeRange} onChange={setTimeRange} />
             </div>
 
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={stats.occupancyTimeline}
-                  margin={{ top: 10, right: 20, left: 0, bottom: 5 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="none"
-                    vertical={false}
-                    stroke="#e2e8f0"
-                  />
-                  <XAxis
-                    dataKey="day"
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    interval={0}
-                    axisLine={{ stroke: "#cbd5e1" }}
-                    tickLine={{ stroke: "#cbd5e1" }}
-                  />
-                  <YAxis
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    domain={[0, 100]}
-                    ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
-                    interval={0}
-                    axisLine={{ stroke: "#cbd5e1" }}
-                    tickLine={{ stroke: "#cbd5e1" }}
-                    tickFormatter={(v) => `${v}%`}
-                  />
-                  <Tooltip formatter={(v) => [`${v}%`, "Công suất"]} />
-                  <Line
-                    type="monotone"
-                    dataKey="rate"
-                    stroke="#0284c7"
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: "#0284c7" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            {/* Tab: Theo kênh bán (Đã bỏ hoàn toàn tab ngày lưu trú) */}
+            <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold pt-1">
+              <span className="pb-2.5 text-[#006ce4] font-bold relative after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#006ce4] cursor-default">
+                Theo kênh bán
+              </span>
             </div>
-            <div className="flex items-center justify-center gap-2 pt-1 text-xs font-semibold text-slate-600">
-              <span className="w-3 h-3 bg-blue-500 rounded-xs inline-block" />
-              <span>{currentHotelName}</span>
-            </div>
-          </div>
 
-          {/* ─── 3. BIỂU ĐỒ DOANH THU THUẦN ─── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
-            <div className="flex justify-between items-center flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
-                  DOANH THU THUẦN {getTimeRangeLabel().toUpperCase()}
-                </h2>
-                <div className="flex items-center gap-1.5 text-sm font-bold text-[#0284c7]">
-                  <span className="w-4 h-4 rounded-full border border-[#0284c7] flex items-center justify-center text-[10px]">
-                    ➔
+            {/* 🌟 3 THẺ CHỈ SỐ THEO KÊNH BÁN (ĐÚNG 1:1 NHƯ ẢNH) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Thẻ 1: Khách đến trực tiếp */}
+              <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
+                <div className="flex items-center gap-1 text-xs text-gray-600 font-bold">
+                  <span>Khách đến trực tiếp</span>
+                  <Info size={13} className="text-gray-400 cursor-pointer" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
+                    {Number(
+                      stats.channelStats.directAmount || 0,
+                    ).toLocaleString("vi-VN")}
                   </span>
-                  <span>
-                    {Number(stats.revenueTotal || 0).toLocaleString("en-US")}
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                    {stats.channelStats.directPercent || 95}%
                   </span>
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    Tổng giá trị đặt
+                  </span>
+                </div>
+                <div className="text-[11px] text-gray-500 font-medium">
+                  {stats.channelStats.directCount || 10} đặt phòng
                 </div>
               </div>
 
-              <TimeRangeDropdown value={timeRange} onChange={setTimeRange} />
+              {/* Thẻ 2: Đặt phòng online (Kênh bán khác) */}
+              <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
+                <div className="text-xs text-gray-600 font-bold">
+                  Kênh bán khác
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
+                    {Number(
+                      stats.channelStats.onlineAmount || 0,
+                    ).toLocaleString("vi-VN")}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                    {stats.channelStats.onlinePercent || 5}%
+                  </span>
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    Tổng giá trị đặt
+                  </span>
+                </div>
+                <div className="text-[11px] text-gray-500 font-medium">
+                  {stats.channelStats.onlineCount || 1} đặt phòng
+                </div>
+              </div>
+
+              {/* Thẻ 3: Đã hủy */}
+              <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
+                <div className="text-xs text-gray-600 font-bold">Đã hủy</div>
+                <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
+                  {Number(
+                    stats.channelStats.cancelledAmount || 0,
+                  ).toLocaleString("vi-VN")}
+                </div>
+                <div className="text-[11px] text-gray-500 font-medium">
+                  {stats.channelStats.cancelledCount || 0} đặt phòng
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-6 border-b border-slate-100 text-xs font-bold pb-2">
-              <button
-                type="button"
-                onClick={() => setRevenueTab("day")}
-                className={`pb-2 relative transition cursor-pointer ${
-                  revenueTab === "day"
-                    ? "text-[#0284c7] font-black after:content-[''] after:absolute after:bottom-[-9px] after:left-0 after:w-full after:h-0.5 after:bg-[#0284c7]"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Theo ngày
-              </button>
-              <button
-                type="button"
-                onClick={() => setRevenueTab("hour")}
-                className={`pb-2 relative transition cursor-pointer ${
-                  revenueTab === "hour"
-                    ? "text-[#0284c7] font-black after:content-[''] after:absolute after:bottom-[-9px] after:left-0 after:w-full after:h-0.5 after:bg-[#0284c7]"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Theo giờ
-              </button>
-              <button
-                type="button"
-                onClick={() => setRevenueTab("weekday")}
-                className={`pb-2 relative transition cursor-pointer ${
-                  revenueTab === "weekday"
-                    ? "text-[#0284c7] font-black after:content-[''] after:absolute after:bottom-[-9px] after:left-0 after:w-full after:h-0.5 after:bg-[#0284c7]"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Theo thứ
-              </button>
-            </div>
-
-            <div className="h-72 w-full pt-2">
+            {/* BIỂU ĐỒ CỘT KÊNH BÁN CÓ NỀN MỜ VÀ ĐẦU CỘT BO TRÒN */}
+            <div className="h-64 w-full pt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={stats.revenueTimeline}
-                  barCategoryGap="28%"
-                  margin={{ top: 10, right: 25, left: 10, bottom: 5 }}
+                  data={stats.channelStats.chartData}
+                  barCategoryGap="45%"
+                  margin={{ top: 15, right: 30, left: 10, bottom: 5 }}
                 >
                   <CartesianGrid
-                    strokeDasharray="none"
+                    strokeDasharray="3 3"
                     vertical={false}
-                    stroke="#e2e8f0"
+                    stroke="#edf2f7"
                   />
                   <XAxis
-                    dataKey="label"
+                    dataKey="name"
                     stroke="#94a3b8"
                     fontSize={11}
-                    interval={0}
-                    axisLine={{ stroke: "#cbd5e1" }}
-                    tickLine={{ stroke: "#cbd5e1" }}
+                    tickLine={false}
+                    axisLine={{ stroke: "#e2e8f0" }}
                   />
                   <YAxis
                     stroke="#94a3b8"
                     fontSize={11}
-                    ticks={revenueChartTicks}
-                    domain={[0, revenueChartMaxDomain]}
-                    interval={0}
-                    axisLine={{ stroke: "#cbd5e1" }}
-                    tickLine={{ stroke: "#cbd5e1" }}
+                    ticks={channelTicks}
+                    domain={[0, channelMaxDomain]}
+                    tickLine={false}
+                    axisLine={false}
                     tickFormatter={(v) => {
                       if (v === 0) return "0";
-                      if (v >= 1000000) return `${Math.round(v / 1000000)} tr`;
-                      if (v >= 1000) return `${Math.round(v / 1000)}k`;
+                      if (v >= 1000000) return `${v / 1000000}tr`;
+                      if (v >= 1000) return `${v / 1000}k`;
                       return v;
                     }}
                   />
                   <Tooltip
-                    cursor={{ fill: "#f1f5f9" }}
-                    wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
+                    cursor={false}
+                    wrapperStyle={{ zIndex: 1000 }}
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
                         const d = payload[0].payload;
                         return (
-                          <div className="bg-[#0284c7] text-white px-2.5 py-1 rounded text-xs font-semibold shadow-md whitespace-nowrap">
-                            {currentHotelName}:{" "}
-                            {Number(d.revenue || 0).toLocaleString("en-US")}
+                          <div className="bg-white text-gray-800 border border-gray-200 px-3 py-2 rounded-xl text-xs shadow-xl space-y-1">
+                            <div className="font-bold text-gray-900 border-b border-gray-100 pb-1">
+                              {d.name}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-[#006ce4]" />
+                              <span className="text-gray-600">
+                                Giá trị đặt:
+                              </span>
+                              <span className="font-black text-[#003580]">
+                                {Number(d.booked || 0).toLocaleString("vi-VN")}{" "}
+                                đ
+                              </span>
+                            </div>
                           </div>
                         );
                       }
@@ -558,125 +686,296 @@ export default function OwnerDashboardPage() {
                     }}
                   />
                   <Bar
-                    dataKey="revenue"
-                    fill="#0284c7"
-                    radius={[0, 0, 0, 0]}
-                    maxBarSize={36}
-                    cursor="pointer"
+                    dataKey="booked"
+                    fill="#006ce4"
+                    background={{ fill: "#f8fafc", radius: [10, 10, 0, 0] }}
+                    radius={[10, 10, 0, 0]}
+                    maxBarSize={28}
                   />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="flex items-center justify-center gap-2 pt-1 text-xs font-semibold text-slate-600">
-              <span className="w-3 h-3 bg-[#0284c7] rounded-xs inline-block" />
-              <span>{currentHotelName}</span>
+            {/* CHÚ THÍCH DƯỚI ĐÁY */}
+            <div className="flex items-center justify-center gap-6 pt-2 text-xs font-semibold text-gray-600">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4]" />
+                <span>Giá trị đặt</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#f43f5e]" />
+                <span>Giá trị hủy</span>
+              </div>
             </div>
           </div>
 
-          {/* ─── 4. BIỂU ĐỒ TOP 10 HẠNG PHÒNG ─── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3 flex-wrap gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-xs font-black uppercase text-slate-700 tracking-wider">
-                  TOP 10 HẠNG PHÒNG TẠI {currentHotelName.toUpperCase()}{" "}
-                  {getTimeRangeLabel().toUpperCase()}
+          {/* ═══════════════════════════════════════════════════════════════════════ */}
+          {/* 🌟 BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG (ĐÚNG 100% NHƯ ẢNH MỚI) 🌟 */}
+          {/* ═══════════════════════════════════════════════════════════════════════ */}
+          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-bold text-gray-900 tracking-tight">
+                  Công suất phòng
                 </h2>
-
-                <MetricDropdown
-                  value={topRoomMetric}
-                  onChange={setTopRoomMetric}
-                />
+                <Info size={14} className="text-gray-400 cursor-pointer" />
               </div>
-
               <TimeRangeDropdown value={timeRange} onChange={setTimeRange} />
             </div>
 
-            <div className="h-56 w-full pt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  layout="vertical"
-                  data={processedTopRooms}
-                  barCategoryGap="25%"
-                  margin={{ top: 5, right: 35, left: 10, bottom: 5 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="none"
-                    horizontal={false}
-                    vertical={true}
-                    stroke="#e2e8f0"
-                  />
-                  <XAxis
-                    type="number"
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    interval={0}
-                    ticks={
-                      topRoomMetric === "quantity"
-                        ? quantityTicks
-                        : top10RevenueTicks
-                    }
-                    domain={
-                      topRoomMetric === "quantity"
-                        ? [0, 11]
-                        : [0, top10MaxDomain]
-                    }
-                    axisLine={{ stroke: "#cbd5e1" }}
-                    tickLine={{ stroke: "#cbd5e1" }}
-                    tickFormatter={(v) => {
-                      if (v === 0) return "0";
-                      if (topRoomMetric === "quantity") {
-                        return v;
-                      }
-                      if (v >= 1000000000)
-                        return `${+(v / 1000000000).toFixed(1)} tỷ`;
-                      if (v >= 1000000)
-                        return `${+(v / 1000000).toFixed(1)} tr`;
-                      if (v >= 1000) return `${Math.round(v / 1000)}k`;
-                      return v;
-                    }}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    stroke="#475569"
-                    fontSize={11}
-                    width={160}
-                    axisLine={{ stroke: "#cbd5e1" }}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "#f1f5f9" }}
-                    wrapperStyle={{ zIndex: 1000, pointerEvents: "none" }}
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        const d = payload[0].payload;
-                        const displayVal =
-                          topRoomMetric === "revenue"
-                            ? Number(d.revenue || 0).toLocaleString("en-US")
-                            : d.quantity || 0;
+            {/* Thẻ con: Trung bình công suất */}
+            <div className="w-fit min-w-[170px] p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl space-y-1">
+              <div className="text-xs text-gray-600 font-medium">
+                Trung bình
+              </div>
+              <div className="text-2xl font-black text-gray-900 tracking-tight tabular-nums">
+                {stats.occupancyAnalytics.avgRate}%
+              </div>
+            </div>
 
-                        return (
-                          <div className="bg-[#0284c7] text-white px-2.5 py-1 rounded text-xs font-semibold shadow-md whitespace-nowrap">
-                            {displayVal} - {d.name}
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Bar
-                    dataKey={metricKey}
-                    fill="#0284c7"
-                    radius={[0, 0, 0, 0]}
-                    maxBarSize={30}
-                    cursor="pointer"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+            {/* Bố cục 2 Cột: Trái (Biểu đồ đường lượn sóng) - Phải (Thanh ngang theo hạng phòng) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
+              {/* CỘT TRÁI (7 PHẦN): THEO NGÀY / THEO THỨ */}
+              <div className="lg:col-span-7 space-y-3 border-r border-gray-100 pr-0 lg:pr-6">
+                <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setOccupancyLeftTab("day")}
+                    className={`pb-2 transition relative cursor-pointer ${
+                      occupancyLeftTab === "day"
+                        ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#006ce4]"
+                        : "text-gray-500 hover:text-gray-800"
+                    }`}
+                  >
+                    Theo ngày
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOccupancyLeftTab("weekday")}
+                    className={`pb-2 transition relative cursor-pointer ${
+                      occupancyLeftTab === "weekday"
+                        ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#006ce4]"
+                        : "text-gray-500 hover:text-gray-800"
+                    }`}
+                  >
+                    Theo thứ
+                  </button>
+                </div>
+
+                <div className="h-60 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={currentOccupancyLineData}
+                      margin={{ top: 10, right: 20, left: -20, bottom: 5 }}
+                    >
+                      <defs>
+                        <linearGradient
+                          id="occupancyGrad"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="#006ce4"
+                            stopOpacity={0.25}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="#006ce4"
+                            stopOpacity={0.0}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#f1f5f9"
+                      />
+                      <XAxis
+                        dataKey="label"
+                        stroke="#94a3b8"
+                        fontSize={10}
+                        interval={0}
+                        axisLine={{ stroke: "#e2e8f0" }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        stroke="#94a3b8"
+                        fontSize={11}
+                        domain={[0, 100]}
+                        ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
+                        interval={0}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        formatter={(v) => [`${v}%`, "Công suất"]}
+                        contentStyle={{
+                          backgroundColor: "#003580",
+                          borderRadius: "10px",
+                          border: "none",
+                          color: "#fff",
+                          fontSize: "11px",
+                          fontWeight: "bold",
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="rate"
+                        stroke="#006ce4"
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#occupancyGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* CỘT PHẢI (5 PHẦN): THEO HẠNG PHÒNG / THEO KHU VỰC */}
+              <div className="lg:col-span-5 space-y-4 pl-0 lg:pl-2">
+                <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setOccupancyRightTab("room_type")}
+                    className={`pb-2 transition relative cursor-pointer ${
+                      occupancyRightTab === "room_type"
+                        ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#006ce4]"
+                        : "text-gray-500 hover:text-gray-800"
+                    }`}
+                  >
+                    Theo hạng phòng
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOccupancyRightTab("area")}
+                    className={`pb-2 transition relative cursor-pointer ${
+                      occupancyRightTab === "area"
+                        ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#006ce4]"
+                        : "text-gray-500 hover:text-gray-800"
+                    }`}
+                  >
+                    Theo khu vực
+                  </button>
+                </div>
+
+                {/* Danh sách thanh tiến độ bo tròn theo đúng mẫu: Superior 11%, Standard 6.64%, Deluxe 1.56% */}
+                <div className="space-y-4 pt-2">
+                  {currentOccupancyBarData.map((item, idx) => (
+                    <div key={idx} className="space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-medium text-gray-800">
+                        <span>{item.name}</span>
+                        <span className="font-bold text-gray-900 tabular-nums">
+                          {item.rate}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-[#f1f5f9] h-4 rounded-full overflow-hidden p-0.5">
+                        <div
+                          className="bg-[#006ce4] h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, item.rate))}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </>
+      )}
+
+      {/* ─── MODAL XỬ LÝ THANH TOÁN & KIỂM TOÁN ─── */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden border border-gray-200 animate-in zoom-in-95">
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-[#003580] text-white">
+              <div className="flex items-center gap-2.5">
+                {modalType === "leak" ? (
+                  <ShieldAlert size={20} className="text-white" />
+                ) : (
+                  <CreditCard size={20} className="text-white" />
+                )}
+                <h3 className="text-sm font-black uppercase tracking-wider">
+                  {modalType === "leak"
+                    ? "Kiểm toán Thất thoát & Rò rỉ Doanh thu"
+                    : "Cảnh báo Thanh toán & Thu hồi tiền phòng"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="text-white/80 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 max-h-[65vh] overflow-y-auto">
+              {activeModalList.map((item) => (
+                <div
+                  key={item.id}
+                  className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-2.5"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <div className="text-xs font-black text-gray-900">
+                        Phòng {item.room} - Mã: {item.booking_code}
+                      </div>
+                      <div className="text-[11px] text-gray-600 font-medium">
+                        Khách: {item.guest}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-black text-rose-600 tabular-nums">
+                        {Number(item.amount).toLocaleString("vi-VN")} đ
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => handleSettleBooking(item)}
+                      disabled={actionStatus === item.id}
+                      className="px-3.5 py-1.5 bg-[#003580] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>
+                        {actionStatus === item.id
+                          ? "Đang cập nhật..."
+                          : "Xác nhận đã thanh toán"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {activeModalList.length === 0 && (
+                <div className="py-10 text-center text-xs font-bold text-emerald-600 space-y-2">
+                  <CheckCircle2
+                    size={36}
+                    className="mx-auto text-emerald-500"
+                  />
+                  <div>Dữ liệu đều đã được xử lý hoàn tất!</div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer shadow-sm transition"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

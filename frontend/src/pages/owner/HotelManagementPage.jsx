@@ -241,7 +241,6 @@ export default function HotelManagementPage() {
     }
   };
 
-  // 🌟 LƯU THAY ĐỔI KHÁCH SẠN VÀ TÀI KHOẢN NGÂN HÀNG OWNER
   const handleUpdateHotel = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -276,7 +275,6 @@ export default function HotelManagementPage() {
           hotelForm.cancellation_deadline_hours,
         ),
 
-        // 🌟 GỬI ĐẦY ĐỦ CẢ BANK_CODE, BANK_NAME, SỐ TK VÀ TÊN CHỦ TK
         bank_code: hotelForm.bank_code || "VCB",
         bankCode: hotelForm.bank_code || "VCB",
         bank_name: hotelForm.bank_name || "Vietcombank",
@@ -344,31 +342,34 @@ export default function HotelManagementPage() {
   });
 
   return (
-    <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* HEADER */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* HEADER THEO PHONG CÁCH GHOSTAY */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2 text-[#003580] font-bold text-xs uppercase tracking-wider mb-1">
+          <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
             <Building2 size={16} /> Quản Trị Cơ Sở Chỗ Nghỉ
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            Hồ Sơ Doanh Nghiệp Chỗ Nghỉ ({hotels.length} Cơ sở)
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0a2540] tracking-tight">
+            Hồ Sơ Doanh Nghiệp ({hotels.length} Cơ sở)
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Dữ liệu đồng bộ trực tiếp từ Database
+          <p className="text-xs text-gray-500 mt-1">
+            Thông tin chi nhánh, tài khoản ngân hàng nhận tiền và thiết lập tiện
+            nghi
           </p>
         </div>
 
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
           <button
+            type="button"
             onClick={() => navigate("/owner/hotels/register")}
-            className="px-5 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-full shadow-xs transition flex items-center gap-2 cursor-pointer active:scale-95"
+            className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95"
           >
-            <Plus size={24} /> Đăng Ký Cơ Sở Mới
+            <Plus size={16} /> Đăng ký cơ sở mới
           </button>
           <button
+            type="button"
             onClick={fetchMyHotels}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full cursor-pointer transition"
+            className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl cursor-pointer transition"
             title="Làm mới dữ liệu"
           >
             <RefreshCw size={16} />
@@ -382,8 +383,8 @@ export default function HotelManagementPage() {
         </div>
       )}
 
-      {/* TABS LỌC */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto text-xs font-bold">
+      {/* TABS LỌC TRẠNG THÁI */}
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-3 overflow-x-auto text-xs font-bold">
         {[
           { id: "all", label: `Tất cả cơ sở (${hotels.length})` },
           { id: "active", label: "Đang mở bán" },
@@ -392,11 +393,12 @@ export default function HotelManagementPage() {
         ].map((tab) => (
           <button
             key={tab.id}
+            type="button"
             onClick={() => setStatusFilter(tab.id)}
             className={`px-4 py-2 rounded-xl transition cursor-pointer ${
               statusFilter === tab.id
-                ? "bg-slate-900 text-white shadow-xs"
-                : "bg-white border text-slate-600 hover:bg-slate-50"
+                ? "bg-[#003580] text-white shadow-xs"
+                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
             }`}
           >
             {tab.label}
@@ -406,11 +408,8 @@ export default function HotelManagementPage() {
 
       {/* DANH SÁCH CƠ SỞ CHỖ NGHỈ */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border">
-          <LoadingSpinner
-            size="lg"
-            label="Đang tải danh sách cơ sở từ Database..."
-          />
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
+          <LoadingSpinner size="lg" label="Đang tải danh sách cơ sở..." />
         </div>
       ) : filteredHotels.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -422,10 +421,10 @@ export default function HotelManagementPage() {
             return (
               <div
                 key={hotel.id}
-                className="bg-white rounded-3xl border overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between"
+                className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between"
               >
                 <div>
-                  <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
+                  <div className="relative h-48 w-full bg-gray-100 overflow-hidden">
                     <img
                       src={
                         hotel.image_url ||
@@ -441,12 +440,12 @@ export default function HotelManagementPage() {
                           ? "bg-emerald-600"
                           : isRejected
                             ? "bg-rose-600"
-                            : "bg-amber-500 animate-pulse"
+                            : "bg-amber-500"
                       }`}
                     >
                       {isApproved ? (
                         <>
-                          <CheckCircle2 size={13} /> ✓ Đang Mở Bán
+                          <CheckCircle2 size={13} /> Đang Mở Bán
                         </>
                       ) : isRejected ? (
                         <>
@@ -454,7 +453,7 @@ export default function HotelManagementPage() {
                         </>
                       ) : (
                         <>
-                          <Clock size={13} /> ⏳ Đang Chờ Duyệt
+                          <Clock size={13} /> Đang Chờ Duyệt
                         </>
                       )}
                     </span>
@@ -462,24 +461,24 @@ export default function HotelManagementPage() {
 
                   <div className="p-6 space-y-3">
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#003580] bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-100">
                         ⭐ {hotel.star_rating || 0} SAO •{" "}
                         {hotel.property_type?.toUpperCase() || "HOTEL"}
                       </span>
-                      <span className="text-xs text-slate-400 font-mono">
+                      <span className="text-xs text-gray-400 font-mono">
                         #{String(hotel.id).slice(0, 8)}
                       </span>
                     </div>
 
-                    <h3 className="font-black text-slate-900 text-lg leading-snug">
+                    <h3 className="font-black text-[#0a2540] text-lg leading-snug">
                       {hotel.name}
                     </h3>
-                    <p className="text-xs text-slate-500 flex items-center gap-1">
-                      <MapPin size={13} className="text-[#006ce4] shrink-0" />
+                    <p className="text-xs text-gray-500 flex items-center gap-1">
+                      <MapPin size={14} className="text-[#006ce4] shrink-0" />
                       {hotel.address}, {hotel.city}
                     </p>
 
-                    <div className="p-3 bg-slate-50 rounded-2xl border flex items-center gap-2 text-xs text-slate-700 font-medium">
+                    <div className="p-3 bg-gray-50 rounded-2xl border border-gray-200 flex items-center gap-2 text-xs text-gray-700 font-medium">
                       <CreditCard
                         size={15}
                         className="text-emerald-600 shrink-0"
@@ -499,11 +498,12 @@ export default function HotelManagementPage() {
                   </div>
                 </div>
 
-                <div className="p-6 pt-0 border-t mt-2 flex items-center justify-between pt-3 gap-2 flex-wrap">
+                <div className="p-6 pt-0 border-t border-gray-100 mt-2 flex items-center justify-between pt-4 gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <button
+                      type="button"
                       onClick={() => handleOpenEdit(hotel)}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
                     >
                       <Edit3 size={14} /> Sửa
                     </button>
@@ -513,17 +513,17 @@ export default function HotelManagementPage() {
                       onClick={() =>
                         window.open(`/hotels/${hotel.id}`, "_blank")
                       }
-                      className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-[#006ce4] rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
-                      title="Mở tab mới xem trực tiếp trang chi tiết khách sạn này"
+                      className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-[#006ce4] rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
                     >
                       <Eye size={14} /> Xem trang khách
                     </button>
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => navigate(`/owner/rooms?hotelId=${hotel.id}`)}
                     disabled={!isApproved}
-                    className="px-5 py-2 bg-[#003580] hover:bg-blue-900 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-full text-xs font-bold cursor-pointer flex items-center gap-1 transition"
+                    className="px-5 py-2 bg-[#003580] hover:bg-blue-900 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1 transition shadow-xs"
                   >
                     <BedDouble size={14} /> Quản lý phòng & Giá →
                   </button>
@@ -542,14 +542,14 @@ export default function HotelManagementPage() {
 
       {/* MODAL SỬA KHÁCH SẠN */}
       {editingHotel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-2xl shadow-2xl border space-y-5 text-xs max-h-[90vh] overflow-y-auto font-sans">
-            <div className="flex justify-between items-center border-b pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-2xl shadow-2xl border border-gray-200 space-y-5 text-xs max-h-[90vh] overflow-y-auto font-sans">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-extrabold text-base text-slate-900">
-                  Chỉnh Sửa Toàn Diện Cơ Sở Chỗ Nghỉ
+                <h3 className="font-black text-base text-[#0a2540]">
+                  Chỉnh Sửa Cơ Sở Chỗ Nghỉ
                 </h3>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-gray-400">
                   Cập nhật các thuộc tính vận hành và tiện nghi của #
                   {String(editingHotel.id).slice(0, 8)}
                 </p>
@@ -557,23 +557,23 @@ export default function HotelManagementPage() {
               <button
                 type="button"
                 onClick={() => setEditingHotel(null)}
-                className="p-1.5 hover:bg-slate-100 rounded-xl cursor-pointer text-slate-400 hover:text-slate-700 transition"
+                className="p-1.5 hover:bg-gray-100 rounded-xl cursor-pointer text-gray-400 hover:text-gray-700 transition"
               >
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleUpdateHotel} className="space-y-4">
-              {/* KHỐI 1: ĐỊNH DANH */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <span className="font-bold text-slate-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
-                  <Building2 size={14} className="text-blue-600" /> 1. Định danh
-                  & Loại hình
+              {/* KHỐI 1 */}
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+                <span className="font-bold text-gray-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+                  <Building2 size={14} className="text-[#006ce4]" /> 1. Định
+                  danh & Loại hình
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">
-                    <label className="block font-bold text-slate-600 mb-1">
+                    <label className="block font-bold text-gray-700 mb-1">
                       Tên khách sạn *
                     </label>
                     <input
@@ -582,13 +582,13 @@ export default function HotelManagementPage() {
                       onChange={(e) =>
                         setHotelForm({ ...hotelForm, name: e.target.value })
                       }
-                      className="w-full h-10 px-3 border rounded-xl font-bold text-slate-900 bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl font-bold text-gray-900 bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
-                      Loại hình chỗ nghỉ *
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Loại hình *
                     </label>
                     <select
                       value={hotelForm.property_type}
@@ -598,7 +598,7 @@ export default function HotelManagementPage() {
                           property_type: e.target.value,
                         })
                       }
-                      className="w-full h-10 px-2.5 border rounded-xl font-semibold bg-white cursor-pointer outline-none focus:border-blue-600"
+                      className="w-full h-10 px-2.5 border border-gray-200 rounded-xl font-semibold bg-white cursor-pointer outline-none focus:border-[#003580]"
                     >
                       <option value="hotel">Khách sạn (Hotel)</option>
                       <option value="resort">Khu nghỉ dưỡng (Resort)</option>
@@ -611,8 +611,8 @@ export default function HotelManagementPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
-                      Hạng sao (star_rating)
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Hạng sao
                     </label>
                     <select
                       value={hotelForm.star_rating}
@@ -622,7 +622,7 @@ export default function HotelManagementPage() {
                           star_rating: Number(e.target.value),
                         })
                       }
-                      className="w-full h-10 px-2.5 border rounded-xl font-bold bg-white cursor-pointer outline-none focus:border-blue-600"
+                      className="w-full h-10 px-2.5 border border-gray-200 rounded-xl font-bold bg-white cursor-pointer outline-none focus:border-[#003580]"
                     >
                       {[1, 2, 3, 4, 5].map((s) => (
                         <option key={s} value={s}>
@@ -633,8 +633,8 @@ export default function HotelManagementPage() {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block font-bold text-slate-600 mb-1">
-                      Link ảnh mặt tiền đại diện (URL)
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Link ảnh mặt tiền (URL)
                     </label>
                     <input
                       value={hotelForm.image}
@@ -642,22 +642,22 @@ export default function HotelManagementPage() {
                         setHotelForm({ ...hotelForm, image: e.target.value })
                       }
                       placeholder="https://images.unsplash.com/..."
-                      className="w-full h-10 px-3 border rounded-xl bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* KHỐI 2: VỊ TRÍ & LIÊN HỆ */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <span className="font-bold text-slate-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+              {/* KHỐI 2 */}
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+                <span className="font-bold text-gray-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
                   <MapPin size={14} className="text-rose-600" /> 2. Vị trí &
                   Hotline liên hệ
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
+                    <label className="block font-bold text-gray-700 mb-1">
                       Tỉnh / Thành phố *
                     </label>
                     <input
@@ -666,11 +666,11 @@ export default function HotelManagementPage() {
                       onChange={(e) =>
                         setHotelForm({ ...hotelForm, city: e.target.value })
                       }
-                      className="w-full h-10 px-3 border rounded-xl font-semibold bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl font-semibold bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block font-bold text-slate-600 mb-1">
+                    <label className="block font-bold text-gray-700 mb-1">
                       Địa chỉ chi tiết *
                     </label>
                     <input
@@ -679,14 +679,14 @@ export default function HotelManagementPage() {
                       onChange={(e) =>
                         setHotelForm({ ...hotelForm, address: e.target.value })
                       }
-                      className="w-full h-10 px-3 border rounded-xl bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1 flex items-center gap-1">
+                    <label className="block font-bold text-gray-700 mb-1 flex items-center gap-1">
                       <Phone size={12} /> Hotline lễ tân
                     </label>
                     <input
@@ -694,12 +694,12 @@ export default function HotelManagementPage() {
                       onChange={(e) =>
                         setHotelForm({ ...hotelForm, phone: e.target.value })
                       }
-                      className="w-full h-10 px-3 border rounded-xl bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1 flex items-center gap-1">
-                      <Mail size={12} /> Email thông báo đặt phòng
+                    <label className="block font-bold text-gray-700 mb-1 flex items-center gap-1">
+                      <Mail size={12} /> Email nhận thông báo
                     </label>
                     <input
                       type="email"
@@ -707,23 +707,23 @@ export default function HotelManagementPage() {
                       onChange={(e) =>
                         setHotelForm({ ...hotelForm, email: e.target.value })
                       }
-                      className="w-full h-10 px-3 border rounded-xl bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* KHỐI 3: VẬN HÀNH & CHÍNH SÁCH HỦY */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <span className="font-bold text-slate-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+              {/* KHỐI 3 */}
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+                <span className="font-bold text-gray-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
                   <Clock size={14} className="text-amber-600" /> 3. Giờ nhận /
                   trả phòng & Hủy phòng
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
-                      Giờ nhận phòng (checkin)
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Giờ nhận phòng
                     </label>
                     <input
                       value={hotelForm.checkin_time}
@@ -734,12 +734,12 @@ export default function HotelManagementPage() {
                         })
                       }
                       placeholder="14:00"
-                      className="w-full h-10 px-3 border rounded-xl font-bold bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl font-bold bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
-                      Giờ trả phòng (checkout)
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Giờ trả phòng
                     </label>
                     <input
                       value={hotelForm.checkout_time}
@@ -750,12 +750,12 @@ export default function HotelManagementPage() {
                         })
                       }
                       placeholder="12:00"
-                      className="w-full h-10 px-3 border rounded-xl font-bold bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl font-bold bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
-                      Chính sách hủy phòng
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Chính sách hủy
                     </label>
                     <select
                       value={hotelForm.cancellation_deadline_hours}
@@ -765,7 +765,7 @@ export default function HotelManagementPage() {
                           cancellation_deadline_hours: Number(e.target.value),
                         })
                       }
-                      className="w-full h-10 px-2.5 border rounded-xl font-semibold bg-white cursor-pointer outline-none focus:border-blue-600"
+                      className="w-full h-10 px-2.5 border border-gray-200 rounded-xl font-semibold bg-white cursor-pointer outline-none focus:border-[#003580]"
                     >
                       <option value={24}>Hủy trước 24 giờ</option>
                       <option value={72}>Hủy trước 72 giờ</option>
@@ -775,16 +775,16 @@ export default function HotelManagementPage() {
                 </div>
               </div>
 
-              {/* KHỐI 4: QUYẾT TOÁN & TÀI KHOẢN NGÂN HÀNG (CẬP NHẬT CHUẨN CẢ BANK_CODE) */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <span className="font-bold text-slate-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+              {/* KHỐI 4 */}
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+                <span className="font-bold text-gray-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
                   <CreditCard size={14} className="text-emerald-600" /> 4. Tài
                   khoản thụ hưởng & Thuế
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
+                    <label className="block font-bold text-gray-700 mb-1">
                       Ngân hàng thụ hưởng *
                     </label>
                     <select
@@ -800,7 +800,7 @@ export default function HotelManagementPage() {
                           bank_name: b ? b.name : selectedCode,
                         });
                       }}
-                      className="w-full h-10 px-2.5 border rounded-xl font-semibold bg-white cursor-pointer outline-none focus:border-blue-600"
+                      className="w-full h-10 px-2.5 border border-gray-200 rounded-xl font-semibold bg-white cursor-pointer outline-none focus:border-[#003580]"
                     >
                       {VIETNAM_BANKS.map((b) => (
                         <option key={b.code} value={b.code}>
@@ -810,7 +810,7 @@ export default function HotelManagementPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
+                    <label className="block font-bold text-gray-700 mb-1">
                       Số tài khoản *
                     </label>
                     <input
@@ -822,11 +822,11 @@ export default function HotelManagementPage() {
                         })
                       }
                       placeholder="Nhập số tài khoản..."
-                      className="w-full h-10 px-3 border rounded-xl font-mono text-blue-900 font-bold bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl font-mono text-[#003580] font-bold bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-600 mb-1">
+                    <label className="block font-bold text-gray-700 mb-1">
                       Tên chủ tài khoản *
                     </label>
                     <input
@@ -838,14 +838,14 @@ export default function HotelManagementPage() {
                         })
                       }
                       placeholder="VD: NGUYEN VAN A"
-                      className="w-full h-10 px-3 border rounded-xl font-bold uppercase bg-white outline-none focus:border-blue-600"
+                      className="w-full h-10 px-3 border border-gray-200 rounded-xl font-bold uppercase bg-white outline-none focus:border-[#003580]"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-600 mb-1">
-                    Mã số thuế doanh nghiệp / Hộ KD
+                  <label className="block font-bold text-gray-700 mb-1">
+                    Mã số thuế doanh nghiệp
                   </label>
                   <input
                     value={hotelForm.tax_code}
@@ -853,14 +853,14 @@ export default function HotelManagementPage() {
                       setHotelForm({ ...hotelForm, tax_code: e.target.value })
                     }
                     placeholder="VD: 0101234567"
-                    className="w-full h-10 px-3 border rounded-xl font-mono bg-white outline-none focus:border-blue-600"
+                    className="w-full h-10 px-3 border border-gray-200 rounded-xl font-mono bg-white outline-none focus:border-[#003580]"
                   />
                 </div>
               </div>
 
-              {/* KHỐI 5: TIỆN NGHI & CƠ SỞ VẬT CHẤT */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <span className="font-bold text-slate-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
+              {/* KHỐI 5 */}
+              <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-3">
+                <span className="font-bold text-gray-900 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
                   <Sparkles size={14} className="text-amber-500" /> 5. Tiện nghi
                   & Cơ sở vật chất chỗ nghỉ
                 </span>
@@ -898,15 +898,15 @@ export default function HotelManagementPage() {
                         }}
                         className={`flex items-center gap-2 p-2.5 rounded-xl text-left border transition cursor-pointer select-none text-xs ${
                           isChecked
-                            ? "bg-emerald-50 border-emerald-400 text-emerald-900 font-bold shadow-2xs"
-                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
+                            ? "bg-blue-50 border-[#006ce4] text-[#003580] font-bold shadow-2xs"
+                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-100"
                         }`}
                       >
                         <div
                           className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition ${
                             isChecked
-                              ? "bg-emerald-600 border-emerald-600 text-white"
-                              : "border-slate-300 bg-white"
+                              ? "bg-[#003580] border-[#003580] text-white"
+                              : "border-gray-300 bg-white"
                           }`}
                         >
                           {isChecked && <Check size={12} strokeWidth={3} />}
@@ -920,7 +920,7 @@ export default function HotelManagementPage() {
 
               {/* MÔ TẢ */}
               <div>
-                <label className="block font-bold text-slate-600 mb-1">
+                <label className="block font-bold text-gray-700 mb-1">
                   Mô tả cơ sở lưu trú
                 </label>
                 <textarea
@@ -930,26 +930,26 @@ export default function HotelManagementPage() {
                     setHotelForm({ ...hotelForm, description: e.target.value })
                   }
                   placeholder="Nhập mô tả giới thiệu chỗ nghỉ..."
-                  className="w-full p-3 border rounded-xl bg-white outline-none focus:border-blue-600"
+                  className="w-full p-3 border border-gray-200 rounded-xl bg-white outline-none focus:border-[#003580]"
                 />
               </div>
 
               {/* NÚT THAO TÁC */}
-              <div className="flex justify-end gap-2.5 pt-3 border-t">
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   disabled={submitting}
                   onClick={() => setEditingHotel(null)}
-                  className="px-6 py-2.5 border rounded-full font-bold cursor-pointer hover:bg-slate-50 text-slate-700 transition disabled:opacity-50"
+                  className="px-5 py-2.5 border border-gray-200 rounded-xl font-bold cursor-pointer hover:bg-gray-50 text-gray-700 transition disabled:opacity-50"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-7 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-full cursor-pointer shadow-md transition active:scale-95 disabled:opacity-50"
+                  className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer shadow-sm transition active:scale-95 disabled:opacity-50"
                 >
-                  {submitting ? "Đang lưu..." : "Lưu Thay Đổi"}
+                  {submitting ? "Đang lưu..." : "Lưu thay đổi"}
                 </button>
               </div>
             </form>

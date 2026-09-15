@@ -1,3 +1,4 @@
+// src/pages/owner/RoomManagementPage.jsx
 import React, {
   useState,
   useEffect,
@@ -96,11 +97,11 @@ const MountainPlaceholderIcon = () => (
     viewBox="0 0 48 38"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className="w-9 h-7 text-slate-200"
+    className="w-9 h-7 text-gray-300"
   >
     <path
       d="M1 35L15 13L24 26L31 16L47 35H1Z"
-      fill="#E2E8F0"
+      fill="#F1F5F9"
       stroke="#CBD5E1"
       strokeWidth="1.5"
       strokeLinejoin="round"
@@ -108,12 +109,10 @@ const MountainPlaceholderIcon = () => (
   </svg>
 );
 
-// ✅ Chuẩn hóa tên tiện nghi ĐỘC LẬP - SO KHỚP CHÍNH XÁC 100%, KHÔNG DÙNG INCLUDES
 const normalizeAmenityKey = (val) => {
   if (!val) return "";
   const s = String(val).toLowerCase().trim();
 
-  // Chỉ gom nhóm chính xác các từ đồng nghĩa của Điều hòa / Máy lạnh
   if (
     s === "máy lạnh" ||
     s === "điều hòa" ||
@@ -124,17 +123,14 @@ const normalizeAmenityKey = (val) => {
     return "air_conditioner";
   }
 
-  // Bình nóng lạnh là một mục hoàn toàn độc lập
   if (s === "bình nóng lạnh" || s === "nước nóng" || s === "hot_water") {
     return "hot_water";
   }
 
-  // Tủ lạnh là một mục hoàn toàn độc lập
   if (s === "tủ lạnh" || s === "refrigerator" || s === "fridge") {
     return "refrigerator";
   }
 
-  // Máy sấy tóc là một mục hoàn toàn độc lập
   if (s === "máy sấy tóc" || s === "hair_dryer") {
     return "hair_dryer";
   }
@@ -262,7 +258,6 @@ export default function RoomManagementPage() {
     }
   }, [selectedHotelId, setSearchParams]);
 
-  // Lấy danh sách hạng phòng và phòng vật lý thật từ Database
   const fetchRoomsByHotel = useCallback(async () => {
     if (!selectedHotelId || selectedHotelId === "all") {
       setRooms([]);
@@ -390,7 +385,6 @@ export default function RoomManagementPage() {
     const overnightP =
       Number(room.overnight_price) > 0 ? Number(room.overnight_price) : baseP;
 
-    // Chuẩn hóa tiện nghi: Lọc sạch mảng rỗng, không tự ý gán giá trị mặc định
     let parsedAmenities = [];
     if (Array.isArray(room.amenities)) {
       parsedAmenities = room.amenities.filter(
@@ -725,17 +719,28 @@ export default function RoomManagementPage() {
   };
 
   return (
-    <div className="space-y-4 font-sans text-slate-800 pb-16 min-h-screen">
-      <div className="flex justify-between items-center flex-wrap gap-4 pt-1">
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
-          Hạng phòng & Phòng
-        </h1>
+    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* HEADER THEO PHONG CÁCH GHOSTAY */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
+        <div>
+          <div className="text-xs font-black text-[#006ce4] uppercase tracking-wider mb-1">
+            Hệ thống Quản trị GoStay
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0a2540] tracking-tight">
+            Hạng phòng & Phòng
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-500 font-normal mt-0.5">
+            Quản lý các loại hạng phòng, thiết lập số lượng phòng thực tế và cơ
+            cấu giá
+          </p>
+        </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           {selectedIds.length > 0 && activeTab === "room_types" && (
             <button
+              type="button"
               onClick={handleBulkDelete}
-              className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-md shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 animate-fadeIn"
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <Trash2 size={14} />
               <span>Xóa ({selectedIds.length})</span>
@@ -744,10 +749,11 @@ export default function RoomManagementPage() {
 
           <div className="relative" ref={addMenuRef}>
             <button
+              type="button"
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
-              className="px-4 py-2 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold text-xs rounded-md shadow-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+              className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95"
             >
-              <Plus size={14} strokeWidth={2.5} />
+              <Plus size={16} strokeWidth={2.5} />
               <span>Thêm mới</span>
               <ChevronDown
                 size={14}
@@ -756,69 +762,65 @@ export default function RoomManagementPage() {
             </button>
 
             {isAddMenuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-md shadow-lg py-1 z-30 min-w-[150px] animate-fadeIn">
+              <div className="absolute right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-2xl shadow-xl py-1.5 z-30 min-w-[160px]">
                 <button
+                  type="button"
                   onClick={handleOpenAddModal}
-                  className="w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-2 cursor-pointer"
+                  className="w-full px-4 py-2 text-left text-xs font-bold text-gray-700 hover:bg-blue-50 hover:text-[#003580] flex items-center gap-2 cursor-pointer"
                 >
-                  <Plus size={14} className="text-slate-500" />
+                  <Plus size={14} className="text-gray-400" />
                   <span>Hạng phòng</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleOpenAddRoomUnitModal()}
-                  className="w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-2 cursor-pointer border-t border-slate-100"
+                  className="w-full px-4 py-2 text-left text-xs font-bold text-gray-700 hover:bg-blue-50 hover:text-[#003580] flex items-center gap-2 cursor-pointer border-t border-gray-100"
                 >
-                  <Plus size={14} className="text-slate-500" />
-                  <span>Phòng</span>
+                  <Plus size={14} className="text-gray-400" />
+                  <span>Phòng cụ thể</span>
                 </button>
               </div>
             )}
           </div>
-
-          <button
-            title="Đổi kiểu hiển thị"
-            className="p-2 bg-[#2e7d32] hover:bg-[#256628] text-white rounded-md transition cursor-pointer"
-          >
-            <List size={16} />
-          </button>
         </div>
       </div>
 
       {apiError && (
-        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg flex items-center gap-2 font-semibold">
-          <AlertCircle size={15} /> <span>{apiError}</span>
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl flex items-center gap-2">
+          <AlertCircle size={16} /> <span>{apiError}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-        <div className="md:col-span-3 space-y-3.5">
-          <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-2xs space-y-2">
-            <label className="block text-xs font-bold text-slate-800">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        {/* BỘ LỌC CỘT TRÁI */}
+        <div className="md:col-span-3 space-y-4">
+          <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-2">
+            <label className="block text-xs font-black uppercase text-[#0a2540] tracking-wider">
               Tìm kiếm
             </label>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm kiếm hạng phòng"
-              className="w-full text-xs py-1.5 px-0 border-b border-slate-200 outline-none placeholder:text-slate-400 focus:border-blue-500 transition"
+              placeholder="Tìm theo tên hạng phòng..."
+              className="w-full text-xs py-2 px-3 bg-gray-50 border border-gray-200 rounded-xl outline-none placeholder:text-gray-400 focus:border-[#003580] focus:bg-white transition"
             />
           </div>
 
-          <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-2xs space-y-3">
+          <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-3">
             <div
               onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
               className="flex justify-between items-center cursor-pointer select-none"
             >
               <div className="flex items-center gap-1.5">
-                <Building2 size={14} className="text-slate-600" />
-                <span className="text-xs font-bold text-slate-800">
+                <Building2 size={16} className="text-[#006ce4]" />
+                <span className="text-xs font-black uppercase text-[#0a2540] tracking-wider">
                   Chi nhánh
                 </span>
               </div>
               <ChevronDown
                 size={14}
-                className={`text-slate-500 transition-transform ${isBranchDropdownOpen ? "rotate-180" : ""}`}
+                className={`text-gray-400 transition-transform ${isBranchDropdownOpen ? "rotate-180" : ""}`}
               />
             </div>
 
@@ -831,11 +833,11 @@ export default function RoomManagementPage() {
                     setSelectedHotelId(newId);
                     setSearchParams({ hotelId: newId });
                   }}
-                  className="w-full text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-md p-2 outline-none cursor-pointer focus:border-[#2e7d32] transition"
+                  className="w-full text-xs font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-xl p-2.5 outline-none cursor-pointer focus:border-[#003580]"
                 >
                   {hotels.map((h) => (
                     <option key={h.id} value={h.id}>
-                      {h.name}
+                      🏨 {h.name}
                     </option>
                   ))}
                 </select>
@@ -843,11 +845,11 @@ export default function RoomManagementPage() {
             )}
           </div>
 
-          <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-2xs space-y-3">
-            <span className="block text-xs font-bold text-slate-800">
+          <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-3">
+            <span className="block text-xs font-black uppercase text-[#0a2540] tracking-wider">
               Trạng thái
             </span>
-            <div className="space-y-2.5 text-xs font-semibold text-slate-700">
+            <div className="space-y-2.5 text-xs font-semibold text-gray-700">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="radio"
@@ -855,7 +857,7 @@ export default function RoomManagementPage() {
                   value="active"
                   checked={statusFilter === "active"}
                   onChange={() => setStatusFilter("active")}
-                  className="accent-[#2e7d32] cursor-pointer"
+                  className="accent-[#003580] cursor-pointer"
                 />
                 <span>Đang kinh doanh</span>
               </label>
@@ -866,7 +868,7 @@ export default function RoomManagementPage() {
                   value="inactive"
                   checked={statusFilter === "inactive"}
                   onChange={() => setStatusFilter("inactive")}
-                  className="accent-[#2e7d32] cursor-pointer"
+                  className="accent-[#003580] cursor-pointer"
                 />
                 <span>Ngừng kinh doanh</span>
               </label>
@@ -877,7 +879,7 @@ export default function RoomManagementPage() {
                   value="all"
                   checked={statusFilter === "all"}
                   onChange={() => setStatusFilter("all")}
-                  className="accent-[#2e7d32] cursor-pointer"
+                  className="accent-[#003580] cursor-pointer"
                 />
                 <span>Tất cả</span>
               </label>
@@ -885,41 +887,44 @@ export default function RoomManagementPage() {
           </div>
         </div>
 
+        {/* BẢNG CỘT PHẢI */}
         <div className="md:col-span-9 space-y-0">
-          <div className="flex items-center gap-1 border-b border-transparent">
+          <div className="flex items-center gap-1.5 border-b border-transparent">
             <button
+              type="button"
               onClick={() => setActiveTab("room_types")}
-              className={`px-5 py-2 text-xs font-bold rounded-t-md transition cursor-pointer ${
+              className={`px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-2xl transition cursor-pointer ${
                 activeTab === "room_types"
-                  ? "bg-[#0284c7] text-white shadow-2xs"
-                  : "bg-slate-200/80 text-slate-700 hover:bg-slate-300"
+                  ? "bg-[#003580] text-white shadow-xs"
+                  : "bg-gray-200/70 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              Hạng phòng
+              Hạng phòng ({filteredRooms.length})
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab("room_units")}
-              className={`px-5 py-2 text-xs font-bold rounded-t-md transition cursor-pointer ${
+              className={`px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-2xl transition cursor-pointer ${
                 activeTab === "room_units"
-                  ? "bg-[#0284c7] text-white shadow-2xs"
-                  : "bg-slate-200/80 text-slate-700 hover:bg-slate-300"
+                  ? "bg-[#003580] text-white shadow-xs"
+                  : "bg-gray-200/70 text-gray-600 hover:bg-gray-200"
               }`}
             >
-              Danh sách phòng
+              Danh sách phòng ({roomUnitsList.length})
             </button>
           </div>
 
-          <div className="bg-white rounded-b-lg rounded-tr-lg border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="bg-white rounded-b-3xl rounded-tr-3xl border border-gray-200 shadow-sm overflow-hidden">
             {loading ? (
-              <div className="py-20 flex justify-center">
-                <LoadingSpinner size="md" label="Đang tải dữ liệu..." />
+              <div className="py-24 flex justify-center">
+                <LoadingSpinner size="md" label="Đang tải dữ liệu phòng..." />
               </div>
             ) : activeTab === "room_types" ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-[#e0f2fe] text-slate-700 border-b border-slate-200">
-                      <th className="py-3 px-3 w-8 text-center">
+                    <tr className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
+                      <th className="py-4 px-3 w-8 text-center">
                         <input
                           type="checkbox"
                           checked={
@@ -933,43 +938,43 @@ export default function RoomManagementPage() {
                                 : [],
                             )
                           }
-                          className="cursor-pointer rounded accent-blue-600"
+                          className="cursor-pointer rounded accent-[#003580]"
                         />
                       </th>
-                      <th className="py-3 px-1 w-7 text-center">
-                        <Star size={13} className="text-slate-400 inline" />
+                      <th className="py-4 px-1 w-7 text-center">
+                        <Star size={13} className="text-gray-300 inline" />
                       </th>
-                      <th className="py-3 px-3 font-bold text-slate-700 whitespace-nowrap">
+                      <th className="py-4 px-3 font-bold whitespace-nowrap">
                         Mã hạng phòng
                       </th>
-                      <th className="py-3 px-3 font-bold text-slate-700 whitespace-nowrap">
+                      <th className="py-4 px-3 font-bold whitespace-nowrap">
                         Tên hạng phòng
                       </th>
-                      <th className="py-3 px-3 font-bold text-slate-700 text-center whitespace-nowrap">
+                      <th className="py-4 px-3 font-bold text-center whitespace-nowrap">
                         SL phòng
                       </th>
-                      <th className="py-3 px-3 font-bold text-slate-700 text-right whitespace-nowrap">
+                      <th className="py-4 px-3 font-bold text-right whitespace-nowrap">
                         Giá theo giờ
                       </th>
-                      <th className="py-3 px-3 font-bold text-slate-700 text-right whitespace-nowrap">
+                      <th className="py-4 px-3 font-bold text-right whitespace-nowrap">
                         Giá theo ngày
                       </th>
-                      <th className="py-3 px-3 font-bold text-slate-700 text-right whitespace-nowrap">
+                      <th className="py-4 px-3 font-bold text-right whitespace-nowrap">
                         Giá qua đêm
                       </th>
-                      <th className="py-3 px-3 font-bold text-slate-700 whitespace-nowrap">
+                      <th className="py-4 px-3 font-bold whitespace-nowrap">
                         Trạng thái
                       </th>
-                      <th className="py-3 px-2 w-16 text-center">Thao tác</th>
+                      <th className="py-4 px-2 w-16 text-center">Thao tác</th>
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-gray-100">
                     {filteredRooms.length === 0 ? (
                       <tr>
                         <td
                           colSpan={10}
-                          className="py-12 text-center text-slate-400"
+                          className="py-16 text-center text-gray-400"
                         >
                           Chưa có hạng phòng nào trong chi nhánh này.
                         </td>
@@ -986,16 +991,16 @@ export default function RoomManagementPage() {
                           <React.Fragment key={room.id}>
                             <tr
                               onClick={() => handleToggleRowExpand(room.id)}
-                              className={`transition cursor-pointer group select-none ${
+                              className={`transition cursor-pointer select-none ${
                                 isExpanded
-                                  ? "bg-[#f4fbf4] border-t-2 border-emerald-500"
+                                  ? "bg-blue-50/70 border-t-2 border-[#003580]"
                                   : isChecked
-                                    ? "bg-blue-50/60"
-                                    : "hover:bg-slate-50"
+                                    ? "bg-blue-50/40"
+                                    : "hover:bg-gray-50/80"
                               }`}
                             >
                               <td
-                                className="py-2.5 px-3 text-center"
+                                className="py-3 px-3 text-center"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <input
@@ -1008,56 +1013,64 @@ export default function RoomManagementPage() {
                                         : [...prev, room.id],
                                     )
                                   }
-                                  className="cursor-pointer rounded accent-blue-600"
+                                  className="cursor-pointer rounded accent-[#003580]"
                                 />
                               </td>
-                              <td className="py-2.5 px-1 text-center">
-                                <Star size={14} className="text-slate-300" />
+                              <td className="py-3 px-1 text-center">
+                                <Star size={14} className="text-gray-300" />
                               </td>
-                              <td className="py-2.5 px-3 font-bold text-slate-800">
+                              <td className="py-3 px-3 font-bold text-[#003580]">
                                 {roomCode}
                               </td>
-                              <td className="py-2.5 px-3 font-semibold text-slate-800">
+                              <td className="py-3 px-3 font-bold text-gray-900">
                                 {room.name}
                               </td>
-                              <td className="py-2.5 px-3 text-center font-bold text-slate-800">
+                              <td className="py-3 px-3 text-center font-bold text-gray-900">
                                 {room.amount || 2}
                               </td>
-                              <td className="py-2.5 px-3 text-right font-medium text-slate-700">
+                              <td className="py-3 px-3 text-right font-medium text-gray-700 tabular-nums">
                                 {formatVND(room.hourly_price)}
                               </td>
-                              <td className="py-2.5 px-3 text-right font-medium text-slate-700">
+                              <td className="py-3 px-3 text-right font-bold text-[#ff6a00] tabular-nums">
                                 {formatVND(room.base_price)}
                               </td>
-                              <td className="py-2.5 px-3 text-right font-medium text-slate-700">
+                              <td className="py-3 px-3 text-right font-medium text-gray-700 tabular-nums">
                                 {formatVND(room.overnight_price)}
                               </td>
-                              <td className="py-2.5 px-3 whitespace-nowrap">
-                                <span className="text-slate-800 font-semibold">
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                <span
+                                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                    room.is_active === false
+                                      ? "bg-gray-100 text-gray-600"
+                                      : "bg-emerald-50 text-emerald-800"
+                                  }`}
+                                >
                                   {room.is_active === false
                                     ? "Ngừng kinh doanh"
                                     : "Đang kinh doanh"}
                                 </span>
                               </td>
-                              <td className="py-2.5 px-2 text-center whitespace-nowrap">
-                                <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                              <td className="py-3 px-2 text-center whitespace-nowrap">
+                                <div className="flex items-center justify-center gap-1.5">
                                   <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleOpenEditRoomModal(room, roomCode);
                                     }}
-                                    className="p-1 text-slate-400 hover:text-blue-600 cursor-pointer transition"
-                                    title="Chỉnh sửa hạng phòng"
+                                    className="p-1 text-gray-400 hover:text-[#003580] cursor-pointer transition"
+                                    title="Chỉnh sửa"
                                   >
                                     <Edit2 size={13} />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleDeleteRoom(room.id, room.name);
                                     }}
-                                    className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer transition"
-                                    title="Xóa hạng phòng"
+                                    className="p-1 text-gray-400 hover:text-rose-600 cursor-pointer transition"
+                                    title="Xóa"
                                   >
                                     <Trash2 size={13} />
                                   </button>
@@ -1066,11 +1079,11 @@ export default function RoomManagementPage() {
                             </tr>
 
                             {isExpanded && (
-                              <tr className="bg-[#fafffa] border-b-2 border-emerald-500/80">
-                                <td colSpan={10} className="p-4 bg-white">
+                              <tr className="bg-white border-b-2 border-[#003580]">
+                                <td colSpan={10} className="p-5">
                                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6 text-xs">
                                     <div className="md:col-span-4 flex gap-2">
-                                      <div className="w-44 h-28 bg-slate-100 rounded border border-slate-200 overflow-hidden flex items-center justify-center">
+                                      <div className="w-48 h-32 bg-gray-100 rounded-2xl border border-gray-200 overflow-hidden flex items-center justify-center">
                                         {roomImg ? (
                                           <img
                                             src={roomImg}
@@ -1084,14 +1097,22 @@ export default function RoomManagementPage() {
                                     </div>
                                     <div className="md:col-span-4 space-y-1.5">
                                       <div>
-                                        Mã hạng phòng: <b>{roomCode}</b>
+                                        Mã:{" "}
+                                        <b className="text-gray-900">
+                                          {roomCode}
+                                        </b>
                                       </div>
                                       <div>
-                                        Tên hạng phòng: <b>{room.name}</b>
+                                        Tên:{" "}
+                                        <b className="text-gray-900">
+                                          {room.name}
+                                        </b>
                                       </div>
                                       <div>
-                                        Số lượng phòng:{" "}
-                                        <b>{room.amount || 2}</b>
+                                        Số lượng:{" "}
+                                        <b className="text-gray-900">
+                                          {room.amount || 2} phòng
+                                        </b>
                                       </div>
                                       <div>
                                         Sức chứa tiêu chuẩn:{" "}
@@ -1109,13 +1130,18 @@ export default function RoomManagementPage() {
                                       </div>
                                       <div>
                                         Giá theo ngày:{" "}
-                                        <b>{formatVND(room.base_price)} đ</b>
+                                        <b className="text-[#ff6a00] tabular-nums">
+                                          {formatVND(room.base_price)} đ
+                                        </b>
                                       </div>
                                     </div>
-                                    <div className="md:col-span-4 border-l pl-4">
-                                      <span className="font-bold">Mô tả</span>
-                                      <p className="text-slate-600 mt-1">
-                                        {room.description || "Chưa có mô tả"}
+                                    <div className="md:col-span-4 border-l border-gray-200 pl-5">
+                                      <span className="font-bold text-gray-900">
+                                        Mô tả
+                                      </span>
+                                      <p className="text-gray-500 mt-1 leading-relaxed">
+                                        {room.description ||
+                                          "Chưa có mô tả chi tiết."}
                                       </p>
                                     </div>
                                   </div>
@@ -1133,30 +1159,30 @@ export default function RoomManagementPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-[#e0f2fe] text-slate-700 border-b border-slate-200">
-                      <th className="py-3 px-4 font-bold">Số phòng</th>
-                      <th className="py-3 px-4 font-bold">Khu vực</th>
-                      <th className="py-3 px-4 font-bold">Thuộc hạng phòng</th>
-                      <th className="py-3 px-4 font-bold text-right">
+                    <tr className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
+                      <th className="py-4 px-4 font-bold">Số phòng</th>
+                      <th className="py-4 px-4 font-bold">Khu vực</th>
+                      <th className="py-4 px-4 font-bold">Thuộc hạng phòng</th>
+                      <th className="py-4 px-4 font-bold text-right">
                         Giá theo giờ
                       </th>
-                      <th className="py-3 px-4 font-bold text-right">
+                      <th className="py-4 px-4 font-bold text-right">
                         Giá theo ngày
                       </th>
-                      <th className="py-3 px-4 font-bold text-right">
+                      <th className="py-4 px-4 font-bold text-right">
                         Giá qua đêm
                       </th>
-                      <th className="py-3 px-4 font-bold text-center">
+                      <th className="py-4 px-4 font-bold text-center">
                         Thao tác
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-gray-100">
                     {roomUnitsList.length === 0 ? (
                       <tr>
                         <td
                           colSpan={7}
-                          className="py-12 text-center text-slate-400"
+                          className="py-16 text-center text-gray-400"
                         >
                           Chưa có phòng vật lý nào trong chi nhánh này.
                         </td>
@@ -1168,45 +1194,47 @@ export default function RoomManagementPage() {
                           onClick={() => handleOpenAddRoomUnitModal(unit)}
                           className="hover:bg-blue-50/40 cursor-pointer transition"
                         >
-                          <td className="py-3 px-4 font-bold text-blue-900 flex items-center gap-1.5">
-                            <Key size={13} className="text-emerald-600" />
+                          <td className="py-3 px-4 font-bold text-[#003580] flex items-center gap-1.5">
+                            <Key size={14} className="text-[#006ce4]" />
                             <span>Phòng {unit.name}</span>
                           </td>
-                          <td className="py-3 px-4 font-medium text-slate-700">
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold rounded">
+                          <td className="py-3 px-4 font-medium text-gray-700">
+                            <span className="px-2.5 py-0.5 bg-blue-50 text-[#003580] font-bold rounded-md border border-blue-100">
                               {unit.area || "Tầng 1"}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-semibold text-slate-800">
+                          <td className="py-3 px-4 font-bold text-gray-900">
                             {unit.room_type_name}
                           </td>
-                          <td className="py-3 px-4 text-right font-medium text-slate-700">
+                          <td className="py-3 px-4 text-right font-medium text-gray-700 tabular-nums">
                             {formatVND(unit.hourly_price)}
                           </td>
-                          <td className="py-3 px-4 text-right font-medium text-slate-700">
+                          <td className="py-3 px-4 text-right font-bold text-[#ff6a00] tabular-nums">
                             {formatVND(unit.daily_price)}
                           </td>
-                          <td className="py-3 px-4 text-right font-medium text-slate-700">
+                          <td className="py-3 px-4 text-right font-medium text-gray-700 tabular-nums">
                             {formatVND(unit.overnight_price)}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleOpenAddRoomUnitModal(unit);
                                 }}
-                                className="p-1 hover:text-blue-600 cursor-pointer text-slate-400"
+                                className="p-1 hover:text-[#003580] cursor-pointer text-gray-400"
                                 title="Chỉnh sửa"
                               >
                                 <Edit2 size={13} />
                               </button>
                               <button
+                                type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteRoomUnit(unit.id, unit.name);
                                 }}
-                                className="p-1 hover:text-rose-600 cursor-pointer text-slate-400"
+                                className="p-1 hover:text-rose-600 cursor-pointer text-gray-400"
                                 title="Xóa phòng"
                               >
                                 <Trash2 size={13} />
@@ -1221,9 +1249,9 @@ export default function RoomManagementPage() {
               </div>
             )}
 
-            <div className="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-semibold bg-white">
+            <div className="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 font-semibold bg-white">
               <span>
-                Tổng số:{" "}
+                Tổng cộng:{" "}
                 <b>
                   {activeTab === "room_types"
                     ? filteredRooms.length
@@ -1236,9 +1264,10 @@ export default function RoomManagementPage() {
         </div>
       </div>
 
+      {/* MODAL HẠNG PHÒNG */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-fadeIn">
-          <div className="bg-white rounded-md w-full max-w-2xl shadow-xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-gray-200 flex flex-col max-h-[92vh] overflow-hidden font-sans">
             <input
               id="room-image-upload-input"
               type="file"
@@ -1249,75 +1278,76 @@ export default function RoomManagementPage() {
               className="hidden"
             />
 
-            <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-100">
-              <h3 className="font-semibold text-sm text-slate-800 tracking-tight">
-                {editingRoom ? "Chỉnh sửa hạng phòng" : "Thêm hạng phòng mới"}
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
+              <h3 className="font-black text-base text-[#0a2540]">
+                {editingRoom ? "Chỉnh Sửa Hạng Phòng" : "Thêm Hạng Phòng Mới"}
               </h3>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="cursor-pointer text-slate-400 hover:text-slate-600 transition text-lg"
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex items-center gap-8 px-6 border-b border-slate-200 text-xs font-medium text-slate-500 bg-white select-none">
+            <div className="flex items-center gap-8 px-6 border-b border-gray-200 text-xs font-bold text-gray-500 bg-white select-none">
               <button
                 type="button"
                 onClick={() => setModalTab("info")}
-                className={`py-2.5 transition relative cursor-pointer ${
+                className={`py-3 transition relative cursor-pointer ${
                   modalTab === "info"
-                    ? "text-slate-800 font-semibold"
-                    : "hover:text-slate-800"
+                    ? "text-[#003580] font-black"
+                    : "hover:text-gray-900"
                 }`}
               >
-                Thông tin
+                Thông tin cơ bản
                 {modalTab === "info" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2e7d32]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
                 )}
               </button>
 
               <button
                 type="button"
                 onClick={() => setModalTab("description")}
-                className={`py-2.5 transition relative cursor-pointer ${
+                className={`py-3 transition relative cursor-pointer ${
                   modalTab === "description"
-                    ? "text-slate-800 font-semibold"
-                    : "hover:text-slate-800"
+                    ? "text-[#003580] font-black"
+                    : "hover:text-gray-900"
                 }`}
               >
-                Mô tả chi tiết & Tiện nghi
+                Mô tả & Tiện nghi
                 {modalTab === "description" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2e7d32]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
                 )}
               </button>
 
               <button
                 type="button"
                 onClick={() => setModalTab("units")}
-                className={`py-2.5 transition relative cursor-pointer ${
+                className={`py-3 transition relative cursor-pointer ${
                   modalTab === "units"
-                    ? "text-slate-800 font-semibold"
-                    : "hover:text-slate-800"
+                    ? "text-[#003580] font-black"
+                    : "hover:text-gray-900"
                 }`}
               >
-                Danh sách phòng
+                Số lượng phòng
                 {modalTab === "units" && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2e7d32]" />
+                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#003580]" />
                 )}
               </button>
             </div>
 
             <form
               onSubmit={(e) => handleSaveRoom(e, false)}
-              className="flex-1 overflow-y-auto p-6 space-y-6 text-xs font-sans"
+              className="flex-1 overflow-y-auto p-6 space-y-6 text-xs"
             >
               {modalTab === "info" && (
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 items-start pt-2">
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <label className="w-28 text-slate-700 font-normal">
+                        <label className="w-28 text-gray-700 font-bold">
                           Chi nhánh <b className="text-rose-500">*</b>
                         </label>
                         <select
@@ -1329,7 +1359,7 @@ export default function RoomManagementPage() {
                               hotel_id: e.target.value,
                             })
                           }
-                          className="flex-1 py-1 border-b border-slate-300 outline-none text-slate-800 font-medium bg-transparent cursor-pointer focus:border-[#2e7d32]"
+                          className="flex-1 py-1.5 border-b border-gray-300 outline-none text-gray-900 font-bold bg-transparent cursor-pointer focus:border-[#003580]"
                         >
                           {hotels.map((h) => (
                             <option key={h.id} value={h.id}>
@@ -1340,22 +1370,21 @@ export default function RoomManagementPage() {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <label className="w-28 flex items-center gap-1 text-slate-700 font-normal">
-                          <span>Mã hạng phòng</span>
-                          <Info size={12} className="text-slate-400" />
+                        <label className="w-28 text-gray-700 font-bold">
+                          Mã hạng phòng
                         </label>
                         <input
                           value={formData.code}
                           onChange={(e) =>
                             setFormData({ ...formData, code: e.target.value })
                           }
-                          placeholder="Mã hạng phòng tự động"
-                          className="flex-1 py-1 border-b border-slate-300 outline-none placeholder:text-slate-400 text-slate-700 bg-transparent"
+                          placeholder="Tự động sinh nếu để trống"
+                          className="flex-1 py-1.5 border-b border-gray-300 outline-none text-gray-900 bg-transparent font-mono"
                         />
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <label className="w-28 text-slate-700 font-normal">
+                        <label className="w-28 text-gray-700 font-bold">
                           Tên hạng phòng <b className="text-rose-500">*</b>
                         </label>
                         <input
@@ -1364,14 +1393,15 @@ export default function RoomManagementPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, name: e.target.value })
                           }
-                          className="flex-1 py-1 border-b border-[#2e7d32] outline-none text-slate-800 font-medium bg-transparent"
+                          placeholder="VD: Deluxe Hướng Biển"
+                          className="flex-1 py-1.5 border-b border-[#003580] outline-none text-gray-900 font-bold bg-transparent"
                         />
                       </div>
                     </div>
 
                     <div className="space-y-3.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-700 font-normal">
+                        <span className="text-gray-700 font-medium">
                           Giá theo giờ
                         </span>
                         <input
@@ -1386,12 +1416,12 @@ export default function RoomManagementPage() {
                             }));
                           }}
                           placeholder="0"
-                          className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 bg-transparent font-medium"
+                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-700 font-normal">
+                        <span className="text-gray-700 font-bold">
                           Giá theo ngày <b className="text-rose-500">*</b>
                         </span>
                         <input
@@ -1423,12 +1453,12 @@ export default function RoomManagementPage() {
                             });
                           }}
                           placeholder="0"
-                          className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 font-semibold bg-transparent"
+                          className="w-28 text-right py-1 border-b border-[#003580] outline-none text-[#ff6a00] font-black bg-transparent"
                         />
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-700 font-normal">
+                        <span className="text-gray-700 font-medium">
                           Giá qua đêm
                         </span>
                         <input
@@ -1443,14 +1473,13 @@ export default function RoomManagementPage() {
                             }));
                           }}
                           placeholder="0"
-                          className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 bg-transparent font-medium"
+                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-1 text-slate-700 font-normal">
-                          <span>Phụ thu nhận sớm</span>
-                          <Info size={12} className="text-slate-400" />
+                        <span className="text-gray-700 font-medium">
+                          Phụ thu nhận sớm
                         </span>
                         <div className="flex items-center gap-1">
                           <input
@@ -1467,16 +1496,15 @@ export default function RoomManagementPage() {
                               }));
                             }}
                             placeholder="0"
-                            className="w-20 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 bg-transparent"
+                            className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 bg-transparent font-semibold"
                           />
-                          <span className="text-slate-500">/giờ</span>
+                          <span className="text-gray-400">/giờ</span>
                         </div>
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-1 text-slate-700 font-normal">
-                          <span>Phụ thu trả muộn</span>
-                          <Info size={12} className="text-slate-400" />
+                        <span className="text-gray-700 font-medium">
+                          Phụ thu trả muộn
                         </span>
                         <div className="flex items-center gap-1">
                           <input
@@ -1493,19 +1521,19 @@ export default function RoomManagementPage() {
                               }));
                             }}
                             placeholder="0"
-                            className="w-20 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 bg-transparent"
+                            className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 bg-transparent font-semibold"
                           />
-                          <span className="text-slate-500">/giờ</span>
+                          <span className="text-gray-400">/giờ</span>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 flex items-center gap-1.5">
+                  <div className="pt-2 flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => scrollImages("left", imageScrollRef)}
-                      className="p-1 text-slate-300 hover:text-slate-600 cursor-pointer flex-shrink-0"
+                      className="p-1 text-gray-300 hover:text-gray-600 cursor-pointer flex-shrink-0"
                     >
                       <ChevronLeft size={20} />
                     </button>
@@ -1517,7 +1545,7 @@ export default function RoomManagementPage() {
                       {formData.images.map((imgSrc, idx) => (
                         <div
                           key={idx}
-                          className="relative group w-16 h-14 rounded border border-slate-300 overflow-hidden flex-shrink-0 bg-slate-50"
+                          className="relative group w-16 h-14 rounded-xl border border-gray-200 overflow-hidden flex-shrink-0 bg-gray-50"
                         >
                           <img
                             src={imgSrc}
@@ -1533,7 +1561,7 @@ export default function RoomManagementPage() {
                                 images: prev.images.filter((_, i) => i !== idx),
                               }));
                             }}
-                            className="absolute top-0.5 right-0.5 bg-rose-600/90 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                            className="absolute top-0.5 right-0.5 bg-rose-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition cursor-pointer"
                           >
                             <X size={10} strokeWidth={3} />
                           </button>
@@ -1545,8 +1573,8 @@ export default function RoomManagementPage() {
                           <label
                             key={i}
                             htmlFor="room-image-upload-input"
-                            className="w-16 h-14 rounded border border-dashed border-slate-300 bg-white hover:border-emerald-500 cursor-pointer flex items-center justify-center flex-shrink-0 transition"
-                            title="Bấm để tải ảnh từ máy"
+                            className="w-16 h-14 rounded-xl border border-dashed border-gray-300 bg-white hover:border-[#003580] cursor-pointer flex items-center justify-center flex-shrink-0 transition"
+                            title="Tải ảnh"
                           >
                             <MountainPlaceholderIcon />
                           </label>
@@ -1557,19 +1585,19 @@ export default function RoomManagementPage() {
                     <button
                       type="button"
                       onClick={() => scrollImages("right", imageScrollRef)}
-                      className="p-1 text-slate-300 hover:text-slate-600 cursor-pointer flex-shrink-0"
+                      className="p-1 text-gray-300 hover:text-gray-600 cursor-pointer flex-shrink-0"
                     >
                       <ChevronRight size={20} />
                     </button>
                   </div>
 
-                  <div className="border border-slate-200 rounded-md overflow-hidden bg-white mt-4">
-                    <div className="bg-[#f1f5f9] px-4 py-2 font-bold text-slate-800 text-xs border-b border-slate-200">
-                      Sức chứa
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white mt-4">
+                    <div className="bg-gray-50 px-4 py-2.5 font-black uppercase tracking-wider text-gray-800 text-xs border-b border-gray-200">
+                      Sức chứa phòng
                     </div>
                     <div className="p-4 space-y-3.5 text-xs">
                       <div className="flex items-center gap-6">
-                        <span className="w-20 font-medium text-slate-700">
+                        <span className="w-20 font-bold text-gray-700">
                           Tiêu chuẩn
                         </span>
                         <div className="flex items-center gap-2">
@@ -1583,9 +1611,9 @@ export default function RoomManagementPage() {
                                 standard_adults: Number(e.target.value),
                               })
                             }
-                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                            className="w-12 text-center border-b border-gray-400 outline-none font-bold text-gray-900 py-0.5 bg-transparent"
                           />
-                          <span className="text-slate-600">người lớn và</span>
+                          <span className="text-gray-500">người lớn và</span>
                           <input
                             type="number"
                             min="0"
@@ -1596,14 +1624,14 @@ export default function RoomManagementPage() {
                                 standard_children: Number(e.target.value),
                               })
                             }
-                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                            className="w-12 text-center border-b border-gray-400 outline-none font-bold text-gray-900 py-0.5 bg-transparent"
                           />
-                          <span className="text-slate-600">trẻ em</span>
+                          <span className="text-gray-500">trẻ em</span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-6">
-                        <span className="w-20 font-medium text-slate-700">
+                        <span className="w-20 font-bold text-gray-700">
                           Tối đa
                         </span>
                         <div className="flex items-center gap-2">
@@ -1618,9 +1646,9 @@ export default function RoomManagementPage() {
                                 capacity: Number(e.target.value),
                               })
                             }
-                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                            className="w-12 text-center border-b border-gray-400 outline-none font-bold text-gray-900 py-0.5 bg-transparent"
                           />
-                          <span className="text-slate-600">người lớn và</span>
+                          <span className="text-gray-500">người lớn và</span>
                           <input
                             type="number"
                             min="0"
@@ -1631,9 +1659,9 @@ export default function RoomManagementPage() {
                                 max_children: Number(e.target.value),
                               })
                             }
-                            className="w-10 text-center border-b border-slate-400 outline-none font-semibold text-slate-800 focus:border-[#2e7d32] py-0.5 bg-transparent"
+                            className="w-12 text-center border-b border-gray-400 outline-none font-bold text-gray-900 py-0.5 bg-transparent"
                           />
-                          <span className="text-slate-600">trẻ em</span>
+                          <span className="text-gray-500">trẻ em</span>
                         </div>
                       </div>
                     </div>
@@ -1645,7 +1673,7 @@ export default function RoomManagementPage() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-slate-700 font-medium mb-1">
+                      <label className="block text-gray-700 font-bold mb-1">
                         Loại giường
                       </label>
                       <input
@@ -1653,11 +1681,11 @@ export default function RoomManagementPage() {
                         onChange={(e) =>
                           setFormData({ ...formData, bed_type: e.target.value })
                         }
-                        className="w-full p-1.5 border border-slate-300 rounded outline-none"
+                        className="w-full p-2.5 border border-gray-200 rounded-xl outline-none focus:border-[#003580]"
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-700 font-medium mb-1">
+                      <label className="block text-gray-700 font-bold mb-1">
                         Diện tích phòng (m²)
                       </label>
                       <input
@@ -1669,19 +1697,18 @@ export default function RoomManagementPage() {
                             room_area: e.target.value,
                           })
                         }
-                        className="w-full p-1.5 border border-slate-300 rounded outline-none"
+                        className="w-full p-2.5 border border-gray-200 rounded-xl outline-none focus:border-[#003580]"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="font-bold text-slate-800 flex items-center gap-1">
-                        <Sparkles size={13} className="text-amber-500" /> Tiện
+                      <label className="font-bold text-gray-800 flex items-center gap-1">
+                        <Sparkles size={14} className="text-amber-500" /> Tiện
                         nghi hạng phòng:
                       </label>
 
-                      {/* 👉 NÚT BẤM XÓA HẾT MỌI TIỆN NGHI */}
                       {Array.isArray(formData.amenities) &&
                         formData.amenities.length > 0 && (
                           <button
@@ -1692,7 +1719,7 @@ export default function RoomManagementPage() {
                                 amenities: [],
                               }))
                             }
-                            className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded cursor-pointer transition flex items-center gap-1"
+                            className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 px-2 py-0.5 rounded-lg cursor-pointer transition flex items-center gap-1"
                           >
                             <Trash2 size={12} />
                             <span>
@@ -1702,18 +1729,17 @@ export default function RoomManagementPage() {
                         )}
                     </div>
 
-                    {/* HIỂN THỊ CÁC TIỆN NGHI ĐANG ĐƯỢC CHỌN (KÈM NÚT XÓA TRỰC TIẾP) */}
                     {Array.isArray(formData.amenities) &&
                       formData.amenities.length > 0 && (
-                        <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-md">
-                          <span className="text-[10px] font-bold text-emerald-800 block mb-1 uppercase tracking-wider">
+                        <div className="p-2.5 bg-blue-50/50 border border-blue-100 rounded-2xl">
+                          <span className="text-[10px] font-black text-[#003580] block mb-1 uppercase tracking-wider">
                             Đang chọn ({formData.amenities.length}):
                           </span>
                           <div className="flex flex-wrap gap-1.5">
                             {formData.amenities.map((item, idx) => (
                               <span
                                 key={idx}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-md"
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-white border border-blue-200 text-[#003580] text-[11px] font-bold rounded-lg"
                               >
                                 <span>{item}</span>
                                 <button
@@ -1726,8 +1752,7 @@ export default function RoomManagementPage() {
                                       ),
                                     }))
                                   }
-                                  className="text-emerald-700 hover:text-rose-700 cursor-pointer ml-0.5"
-                                  title="Xóa tiện nghi này"
+                                  className="text-gray-400 hover:text-rose-600 cursor-pointer ml-0.5"
                                 >
                                   ✕
                                 </button>
@@ -1737,8 +1762,7 @@ export default function RoomManagementPage() {
                         </div>
                       )}
 
-                    {/* DANH SÁCH TẤT CẢ TIỆN NGHI: TÍCH CÁI NÀO CHỈ SÁNG CÁI ĐÓ */}
-                    <div className="grid grid-cols-2 gap-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200 max-h-40 overflow-y-auto">
+                    <div className="grid grid-cols-2 gap-1.5 bg-gray-50 p-3 rounded-2xl border border-gray-200 max-h-48 overflow-y-auto">
                       {ROOM_AMENITIES_LIST.map((item) => {
                         const currentAmenities = Array.isArray(
                           formData.amenities,
@@ -1746,7 +1770,6 @@ export default function RoomManagementPage() {
                           ? formData.amenities
                           : [];
 
-                        // So khớp CHÍNH XÁC mục tiêu
                         const isChecked = currentAmenities.some((a) =>
                           isSameAmenity(a, item),
                         );
@@ -1773,17 +1796,17 @@ export default function RoomManagementPage() {
                                 };
                               });
                             }}
-                            className={`flex items-center gap-2 p-1.5 rounded cursor-pointer select-none text-[11px] text-left transition ${
+                            className={`flex items-center gap-2 p-2 rounded-xl cursor-pointer select-none text-[11px] text-left transition ${
                               isChecked
-                                ? "bg-emerald-100/70 text-emerald-900 font-bold"
-                                : "hover:bg-slate-200/50 text-slate-700"
+                                ? "bg-blue-50 text-[#003580] font-bold border border-blue-200"
+                                : "hover:bg-white text-gray-700"
                             }`}
                           >
                             <div
                               className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
                                 isChecked
-                                  ? "bg-[#2e7d32] border-[#2e7d32] text-white"
-                                  : "border-slate-300 bg-white"
+                                  ? "bg-[#003580] border-[#003580] text-white"
+                                  : "border-gray-300 bg-white"
                               }`}
                             >
                               {isChecked && <Check size={10} strokeWidth={3} />}
@@ -1799,8 +1822,8 @@ export default function RoomManagementPage() {
 
               {modalTab === "units" && (
                 <div className="space-y-3">
-                  <div className="p-3 bg-slate-50 border rounded space-y-2">
-                    <label className="font-semibold text-slate-700">
+                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-2">
+                    <label className="font-bold text-gray-800">
                       Số lượng phòng thực tế:
                     </label>
                     <input
@@ -1812,24 +1835,24 @@ export default function RoomManagementPage() {
                           amount: Number(e.target.value),
                         })
                       }
-                      className="w-24 p-1.5 border border-slate-300 rounded outline-none bg-white font-bold"
+                      className="w-24 p-2 border border-gray-200 rounded-xl outline-none bg-white font-bold text-gray-900"
                     />
-                    <p className="text-[11px] text-slate-500">
-                      Hệ thống sẽ tự động sinh {formData.amount || 2} phòng
-                      tương ứng vào danh sách phòng.
+                    <p className="text-[11px] text-gray-500">
+                      Hệ thống sẽ đồng bộ số lượng phòng vật lý tương ứng vào
+                      chi nhánh này.
                     </p>
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                 {editingRoom ? (
                   <button
                     type="button"
                     onClick={() =>
                       handleDeleteRoom(editingRoom.id, editingRoom.name)
                     }
-                    className="px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded text-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                    className="px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition active:scale-95"
                   >
                     <Trash2 size={14} />
                     <span>Xóa hạng phòng</span>
@@ -1838,10 +1861,10 @@ export default function RoomManagementPage() {
                   <div />
                 )}
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    className="px-4 py-1.5 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                    className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
                   >
                     <Save size={14} />
                     <span>Lưu</span>
@@ -1850,19 +1873,19 @@ export default function RoomManagementPage() {
                   <button
                     type="button"
                     onClick={(e) => handleSaveRoom(e, true)}
-                    className="px-4 py-1.5 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                    className="px-5 py-2 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
                   >
                     <Save size={14} />
-                    <span>Lưu & Thêm mới</span>
+                    <span>Lưu & Thêm tiếp</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-1.5 bg-[#718096] hover:bg-[#4a5568] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
                   >
                     <Ban size={14} />
-                    <span>Bỏ qua</span>
+                    <span>Hủy</span>
                   </button>
                 </div>
               </div>
@@ -1871,9 +1894,10 @@ export default function RoomManagementPage() {
         </div>
       )}
 
+      {/* MODAL PHÒNG VẬT LÝ CỤ THỂ */}
       {isRoomUnitModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs animate-fadeIn">
-          <div className="bg-white rounded-md w-full max-w-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-gray-200 flex flex-col max-h-[92vh] overflow-hidden font-sans">
             <input
               id="room-unit-image-upload"
               type="file"
@@ -1884,13 +1908,16 @@ export default function RoomManagementPage() {
               className="hidden"
             />
 
-            <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-100">
-              <h3 className="font-bold text-sm text-slate-800 tracking-tight">
-                Phòng
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
+              <h3 className="font-black text-base text-[#0a2540]">
+                {editingRoomUnit
+                  ? `Chỉnh Sửa Phòng ${editingRoomUnit.name}`
+                  : "Thêm Phòng Cụ Thể"}
               </h3>
               <button
+                type="button"
                 onClick={() => setIsRoomUnitModalOpen(false)}
-                className="cursor-pointer text-slate-400 hover:text-slate-600 transition text-lg"
+                className="cursor-pointer text-gray-400 hover:text-gray-600 p-1"
               >
                 ✕
               </button>
@@ -1898,12 +1925,12 @@ export default function RoomManagementPage() {
 
             <form
               onSubmit={(e) => handleSaveRoomUnit(e, false)}
-              className="flex-1 overflow-y-auto p-6 space-y-6 text-xs font-sans"
+              className="flex-1 overflow-y-auto p-6 space-y-6 text-xs"
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 items-start pt-1">
                 <div className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <label className="w-24 text-slate-700 font-normal">
+                    <label className="w-24 text-gray-700 font-bold">
                       Tên phòng <b className="text-rose-500">*</b>
                     </label>
                     <input
@@ -1916,15 +1943,15 @@ export default function RoomManagementPage() {
                         })
                       }
                       placeholder="VD: 101, 201..."
-                      className="flex-1 py-1 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 font-semibold bg-transparent"
+                      className="flex-1 py-1.5 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                     />
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className="w-24 text-slate-700 font-normal">
+                    <label className="w-24 text-gray-700 font-bold">
                       Khu vực
                     </label>
-                    <div className="flex-1 flex items-center border-b border-slate-300 pb-0.5">
+                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
                       <select
                         value={roomUnitFormData.area}
                         onChange={(e) =>
@@ -1933,9 +1960,9 @@ export default function RoomManagementPage() {
                             area: e.target.value,
                           })
                         }
-                        className="flex-1 outline-none text-slate-700 bg-transparent cursor-pointer font-bold text-blue-900"
+                        className="flex-1 outline-none text-[#003580] bg-transparent cursor-pointer font-bold"
                       >
-                        <option value="">--Lựa chọn--</option>
+                        <option value="">-- Lựa chọn --</option>
                         {areasList.map((area, idx) => (
                           <option key={idx} value={area}>
                             {area}
@@ -1946,7 +1973,7 @@ export default function RoomManagementPage() {
                         type="button"
                         onClick={() => {
                           const areaName = window.prompt(
-                            "Nhập tên khu vực mới (VD: Tầng 2, Tầng 3):",
+                            "Nhập tên khu vực mới (VD: Tầng 4, Khu VIP):",
                           );
                           if (areaName && areaName.trim()) {
                             setAreasList((prev) => [...prev, areaName.trim()]);
@@ -1956,7 +1983,7 @@ export default function RoomManagementPage() {
                             }));
                           }
                         }}
-                        className="text-slate-500 hover:text-[#2e7d32] font-bold px-1.5 cursor-pointer text-sm"
+                        className="text-[#006ce4] font-bold px-1.5 cursor-pointer text-sm"
                       >
                         +
                       </button>
@@ -1964,44 +1991,33 @@ export default function RoomManagementPage() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className="w-24 text-slate-700 font-normal">
+                    <label className="w-24 text-gray-700 font-bold">
                       Hạng phòng <b className="text-rose-500">*</b>
                     </label>
-                    <div className="flex-1 flex items-center border-b border-slate-300 pb-0.5">
+                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
                       <select
                         required
                         value={roomUnitFormData.room_id}
                         onChange={(e) =>
                           handleSelectRoomTypeForUnit(e.target.value)
                         }
-                        className="flex-1 outline-none text-slate-800 font-medium bg-transparent cursor-pointer"
+                        className="flex-1 outline-none text-gray-900 font-bold bg-transparent cursor-pointer"
                       >
-                        <option value="">--Lựa chọn--</option>
+                        <option value="">-- Lựa chọn --</option>
                         {rooms.map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.name}
                           </option>
                         ))}
                       </select>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsRoomUnitModalOpen(false);
-                          handleOpenAddModal();
-                        }}
-                        className="text-slate-500 hover:text-[#2e7d32] font-bold px-1.5 cursor-pointer text-sm"
-                        title="Thêm hạng phòng mới"
-                      >
-                        +
-                      </button>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className="w-24 text-slate-700 font-normal">
-                      Bắt đầu sử dụng
+                    <label className="w-24 text-gray-700 font-bold">
+                      Bắt đầu dùng
                     </label>
-                    <div className="flex-1 flex items-center border-b border-slate-300 pb-0.5">
+                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
                       <input
                         type="date"
                         value={roomUnitFormData.start_date}
@@ -2011,16 +2027,16 @@ export default function RoomManagementPage() {
                             start_date: e.target.value,
                           })
                         }
-                        className="flex-1 outline-none text-slate-800 bg-transparent text-xs"
+                        className="flex-1 outline-none text-gray-900 bg-transparent text-xs font-semibold"
                       />
-                      <Calendar size={13} className="text-slate-400" />
+                      <Calendar size={14} className="text-gray-400" />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-3.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-700 font-normal">
+                    <span className="text-gray-700 font-medium">
                       Giá theo giờ
                     </span>
                     <input
@@ -2037,12 +2053,12 @@ export default function RoomManagementPage() {
                         }));
                       }}
                       placeholder="0"
-                      className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 text-xs font-medium bg-transparent"
+                      className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-bold bg-transparent"
                     />
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-700 font-normal">
+                    <span className="text-gray-700 font-bold">
                       Giá theo ngày
                     </span>
                     <input
@@ -2057,12 +2073,12 @@ export default function RoomManagementPage() {
                         }));
                       }}
                       placeholder="0"
-                      className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 text-xs font-medium bg-transparent"
+                      className="w-28 text-right py-1 border-b border-[#003580] outline-none text-[#ff6a00] text-xs font-black bg-transparent"
                     />
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-700 font-normal">
+                    <span className="text-gray-700 font-medium">
                       Giá qua đêm
                     </span>
                     <input
@@ -2079,14 +2095,13 @@ export default function RoomManagementPage() {
                         }));
                       }}
                       placeholder="0"
-                      className="w-28 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 text-xs font-medium bg-transparent"
+                      className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-bold bg-transparent"
                     />
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1 text-slate-700 font-normal">
-                      <span>Phụ thu nhận sớm</span>
-                      <Info size={12} className="text-slate-400" />
+                    <span className="text-gray-700 font-medium">
+                      Phụ thu nhận sớm
                     </span>
                     <div className="flex items-center gap-1">
                       <input
@@ -2103,16 +2118,15 @@ export default function RoomManagementPage() {
                           }));
                         }}
                         placeholder="0"
-                        className="w-20 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 text-xs bg-transparent"
+                        className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-semibold bg-transparent"
                       />
-                      <span className="text-slate-500 text-xs">/giờ</span>
+                      <span className="text-gray-400 text-xs">/giờ</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1 text-slate-700 font-normal">
-                      <span>Phụ thu trả muộn</span>
-                      <Info size={12} className="text-slate-400" />
+                    <span className="text-gray-700 font-medium">
+                      Phụ thu trả muộn
                     </span>
                     <div className="flex items-center gap-1">
                       <input
@@ -2129,17 +2143,17 @@ export default function RoomManagementPage() {
                           }));
                         }}
                         placeholder="0"
-                        className="w-20 text-right py-0.5 border-b border-slate-300 outline-none focus:border-[#2e7d32] text-slate-800 text-xs bg-transparent"
+                        className="w-20 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 text-xs font-semibold bg-transparent"
                       />
-                      <span className="text-slate-500 text-xs">/giờ</span>
+                      <span className="text-gray-400 text-xs">/giờ</span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 pt-0.5">
-                    <span className="w-20 text-slate-700 font-normal">
+                    <span className="w-20 text-gray-700 font-bold">
                       Ghi chú
                     </span>
-                    <div className="flex-1 flex items-center border-b border-slate-300 pb-0.5">
+                    <div className="flex-1 flex items-center border-b border-gray-300 pb-0.5">
                       <input
                         value={roomUnitFormData.note}
                         onChange={(e) =>
@@ -2148,78 +2162,15 @@ export default function RoomManagementPage() {
                             note: e.target.value,
                           })
                         }
-                        placeholder="Thêm ghi chú nếu có..."
-                        className="flex-1 outline-none text-slate-700 bg-transparent text-xs"
+                        placeholder="Ghi chú vị trí hoặc tình trạng..."
+                        className="flex-1 outline-none text-gray-800 bg-transparent text-xs"
                       />
-                      <Edit2 size={12} className="text-slate-400" />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-3 flex items-center gap-1.5 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => scrollImages("left", roomUnitImageScrollRef)}
-                  className="p-1 text-slate-300 hover:text-slate-600 cursor-pointer flex-shrink-0"
-                >
-                  <ChevronLeft size={20} />
-                </button>
-
-                <div
-                  ref={roomUnitImageScrollRef}
-                  className="flex-1 flex gap-2 overflow-x-auto py-1 scroll-smooth scrollbar-none items-center"
-                >
-                  {roomUnitFormData.images.map((imgSrc, idx) => (
-                    <div
-                      key={idx}
-                      className="relative group w-16 h-14 rounded border border-slate-300 overflow-hidden flex-shrink-0 bg-slate-50"
-                    >
-                      <img
-                        src={imgSrc}
-                        alt="preview"
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRoomUnitFormData((prev) => ({
-                            ...prev,
-                            images: prev.images.filter((_, i) => i !== idx),
-                          }));
-                        }}
-                        className="absolute top-0.5 right-0.5 bg-rose-600/90 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition cursor-pointer"
-                      >
-                        <X size={10} strokeWidth={3} />
-                      </button>
-                    </div>
-                  ))}
-
-                  {[
-                    ...Array(Math.max(1, 8 - roomUnitFormData.images.length)),
-                  ].map((_, i) => (
-                    <label
-                      key={i}
-                      htmlFor="room-unit-image-upload"
-                      className="w-16 h-14 rounded border border-dashed border-slate-300 bg-white hover:border-emerald-500 cursor-pointer flex items-center justify-center flex-shrink-0 transition"
-                      title="Bấm để tải ảnh"
-                    >
-                      <MountainPlaceholderIcon />
-                    </label>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => scrollImages("right", roomUnitImageScrollRef)}
-                  className="p-1 text-slate-300 hover:text-slate-600 cursor-pointer flex-shrink-0"
-                >
-                  <ChevronRight size={20} />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                 {editingRoomUnit ? (
                   <button
                     type="button"
@@ -2229,7 +2180,7 @@ export default function RoomManagementPage() {
                         editingRoomUnit.name,
                       )
                     }
-                    className="px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded text-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                    className="px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition active:scale-95"
                   >
                     <Trash2 size={14} />
                     <span>Xóa phòng</span>
@@ -2238,10 +2189,10 @@ export default function RoomManagementPage() {
                   <div />
                 )}
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    className="px-4 py-1.5 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                    className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
                   >
                     <Save size={14} />
                     <span>Lưu</span>
@@ -2250,19 +2201,19 @@ export default function RoomManagementPage() {
                   <button
                     type="button"
                     onClick={(e) => handleSaveRoomUnit(e, true)}
-                    className="px-4 py-1.5 bg-[#2e7d32] hover:bg-[#256628] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition active:scale-95"
+                    className="px-5 py-2 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
                   >
                     <Save size={14} />
-                    <span>Lưu & Thêm mới</span>
+                    <span>Lưu & Thêm tiếp</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setIsRoomUnitModalOpen(false)}
-                    className="px-4 py-1.5 bg-[#718096] hover:bg-[#4a5568] text-white font-semibold rounded text-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
                   >
                     <Ban size={14} />
-                    <span>Bỏ qua</span>
+                    <span>Hủy</span>
                   </button>
                 </div>
               </div>

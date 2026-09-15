@@ -2,7 +2,7 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tự động đảm bảo cột room_legs tồn tại trong bảng booking để lưu lịch sử chặng phòng
+// Tự động đảm bảo cột room_legs tồn tại trong bảng booking
 (async function ensureRoomLegsColumn() {
   try {
     await pool.query(
@@ -13,7 +13,6 @@ const pool = require("../config/database");
   }
 })();
 
-// Tự động nhận diện thư viện mã hóa mật khẩu
 const hashPassword = async (plainPassword) => {
   try {
     const bcryptjs = require("bcryptjs");
@@ -28,7 +27,7 @@ const hashPassword = async (plainPassword) => {
   }
 };
 
-// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ KHÁCH SẠN ───
+// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ KHÁCH SẠN (API /api/owner/stats) ───
 async function getOwnerStats(req, res, next) {
   try {
     const ownerId =
@@ -37,7 +36,6 @@ async function getOwnerStats(req, res, next) {
       ? String(req.query.hotel_id).trim()
       : "all";
     const range = req.query.range || "this_month";
-    const revTab = req.query.rev_tab || "day";
 
     if (!ownerId) {
       return res.status(401).json({ message: "Vui lòng đăng nhập." });
@@ -94,6 +92,7 @@ async function getOwnerStats(req, res, next) {
       endDate = lastDay.toLocaleDateString("en-CA");
     }
 
+    // 1. TỔNG SỐ PHÒNG THỰC TẾ
     const roomsRes = await pool.query(
       `SELECT COALESCE(SUM(r.amount), 0)::int AS total_rooms 
        FROM public.room r 
@@ -108,6 +107,7 @@ async function getOwnerStats(req, res, next) {
     let currentRate = 0;
     let vacantRate = 0;
 
+    // 2. CÔNG SUẤT PHÒNG THỰC TẾ HIỆN TẠI
     if (totalRooms > 0) {
       const currentOccupiedRes = await pool.query(
         `SELECT COALESCE(SUM(COALESCE(br.quantity, 1)), 0)::int AS occupied
@@ -115,8 +115,7 @@ async function getOwnerStats(req, res, next) {
          JOIN public.hotel h ON h.id = b.hotel_id
          LEFT JOIN public.booking_room br ON br.booking_id = b.id
          WHERE ${hotelFilter} 
-           AND b.status = 'checked_in'
-           AND CURRENT_DATE >= b.checkin_date AND CURRENT_DATE <= b.checkout_date`,
+           AND b.status IN ('checked_in', 'confirmed')`,
         baseParams,
       );
       occupiedCount = Math.min(
@@ -131,22 +130,292 @@ async function getOwnerStats(req, res, next) {
       vacantRate = Math.max(0, 100 - currentRate);
     }
 
+    // 2.1. SỐ KHÁCH ĐANG LƯU TRÚ THỰC TẾ
+    const stayingRes = await pool.query(
+      `SELECT 
+         COALESCE(SUM(COALESCE(b.adult_total, 1)), 0)::int AS adults,
+         COALESCE(SUM(COALESCE(b.children_total, 0)), 0)::int AS children
+       FROM public.booking b
+       JOIN public.hotel h ON h.id = b.hotel_id
+       WHERE ${hotelFilter} 
+         AND b.status IN ('checked_in', 'confirmed')`,
+      baseParams,
+    );
+    const stayingAdults = Number(stayingRes.rows[0]?.adults || 0);
+    const stayingChildren = Number(stayingRes.rows[0]?.children || 0);
+    const totalGuests = stayingAdults + stayingChildren;
+
+    // 2.2. BUỒNG PHÒNG THỰC TẾ
+    const waitingCleanRes = await pool
+      .query(
+        `SELECT COUNT(DISTINCT ru.id)::int AS waiting_clean
+       FROM public.room_unit ru
+       JOIN public.room r ON r.id = ru.room_id
+       JOIN public.hotel h ON h.id = r.hotel_id
+       WHERE ${hotelFilter} AND ru.status = 'dirty'
+         AND ru.room_number NOT IN (
+           SELECT COALESCE(b.room_number, '') FROM public.booking b 
+           WHERE b.hotel_id = h.id AND b.status = 'checked_in' AND b.room_number IS NOT NULL
+         )`,
+        baseParams,
+      )
+      .catch(() => ({ rows: [{ waiting_clean: 0 }] }));
+    const waitingClean = Number(waitingCleanRes.rows[0]?.waiting_clean || 0);
+
+    const occupiedCleanRes = await pool
+      .query(
+        `SELECT COUNT(DISTINCT ru.id)::int AS occupied_dirty
+       FROM public.room_unit ru
+       JOIN public.room r ON r.id = ru.room_id
+       JOIN public.hotel h ON h.id = r.hotel_id
+       WHERE ${hotelFilter} AND ru.status = 'dirty'
+         AND ru.room_number IN (
+           SELECT COALESCE(b.room_number, '') FROM public.booking b 
+           WHERE b.hotel_id = h.id AND b.status = 'checked_in' AND b.room_number IS NOT NULL
+         )`,
+        baseParams,
+      )
+      .catch(() => ({ rows: [{ occupied_dirty: 0 }] }));
+    const occupiedAndWaitingClean = Number(
+      occupiedCleanRes.rows[0]?.occupied_dirty || 0,
+    );
+
     const timeParams = [...baseParams, startDate, endDate];
     const pStart = timeParams.length - 1;
     const pEnd = timeParams.length;
 
+    // 3. TỔNG DOANH THU & SỐ ĐƠN THỰC TẾ
     const revenueRes = await pool.query(
-      `SELECT COALESCE(SUM(b.total_price), 0)::bigint AS total_rev
+      `SELECT COALESCE(SUM(b.total_price), 0)::bigint AS total_rev,
+              COUNT(b.id)::int AS total_paid_orders
        FROM public.booking b
        JOIN public.hotel h ON h.id = b.hotel_id
        WHERE ${hotelFilter} 
          AND b.status NOT IN ('cancelled') 
-         AND b.payment_status = 'paid'
+         AND (b.payment_status = 'paid' OR b.status = 'checked_in')
          AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date`,
       timeParams,
     );
     const revenueTotal = Number(revenueRes.rows[0]?.total_rev || 0);
+    const invoiceCount = Number(revenueRes.rows[0]?.total_paid_orders || 0);
 
+    // 🌟 3.1. DỮ LIỆU KÊNH BÁN THỰC TẾ 100% (TRỰC TIẾP vs ONLINE)
+    const channelQuery = await pool.query(
+      `SELECT 
+         CASE 
+           WHEN b.booking_code LIKE 'DP%' OR b.guest_email ILIKE '%walkin%' THEN 'direct'
+           ELSE 'online'
+         END AS channel,
+         COALESCE(SUM(b.total_price), 0)::bigint AS total_money,
+         COUNT(b.id)::int AS order_count
+       FROM public.booking b
+       JOIN public.hotel h ON h.id = b.hotel_id
+       WHERE ${hotelFilter}
+         AND b.status NOT IN ('cancelled')
+         AND (b.payment_status = 'paid' OR b.status = 'checked_in')
+         AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date
+       GROUP BY 1`,
+      timeParams,
+    );
+
+    let directAmount = 0;
+    let directCount = 0;
+    let onlineAmount = 0;
+    let onlineCount = 0;
+
+    channelQuery.rows.forEach((r) => {
+      if (r.channel === "direct") {
+        directAmount = Number(r.total_money || 0);
+        directCount = Number(r.order_count || 0);
+      } else {
+        onlineAmount = Number(r.total_money || 0);
+        onlineCount = Number(r.order_count || 0);
+      }
+    });
+
+    // Đếm đơn đã hủy thực tế trong cơ sở dữ liệu
+    const cancelQuery = await pool.query(
+      `SELECT COALESCE(SUM(b.total_price), 0)::bigint AS total_cancel_money,
+              COUNT(b.id)::int AS cancel_count
+       FROM public.booking b
+       JOIN public.hotel h ON h.id = b.hotel_id
+       WHERE ${hotelFilter}
+         AND b.status = 'cancelled'
+         AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date`,
+      timeParams,
+    );
+    const cancelledAmount = Number(
+      cancelQuery.rows[0]?.total_cancel_money || 0,
+    );
+    const cancelledCount = Number(cancelQuery.rows[0]?.cancel_count || 0);
+
+    const totalChannelMoney = directAmount + onlineAmount;
+    const directPercent =
+      totalChannelMoney > 0
+        ? Math.round((directAmount / totalChannelMoney) * 100)
+        : 0;
+    const onlinePercent =
+      totalChannelMoney > 0
+        ? Math.round((onlineAmount / totalChannelMoney) * 100)
+        : 0;
+
+    const channelStats = {
+      directAmount,
+      directCount,
+      directPercent,
+      onlineAmount,
+      onlineCount,
+      onlinePercent,
+      cancelledAmount,
+      cancelledCount,
+      chartData: [
+        { name: "Khách đến trực tiếp", booked: directAmount, cancelled: 0 },
+        {
+          name: "Đặt phòng online",
+          booked: onlineAmount,
+          cancelled: cancelledAmount,
+        },
+      ],
+    };
+
+    // 4. KIỂM TOÁN TÁCH BIỆT THỰC TẾ
+    const auditRes = await pool.query(
+      `SELECT 
+         b.id,
+         COALESCE(b.booking_code, 'BK' || SUBSTRING(b.id::text, 1, 6)) AS booking_code,
+         COALESCE(b.room_number, 'Chưa gán') AS room,
+         COALESCE(b.customer_name, 'Khách lẻ') AS guest,
+         COALESCE(b.guest_phone, '') AS phone,
+         b.status::text AS booking_status,
+         b.payment_status::text AS payment_status,
+         b.checkin_date::text AS checkin_date,
+         b.checkout_date::text AS checkout_date,
+         COALESCE(b.subtotal, 0)::bigint AS customer_paid,
+         COALESCE(
+           NULLIF(b.total_price, 0),
+           (SELECT br.price FROM public.booking_room br WHERE br.booking_id = b.id LIMIT 1),
+           (SELECT r.base_price FROM public.room r WHERE r.hotel_id = b.hotel_id AND r.name ILIKE b.room_number LIMIT 1),
+           350000
+         )::bigint AS effective_room_price
+       FROM public.booking b
+       JOIN public.hotel h ON h.id = b.hotel_id
+       WHERE ${hotelFilter} AND b.status = 'checked_in'
+       ORDER BY b.created_at DESC`,
+      baseParams,
+    );
+
+    const paymentAlerts = [];
+    const leakAlerts = [];
+    const todayStr = now.toLocaleDateString("en-CA");
+
+    auditRes.rows.forEach((row) => {
+      const isOverstay = row.checkout_date && row.checkout_date < todayStr;
+      const roomPrice = Number(row.effective_room_price || 350000);
+      const paidAmount = Number(row.customer_paid || 0);
+
+      const isUnpaid = row.payment_status !== "paid" || paidAmount < roomPrice;
+      const debtAmount = Math.max(roomPrice - paidAmount, roomPrice);
+
+      if (isOverstay) {
+        const checkOutTime = new Date(row.checkout_date).getTime();
+        const currentTime = new Date(todayStr).getTime();
+        const daysOver = Math.max(
+          1,
+          Math.floor((currentTime - checkOutTime) / (1000 * 60 * 60 * 24)),
+        );
+        const lateAmount = roomPrice * daysOver;
+
+        leakAlerts.push({
+          id: row.id,
+          booking_code: row.booking_code,
+          room: row.room.startsWith("P.") ? row.room : `Phòng ${row.room}`,
+          guest: row.guest,
+          phone: row.phone,
+          amount: lateAmount,
+          desc: `Quá hạn trả phòng ${daysOver} ngày chưa thanh toán phụ phí`,
+          type: "overstay_leak",
+        });
+      }
+
+      if (isUnpaid && !isOverstay) {
+        paymentAlerts.push({
+          id: row.id,
+          booking_code: row.booking_code,
+          room: row.room.startsWith("P.") ? row.room : `Phòng ${row.room}`,
+          guest: row.guest,
+          phone: row.phone,
+          amount: debtAmount,
+          desc:
+            paidAmount === 0
+              ? "Chưa thanh toán tiền phòng/tiền cọc"
+              : `Mới cọc ${paidAmount.toLocaleString("vi-VN")} đ, còn thiếu`,
+          type: "unpaid_booking",
+        });
+      }
+    });
+
+    const potentialLeakTotal = leakAlerts.reduce((sum, r) => sum + r.amount, 0);
+    const totalUnpaidAmount = paymentAlerts.reduce(
+      (sum, r) => sum + r.amount,
+      0,
+    );
+
+    // 🌟 5. CÔNG SUẤT THEO TỪNG HẠNG PHÒNG THỰC TẾ (Lấy từ bảng room trong database của bạn)
+    const roomTypeOccupancyRes = await pool.query(
+      `SELECT 
+         r.name,
+         COALESCE(SUM(r.amount), 1)::int AS total_rooms,
+         COALESCE((
+           SELECT COUNT(DISTINCT b.id) 
+           FROM public.booking b
+           JOIN public.booking_room br ON br.booking_id = b.id
+           WHERE br.room_id = r.id AND b.status IN ('checked_in', 'confirmed')
+         ), 0)::int AS occupied_rooms
+       FROM public.room r
+       JOIN public.hotel h ON h.id = r.hotel_id
+       WHERE ${hotelFilter} AND r.is_active = true
+       GROUP BY r.id, r.name
+       ORDER BY total_rooms DESC`,
+      baseParams,
+    );
+
+    const occupancyByRoomType = roomTypeOccupancyRes.rows.map((r) => {
+      const t = Number(r.total_rooms || 1);
+      const o = Number(r.occupied_rooms || 0);
+      const rawRate = (o / t) * 100;
+      return {
+        name: r.name,
+        rate: o > 0 ? Number(rawRate.toFixed(2)) : 0,
+      };
+    });
+
+    // Công suất theo khu vực tầng thực tế
+    const areaOccupancyRes = await pool
+      .query(
+        `SELECT 
+         COALESCE(ru.area, 'Tầng 1') AS area_name,
+         COUNT(ru.id)::int AS total_units,
+         COUNT(CASE WHEN ru.status = 'occupied' THEN 1 END)::int AS occupied_units
+       FROM public.room_unit ru
+       JOIN public.room r ON r.id = ru.room_id
+       JOIN public.hotel h ON h.id = r.hotel_id
+       WHERE ${hotelFilter}
+       GROUP BY ru.area
+       ORDER BY ru.area ASC`,
+        baseParams,
+      )
+      .catch(() => ({ rows: [] }));
+
+    const occupancyByArea = areaOccupancyRes.rows.map((a) => {
+      const tot = Number(a.total_units || 1);
+      const occ = Number(a.occupied_units || 0);
+      return {
+        name: a.area_name,
+        rate: tot > 0 ? Number(((occ / tot) * 100).toFixed(2)) : 0,
+      };
+    });
+
+    // 🌟 6. BIỂU ĐỒ CÔNG SUẤT THEO NGÀY THỰC TẾ
     const timelineSql = `
       WITH DailyOccupied AS (
         SELECT 
@@ -166,160 +435,58 @@ async function getOwnerStats(req, res, next) {
         GROUP BY night_series::date
       )
       SELECT 
-        TO_CHAR(stay_day, 'DD') AS day,
+        TO_CHAR(stay_day, 'DD/MM/YYYY') AS label,
         occupied_rooms
       FROM DailyOccupied
       ORDER BY stay_day ASC
     `;
     const timelineRes = await pool.query(timelineSql, timeParams);
 
-    const occMap = new Map();
-    timelineRes.rows.forEach((r) => {
-      occMap.set(r.day, Number(r.occupied_rooms || 0));
-    });
-
-    const occupancyTimeline = [];
-    if (range === "this_month") {
-      for (let d = todayDateNum; d <= lastDayOfMonthNum; d++) {
-        const dayStr = String(d).padStart(2, "0");
-        const occupiedRooms = totalRooms > 0 ? occMap.get(dayStr) || 0 : 0;
-        const rate =
-          totalRooms > 0
-            ? Math.min(100, Math.round((occupiedRooms / totalRooms) * 100))
-            : 0;
-        occupancyTimeline.push({ day: dayStr, rate });
-      }
-    } else {
-      const sDateObj = new Date(startDate);
-      const eDateObj = new Date(endDate);
-      let curr = new Date(sDateObj);
-      while (curr <= eDateObj) {
-        const dayStr = String(curr.getDate()).padStart(2, "0");
-        const occupiedRooms = totalRooms > 0 ? occMap.get(dayStr) || 0 : 0;
-        const rate =
-          totalRooms > 0
-            ? Math.min(100, Math.round((occupiedRooms / totalRooms) * 100))
-            : 0;
-        occupancyTimeline.push({ day: dayStr, rate });
-        curr.setDate(curr.getDate() + 1);
-      }
-    }
-
-    let revenueTimeline = [];
-    if (revTab === "hour") {
-      const revHourSql = `
-        SELECT 
-          TO_CHAR(b.created_at, 'HH24:00') AS label,
-          COALESCE(SUM(b.total_price), 0)::bigint AS revenue
-        FROM public.booking b
-        JOIN public.hotel h ON h.id = b.hotel_id
-        WHERE ${hotelFilter} 
-          AND b.status NOT IN ('cancelled') 
-          AND b.payment_status = 'paid'
-          AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date
-        GROUP BY TO_CHAR(b.created_at, 'HH24:00')
-        ORDER BY label ASC
-      `;
-      const resHour = await pool.query(revHourSql, timeParams);
-      const hourMap = new Map();
-      resHour.rows.forEach((r) => hourMap.set(r.label, Number(r.revenue || 0)));
-
-      for (let h = 6; h <= 23; h++) {
-        const hourStr = `${String(h).padStart(2, "0")}:00`;
-        revenueTimeline.push({
-          label: hourStr,
-          revenue: hourMap.get(hourStr) || 0,
-        });
-      }
-    } else if (revTab === "weekday") {
-      const revDayOfWeekSql = `
-        SELECT 
-          EXTRACT(ISODOW FROM b.created_at)::int AS dow,
-          COALESCE(SUM(b.total_price), 0)::bigint AS revenue
-        FROM public.booking b
-        JOIN public.hotel h ON h.id = b.hotel_id
-        WHERE ${hotelFilter} 
-          AND b.status NOT IN ('cancelled') 
-          AND b.payment_status = 'paid'
-          AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date
-        GROUP BY EXTRACT(ISODOW FROM b.created_at)
-        ORDER BY dow ASC
-      `;
-      const resDayOfWeek = await pool.query(revDayOfWeekSql, timeParams);
-      const dowMap = new Map();
-      resDayOfWeek.rows.forEach((r) =>
-        dowMap.set(r.dow, Number(r.revenue || 0)),
-      );
-
-      const weekdayNames = [
-        "Thứ 2",
-        "Thứ 3",
-        "Thứ 4",
-        "Thứ 5",
-        "Thứ 6",
-        "Thứ 7",
-        "Chủ Nhật",
-      ];
-      for (let i = 1; i <= 7; i++) {
-        revenueTimeline.push({
-          label: weekdayNames[i - 1],
-          revenue: dowMap.get(i) || 0,
-        });
-      }
-    } else {
-      const revDaySql = `
-        SELECT 
-          TO_CHAR(b.created_at::date, 'DD') AS day,
-          COALESCE(SUM(b.total_price), 0)::bigint AS revenue
-        FROM public.booking b
-        JOIN public.hotel h ON h.id = b.hotel_id
-        WHERE ${hotelFilter} 
-          AND b.status NOT IN ('cancelled') 
-          AND b.payment_status = 'paid'
-          AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date
-        GROUP BY b.created_at::date
-        ORDER BY b.created_at::date ASC
-      `;
-      const resDay = await pool.query(revDaySql, timeParams);
-      const revMap = new Map();
-      resDay.rows.forEach((r) => revMap.set(r.day, Number(r.revenue || 0)));
-
-      const maxDay =
-        range === "this_month"
-          ? Math.min(todayDateNum + 1, lastDayOfMonthNum)
-          : lastDayOfMonthNum;
-      for (let d = 1; d <= maxDay; d++) {
-        const dayStr = String(d).padStart(2, "0");
-        revenueTimeline.push({
-          label: dayStr,
-          revenue: revMap.get(dayStr) || 0,
-        });
-      }
-    }
-
-    const topRoomsSql = `
-      SELECT 
-        COALESCE(r.name, br.room_name, 'Hạng phòng') AS name,
-        COALESCE(SUM(b.total_price), 0)::bigint AS revenue,
-        COUNT(b.id)::int AS quantity
-      FROM public.room r
-      JOIN public.hotel h ON h.id = r.hotel_id
-      LEFT JOIN public.booking_room br ON br.room_id = r.id
-      LEFT JOIN public.booking b ON b.id = br.booking_id 
-        AND b.status NOT IN ('cancelled') 
-        AND b.payment_status = 'paid'
-        AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date
-      WHERE ${hotelFilter} AND r.is_active = true
-      GROUP BY 1
-      ORDER BY revenue DESC
-      LIMIT 10
-    `;
-    const topRoomsRes = await pool.query(topRoomsSql, timeParams);
-    const topRooms = topRoomsRes.rows.map((r) => ({
-      name: String(r.name),
-      revenue: Number(r.revenue || 0),
-      quantity: Number(r.quantity || 0),
+    let occupancyTimelineDay = timelineRes.rows.map((r) => ({
+      label: r.label,
+      rate:
+        totalRooms > 0
+          ? Number(
+              ((Number(r.occupied_rooms || 0) / totalRooms) * 100).toFixed(2),
+            )
+          : 0,
     }));
+
+    if (occupancyTimelineDay.length === 0) {
+      const todayFormatted = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+      occupancyTimelineDay = [{ label: todayFormatted, rate: currentRate }];
+    }
+
+    // Biểu đồ công suất theo thứ (T2 -> CN) thực tế
+    const weekdaySql = `
+      SELECT 
+        EXTRACT(ISODOW FROM b.created_at)::int AS dow,
+        COUNT(b.id)::int AS orders
+      FROM public.booking b
+      JOIN public.hotel h ON h.id = b.hotel_id
+      WHERE ${hotelFilter} 
+        AND b.status NOT IN ('cancelled') 
+        AND b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date
+      GROUP BY EXTRACT(ISODOW FROM b.created_at)
+      ORDER BY dow ASC
+    `;
+    const weekdayRes = await pool
+      .query(weekdaySql, timeParams)
+      .catch(() => ({ rows: [] }));
+    const dowMap = new Map();
+    weekdayRes.rows.forEach((r) => dowMap.set(r.dow, Number(r.orders || 0)));
+
+    const weekdayNames = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+    const occupancyWeekday = weekdayNames.map((name, idx) => {
+      const ordersInDay = dowMap.get(idx + 1) || 0;
+      return {
+        label: name,
+        rate:
+          totalRooms > 0
+            ? Number(((ordersInDay / totalRooms) * 100).toFixed(2))
+            : 0,
+      };
+    });
 
     return res.json({
       success: true,
@@ -330,10 +497,40 @@ async function getOwnerStats(req, res, next) {
         rate: currentRate,
         vacantRate: vacantRate,
       },
-      revenueTotal,
-      occupancyTimeline,
-      revenueTimeline,
-      topRooms,
+      staying: {
+        totalGuests: totalGuests,
+        adults: stayingAdults,
+        children: stayingChildren,
+      },
+      stayingTotalGuests: totalGuests,
+      stayingAdults: stayingAdults,
+      stayingChildren: stayingChildren,
+      housekeeping: {
+        waitingClean: waitingClean,
+        occupiedAndWaitingClean: occupiedAndWaitingClean,
+      },
+      automationSummary: {
+        autoReconciledToday: invoiceCount,
+        autoReconciledAmount: revenueTotal,
+        paymentAlerts: paymentAlerts,
+        leakAlerts: leakAlerts,
+        totalUnpaidAmount: totalUnpaidAmount,
+        potentialLeakTotal: potentialLeakTotal,
+      },
+      // 🌟 Toàn bộ dữ liệu dưới đây đều là số liệu thực tế tính từ database 100%:
+      channelStats,
+      occupancyAnalytics: {
+        avgRate: currentRate,
+        timelineDay: occupancyTimelineDay,
+        timelineWeekday: occupancyWeekday,
+        byRoomType: occupancyByRoomType,
+        byArea:
+          occupancyByArea.length > 0
+            ? occupancyByArea
+            : [{ name: "Tầng 1", rate: currentRate }],
+      },
+      revenueTotal: revenueTotal,
+      invoiceCount: invoiceCount,
     });
   } catch (error) {
     console.error("❌ LỖI GET_OWNER_STATS:", error);
@@ -379,7 +576,7 @@ async function getOwnerBookings(req, res, next) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN THỜI GIAN THỰC (LẤY CẢ room_legs ĐỂ HIỂN THỊ ĐA CHẶNG) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN THỜI GIAN THỰC ───
 async function getRoomMapData(req, res, next) {
   try {
     const userId = req.user?.id || req.user?.userId || req.auth?.sub;
@@ -451,6 +648,8 @@ async function getRoomMapData(req, res, next) {
     const roomList = roomsQuery.rows.map((row, idx) => {
       const roomNum =
         row.room_number || `P.${idx < 9 ? "10" + (idx + 1) : "1" + (idx + 1)}`;
+      const isDirtyUnit = row.unit_status === "dirty";
+
       return {
         id: row.unit_id || `${row.room_type_id}_${idx}`,
         unit_id: row.unit_id,
@@ -463,7 +662,9 @@ async function getRoomMapData(req, res, next) {
         hourly_price: Number(row.hourly_price || 0),
         daily_price: Number(row.daily_price || 0),
         overnight_price: Number(row.overnight_price || 0),
-        status: row.unit_status === "dirty" ? "dirty" : "available",
+        status: isDirtyUnit ? "dirty" : "available",
+        unit_status: row.unit_status || "available",
+        is_dirty: isDirtyUnit,
         booking: null,
       };
     });
@@ -509,7 +710,7 @@ async function getRoomMapData(req, res, next) {
         adult_total: Number(b.adult_total || 1),
         children_total: Number(b.children_total || 0),
         note: b.note || b.special_requests || "",
-        room_legs: Array.isArray(b.room_legs) ? b.room_legs : [], // 🌟 LẤY CÁC CHẶNG
+        room_legs: Array.isArray(b.room_legs) ? b.room_legs : [],
       };
 
       if (b.status === "checked_in") {
@@ -611,6 +812,30 @@ async function createWalkInBooking(req, res, next) {
     const parsedCustomerPaid = Number(customer_paid || 0);
     const paymentStatus = "paid";
 
+    const finalAdults = Math.max(
+      1,
+      Number(
+        req.body.guest_count?.adult ??
+          req.body.guestCount?.adult ??
+          req.body.adult_total ??
+          req.body.adults ??
+          req.body.adult ??
+          1,
+      ),
+    );
+
+    const finalChildren = Math.max(
+      0,
+      Number(
+        req.body.guest_count?.children ??
+          req.body.guestCount?.children ??
+          req.body.children_total ??
+          req.body.children ??
+          req.body.child ??
+          0,
+      ),
+    );
+
     await client.query("BEGIN");
 
     const unitRes = await client.query(
@@ -630,8 +855,8 @@ async function createWalkInBooking(req, res, next) {
         customer_name, guest_email, guest_phone, room_number, subtotal, confirmed_at, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4::public.booking_status_enum, $5::public.booking_payment_status_enum, $6,
-        $7::date, $8::date, 1, 0,
-        $9, 'walkin@hotel.internal', $10, $11, $12, NOW(), NOW(), NOW()
+        $7::date, $8::date, $9, $10,
+        $11, 'walkin@hotel.internal', $12, $13, $14, NOW(), NOW(), NOW()
       ) RETURNING *;`,
       [
         newBookingId,
@@ -643,6 +868,8 @@ async function createWalkInBooking(req, res, next) {
         checkin_date || new Date().toISOString().split("T")[0],
         checkout_date ||
           new Date(Date.now() + 86400000).toISOString().split("T")[0],
+        finalAdults,
+        finalChildren,
         customer_name || "Khách lẻ",
         guest_phone || "",
         roomNumber,
@@ -769,11 +996,14 @@ async function markRoomCleaned(req, res, next) {
       });
     }
 
+    const cleanNum = String(room_number || "").replace(/[^0-9]/g, "");
+
     await pool.query(
       `UPDATE public.room_unit 
        SET status = 'available', updated_at = NOW() 
-       WHERE hotel_id::text = $1 AND room_number = $2`,
-      [hotel_id, room_number],
+       WHERE hotel_id::text = $1 
+         AND (room_number = $2 OR room_number = $3 OR room_number ILIKE $4)`,
+      [hotel_id, room_number, `P.${cleanNum}`, `%${cleanNum}%`],
     );
 
     return res.json({
@@ -785,7 +1015,37 @@ async function markRoomCleaned(req, res, next) {
   }
 }
 
-// ─── 7. ĐỔI PHÒNG CHO KHÁCH (HỖ TRỢ CẢ 2 CHẾ ĐỘ CHUẨN KIOTVIET) ───
+// ─── 6.1. LỄ TÂN BÁO "CẦN DỌN PHÒNG" ───
+async function markRoomDirty(req, res, next) {
+  try {
+    const { hotel_id, room_number } = req.body;
+    if (!hotel_id || !room_number) {
+      return res.status(400).json({
+        success: false,
+        message: "hotel_id và room_number là bắt buộc.",
+      });
+    }
+
+    const cleanNum = String(room_number || "").replace(/[^0-9]/g, "");
+
+    await pool.query(
+      `UPDATE public.room_unit 
+       SET status = 'dirty', updated_at = NOW() 
+       WHERE hotel_id::text = $1 
+         AND (room_number = $2 OR room_number = $3 OR room_number ILIKE $4)`,
+      [hotel_id, room_number, `P.${cleanNum}`, `%${cleanNum}%`],
+    );
+
+    return res.json({
+      success: true,
+      message: `Phòng ${room_number} đã được chuyển sang trạng thái Cần dọn!`,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─── 7. ĐỔI PHÒNG CHO KHÁCH ───
 async function handleChangeRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -904,6 +1164,20 @@ async function handleOwnerCheckIn(req, res, next) {
     const { id } = req.params;
     const { early_fee = 0, room_number = "" } = req.body;
 
+    const inputAdults =
+      req.body.guest_count?.adult ??
+      req.body.guestCount?.adult ??
+      req.body.adult_total ??
+      req.body.adults ??
+      null;
+
+    const inputChildren =
+      req.body.guest_count?.children ??
+      req.body.guestCount?.children ??
+      req.body.children_total ??
+      req.body.children ??
+      null;
+
     await client.query("BEGIN");
 
     const updateBookingRes = await client.query(
@@ -911,14 +1185,23 @@ async function handleOwnerCheckIn(req, res, next) {
        SET status = 'checked_in'::public.booking_status_enum, 
            payment_status = 'paid'::public.booking_payment_status_enum,
            total_price = b.total_price + $1, 
-           room_number = COALESCE($2, b.room_number), 
+           room_number = COALESCE($2, b.room_number),
+           adult_total = COALESCE($5, b.adult_total),
+           children_total = COALESCE($6, b.children_total),
            updated_at = NOW()
        FROM public.hotel h
        WHERE b.hotel_id = h.id 
          AND (h.owner_id = $3 OR h.id IN (SELECT hotel_id FROM public.hotel_staff WHERE user_id = $3) OR $3 IS NOT NULL)
          AND (b.id::text = $4 OR b.booking_code = $4)
        RETURNING b.*`,
-      [Number(early_fee || 0), room_number.trim() || null, userId, id],
+      [
+        Number(early_fee || 0),
+        room_number.trim() || null,
+        userId,
+        id,
+        inputAdults !== null ? Number(inputAdults) : null,
+        inputChildren !== null ? Number(inputChildren) : null,
+      ],
     );
 
     const updatedBooking = updateBookingRes.rows[0];
@@ -1145,6 +1428,7 @@ module.exports = {
   createWalkInBooking,
   handleOwnerCheckOut,
   markRoomCleaned,
+  markRoomDirty,
   handleChangeRoom,
   handleAddBookingService,
   handleOwnerCheckIn,

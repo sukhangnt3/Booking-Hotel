@@ -49,8 +49,11 @@ safeRoute(
   ownerController.handleOwnerCheckOut,
 );
 
-// Lễ tân xác nhận Đã dọn phòng
+// 🌟 Lễ tân xác nhận ĐÃ DỌN PHÒNG (Cleaned)
 safeRoute("post", "/rooms/mark-cleaned", ownerController.markRoomCleaned);
+
+// 🌟 LỄ TÂN BÁO CẦN DỌN PHÒNG (Dirty) -> ĐÃ THÊM DÒNG NÀY ĐỂ HẾT LỖI 404
+safeRoute("post", "/rooms/mark-dirty", ownerController.markRoomDirty);
 
 // Đổi phòng cho khách
 safeRoute(
@@ -66,7 +69,7 @@ safeRoute(
   ownerController.handleAddBookingService,
 );
 
-// ─── 2. CÁC API QUẢN LÝ NHÂN VIÊN LỄ TÂN (MỚI THÊM) ───
+// ─── 2. CÁC API QUẢN LÝ NHÂN VIÊN LỄ TÂN ───
 // Lấy danh sách nhân viên lễ tân của Owner
 safeRoute("get", "/staff", ownerController.getOwnerStaff);
 
@@ -85,6 +88,11 @@ safeRoute("get", "/bookings", ownerController.getOwnerBookings);
 safeRoute("post", "/bookings/:id/checkin", ownerController.handleOwnerCheckIn);
 safeRoute(
   "patch",
+  "/bookings/:id/status",
+  ownerController.updateOwnerBookingStatus,
+);
+safeRoute(
+  "put",
   "/bookings/:id/status",
   ownerController.updateOwnerBookingStatus,
 );

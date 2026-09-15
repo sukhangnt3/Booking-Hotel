@@ -102,7 +102,10 @@ async function createBooking(req, res, next) {
       checkin_date,
       checkout_date,
       total_price,
-      adults = 2,
+      adults,
+      adult_total,
+      children,
+      children_total,
       quantity = 1,
       customer_name,
       guest_phone,
@@ -135,6 +138,16 @@ async function createBooking(req, res, next) {
       });
     }
 
+    // 🌟 ĐỌC CHUẨN XÁC SỐ LƯỢNG NGƯỜI LỚN & TRẺ EM (KHÔNG ÉP VỀ 2 VÀ KHÔNG GÁN CỨNG 0)
+    const finalAdults = Math.max(
+      1,
+      Number(adult_total ?? adults ?? req.body.adult ?? 1),
+    );
+    const finalChildren = Math.max(
+      0,
+      Number(children_total ?? children ?? req.body.child ?? 0),
+    );
+
     const bookingQty = Math.max(1, Number(quantity) || 1);
 
     await client.query("BEGIN");
@@ -166,8 +179,6 @@ async function createBooking(req, res, next) {
       source === "walk_in" ||
       source === "counter";
 
-    // 👉 KHÁCH LẺ OFFLINE: HOA HỒNG = 0%
-    // 👉 KHÁCH ONLINE QUA SÀN: HOA HỒNG = 18% (HOẶC THEO CẤU HÌNH CỦA KHÁCH SẠN)
     const commissionRate = isWalkInBooking
       ? 0
       : Number(hotelData.commission_rate ?? 18.0);
@@ -249,7 +260,6 @@ async function createBooking(req, res, next) {
 
     // 🌟 3. TÍNH TOÁN DÒNG TIỀN HOA HỒNG CHUẨN XÁC
     const newBookingId = crypto.randomUUID();
-    // Khách lẻ dùng tiền tố DP (Direct Placement), khách online dùng BK
     const bookingCodePrefix = isWalkInBooking ? "DP" : "BK";
     const bookingCode =
       bookingCodePrefix + Math.floor(10000000 + Math.random() * 90000000);
@@ -258,9 +268,6 @@ async function createBooking(req, res, next) {
     const discountVal = Math.round(Number(discount || 0));
     const subtotalVal = finalPrice + discountVal;
 
-    // 💰 TÍNH HOA HỒNG:
-    // - Khách lẻ offline: adminCommission = 0đ, hotelPayout = 100% finalPrice!
-    // - Khách online sàn: adminCommission = 18%, hotelPayout = 82%!
     const adminCommission = isWalkInBooking
       ? 0
       : Math.round((finalPrice * commissionRate) / 100);
@@ -273,7 +280,6 @@ async function createBooking(req, res, next) {
     const remAmount = isDeposit ? finalPrice - depAmount : 0;
     const amountToPayNow = Math.round(Number(expected_amount) || depAmount);
 
-    // XÁC ĐỊNH TRẠNG THÁI ĐƠN & THANH TOÁN
     let initialStatus = "pending";
     let initialPaymentStatus = "unpaid";
 
@@ -283,7 +289,7 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
-    // 🌟 4. INSERT VÀO BẢNG BOOKING (GHI NHẬN CHUẨN XÁC NGUỒN ĐƠN VÀ DOANH THU)
+    // 🌟 4. INSERT VÀO BẢNG BOOKING (ĐÃ TRUYỀN ĐÚNG $8 LÀ ADULTS VÀ $9 LÀ CHILDREN)
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -293,11 +299,11 @@ async function createBooking(req, res, next) {
         total_price, hotel_payout, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5,
-        $6::date, $7::date, $8, 0,
-        $9, $10, $11, $12,
-        $13, $14,
-        $15, $16, 0,
-        $17, $18, NOW(), NOW()
+        $6::date, $7::date, $8, $9,
+        $10, $11, $12, $13,
+        $14, $15,
+        $16, $17, 0,
+        $18, $19, NOW(), NOW()
       ) RETURNING *;
     `;
 
@@ -309,7 +315,8 @@ async function createBooking(req, res, next) {
       promotion_id || null,
       checkin_date,
       checkout_date,
-      Number(adults) || 2,
+      finalAdults, // 👈 $8: Đúng số người lớn bạn nhập
+      finalChildren, // 👈 $9: Đúng số trẻ em bạn nhập (Không còn bị ép về 0!)
       customer_name ||
         (isWalkInBooking ? "Khách lẻ tại quầy" : "Khách đặt trực tuyến"),
       guest_email ||
@@ -322,7 +329,7 @@ async function createBooking(req, res, next) {
       subtotalVal,
       discountVal,
       finalPrice,
-      hotelPayout, // 💰 Khách lẻ thì hotelPayout = 100% tiền phòng!
+      hotelPayout,
     ]);
 
     const newBooking = insertRes.rows[0];
@@ -346,7 +353,6 @@ async function createBooking(req, res, next) {
         [newBooking.id, room_id, roomName, checkin_date, bookingQty, roomPrice],
       );
 
-      // Nếu là khách online mới cần khóa tạm 15 phút, khách lẻ nhận phòng ngay không khóa tạm
       if (!isWalkInBooking) {
         const sessionId =
           req.headers["x-session-id"] ||
@@ -408,7 +414,7 @@ async function createBooking(req, res, next) {
       }
     }
 
-    // 🌟 5. TẠO MÃ QR NẾU LÀ ĐƠN ONLINE (VỀ VÍ ADMIN ĐỂ CẮT HOA HỒNG)
+    // 🌟 5. TẠO MÃ QR NẾU LÀ ĐƠN ONLINE
     let qrUrl = null;
     let payRecord = null;
     const paymentBank = PLATFORM_ADMIN_BANK;
@@ -446,8 +452,8 @@ async function createBooking(req, res, next) {
       booking: {
         ...newBooking,
         commission_rate: commissionRate,
-        commission_amount: adminCommission, // Khách lẻ = 0đ
-        hotel_payout: hotelPayout, // Khách lẻ = 100% tiền phòng
+        commission_amount: adminCommission,
+        hotel_payout: hotelPayout,
         payment_type: payment_type,
         deposit_amount: depAmount,
         remaining_amount: remAmount,
@@ -589,7 +595,7 @@ async function confirmPayment(req, res, next) {
   }
 }
 
-// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO MÃ (HIỂN THỊ CẢ HOA HỒNG & TIỀN OWNER) ───
+// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO MÃ ───
 async function getBookingByCode(req, res, next) {
   try {
     const { code } = req.params;
@@ -627,7 +633,6 @@ async function getBookingByCode(req, res, next) {
     const expAmount = Number(row.expected_amount || 0);
     const paidMoney = Number(row.paid_amount || 0);
 
-    // Nhận diện đơn offline tại quầy
     const isWalkIn =
       row.booking_type === "walk_in" ||
       row.source === "walk_in" ||

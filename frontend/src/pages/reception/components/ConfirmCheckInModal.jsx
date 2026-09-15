@@ -1,6 +1,6 @@
 // src/pages/reception/components/ConfirmCheckInModal.jsx
 import React from "react";
-import { User, Users } from "lucide-react";
+import { User, Users, X, CheckCircle2, Key } from "lucide-react";
 
 export default function ConfirmCheckInModal({
   isOpen,
@@ -17,52 +17,75 @@ export default function ConfirmCheckInModal({
   if (!isOpen || !room) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp">
-        {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200">
-          <h3 className="font-extrabold text-sm text-slate-900">
-            Xác nhận nhận phòng - {room.booking?.code || "DP000008"}
-          </h3>
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
+      <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
+        {/* 1. HEADER CỐ ĐỊNH (SHRINK-0) */}
+        <div className="bg-[#003580] text-white p-5 flex items-center justify-between shadow-xs shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
+              <Key size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-base tracking-tight leading-none text-white">
+                  Xác Nhận Nhận Phòng
+                </h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/20 text-white font-bold">
+                  #{room.booking?.code || "DP000008"}
+                </span>
+              </div>
+              <p className="text-[11px] text-blue-100/80 font-medium mt-1 leading-none">
+                Kiểm tra mốc thời gian nhận - trả phòng trước khi giao chìa khóa
+              </p>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 text-lg font-bold cursor-pointer"
+            className="p-1.5 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer"
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
-          {/* Thông tin khách hàng & số lượng khách đã khai báo */}
-          <div className="flex items-center justify-between text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+        {/* 2. THÂN FORM CÓ THANH CUỘN (FLEX-1 OVERFLOW-Y-AUTO) */}
+        <div className="p-6 space-y-4 overflow-y-auto flex-1 bg-white">
+          {/* THÔNG TIN KHÁCH HÀNG */}
+          <div className="flex items-center justify-between text-gray-800 bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200/80 flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <User size={15} className="text-slate-400" />
-              <span className="font-bold text-[#1b6a38] text-xs">
-                {room.booking?.customer_name || "Khách lẻ"} -{" "}
-                {room.booking?.guest_phone || "---"}
-              </span>
+              <div className="w-7 h-7 rounded-lg bg-blue-100 text-[#003580] flex items-center justify-center">
+                <User size={15} />
+              </div>
+              <div>
+                <span className="font-black text-[#003580] text-xs block">
+                  {room.booking?.customer_name || "Khách lẻ"}
+                </span>
+                <span className="text-[11px] text-gray-500 font-mono">
+                  {room.booking?.guest_phone || "Chưa có số điện thoại"}
+                </span>
+              </div>
             </div>
 
-            <div className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-              <Users size={14} className="text-slate-400" />
+            <div className="text-xs font-bold text-gray-700 flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl border border-blue-100 shadow-2xs">
+              <Users size={14} className="text-[#006ce4]" />
               <span>
                 {guestCount.adult} người lớn, {guestCount.children} trẻ em
-                {guestList.length > 0 && ` (${guestList.length} giấy tờ/CCCD)`}
+                {guestList.length > 0 && ` (${guestList.length} CCCD)`}
               </span>
             </div>
           </div>
 
-          {/* Bảng chi tiết giờ nhận / trả phòng */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+          {/* BẢNG GIỜ NHẬN / TRẢ */}
+          <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-[#eef8f2] text-slate-700 border-b text-xs">
-                  <th className="py-2.5 px-4 font-bold">Hạng phòng</th>
-                  <th className="py-2.5 px-4 font-bold">Phòng</th>
-                  <th className="py-2.5 px-4 font-bold">
-                    <div className="flex items-center gap-1.5">
-                      <span>Nhận</span>
+                <tr className="bg-gray-50 text-gray-500 border-b border-gray-200 text-xs uppercase font-bold tracking-wider">
+                  <th className="py-3 px-4">Hạng phòng</th>
+                  <th className="py-3 px-4">Phòng</th>
+                  <th className="py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <span>Nhận phòng</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -73,10 +96,10 @@ export default function ConfirmCheckInModal({
                             checkin_time: toDatetimeLocal(now),
                           }));
                         }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition ${
+                        className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black cursor-pointer transition ${
                           confirmData.checkin_mode === "Hiện tại"
-                            ? "border border-[#1b6a38] text-[#1b6a38] bg-white shadow-2xs"
-                            : "border border-slate-300 text-slate-600 bg-white"
+                            ? "bg-[#003580] text-white shadow-2xs"
+                            : "border border-gray-200 text-gray-600 bg-white hover:bg-gray-100"
                         }`}
                       >
                         Hiện tại
@@ -93,28 +116,28 @@ export default function ConfirmCheckInModal({
                             checkin_time: toDatetimeLocal(orig),
                           }));
                         }}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition ${
+                        className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black cursor-pointer transition ${
                           confirmData.checkin_mode === "Giờ đặt"
-                            ? "border border-[#1b6a38] text-[#1b6a38] bg-white shadow-2xs"
-                            : "border border-slate-300 text-slate-600 bg-white"
+                            ? "bg-[#003580] text-white shadow-2xs"
+                            : "border border-gray-200 text-gray-600 bg-white hover:bg-gray-100"
                         }`}
                       >
                         Giờ đặt
                       </button>
                     </div>
                   </th>
-                  <th className="py-2.5 px-4 font-bold">Trả</th>
+                  <th className="py-3 px-4">Trả phòng</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr className="border-b border-slate-100">
-                  <td className="py-3 px-4 font-medium text-slate-800">
+              <tbody className="divide-y divide-gray-100 text-xs">
+                <tr>
+                  <td className="py-3.5 px-4 font-bold text-gray-900">
                     {room.type_name}
                   </td>
-                  <td className="py-3 px-4 font-bold text-slate-900">
-                    {room.room_number}
+                  <td className="py-3.5 px-4 font-black text-[#003580]">
+                    P.{room.room_number}
                   </td>
-                  <td className="py-3 px-4">
+                  <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2">
                       <input
                         type="datetime-local"
@@ -125,14 +148,14 @@ export default function ConfirmCheckInModal({
                             checkin_time: e.target.value,
                           }))
                         }
-                        className="border border-slate-300 rounded-lg px-2 py-1 outline-none text-slate-800 font-semibold bg-white"
+                        className="border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none text-gray-900 font-bold bg-white focus:border-[#003580]"
                       />
-                      <span className="text-slate-500 font-medium whitespace-nowrap">
+                      <span className="text-[#006ce4] font-black whitespace-nowrap bg-blue-50 px-2 py-1 rounded-md border border-blue-100 text-[11px]">
                         {confirmData.duration_label}
                       </span>
                     </div>
                   </td>
-                  <td className="py-3 px-4">
+                  <td className="py-3.5 px-4">
                     <input
                       type="datetime-local"
                       value={confirmData.checkout_time}
@@ -142,7 +165,7 @@ export default function ConfirmCheckInModal({
                           checkout_time: e.target.value,
                         }))
                       }
-                      className="border border-slate-300 rounded-lg px-2 py-1 outline-none text-slate-800 font-semibold bg-white"
+                      className="border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none text-gray-900 font-bold bg-white focus:border-[#003580]"
                     />
                   </td>
                 </tr>
@@ -151,22 +174,23 @@ export default function ConfirmCheckInModal({
           </div>
         </div>
 
-        {/* Footer 2 Nút */}
-        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-white">
+        {/* 3. FOOTER CỐ ĐỊNH (SHRINK-0) */}
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/70 shrink-0">
           <button
             type="button"
             onClick={onOpenGuestStay}
-            className="px-4 py-2 border border-[#1b6a38] text-[#1b6a38] hover:bg-emerald-50 font-bold rounded-lg cursor-pointer transition text-xs shadow-2xs"
+            className="px-5 py-2.5 border border-gray-200 text-gray-800 hover:bg-white font-bold rounded-xl cursor-pointer transition text-xs shadow-2xs"
           >
-            Xác nhận và thêm TT khách
+            Thêm thông tin khách
           </button>
 
           <button
             type="button"
             onClick={onFinalExecuteCheckIn}
-            className="px-6 py-2 bg-[#1b6a38] hover:bg-[#14532d] text-white font-bold rounded-lg shadow-sm cursor-pointer transition active:scale-95 text-xs"
+            className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 text-xs flex items-center gap-2"
           >
-            Xác nhận
+            <CheckCircle2 size={16} />
+            <span>Xác nhận giao phòng</span>
           </button>
         </div>
       </div>

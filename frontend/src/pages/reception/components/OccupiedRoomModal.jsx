@@ -10,6 +10,8 @@ import {
   Building2,
   Banknote,
   CheckCircle2,
+  X,
+  Receipt,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 
@@ -141,7 +143,7 @@ export default function OccupiedRoomModal({
   );
   const totalBill = baseRoomPrice + overtimeFee;
 
-  // ─── 🌟 XỬ LÝ CHUẨN XÁC NGUỒN KHÁCH VÀ TIỀN PHÒNG ───
+  // ─── XỬ LÝ CHUẨN XÁC NGUỒN KHÁCH VÀ TIỀN PHÒNG ───
   const b = bookingDetail || room.booking;
 
   const isWalkInGuest =
@@ -168,17 +170,14 @@ export default function OccupiedRoomModal({
   let paymentSubLabel = "";
 
   if (isWalkInGuest) {
-    // Với khách lẻ tại quầy: Mặc định đã thu đủ tiền phòng lúc nhận phòng
     customerPaid = baseRoomPrice;
     paymentLabel = "Đã thanh toán lúc nhận phòng:";
     paymentSubLabel = "(Đã thu đủ 100% tiền phòng)";
   } else if (isDepositOnline) {
-    // Khách online cọc 30% qua sàn GoStay
     customerPaid = Number(b?.deposit_amount ?? Math.round(baseRoomPrice * 0.3));
     paymentLabel = "Khách cọc online qua sàn:";
     paymentSubLabel = "(Đã cọc 30% qua GoStay)";
   } else if (isPaidFullOnline) {
-    // Khách online thanh toán 100% qua sàn GoStay
     customerPaid = baseRoomPrice;
     paymentLabel = "Đã thanh toán online qua sàn:";
     paymentSubLabel = "(Đã trả 100% qua GoStay)";
@@ -186,9 +185,6 @@ export default function OccupiedRoomModal({
     customerPaid = baseRoomPrice;
   }
 
-  // Số tiền còn cần thu tại quầy:
-  // Nếu đã thu đủ tiền phòng và không trễ giờ -> remainingAmount = 0 ₫!
-  // Nếu có phụ thu trễ giờ -> remainingAmount = đúng bằng số tiền phụ thu!
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
@@ -231,42 +227,55 @@ export default function OccupiedRoomModal({
     "Khách lẻ tại quầy";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-fadeIn">
-      <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl border border-slate-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col">
-        {/* HEADER MODAL */}
-        <div className="flex justify-between items-center px-6 py-3.5 border-b border-slate-200 bg-white shrink-0">
-          <div className="flex items-center gap-3">
-            <h3 className="font-extrabold text-base text-slate-900">
-              Thanh toán {currentBookingCode} -{" "}
-              <span className="text-[#1b6a38]">{currentCustomerName}</span>
-            </h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
+      <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl border border-gray-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col text-gray-900">
+        {/* ─── HEADER MODAL THEO CHUẨN GHOSTAY NAVY #003580 ─── */}
+        <div className="flex justify-between items-center px-6 py-4 bg-[#003580] text-white shadow-xs shrink-0 flex-wrap gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
+              <Receipt size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-base text-white tracking-tight leading-none">
+                  Thanh Toán & Trả Phòng #{currentBookingCode}
+                </h3>
+                <span className="text-[11px] text-blue-200 font-bold">
+                  • {currentCustomerName}
+                </span>
+              </div>
+              <p className="text-[11px] text-blue-100/80 font-medium mt-1 leading-none">
+                Phòng {room.room_number} • {room.type_name || "Tiêu chuẩn"}
+              </p>
+            </div>
 
-            {/* HUY HIỆU PHÂN LOẠI */}
+            {/* BADGE PHÂN LOẠI NGUỒN ĐẶT */}
             {isWalkInGuest ? (
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 font-bold text-[11px] border border-blue-300 flex items-center gap-1">
+              <span className="px-3 py-1 rounded-full bg-white/20 text-white font-black text-[10px] border border-white/30 flex items-center gap-1">
                 <Banknote size={12} />
-                Khách nhận phòng tại quầy (0% hoa hồng sàn)
+                Khách tại quầy (0% hoa hồng)
               </span>
             ) : isDepositOnline ? (
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold text-[11px] border border-amber-300 flex items-center gap-1">
+              <span className="px-3 py-1 rounded-full bg-amber-400 text-gray-950 font-black text-[10px] flex items-center gap-1 shadow-xs">
                 <Building2 size={12} />
-                Cọc 30% online qua sàn
+                Cọc 30% online GoStay
               </span>
             ) : (
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 font-bold text-[11px] border border-emerald-300 flex items-center gap-1">
+              <span className="px-3 py-1 rounded-full bg-emerald-500 text-white font-black text-[10px] flex items-center gap-1 shadow-xs">
                 <CheckCircle2 size={12} />
-                Đã trả 100% online qua sàn
+                Đã thanh toán 100% GoStay
               </span>
             )}
 
+            {/* NÚT ĐỔI PHÒNG */}
             <button
               type="button"
               onClick={() => {
                 if (onOpenChangeRoom) onOpenChangeRoom(room);
               }}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-amber-500 bg-amber-50 text-amber-800 font-bold text-[11px] hover:bg-amber-100 cursor-pointer shadow-2xs transition"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-[11px] border border-white/20 cursor-pointer transition"
             >
-              <ArrowRightLeft size={13} className="text-amber-700" />
+              <ArrowRightLeft size={13} />
               <span>Đổi phòng</span>
             </button>
           </div>
@@ -274,118 +283,116 @@ export default function OccupiedRoomModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-700 text-lg font-bold cursor-pointer p-1"
+            className="text-white/80 hover:text-white transition p-1.5 rounded-xl hover:bg-white/10 cursor-pointer"
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
 
-        {/* NỘI DUNG TÍNH TIỀN CHI TIẾT */}
-        <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1">
-          {/* CỘT TRÁI: THÔNG TIN PHÒNG */}
+        {/* ─── NỘI DUNG TÍNH TIỀN CHI TIẾT ─── */}
+        <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1 bg-white">
+          {/* CỘT TRÁI: BẢNG TIỀN PHÒNG & PHỤ PHÍ */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+            <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-[#eef8f2] text-slate-700 border-b text-xs">
-                    <th className="py-2.5 px-3 font-bold">
-                      Thông tin phòng / Phụ thu
-                    </th>
-                    <th className="py-2.5 px-3 font-bold text-center">
-                      Thời gian
-                    </th>
-                    <th className="py-2.5 px-3 font-bold text-right">
-                      Đơn giá
-                    </th>
-                    <th className="py-2.5 px-3 font-bold text-right">
-                      Thành tiền
-                    </th>
+                  <tr className="bg-gray-50 text-gray-500 border-b border-gray-200 text-xs font-bold uppercase tracking-wider">
+                    <th className="py-3 px-4">Thông tin phòng / Dịch vụ</th>
+                    <th className="py-3 px-4 text-center">Thời gian</th>
+                    <th className="py-3 px-4 text-right">Đơn giá</th>
+                    <th className="py-3 px-4 text-right">Thành tiền</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-gray-100 text-xs">
                   {roomLegs ? (
                     roomLegs.map((leg, idx) => (
                       <tr
                         key={idx}
                         className={
-                          leg.is_closed ? "bg-slate-50/80" : "hover:bg-slate-50"
+                          leg.is_closed
+                            ? "bg-gray-50/80"
+                            : "hover:bg-blue-50/40 transition"
                         }
                       >
-                        <td className="py-3 px-3">
-                          <div className="font-bold text-slate-900 text-xs">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-gray-900 text-xs">
                             {leg.type_name || room.type_name}
                           </div>
                           <div className="flex items-center gap-1.5 mt-1">
-                            <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-300 font-bold text-[10px] text-slate-700">
-                              {leg.room_number}
+                            <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-100 font-bold text-[10px] text-[#003580]">
+                              P.{leg.room_number}
                             </span>
                             {leg.is_closed ? (
-                              <span className="px-1.5 py-0.2 rounded bg-slate-200 text-slate-600 font-semibold text-[10px]">
+                              <span className="px-2 py-0.5 rounded-md bg-gray-200 text-gray-700 font-semibold text-[10px]">
                                 Đã ở (Chặng 1)
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.2 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
                                 Đang trả (Chặng 2)
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-3 text-center font-semibold text-slate-700">
+                        <td className="py-3 px-4 text-center font-semibold text-gray-700">
                           {leg.duration_text}
                         </td>
-                        <td className="py-3 px-3 text-right font-medium text-slate-600">
+                        <td className="py-3 px-4 text-right font-medium text-gray-600 tabular-nums">
                           {formatVND(leg.unit_price)}
                         </td>
-                        <td className="py-3 px-3 text-right font-bold text-slate-900">
+                        <td className="py-3 px-4 text-right font-bold text-gray-900 tabular-nums">
                           {formatVND(leg.amount)}
                         </td>
                       </tr>
                     ))
                   ) : (
-                    <tr className="hover:bg-slate-50">
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-slate-900 text-xs">
+                    <tr className="hover:bg-blue-50/40 transition">
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-gray-900 text-xs">
                           {room.type_name}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-300 font-bold text-[10px] text-slate-700">
-                            {room.room_number}
+                          <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-100 font-bold text-[10px] text-[#003580]">
+                            P.{room.room_number}
                           </span>
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold text-[10px]">
                             Đang trả phòng
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-center font-semibold text-slate-700">
+                      <td className="py-3 px-4 text-center font-semibold text-gray-700">
                         {b?.stay_duration || "1 Ngày"}
                       </td>
-                      <td className="py-3 px-3 text-right font-medium text-slate-600">
+                      <td className="py-3 px-4 text-right font-medium text-gray-600 tabular-nums">
                         {formatVND(room.daily_price || baseRoomPrice)}
                       </td>
-                      <td className="py-3 px-3 text-right font-bold text-slate-900">
+                      <td className="py-3 px-4 text-right font-bold text-gray-900 tabular-nums">
                         {formatVND(baseRoomPrice)}
                       </td>
                     </tr>
                   )}
 
+                  {/* DÒNG PHỤ THU TRẢ MUỘN NẾU CÓ */}
                   {overtimeFee > 0 && (
-                    <tr className="bg-amber-50/50 hover:bg-amber-50 text-amber-950 border-t border-amber-200">
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-xs flex items-center gap-1 text-amber-900">
-                          <AlertTriangle size={13} className="text-amber-600" />
+                    <tr className="bg-amber-50/60 hover:bg-amber-50 text-amber-950 border-t border-amber-200">
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-xs flex items-center gap-1.5 text-amber-900">
+                          <AlertTriangle
+                            size={14}
+                            className="text-amber-600 shrink-0"
+                          />
                           Phụ thu trả phòng muộn (Quá giờ)
                         </div>
-                        <div className="text-[10px] text-amber-700 mt-0.5">
+                        <div className="text-[10px] text-amber-700 mt-0.5 font-medium">
                           {overtimeLabel}
                         </div>
                       </td>
-                      <td className="py-3 px-3 text-center font-bold text-amber-900">
+                      <td className="py-3 px-4 text-center font-bold text-amber-900">
                         {overtimeDisplayTime}
                       </td>
-                      <td className="py-3 px-3 text-right font-medium text-amber-800">
+                      <td className="py-3 px-4 text-right font-medium text-amber-800 tabular-nums">
                         {formatVND(firstHourRate)}
                       </td>
-                      <td className="py-3 px-3 text-right font-black text-amber-900">
+                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums">
                         +{formatVND(overtimeFee)}
                       </td>
                     </tr>
@@ -395,20 +402,20 @@ export default function OccupiedRoomModal({
             </div>
           </div>
 
-          {/* CỘT PHẢI: BẢNG TÍNH TIỀN THÔNG MINH */}
-          <div className="lg:col-span-5 border-l border-slate-200 lg:pl-6 space-y-3.5">
+          {/* CỘT PHẢI: BẢNG QUYẾT TOÁN TIỀN THÔNG MINH */}
+          <div className="lg:col-span-5 border-l border-gray-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-slate-600 font-semibold border border-slate-200 rounded-lg px-2 py-1 bg-slate-50">
-                <Calendar size={13} className="text-slate-400" />
+              <div className="flex items-center gap-1.5 text-gray-600 font-bold border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 text-xs">
+                <Calendar size={13} className="text-[#006ce4]" />
                 <span>{currentDateStr}</span>
-                <Clock size={13} className="text-slate-400 ml-1" />
+                <Clock size={13} className="text-gray-400 ml-1" />
               </div>
             </div>
 
-            <div className="space-y-2 pt-1 border-t border-slate-100">
-              <div className="flex justify-between items-center text-slate-700">
+            <div className="space-y-2.5 pt-2 border-t border-gray-100">
+              <div className="flex justify-between items-center text-gray-600 font-medium">
                 <span>Tiền phòng (Tổng đơn):</span>
-                <span className="font-semibold text-slate-900">
+                <span className="font-bold text-gray-900 tabular-nums">
                   {formatVND(baseRoomPrice)}
                 </span>
               </div>
@@ -416,72 +423,74 @@ export default function OccupiedRoomModal({
               {overtimeFee > 0 && (
                 <div className="flex justify-between items-center text-amber-800 font-medium">
                   <span>Phụ thu trả muộn:</span>
-                  <span className="font-bold">+{formatVND(overtimeFee)}</span>
+                  <span className="font-bold tabular-nums">
+                    +{formatVND(overtimeFee)}
+                  </span>
                 </div>
               )}
 
-              <div className="flex justify-between items-center text-slate-700">
-                <span>Tổng hoá đơn:</span>
-                <span className="font-bold text-slate-900">
+              <div className="flex justify-between items-center text-gray-700 font-bold">
+                <span>Tổng hoá đơn quyết toán:</span>
+                <span className="font-black text-[#0a2540] tabular-nums">
                   {formatVND(totalBill)}
                 </span>
               </div>
 
-              {/* TIỀN ĐÃ THU */}
-              <div className="flex justify-between items-center text-slate-700">
+              {/* TIỀN ĐÃ THU TRƯỚC */}
+              <div className="flex justify-between items-center text-gray-700">
                 <div>
-                  <span className="block font-medium text-slate-800">
+                  <span className="block font-medium text-gray-800">
                     {paymentLabel}
                   </span>
                   {paymentSubLabel && (
-                    <span className="text-[10px] text-slate-400 block">
+                    <span className="text-[10px] text-gray-400 block">
                       {paymentSubLabel}
                     </span>
                   )}
                 </div>
-                <span className="font-bold text-[#1b6a38]">
+                <span className="font-black text-[#003580] tabular-nums">
                   {customerPaid > 0 ? `- ${formatVND(customerPaid)}` : "0 ₫"}
                 </span>
               </div>
 
               {/* SỐ TIỀN CÒN CẦN THU */}
-              <div className="flex justify-between items-center pt-2 border-t border-slate-200 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
+              <div className="flex justify-between items-center pt-2.5 border-t border-gray-200 bg-amber-50/70 p-3 rounded-2xl border border-amber-200">
                 <div>
-                  <span className="font-bold text-slate-900 text-xs block">
+                  <span className="font-black text-gray-900 text-xs block uppercase tracking-wider">
                     Còn cần thu tại quầy:
                   </span>
                   <span className="text-[10px] text-amber-800 font-medium">
                     {remainingAmount === 0
-                      ? "(Tiền phòng đã thanh toán đủ)"
+                      ? "(Hóa đơn đã thanh toán đủ 100%)"
                       : overtimeFee > 0 && customerPaid >= baseRoomPrice
                         ? "(Chỉ thu tiền phụ phí quá giờ)"
                         : "(Khách thanh toán nốt tiền phòng)"}
                   </span>
                 </div>
-                <span className="font-black text-base text-rose-600">
+                <span className="font-black text-base text-rose-600 tabular-nums">
                   {formatVND(remainingAmount)}
                 </span>
               </div>
 
-              {/* 🌟 NẾU ĐÃ THANH TOÁN ĐỦ (REMAINING = 0): HIỆN THÔNG BÁO XANH MƯỢT, ẨN Ô NHẬP TIỀN */}
+              {/* NẾU ĐÃ THANH TOÁN ĐỦ (REMAINING = 0) */}
               {remainingAmount === 0 ? (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-center space-y-1 mt-2">
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-center space-y-1 mt-2 shadow-2xs">
                   <div className="font-black text-xs flex items-center justify-center gap-1.5 text-emerald-800">
                     <CheckCircle2 size={16} className="text-emerald-600" />
-                    <span>Hóa đơn đã được thanh toán đủ 100%</span>
+                    <span>Hóa đơn đã thanh toán đủ 100%</span>
                   </div>
-                  <p className="text-[11px] text-emerald-700">
+                  <p className="text-[11px] text-emerald-700 font-medium">
                     Không phát sinh phụ phí. Bấm nút bên dưới để nhận lại chìa
                     khóa và hoàn tất trả phòng!
                   </p>
                 </div>
               ) : (
-                /* 🌟 NẾU CÓ PHỤ THU QUÁ GIỜ HOẶC CẦN THU THÊM: MỚI HIỆN Ô NHẬP TIỀN */
-                <div className="space-y-2 pt-2">
+                /* NẾU CÓ PHỤ THU HOẶC CẦN THU NỐT TIỀN PHÒNG */
+                <div className="space-y-2.5 pt-2">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <span className="font-black text-[#0a2540] flex items-center gap-1.5">
                       Lễ tân thu phụ phí phát sinh:
-                      <CreditCard size={14} className="text-emerald-700" />
+                      <CreditCard size={14} className="text-[#006ce4]" />
                     </span>
                     <input
                       type="text"
@@ -494,32 +503,32 @@ export default function OccupiedRoomModal({
                         const raw = e.target.value.replace(/\D/g, "");
                         setGuestPayment(raw ? Number(raw) : 0);
                       }}
-                      className="w-32 text-right border-b-2 border-slate-300 focus:border-[#1b6a38] py-0.5 outline-none font-black text-sm text-slate-900"
+                      className="w-32 text-right border-b-2 border-gray-300 focus:border-[#003580] py-0.5 outline-none font-black text-sm text-gray-900 bg-transparent"
                       placeholder="0"
                     />
                   </div>
 
-                  <div className="flex items-center justify-start gap-6 pt-1 text-slate-700 font-semibold">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
+                  <div className="flex items-center justify-start gap-6 pt-1 text-gray-700 font-bold">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
                         name="checkout_pay_method"
                         checked={paymentMethod === "cash"}
                         onChange={() => setPaymentMethod("cash")}
-                        className="accent-[#1b6a38]"
+                        className="accent-[#003580] cursor-pointer"
                       />
                       <span>Tiền mặt</span>
                     </label>
 
-                    <label className="flex items-center gap-1.5 cursor-pointer">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
                         name="checkout_pay_method"
                         checked={paymentMethod === "transfer"}
                         onChange={() => setPaymentMethod("transfer")}
-                        className="accent-[#1b6a38]"
+                        className="accent-[#003580] cursor-pointer"
                       />
-                      <span>Chuyển khoản</span>
+                      <span>Chuyển khoản QR</span>
                     </label>
                   </div>
 
@@ -529,7 +538,7 @@ export default function OccupiedRoomModal({
                         key={idx}
                         type="button"
                         onClick={() => setGuestPayment(amt)}
-                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-[11px] cursor-pointer"
+                        className="px-3 py-1 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-800 font-bold text-[11px] cursor-pointer transition shadow-2xs"
                       >
                         {formatVND(amt)}
                       </button>
@@ -546,7 +555,7 @@ export default function OccupiedRoomModal({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="✎ Nhập ghi chú hóa đơn trả phòng..."
-                className="w-full border-b border-slate-300 py-1 outline-none text-slate-700 focus:border-[#1b6a38]"
+                className="w-full border-b border-gray-300 py-1 outline-none text-gray-800 focus:border-[#003580] text-xs bg-transparent"
               />
             </div>
 
@@ -561,12 +570,12 @@ export default function OccupiedRoomModal({
                     note: note,
                   })
                 }
-                className="flex-1 py-3 bg-[#1b6a38] hover:bg-[#14532d] text-white font-extrabold rounded-xl shadow-md cursor-pointer transition active:scale-95 text-center text-sm"
+                className="flex-1 py-3 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 text-center text-sm"
               >
                 Hoàn thành & Trả phòng
               </button>
 
-              <div className="p-2 border border-slate-200 rounded-xl bg-slate-50 text-slate-700 flex items-center justify-center">
+              <div className="p-2 border border-gray-200 rounded-xl bg-gray-50 text-gray-700 flex items-center justify-center">
                 <QrCode size={26} />
               </div>
             </div>

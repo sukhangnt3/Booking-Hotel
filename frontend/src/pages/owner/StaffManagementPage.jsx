@@ -27,7 +27,6 @@ export default function StaffManagementPage() {
   const [selectedHotelFilter, setSelectedHotelFilter] = useState("all");
   const [apiError, setApiError] = useState("");
 
-  // Modal tạo lễ tân mới
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,7 +37,6 @@ export default function StaffManagementPage() {
     hotel_id: "",
   });
 
-  // 1. Tải danh sách khách sạn của Owner
   const fetchMyHotels = useCallback(async () => {
     try {
       const res = await apiClient.get("/hotels/my-hotels?active_only=true");
@@ -53,7 +51,6 @@ export default function StaffManagementPage() {
     }
   }, [formData.hotel_id]);
 
-  // 2. Tải danh sách lễ tân của Owner
   const fetchStaffList = useCallback(async () => {
     setLoading(true);
     setApiError("");
@@ -77,7 +74,6 @@ export default function StaffManagementPage() {
     fetchStaffList();
   }, [fetchMyHotels, fetchStaffList]);
 
-  // 3. Xử lý tạo tài khoản Lễ tân mới gắn vào Khách sạn
   const handleCreateStaff = async (e) => {
     e.preventDefault();
     if (!formData.hotel_id) {
@@ -109,7 +105,6 @@ export default function StaffManagementPage() {
     }
   };
 
-  // 4. Xóa / Thu hồi tài khoản Lễ tân
   const handleDeleteStaff = async (staffId, staffName) => {
     if (
       !window.confirm(
@@ -126,7 +121,6 @@ export default function StaffManagementPage() {
     }
   };
 
-  // 5. Khóa / Mở khóa lễ tân
   const handleToggleActive = async (staff) => {
     try {
       await apiClient.patch(`/owner/staff/${staff.id}/status`, {
@@ -161,32 +155,34 @@ export default function StaffManagementPage() {
   });
 
   return (
-    <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* HEADER */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* HEADER THEO PHONG CÁCH GHOSTAY */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
+          <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
             <Users size={16} /> Phân Quyền & Quản Lý Đội Ngũ
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0a2540] tracking-tight">
             Nhân Viên Lễ Tân ({staffList.length} Nhân viên)
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-gray-500 mt-1">
             Cấp tài khoản lễ tân để nhân viên đăng nhập vào trực quầy và đặt
-            phòng cho khách
+            phòng
           </p>
         </div>
 
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
           <button
+            type="button"
             onClick={() => setIsModalOpen(true)}
-            className="px-5 py-3 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-2xl shadow-xs transition flex items-center gap-2 cursor-pointer active:scale-95 whitespace-nowrap"
+            className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-2 cursor-pointer active:scale-95 whitespace-nowrap"
           >
-            <UserPlus size={16} /> + Cấp Tài Khoản Lễ Tân Mới
+            <UserPlus size={16} /> Cấp tài khoản mới
           </button>
           <button
+            type="button"
             onClick={fetchStaffList}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer"
+            className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition cursor-pointer"
             title="Làm mới danh sách"
           >
             <RefreshCw size={16} />
@@ -206,23 +202,23 @@ export default function StaffManagementPage() {
         <div className="relative w-full sm:w-80">
           <Search
             size={16}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
           />
           <input
             type="text"
-            placeholder="Tìm theo tên, email, SĐT lễ tân..."
+            placeholder="Tìm theo tên, email, SĐT..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-medium focus:outline-blue-600 shadow-2xs"
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#003580] shadow-xs"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Building2 size={16} className="text-slate-400 shrink-0" />
+          <Building2 size={16} className="text-gray-400 shrink-0" />
           <select
             value={selectedHotelFilter}
             onChange={(e) => setSelectedHotelFilter(e.target.value)}
-            className="w-full sm:w-auto p-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-2xs"
+            className="w-full sm:w-auto p-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 outline-none cursor-pointer shadow-xs"
           >
             <option value="all">Tất cả chi nhánh khách sạn</option>
             {hotels.map((h) => (
@@ -236,7 +232,7 @@ export default function StaffManagementPage() {
 
       {/* DANH SÁCH LỄ TÂN */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border border-slate-200">
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
           <LoadingSpinner size="lg" label="Đang tải danh sách nhân viên..." />
         </div>
       ) : filteredStaff.length > 0 ? (
@@ -244,25 +240,26 @@ export default function StaffManagementPage() {
           {filteredStaff.map((staff) => (
             <div
               key={staff.id}
-              className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs hover:shadow-md transition space-y-4 flex flex-col justify-between"
+              className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs hover:shadow-md transition space-y-4 flex flex-col justify-between"
             >
               <div className="space-y-3">
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 font-bold text-[10px] rounded-md border border-emerald-200 uppercase">
+                    <span className="px-2.5 py-0.5 bg-blue-50 text-[#003580] font-black text-[10px] rounded-md border border-blue-100 uppercase">
                       Lễ Tân Ca Trực
                     </span>
-                    <h3 className="font-black text-slate-900 text-base mt-1">
+                    <h3 className="font-black text-[#0a2540] text-base mt-1.5">
                       {staff.full_name}
                     </h3>
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => handleToggleActive(staff)}
-                    className={`p-1.5 rounded-xl border cursor-pointer transition ${
+                    className={`p-2 rounded-xl border cursor-pointer transition ${
                       staff.activate !== false
-                        ? "text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border-emerald-200"
-                        : "text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-200"
+                        ? "text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200"
+                        : "text-rose-700 bg-rose-50 hover:bg-rose-100 border-rose-200"
                     }`}
                     title={
                       staff.activate !== false
@@ -278,34 +275,35 @@ export default function StaffManagementPage() {
                   </button>
                 </div>
 
-                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1.5 text-xs text-slate-600">
+                <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-200/80 space-y-1.5 text-xs text-gray-600">
                   <div className="flex items-center gap-2">
                     <Building2 size={13} className="text-[#003580] shrink-0" />
-                    <span className="font-bold text-slate-800 truncate">
+                    <span className="font-bold text-gray-900 truncate">
                       {staff.hotel_name || "Khách sạn trung tâm"}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 font-mono">
-                    <Mail size={13} className="text-slate-400 shrink-0" />
+                  <div className="flex items-center gap-2 font-mono text-[11px]">
+                    <Mail size={13} className="text-gray-400 shrink-0" />
                     <span className="truncate">{staff.email}</span>
                   </div>
-                  <div className="flex items-center gap-2 font-mono">
-                    <Phone size={13} className="text-slate-400 shrink-0" />
+                  <div className="flex items-center gap-2 font-mono text-[11px]">
+                    <Phone size={13} className="text-gray-400 shrink-0" />
                     <span>{staff.phone || "---"}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-[11px] text-slate-400">
+              <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                <span className="text-[11px] text-gray-400">
                   Tạo ngày: {staff.created_at?.split("T")[0] || "---"}
                 </span>
 
                 <button
+                  type="button"
                   onClick={() => handleDeleteStaff(staff.id, staff.full_name)}
                   className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-xl font-bold transition flex items-center gap-1 cursor-pointer"
                 >
-                  <Trash2 size={13} /> Xóa lễ tân
+                  <Trash2 size={13} /> Xóa
                 </button>
               </div>
             </div>
@@ -315,38 +313,38 @@ export default function StaffManagementPage() {
         <EmptyState
           icon={Users}
           title="Chưa có nhân viên lễ tân nào"
-          description="Bấm '+ Cấp Tài Khoản Lễ Tân Mới' để tạo tài khoản cho nhân viên làm việc tại quầy."
+          description="Bấm '+ Cấp Tài Khoản Mới' để tạo tài khoản cho nhân viên làm việc tại quầy."
         />
       )}
 
       {/* MODAL TẠO LỄ TÂN MỚI */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-200 space-y-4 text-xs font-sans">
-            <div className="flex justify-between items-center border-b pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-200 space-y-4 text-xs font-sans">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                <h3 className="font-black text-base text-[#0a2540] flex items-center gap-1.5">
                   <UserPlus size={18} className="text-[#003580]" /> Cấp Tài
                   Khoản Nhân Viên Lễ Tân
                 </h3>
-                <p className="text-[11px] text-slate-400">
-                  Nhân viên chỉ có quyền xem sơ đồ phòng và đặt phòng tại cơ sở
+                <p className="text-[11px] text-gray-500">
+                  Nhân viên chỉ có quyền truy cập sơ đồ phòng và tiếp tân cơ sở
                   được gán
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded-xl cursor-pointer text-slate-400"
+                className="p-1 hover:bg-gray-100 rounded-xl cursor-pointer text-gray-400"
               >
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleCreateStaff} className="space-y-3.5">
-              {/* Chọn khách sạn phân công */}
               <div>
-                <label className="block font-bold mb-1 text-slate-700 flex items-center gap-1">
-                  <Building2 size={13} className="text-blue-600" /> Cơ sở làm
+                <label className="block font-bold mb-1 text-gray-800 flex items-center gap-1">
+                  <Building2 size={13} className="text-[#006ce4]" /> Cơ sở làm
                   việc (Bắt buộc) *
                 </label>
                 <select
@@ -355,7 +353,7 @@ export default function StaffManagementPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, hotel_id: e.target.value })
                   }
-                  className="w-full p-2.5 border rounded-xl font-bold bg-slate-50 text-slate-900 outline-none focus:border-blue-600"
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-bold bg-gray-50 text-gray-900 outline-none focus:border-[#003580]"
                 >
                   {hotels.map((h) => (
                     <option key={h.id} value={h.id}>
@@ -366,23 +364,23 @@ export default function StaffManagementPage() {
               </div>
 
               <div>
-                <label className="block font-bold mb-1 text-slate-700">
+                <label className="block font-bold mb-1 text-gray-800">
                   Họ và tên nhân viên *
                 </label>
                 <input
                   required
-                  placeholder="VD: Lê Thị Thu (Lễ tân sáng)"
+                  placeholder="VD: Lê Thị Thu (Lễ tân ca sáng)"
                   value={formData.full_name}
                   onChange={(e) =>
                     setFormData({ ...formData, full_name: e.target.value })
                   }
-                  className="w-full p-2.5 border rounded-xl font-medium outline-none focus:border-blue-600"
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-semibold outline-none focus:border-[#003580]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold mb-1 text-slate-700">
+                  <label className="block font-bold mb-1 text-gray-800">
                     Email đăng nhập *
                   </label>
                   <input
@@ -393,11 +391,11 @@ export default function StaffManagementPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="w-full p-2.5 border rounded-xl font-mono text-xs outline-none focus:border-blue-600"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-mono text-xs outline-none focus:border-[#003580]"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold mb-1 text-slate-700">
+                  <label className="block font-bold mb-1 text-gray-800">
                     Số điện thoại *
                   </label>
                   <input
@@ -407,13 +405,13 @@ export default function StaffManagementPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, phone: e.target.value })
                     }
-                    className="w-full p-2.5 border rounded-xl outline-none focus:border-blue-600"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl outline-none focus:border-[#003580]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold mb-1 text-slate-700 flex items-center gap-1">
+                <label className="block font-bold mb-1 text-gray-800 flex items-center gap-1">
                   <KeyRound size={13} className="text-amber-600" /> Mật khẩu
                   khởi tạo *
                 </label>
@@ -425,23 +423,23 @@ export default function StaffManagementPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, password: e.target.value })
                   }
-                  className="w-full p-2.5 border rounded-xl font-mono outline-none focus:border-blue-600"
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-mono outline-none focus:border-[#003580]"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t">
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   disabled={submitting}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer hover:bg-slate-50"
+                  className="px-4 py-2 border border-gray-200 rounded-xl font-bold cursor-pointer hover:bg-gray-50 text-gray-700"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer shadow-xs transition active:scale-95 disabled:opacity-50"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer shadow-sm transition active:scale-95 disabled:opacity-50"
                 >
                   {submitting ? "Đang lưu..." : "✓ Xác Nhận & Cấp Tài Khoản"}
                 </button>

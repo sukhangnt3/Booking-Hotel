@@ -1,3 +1,4 @@
+// src/pages/reception/ReceptionMapPage.jsx
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Calendar, Search, Plus, Building2 } from "lucide-react";
 import apiClient from "@/services/apiClient";
@@ -54,33 +55,27 @@ export default function ReceptionMapPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // 🌟 3 BỘ LỌC TRẠNG THÁI CHUẨN XÁC
   const [statusFilters, setStatusFilters] = useState({
     incoming: true,
     occupied: true,
-    checkout_soon: true,
     available: true,
   });
   const [searchQuery, setSearchQuery] = useState("");
-
   const [activeCleaningMenuId, setActiveCleaningMenuId] = useState(null);
 
   // Modal State
-  const [activeIncomingRoom, setActiveIncomingRoom] = useState(null);
-  const [activeOccupiedRoom, setActiveOccupiedRoom] = useState(null);
-
-  // Modal Đổi phòng
-  const [isChangeRoomOpen, setIsChangeRoomOpen] = useState(false);
+  const [activeModalType, setActiveModalType] = useState(null);
+  const [activeRoomData, setActiveRoomData] = useState(null);
   const [changeRoomTarget, setChangeRoomTarget] = useState(null);
 
-  // Flow Nhận phòng
-  const [isConfirmCheckInOpen, setIsConfirmCheckInOpen] = useState(false);
+  // Dữ liệu luồng Check-in
   const [confirmCheckInData, setConfirmCheckInData] = useState({
     checkin_mode: "Hiện tại",
     checkin_time: "",
     checkout_time: "",
     duration_label: "1 đêm",
   });
-  const [isCheckInGuestStayOpen, setIsCheckInGuestStayOpen] = useState(false);
   const [checkInGuestCount, setCheckInGuestCount] = useState({
     adult: 1,
     children: 0,
@@ -88,7 +83,6 @@ export default function ReceptionMapPage() {
   const [checkInGuestList, setCheckInGuestList] = useState([]);
 
   // Form nhập CCCD
-  const [isAddGuestDocOpen, setIsAddGuestDocOpen] = useState(false);
   const [editingGuestIndex, setEditingGuestIndex] = useState(null);
   const initialGuestDocForm = {
     room_number: "",
@@ -105,11 +99,12 @@ export default function ReceptionMapPage() {
   const [guestDocForm, setGuestDocForm] = useState(initialGuestDocForm);
 
   // Đặt phòng nhanh
-  const [isQuickBookingOpen, setIsQuickBookingOpen] = useState(false);
   const [quickBookingData, setQuickBookingData] = useState({
     customer_name: "",
     customer_phone: "",
     guest_count: { adult: 2, children: 0, id_cards: 0 },
+    adult_total: 2,
+    children_total: 0,
     rooms: [],
     note: "",
     customer_paid: 0,
@@ -153,7 +148,6 @@ export default function ReceptionMapPage() {
     return () => window.removeEventListener("click", handleClickOutside);
   }, []);
 
-  // Lấy khách sạn hợp lệ
   useEffect(() => {
     async function loadHotels() {
       try {
@@ -213,24 +207,38 @@ export default function ReceptionMapPage() {
     fetchRoomMap();
   }, [fetchRoomMap]);
 
+  // 🌟 ĐẾM SỐ LƯỢNG CHUẨN XÁC THEO TỪNG NHÓM TRẠNG THÁI
   const counts = useMemo(() => {
     return {
       incoming: rooms.filter((r) => r.status === "incoming").length,
-      occupied: rooms.filter((r) => r.status === "occupied").length,
+      occupied: rooms.filter(
+        (r) => r.status === "occupied" || r.status === "checkout_soon",
+      ).length,
       available: rooms.filter(
         (r) => r.status === "available" || r.status === "dirty",
       ).length,
     };
   }, [rooms]);
 
+  // 🌟 THUẬT TOÁN LỌC PHÒNG CHUẨN XÁC 100%
   const groupedRooms = useMemo(() => {
     const groups = {};
     rooms.forEach((room) => {
-      let normalizedStatus = room.status;
-      if (normalizedStatus === "dirty" || !statusFilters[normalizedStatus]) {
-        normalizedStatus = "available";
+      let filterCategory = "available";
+      if (room.status === "incoming") {
+        filterCategory = "incoming";
+      } else if (
+        room.status === "occupied" ||
+        room.status === "checkout_soon"
+      ) {
+        filterCategory = "occupied";
+      } else {
+        filterCategory = "available";
       }
-      if (!statusFilters[normalizedStatus]) return;
+
+      if (!statusFilters[filterCategory]) {
+        return;
+      }
 
       if (
         searchQuery.trim() &&
@@ -250,11 +258,13 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
+  // Click vào thẻ phòng
   const handleRoomCardClick = (room) => {
+    setActiveRoomData(room);
     if (room.status === "occupied" || room.status === "checkout_soon") {
-      setActiveOccupiedRoom(room);
+      setActiveModalType("occupied");
     } else if (room.status === "incoming") {
-      setActiveIncomingRoom(room);
+      setActiveModalType("incoming");
     } else {
       handleOpenQuickBooking(room);
     }
@@ -284,6 +294,8 @@ export default function ReceptionMapPage() {
       customer_name: "",
       customer_phone: "",
       guest_count: { adult: 2, children: 0, id_cards: 0 },
+      adult_total: 2,
+      children_total: 0,
       rooms: [
         {
           room_id: targetRoom.id,
@@ -300,13 +312,27 @@ export default function ReceptionMapPage() {
       note: "",
       customer_paid: 0,
     });
-    setIsQuickBookingOpen(true);
+    setActiveModalType("quick_booking");
   };
 
+  // 🌟 GỬI ĐẦY ĐỦ THÔNG TIN SỐ KHÁCH LÊN SERVER
   const handleConfirmQuickBooking = async (isCheckInNow = true) => {
     if (quickBookingData.rooms.length === 0)
       return alert("Vui lòng chọn ít nhất một phòng!");
     try {
+      const finalAdults = Number(
+        quickBookingData.guest_count?.adult ??
+          quickBookingData.adult_total ??
+          quickBookingData.adults ??
+          2,
+      );
+      const finalChildren = Number(
+        quickBookingData.guest_count?.children ??
+          quickBookingData.children_total ??
+          quickBookingData.children ??
+          0,
+      );
+
       for (const item of quickBookingData.rooms) {
         await apiClient.post("/owner/bookings/walkin", {
           hotel_id: selectedHotelId,
@@ -318,12 +344,20 @@ export default function ReceptionMapPage() {
           checkin_date: item.checkin_date,
           checkout_date: item.checkout_date,
           is_check_in_now: isCheckInNow,
+          adult_total: finalAdults,
+          children_total: finalChildren,
+          adults: finalAdults,
+          children: finalChildren,
+          guest_count: {
+            adult: finalAdults,
+            children: finalChildren,
+          },
         });
       }
       alert(
         isCheckInNow ? "✓ Nhận phòng thành công!" : "✓ Đã lưu đơn đặt trước!",
       );
-      setIsQuickBookingOpen(false);
+      setActiveModalType(null);
       await fetchRoomMap();
     } catch (err) {
       alert("Lỗi: " + (err.response?.data?.message || err.message));
@@ -332,7 +366,7 @@ export default function ReceptionMapPage() {
 
   const handleOpenChangeRoom = (room) => {
     setChangeRoomTarget(room);
-    setIsChangeRoomOpen(true);
+    setActiveModalType("change_room");
   };
 
   const handleExecuteChangeRoom = async ({
@@ -354,11 +388,12 @@ export default function ReceptionMapPage() {
         },
       );
       alert(
-        `✓ Đã đổi sang phòng ${newRoomNumber} thành công! (${mode === "split_stay" ? "Tính thời gian cả 2 phòng" : "Chuyển toàn bộ"})`,
+        `✓ Đã đổi sang phòng ${newRoomNumber} thành công! (${
+          mode === "split_stay" ? "Tính thời gian cả 2 phòng" : "Chuyển toàn bộ"
+        })`,
       );
-      setIsChangeRoomOpen(false);
-      setActiveOccupiedRoom(null);
-      setActiveIncomingRoom(null);
+      setActiveModalType(null);
+      setActiveRoomData(null);
       await fetchRoomMap();
     } catch (err) {
       alert("Lỗi đổi phòng: " + (err.response?.data?.message || err.message));
@@ -367,10 +402,11 @@ export default function ReceptionMapPage() {
   };
 
   const handleOpenConfirmCheckIn = () => {
-    if (!activeIncomingRoom?.booking) return;
+    if (!activeRoomData?.booking) return;
+
     const now = new Date();
     const defaultCheckout = new Date(
-      activeIncomingRoom.booking.checkout_date || now,
+      activeRoomData.booking.checkout_date || now,
     );
     if (isNaN(defaultCheckout.getTime())) {
       defaultCheckout.setDate(now.getDate() + 1);
@@ -385,15 +421,18 @@ export default function ReceptionMapPage() {
     });
 
     setCheckInGuestCount({
-      adult: activeIncomingRoom.booking.adult_total || 1,
-      children: activeIncomingRoom.booking.children_total || 0,
+      adult: Number(activeRoomData.booking.adult_total || 1),
+      children: Number(activeRoomData.booking.children_total || 0),
     });
 
-    const nowTimeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
+    const nowTimeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(
+      2,
+      "0",
+    )} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
     setCheckInGuestList([
       {
-        room_number: activeIncomingRoom.room_number,
-        full_name: activeIncomingRoom.booking.customer_name || "Khách lưu trú",
+        room_number: activeRoomData.room_number,
+        full_name: activeRoomData.booking.customer_name || "Khách lưu trú",
         gender: "male",
         birthday: "",
         nationality: "Việt Nam",
@@ -407,7 +446,7 @@ export default function ReceptionMapPage() {
       },
     ]);
 
-    setIsConfirmCheckInOpen(true);
+    setActiveModalType("confirm_checkin");
   };
 
   const handleOpenGuestDocForm = (guestItem = null, index = null) => {
@@ -417,11 +456,11 @@ export default function ReceptionMapPage() {
     } else {
       setGuestDocForm({
         ...initialGuestDocForm,
-        room_number: activeIncomingRoom?.room_number || "P.101",
+        room_number: activeRoomData?.room_number || "P.101",
         full_name: "",
       });
     }
-    setIsAddGuestDocOpen(true);
+    setActiveModalType("add_guest_doc");
   };
 
   const handleGuestDocSubmit = (e) => {
@@ -432,7 +471,10 @@ export default function ReceptionMapPage() {
     const now = new Date();
     const newGuestItem = {
       ...guestDocForm,
-      declaration_time: `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`,
+      declaration_time: `${now.getHours()}:${String(now.getMinutes()).padStart(
+        2,
+        "0",
+      )} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`,
       stay_duration: "1 ngày",
     };
 
@@ -445,15 +487,13 @@ export default function ReceptionMapPage() {
     } else {
       setCheckInGuestList((prev) => [...prev, newGuestItem]);
     }
-    setIsAddGuestDocOpen(false);
+    setActiveModalType("guest_stay");
   };
 
-  // ─── CHECK-IN VÀ CẬP NHẬT TIỀN ĐÃ THU TẠI QUẦY ───
   const handleFinalExecuteCheckIn = async () => {
-    if (!activeIncomingRoom?.booking?.id) return;
-    const b = activeIncomingRoom.booking;
+    if (!activeRoomData?.booking?.id) return;
+    const b = activeRoomData.booking;
 
-    // Tính tiền thu nốt tại quầy nếu khách cọc 30%
     const isDeposit =
       b.payment_type === "DEPOSIT_30" ||
       Number(b.deposit_amount) > 0 ||
@@ -464,24 +504,27 @@ export default function ReceptionMapPage() {
 
     try {
       await apiClient.post(`/owner/bookings/${b.id}/checkin`, {
-        room_number: activeIncomingRoom.room_number,
+        room_number: activeRoomData.room_number,
         checkin_date: confirmCheckInData.checkin_time,
         checkout_date: confirmCheckInData.checkout_time,
         adult_total: checkInGuestCount.adult,
         children_total: checkInGuestCount.children,
+        adults: checkInGuestCount.adult,
+        children: checkInGuestCount.children,
         guests: checkInGuestList,
         collected_at_counter: remainingToCollect,
       });
 
       alert(
-        `✓ Đã nhận phòng ${activeIncomingRoom.room_number} thành công!` +
+        `✓ Đã nhận phòng ${activeRoomData.room_number} thành công!` +
           (isDeposit
-            ? ` (Đã thu nốt số tiền còn lại tại quầy: ${formatVND(remainingToCollect)} ₫)`
+            ? ` (Đã thu nốt số tiền còn lại tại quầy: ${formatVND(
+                remainingToCollect,
+              )} ₫)`
             : ""),
       );
-      setIsConfirmCheckInOpen(false);
-      setIsCheckInGuestStayOpen(false);
-      setActiveIncomingRoom(null);
+      setActiveModalType(null);
+      setActiveRoomData(null);
       await fetchRoomMap();
     } catch (err) {
       alert("Lỗi: " + (err.response?.data?.message || err.message));
@@ -490,14 +533,12 @@ export default function ReceptionMapPage() {
 
   const handleSaveGuestStayInfoOnly = () => {
     alert("✓ Đã lưu thông tin khách lưu trú!");
-    setIsCheckInGuestStayOpen(false);
-    setIsConfirmCheckInOpen(true);
+    setActiveModalType("confirm_checkin");
   };
 
   const handleCompleteCheckOut = async (bookingCode) => {
-    const code = bookingCode || activeOccupiedRoom?.booking?.code;
-    const room =
-      rooms.find((r) => r.booking?.code === code) || activeOccupiedRoom;
+    const code = bookingCode || activeRoomData?.booking?.code;
+    const room = rooms.find((r) => r.booking?.code === code) || activeRoomData;
     if (!room?.booking?.id) return;
 
     try {
@@ -509,91 +550,110 @@ export default function ReceptionMapPage() {
       alert(
         `✓ Đã trả phòng ${room.room_number}! Phòng chuyển sang trạng thái Chưa dọn.`,
       );
-      setActiveOccupiedRoom(null);
+      setActiveModalType(null);
+      setActiveRoomData(null);
       await fetchRoomMap();
     } catch (err) {
       alert("Lỗi trả phòng: " + (err.response?.data?.message || err.message));
     }
   };
 
+  // 🌟 CẬP NHẬT TỨC THÌ (OPTIMISTIC UI): BẤM LÀ ĐỔI MÀU NGAY TRONG 0.1s
   const handleMarkCleaned = async (room) => {
     try {
+      // Đổi màu sang Sạch ngay tức thì
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === room.id
+            ? {
+                ...r,
+                is_dirty: false,
+                unit_status: "available",
+                status: r.booking ? "occupied" : "available",
+              }
+            : r,
+        ),
+      );
+      setActiveCleaningMenuId(null);
+
       await apiClient.post("/owner/rooms/mark-cleaned", {
         hotel_id: selectedHotelId,
         room_number: room.room_number,
       });
-      alert(`✓ Phòng ${room.room_number} đã dọn xong!`);
-      setActiveCleaningMenuId(null);
       await fetchRoomMap();
     } catch (err) {
       alert("Lỗi: " + (err.response?.data?.message || err.message));
+      await fetchRoomMap();
     }
   };
 
   const handleMarkDirty = async (room) => {
     try {
+      // Đổi sang trạng thái Cần dọn (viền cam + icon chổi) ngay tức thì
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === room.id
+            ? {
+                ...r,
+                is_dirty: true,
+                unit_status: "dirty",
+                status: r.booking ? "occupied" : "dirty",
+              }
+            : r,
+        ),
+      );
+      setActiveCleaningMenuId(null);
+
       await apiClient.post("/owner/rooms/mark-dirty", {
         hotel_id: selectedHotelId,
         room_number: room.room_number,
       });
-      alert(`✓ Đã chuyển phòng ${room.room_number} sang Cần dọn!`);
-      setActiveCleaningMenuId(null);
       await fetchRoomMap();
     } catch (err) {
       alert("Lỗi: " + (err.response?.data?.message || err.message));
+      await fetchRoomMap();
     }
   };
 
   return (
-    <div className="bg-[#f0f2f5] min-h-screen text-slate-800 font-sans text-xs pb-12">
-      {/* HEADER */}
-      <header className="sticky top-0 z-40 bg-[#1b6a38] text-white px-4 py-2.5 flex items-center justify-between shadow-md">
-        <div className="flex items-center gap-2">
-          <div className="px-3 py-1.5 rounded-full bg-white text-[#1b6a38] shadow-sm font-bold flex items-center gap-1.5">
-            <Calendar size={13} />
-            <span>Lịch đặt phòng</span>
+    <div className="min-h-screen bg-gray-50/50 text-gray-900 font-sans text-xs pb-16">
+      {/* ─── TOOLBAR TIẾP TÂN ─── */}
+      <div className="bg-white border-b border-gray-200 px-5 py-3.5 flex items-center justify-between shadow-xs flex-wrap gap-4 sticky top-0 z-20">
+        <div className="flex items-center gap-3">
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm số phòng, tên khách..."
+              className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-[#003580] focus:bg-white w-56 font-semibold"
+            />
+            <Search size={14} className="absolute right-3 text-gray-400" />
           </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-[#14532d] px-3 py-1.5 rounded-md border border-emerald-600/50">
-            <Building2 size={14} className="text-emerald-300" />
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5">
+            <Building2 size={14} className="text-[#003580]" />
             <select
               value={selectedHotelId}
               onChange={(e) => setSelectedHotelId(e.target.value)}
-              className="bg-transparent outline-none font-bold text-white cursor-pointer text-xs"
+              className="bg-transparent outline-none font-bold text-[#003580] cursor-pointer text-xs"
             >
-              {hotels.length === 0 ? (
-                <option value="" className="text-slate-800">
-                  Không có cơ sở nào
+              {hotels.map((h) => (
+                <option
+                  key={h.id}
+                  value={h.id}
+                  className="text-gray-900 font-bold"
+                >
+                  🏨 {h.name}
                 </option>
-              ) : (
-                hotels.map((h) => (
-                  <option key={h.id} value={h.id} className="text-slate-800">
-                    {h.name}
-                  </option>
-                ))
-              )}
+              ))}
             </select>
           </div>
         </div>
-      </header>
 
-      {/* TOOLBAR */}
-      <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between shadow-2xs flex-wrap gap-3">
-        <div className="relative flex items-center">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm số phòng, tên khách..."
-            className="pl-2 pr-7 py-1 bg-slate-50 border border-slate-300 rounded text-xs outline-none focus:border-[#1b6a38] w-48"
-          />
-          <Search size={13} className="absolute right-2 text-slate-400" />
-        </div>
-
-        <div className="flex items-center gap-5 font-semibold text-slate-700 select-none flex-wrap">
-          <label className="flex items-center gap-1.5 cursor-pointer">
+        {/* BỘ LỌC CHECKBOX: TÍCH CHỌN MỤC NÀO CHỈ HIỆN ĐÚNG MỤC ĐÓ */}
+        <div className="flex items-center gap-5 font-bold text-gray-700 select-none flex-wrap">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={statusFilters.incoming}
@@ -605,11 +665,11 @@ export default function ReceptionMapPage() {
               }
               className="accent-amber-500 rounded"
             />
-            <span className="w-3 h-3 rounded-2xs border border-amber-500 bg-[#fff9f1] inline-block" />
+            <span className="w-3.5 h-3.5 rounded-md border border-amber-500 bg-[#fff9f1] inline-block" />
             <span>Phòng sắp đến ({counts.incoming})</span>
           </label>
 
-          <label className="flex items-center gap-1.5 cursor-pointer">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={statusFilters.occupied}
@@ -619,13 +679,13 @@ export default function ReceptionMapPage() {
                   occupied: e.target.checked,
                 })
               }
-              className="accent-emerald-600 rounded"
+              className="accent-[#003580] rounded"
             />
-            <span className="w-3 h-3 rounded-2xs border border-emerald-500 bg-emerald-100 inline-block" />
-            <span>Phòng đang có khách ({counts.occupied})</span>
+            <span className="w-3.5 h-3.5 rounded-md border border-[#003580] bg-blue-50 inline-block" />
+            <span>Đang có khách ({counts.occupied})</span>
           </label>
 
-          <label className="flex items-center gap-1.5 cursor-pointer">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={statusFilters.available}
@@ -635,49 +695,50 @@ export default function ReceptionMapPage() {
                   available: e.target.checked,
                 })
               }
-              className="accent-slate-400 rounded"
+              className="accent-gray-400 rounded"
             />
-            <span className="w-3 h-3 rounded-2xs border border-slate-300 bg-white inline-block" />
+            <span className="w-3.5 h-3.5 rounded-md border border-gray-300 bg-white inline-block" />
             <span>Phòng trống ({counts.available})</span>
           </label>
         </div>
 
         <button
+          type="button"
           onClick={() => handleOpenQuickBooking()}
-          className="px-3 py-1.5 bg-[#1b6a38] hover:bg-[#14532d] text-white rounded cursor-pointer shadow-xs transition flex items-center gap-1 font-semibold"
+          className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl cursor-pointer shadow-xs transition flex items-center gap-1.5 font-bold active:scale-95"
         >
-          <Plus size={14} />
-          <span>Đặt phòng</span>
+          <Plus size={16} />
+          <span>Đặt phòng nhanh</span>
         </button>
       </div>
 
-      {/* SƠ ĐỒ PHÒNG */}
-      <main className="p-4 space-y-6">
+      {/* ─── SƠ ĐỒ PHÒNG ─── */}
+      <main className="p-4 sm:p-6 space-y-6">
         {loading ? (
           <div className="py-24 flex justify-center">
-            <LoadingSpinner size="lg" label="Đang tải sơ đồ phòng..." />
+            <LoadingSpinner size="lg" label="Đang đồng bộ sơ đồ phòng..." />
           </div>
         ) : hotels.length === 0 ? (
-          <div className="py-24 text-center text-slate-500">
-            Tài khoản này chưa được gán vào khách sạn nào.
+          <div className="py-24 text-center text-gray-400 font-medium">
+            Tài khoản này chưa được phân công cơ sở khách sạn nào.
           </div>
         ) : Object.keys(groupedRooms).length === 0 ? (
-          <div className="py-24 text-center text-slate-500">
-            Không tìm thấy phòng nào phù hợp bộ lọc.
+          <div className="py-24 text-center text-gray-400 font-medium">
+            Không tìm thấy phòng nào phù hợp với bộ lọc tìm kiếm.
           </div>
         ) : (
           Object.keys(groupedRooms).map((area) => {
             const roomList = groupedRooms[area];
             return (
-              <div key={area} className="space-y-2.5">
-                <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
+              <div key={area} className="space-y-3">
+                <div className="flex items-center gap-2 font-black text-[#0a2540] text-sm">
                   <span>{area}</span>
-                  <span className="bg-emerald-700 text-white text-[11px] font-bold px-1.5 py-0.2 rounded-full">
-                    {roomList.length}
+                  <span className="bg-[#003580] text-white text-[11px] font-black px-2 py-0.5 rounded-full">
+                    {roomList.length} phòng
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {roomList.map((room) => {
                     const b = room.booking;
                     const isDep =
@@ -714,51 +775,35 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* MODAL PHÒNG SẮP ĐẾN: TRUYỀN THÊM THÔNG TIN CỌC 30% ĐỂ LỄ TÂN BIẾT */}
+      {/* ─── 1. MODAL PHÒNG SẮP ĐẾN ─── */}
       <IncomingRoomModal
-        room={activeIncomingRoom}
-        onClose={() => setActiveIncomingRoom(null)}
+        isOpen={activeModalType === "incoming"}
+        room={activeRoomData}
+        onClose={() => {
+          setActiveModalType(null);
+          setActiveRoomData(null);
+        }}
         onOpenConfirmCheckIn={handleOpenConfirmCheckIn}
         onOpenChangeRoom={handleOpenChangeRoom}
         formatDisplayDateTime={formatDisplayDateTime}
         countdownText={getCheckinCountdownText(
-          activeIncomingRoom?.booking?.checkin_date,
+          activeRoomData?.booking?.checkin_date,
         )}
         formatVND={formatVND}
       />
 
-      {/* MODAL PHÒNG ĐANG CÓ KHÁCH */}
-      <OccupiedRoomModal
-        room={activeOccupiedRoom}
-        onClose={() => setActiveOccupiedRoom(null)}
-        onCheckOut={handleCompleteCheckOut}
-        onOpenChangeRoom={handleOpenChangeRoom}
-        formatVND={formatVND}
-      />
-
-      {/* MODAL ĐỔI PHÒNG (CHUẨN KIOTVIET) */}
-      <ChangeRoomModal
-        isOpen={isChangeRoomOpen}
-        onClose={() => {
-          setIsChangeRoomOpen(false);
-          setChangeRoomTarget(null);
-        }}
-        currentRoom={changeRoomTarget}
-        allRooms={rooms}
-        onConfirmChange={handleExecuteChangeRoom}
-      />
-
-      {/* MODAL XÁC NHẬN NHẬN PHÒNG */}
+      {/* ─── 2. MODAL XÁC NHẬN NHẬN PHÒNG ─── */}
       <ConfirmCheckInModal
-        isOpen={isConfirmCheckInOpen}
-        onClose={() => setIsConfirmCheckInOpen(false)}
-        room={activeIncomingRoom}
+        isOpen={activeModalType === "confirm_checkin"}
+        onClose={() => {
+          setActiveModalType(null);
+          setActiveRoomData(null);
+        }}
+        room={activeRoomData}
         confirmData={confirmCheckInData}
         setConfirmData={setConfirmCheckInData}
         onOpenGuestStay={() => {
-          setIsConfirmCheckInOpen(false);
-          setIsCheckInGuestStayOpen(true);
-          handleOpenGuestDocForm(checkInGuestList[0], 0);
+          setActiveModalType("guest_stay");
         }}
         onFinalExecuteCheckIn={handleFinalExecuteCheckIn}
         guestCount={checkInGuestCount}
@@ -766,10 +811,13 @@ export default function ReceptionMapPage() {
         toDatetimeLocal={toDatetimeLocal}
       />
 
+      {/* ─── 3. MODAL DANH SÁCH KHÁCH LƯU TRÚ ─── */}
       <CheckInGuestStayModal
-        isOpen={isCheckInGuestStayOpen}
-        onClose={() => setIsCheckInGuestStayOpen(false)}
-        room={activeIncomingRoom}
+        isOpen={activeModalType === "guest_stay"}
+        onClose={() => {
+          setActiveModalType("confirm_checkin");
+        }}
+        room={activeRoomData}
         guestCount={checkInGuestCount}
         setGuestCount={setCheckInGuestCount}
         guestList={checkInGuestList}
@@ -779,18 +827,46 @@ export default function ReceptionMapPage() {
         onFinalExecuteCheckIn={handleFinalExecuteCheckIn}
       />
 
+      {/* ─── 4. MODAL NHẬP CCCD ĐỊNH DANH ─── */}
       <AddGuestDocModal
-        isOpen={isAddGuestDocOpen}
-        onClose={() => setIsAddGuestDocOpen(false)}
+        isOpen={activeModalType === "add_guest_doc"}
+        onClose={() => {
+          setActiveModalType("guest_stay");
+        }}
         rooms={rooms}
         formData={guestDocForm}
         setFormData={setGuestDocForm}
         onSubmit={handleGuestDocSubmit}
       />
 
+      {/* ─── 5. MODAL PHÒNG ĐANG CÓ KHÁCH (TRẢ PHÒNG / QUYẾT TOÁN) ─── */}
+      <OccupiedRoomModal
+        room={activeModalType === "occupied" ? activeRoomData : null}
+        onClose={() => {
+          setActiveModalType(null);
+          setActiveRoomData(null);
+        }}
+        onCheckOut={handleCompleteCheckOut}
+        onOpenChangeRoom={handleOpenChangeRoom}
+        formatVND={formatVND}
+      />
+
+      {/* ─── 6. MODAL ĐỔI PHÒNG ─── */}
+      <ChangeRoomModal
+        isOpen={activeModalType === "change_room"}
+        onClose={() => {
+          setActiveModalType(null);
+          setChangeRoomTarget(null);
+        }}
+        currentRoom={changeRoomTarget}
+        allRooms={rooms}
+        onConfirmChange={handleExecuteChangeRoom}
+      />
+
+      {/* ─── 7. MODAL ĐẶT PHÒNG NHANH ─── */}
       <QuickBookingModal
-        isOpen={isQuickBookingOpen}
-        onClose={() => setIsQuickBookingOpen(false)}
+        isOpen={activeModalType === "quick_booking"}
+        onClose={() => setActiveModalType(null)}
         rooms={rooms}
         bookingData={quickBookingData}
         setBookingData={setQuickBookingData}

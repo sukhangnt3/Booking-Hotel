@@ -9,6 +9,7 @@ import {
   Calendar,
   Split,
   Layers,
+  ArrowUpDown,
 } from "lucide-react";
 
 export default function ChangeRoomModal({
@@ -133,63 +134,77 @@ export default function ChangeRoomModal({
       setSelectedNewRoomNumber("");
       onClose();
     } catch (err) {
-      // Bắt lỗi từ hàm cha
+      // Đã bắt lỗi từ component cha
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-fadeIn backdrop-blur-2xs">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200 text-xs">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 bg-[#1b6a38] text-white">
-          <div className="flex items-center gap-2">
-            <ArrowRightLeft size={18} />
-            <h2 className="text-sm font-bold uppercase tracking-wide">
-              Đổi phòng cho khách (Chuẩn KiotViet)
-            </h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 animate-fadeIn backdrop-blur-xs font-sans">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-gray-200 text-xs text-gray-900 animate-scaleUp">
+        {/* ─── HEADER MODAL ĐỒNG BỘ MÀU XANH NAVY #003580 ─── */}
+        <div className="flex items-center justify-between p-5 bg-[#003580] text-white shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
+              <ArrowRightLeft size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-black tracking-tight leading-none text-white">
+                  Đổi Phòng Cho Khách Lưu Trú
+                </h2>
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/30 text-blue-100 font-bold border border-white/15">
+                  ROOM SWITCH
+                </span>
+              </div>
+              <p className="text-[11px] text-blue-100/80 font-medium mt-1 leading-none">
+                Tự động tính toán phân tách ngày ở và chênh lệch đơn giá
+              </p>
+            </div>
           </div>
+
           <button
+            type="button"
             onClick={onClose}
-            className="text-white/80 hover:text-white transition p-1 cursor-pointer"
+            className="text-white/80 hover:text-white transition p-1.5 rounded-xl hover:bg-white/10 cursor-pointer"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-5 space-y-4 text-xs text-slate-700 max-h-[82vh] overflow-y-auto">
+        {/* ─── NỘI DUNG ─── */}
+        <div className="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto bg-white">
           {/* Thông tin phòng hiện tại */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+          <div className="bg-blue-50/60 border border-blue-200/80 rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-[10px] text-emerald-800 font-bold uppercase">
-                Phòng đang ở
+              <div className="text-[10px] text-[#006ce4] font-black uppercase tracking-wider">
+                Phòng đang lưu trú
               </div>
-              <div className="text-base font-black text-emerald-950">
-                {currentRoom.room_number} - {currentRoom.type_name}
+              <div className="text-lg font-black text-[#0a2540] mt-0.5">
+                Phòng {currentRoom.room_number} • {currentRoom.type_name}
               </div>
-              <div className="text-slate-600 mt-0.5">
+              <div className="text-gray-600 mt-1 font-medium">
                 Khách:{" "}
-                <strong className="text-slate-800">
+                <strong className="text-gray-900 font-bold">
                   {currentBooking?.customer_name || "Khách lẻ"}
                 </strong>
               </div>
             </div>
             <div className="text-right">
-              <span className="text-[11px] text-slate-500 block">
-                Đơn giá gốc
+              <span className="text-[10px] text-gray-500 block uppercase font-bold">
+                Đơn giá phòng cũ
               </span>
-              <span className="text-sm font-bold text-slate-900">
-                {oldDailyPrice.toLocaleString("vi-VN")} đ/ngày
+              <span className="text-sm font-black text-[#003580] tabular-nums">
+                {oldDailyPrice.toLocaleString("vi-VN")} ₫/ngày
               </span>
             </div>
           </div>
 
-          {/* Chọn phòng mới */}
-          <div className="space-y-1.5">
-            <label className="font-bold text-slate-800 flex items-center gap-1">
-              <DoorOpen size={14} className="text-[#1b6a38]" />
+          {/* Chọn phòng chuyển sang */}
+          <div className="space-y-2">
+            <label className="font-black text-[#0a2540] flex items-center gap-1.5 text-xs">
+              <DoorOpen size={15} className="text-[#006ce4]" />
               <span>
                 Chọn phòng chuyển sang ({availableRooms.length} phòng trống khả
                 dụng):
@@ -197,12 +212,12 @@ export default function ChangeRoomModal({
             </label>
 
             {availableRooms.length === 0 ? (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 flex items-center gap-2">
-                <AlertCircle size={16} />
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 flex items-center gap-2 font-bold">
+                <AlertCircle size={16} className="shrink-0" />
                 <span>Hiện không còn phòng trống nào khác để đổi!</span>
               </div>
             ) : (
-              <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-2xl divide-y divide-gray-100 bg-white">
                 {availableRooms.map((room) => {
                   const isSelected = selectedNewRoomNumber === room.room_number;
                   const diff = Number(room.daily_price || 0) - oldDailyPrice;
@@ -210,45 +225,51 @@ export default function ChangeRoomModal({
                     <div
                       key={room.id}
                       onClick={() => setSelectedNewRoomNumber(room.room_number)}
-                      className={`p-3 flex items-center justify-between cursor-pointer transition ${
+                      className={`p-3.5 flex items-center justify-between cursor-pointer transition ${
                         isSelected
-                          ? "bg-emerald-100/70 border-l-4 border-[#1b6a38]"
-                          : "hover:bg-slate-50"
+                          ? "bg-blue-50/80 border-l-4 border-[#003580]"
+                          : "hover:bg-gray-50"
                       }`}
                     >
                       <div>
-                        <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                          <span>{room.room_number}</span>
-                          <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-semibold">
+                        <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                          <span
+                            className={
+                              isSelected ? "text-[#003580] font-black" : ""
+                            }
+                          >
+                            Phòng {room.room_number}
+                          </span>
+                          <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md font-semibold">
                             {room.area || "Tầng 1"}
                           </span>
                         </div>
-                        <div className="text-slate-500 mt-0.5">
+                        <div className="text-gray-500 mt-0.5 text-xs">
                           {room.type_name} •{" "}
-                          <strong className="text-slate-800">
+                          <strong className="text-gray-900 tabular-nums">
                             {Number(room.daily_price || 0).toLocaleString(
                               "vi-VN",
                             )}{" "}
-                            đ/ngày
+                            ₫/ngày
                           </strong>
                         </div>
                       </div>
 
                       <div className="text-right">
                         {diff > 0 && (
-                          <span className="text-[11px] font-bold text-rose-600 block">
-                            +{diff.toLocaleString("vi-VN")} đ (Nâng hạng)
+                          <span className="text-[11px] font-black text-rose-600 block tabular-nums">
+                            +{diff.toLocaleString("vi-VN")} ₫ (Nâng hạng)
                           </span>
                         )}
                         {diff < 0 && (
-                          <span className="text-[11px] font-bold text-emerald-600 block">
-                            -{Math.abs(diff).toLocaleString("vi-VN")} đ (Hạ
+                          <span className="text-[11px] font-black text-emerald-700 block tabular-nums">
+                            -{Math.abs(diff).toLocaleString("vi-VN")} ₫ (Hạ
                             hạng)
                           </span>
                         )}
                         {diff === 0 && (
-                          <span className="text-[11px] font-bold text-slate-500 block">
-                            Cùng giá
+                          <span className="text-[11px] font-bold text-gray-400 block">
+                            Cùng mức giá
                           </span>
                         )}
                       </div>
@@ -261,67 +282,81 @@ export default function ChangeRoomModal({
 
           {/* Hai tùy chọn tính thời gian & giá phòng */}
           {targetRoom && currentRoom.status === "occupied" && (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
-              <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                <Calendar size={14} className="text-[#1b6a38]" />
-                <span>Phương án tính thời gian & tiền phòng:</span>
+            <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-4 space-y-3">
+              <div className="font-black text-[#0a2540] flex items-center gap-1.5 text-xs">
+                <Calendar size={15} className="text-[#006ce4]" />
+                <span>Phương án phân tách thời gian & tiền phòng:</span>
               </div>
 
               <div className="space-y-2">
-                <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 bg-white cursor-pointer hover:border-[#1b6a38] transition">
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-xl border transition cursor-pointer ${
+                    switchMode === "split_stay"
+                      ? "bg-white border-[#003580] shadow-xs"
+                      : "bg-white/60 border-gray-200 hover:border-gray-300"
+                  }`}
+                >
                   <input
                     type="radio"
                     name="kiot_switch_mode"
                     checked={switchMode === "split_stay"}
                     onChange={() => setSwitchMode("split_stay")}
-                    className="accent-[#1b6a38] mt-0.5"
+                    className="accent-[#003580] mt-0.5 cursor-pointer"
                   />
                   <div>
-                    <span className="font-bold text-slate-800 block flex items-center gap-1">
-                      <Split size={13} className="text-[#1b6a38]" />
+                    <span className="font-bold text-gray-900 block flex items-center gap-1.5">
+                      <Split size={14} className="text-[#006ce4]" />
                       Tính thời gian sử dụng ở CẢ HAI PHÒNG (Khuyên dùng)
                     </span>
-                    <span className="text-[11px] text-slate-500 block mt-0.5">
-                      Ở phòng cũ {stayCalculations.stayedDays} ngày (tính giá
-                      cũ) + phòng mới {stayCalculations.remainingDays} ngày
-                      (tính giá mới).
+                    <span className="text-[11px] text-gray-500 block mt-0.5">
+                      Ở phòng cũ <b>{stayCalculations.stayedDays} ngày</b> (tính
+                      đơn giá cũ) + chuyển sang phòng mới ở tiếp{" "}
+                      <b>{stayCalculations.remainingDays} ngày</b> (tính đơn giá
+                      mới).
                     </span>
                   </div>
                 </label>
 
-                <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 bg-white cursor-pointer hover:border-[#1b6a38] transition">
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-xl border transition cursor-pointer ${
+                    switchMode === "transfer_all"
+                      ? "bg-white border-[#003580] shadow-xs"
+                      : "bg-white/60 border-gray-200 hover:border-gray-300"
+                  }`}
+                >
                   <input
                     type="radio"
                     name="kiot_switch_mode"
                     checked={switchMode === "transfer_all"}
                     onChange={() => setSwitchMode("transfer_all")}
-                    className="accent-[#1b6a38] mt-0.5"
+                    className="accent-[#003580] mt-0.5 cursor-pointer"
                   />
                   <div>
-                    <span className="font-bold text-slate-800 block flex items-center gap-1">
-                      <Layers size={13} className="text-slate-600" />
+                    <span className="font-bold text-gray-900 block flex items-center gap-1.5">
+                      <Layers size={14} className="text-gray-600" />
                       Chuyển toàn bộ thời gian sang phòng mới
                     </span>
-                    <span className="text-[11px] text-slate-500 block mt-0.5">
-                      Áp dụng khi khách vừa vào nhận phòng đổi ngay hoặc phòng
-                      cũ bị sự cố.
+                    <span className="text-[11px] text-gray-500 block mt-0.5">
+                      Áp dụng khi khách vừa vào nhận phòng muốn đổi ngay hoặc
+                      phòng cũ gặp sự cố kỹ thuật.
                     </span>
                   </div>
                 </label>
               </div>
 
-              <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                <span className="font-bold text-slate-700">
+              {/* Chính sách đơn giá */}
+              <div className="pt-3 border-t border-gray-200 flex items-center justify-between flex-wrap gap-2">
+                <span className="font-bold text-gray-800">
                   Chính sách giá phòng mới:
                 </span>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4 font-semibold text-gray-700">
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="radio"
                       name="kiot_price_mode"
                       checked={applyNewPrice === true}
                       onChange={() => setApplyNewPrice(true)}
-                      className="accent-[#1b6a38]"
+                      className="accent-[#003580]"
                     />
                     <span>Áp dụng giá phòng mới</span>
                   </label>
@@ -331,30 +366,34 @@ export default function ChangeRoomModal({
                       name="kiot_price_mode"
                       checked={applyNewPrice === false}
                       onChange={() => setApplyNewPrice(false)}
-                      className="accent-[#1b6a38]"
+                      className="accent-[#003580]"
                     />
-                    <span>Giữ giá cũ</span>
+                    <span>Giữ nguyên giá phòng cũ</span>
                   </label>
                 </div>
               </div>
 
-              <div className="bg-emerald-50/70 border border-emerald-200 rounded-lg p-3 space-y-2">
-                <div className="font-bold text-emerald-900 flex justify-between">
+              {/* Tạm tính hóa đơn */}
+              <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-3.5 space-y-2">
+                <div className="font-black text-[#003580] flex justify-between items-center text-xs">
                   <span>Tạm tính hoá đơn sau khi đổi:</span>
-                  <span className="text-sm font-black text-[#1b6a38]">
-                    {calculatedTotalPrice.toLocaleString("vi-VN")} đ
+                  <span className="text-sm font-black text-[#003580] tabular-nums">
+                    {calculatedTotalPrice.toLocaleString("vi-VN")} ₫
                   </span>
                 </div>
-                <div className="space-y-1 text-[11px] divide-y divide-emerald-100">
+                <div className="space-y-1 text-[11px] divide-y divide-blue-100/80">
                   {calculatedLegs.map((leg, idx) => (
-                    <div key={idx} className="flex justify-between pt-1">
-                      <span className="text-slate-700">
+                    <div
+                      key={idx}
+                      className="flex justify-between pt-1 font-medium"
+                    >
+                      <span className="text-gray-700">
                         • Phòng <strong>{leg.room_number}</strong>:{" "}
                         {leg.duration_text} x{" "}
-                        {leg.unit_price.toLocaleString("vi-VN")} đ
+                        {leg.unit_price.toLocaleString("vi-VN")} ₫
                       </span>
-                      <span className="font-bold text-slate-900">
-                        {leg.amount.toLocaleString("vi-VN")} đ
+                      <span className="font-bold text-gray-900 tabular-nums">
+                        {leg.amount.toLocaleString("vi-VN")} ₫
                       </span>
                     </div>
                   ))}
@@ -364,13 +403,13 @@ export default function ChangeRoomModal({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3.5 bg-slate-50 border-t border-slate-200">
+        {/* ─── FOOTER NÚT THAO TÁC ─── */}
+        <div className="flex items-center justify-end gap-2.5 px-6 py-4 bg-gray-50 border-t border-gray-100">
           <button
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-100 font-semibold cursor-pointer text-xs"
+            className="px-5 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-white font-bold cursor-pointer transition"
           >
             Đóng
           </button>
@@ -378,9 +417,9 @@ export default function ChangeRoomModal({
             type="button"
             onClick={handleConfirm}
             disabled={loading || !selectedNewRoomNumber}
-            className="px-5 py-2 bg-[#1b6a38] hover:bg-[#14532d] disabled:opacity-50 text-white rounded-lg font-bold cursor-pointer transition text-xs flex items-center gap-1.5 shadow-sm"
+            className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 disabled:opacity-40 text-white rounded-xl font-black cursor-pointer transition flex items-center gap-2 shadow-md active:scale-95"
           >
-            <ArrowRightLeft size={14} />
+            <ArrowRightLeft size={15} />
             <span>{loading ? "Đang xử lý..." : "Xác nhận đổi phòng"}</span>
           </button>
         </div>

@@ -36,7 +36,7 @@ export default function BookingListPage() {
   const [search, setSearch] = useState("");
   const [apiError, setApiError] = useState("");
 
-  // Modal Check-in (Có thu tiền tại chỗ và nhập số phòng)
+  // Modal Check-in
   const [checkInModal, setCheckInModal] = useState(null);
   const [assignedRoom, setAssignedRoom] = useState("");
   const [earlyOption, setEarlyOption] = useState("none");
@@ -48,7 +48,7 @@ export default function BookingListPage() {
   const [minibarFee, setMinibarFee] = useState(0);
   const [otherFee, setOtherFee] = useState(0);
 
-  // Modal Walk-in (Đặt tại quầy)
+  // Modal Walk-in
   const [isWalkInOpen, setIsWalkInOpen] = useState(false);
   const [walkInForm, setWalkInForm] = useState({
     hotel_id: "",
@@ -62,9 +62,6 @@ export default function BookingListPage() {
     is_check_in_now: true,
   });
 
-  // ─────────────────────────────────────────────
-  // 🕒 HÀM ĐỊNH DẠNG MÚI GIỜ VIỆT NAM (ASIA/HO_CHI_MINH)
-  // ─────────────────────────────────────────────
   const formatStayDateTime = (dateStr, defaultHour = "14:00") => {
     if (!dateStr) return "N/A";
     try {
@@ -159,7 +156,6 @@ export default function BookingListPage() {
     fetchMyHotels();
   }, [fetchOwnerBookings, fetchMyHotels]);
 
-  // Xác nhận đơn đặt online
   const handleConfirmOrder = async (bookingId) => {
     try {
       await apiClient.patch(`/owner/bookings/${bookingId}/status`, {
@@ -176,7 +172,6 @@ export default function BookingListPage() {
     }
   };
 
-  // Nút thu tiền nhanh tại quầy
   const handleQuickPay = async (bookingId) => {
     if (!window.confirm("Xác nhận khách đã thanh toán đủ tiền phòng?")) return;
     try {
@@ -194,9 +189,6 @@ export default function BookingListPage() {
     }
   };
 
-  // ─────────────────────────────────────────────
-  // 🔑 THỰC HIỆN CHECK-IN (LƯU SỐ PHÒNG BÀN GIAO)
-  // ─────────────────────────────────────────────
   const handlePerformCheckIn = async (e) => {
     e.preventDefault();
     if (!checkInModal) return;
@@ -207,13 +199,11 @@ export default function BookingListPage() {
     if (earlyOption === "50") earlyFee = Math.round(basePrice * 0.5);
 
     try {
-      // 👉 GỬI CẢ ROOM_NUMBER VỀ BACKEND
       await apiClient.post(`/owner/bookings/${checkInModal.id}/checkin`, {
         early_fee: earlyFee,
         room_number: assignedRoom,
       });
 
-      // Cập nhật State ngay lập tức
       setBookings((prev) =>
         prev.map((b) =>
           b.id === checkInModal.id
@@ -237,7 +227,6 @@ export default function BookingListPage() {
     }
   };
 
-  // THỰC HIỆN CHECK-OUT
   const handlePerformCheckOut = async (e) => {
     e.preventDefault();
     if (!checkOutModal) return;
@@ -276,7 +265,6 @@ export default function BookingListPage() {
     }
   };
 
-  // TẠO ĐƠN WALK-IN TẠI QUẦY
   const handleCreateWalkIn = async (e) => {
     e.preventDefault();
     try {
@@ -303,25 +291,33 @@ export default function BookingListPage() {
   });
 
   return (
-    <div className="space-y-6 font-sans pb-16 text-slate-800">
-      {/* HEADER & NÚT WALK-IN */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* HEADER & NÚT WALK-IN THEO PHONG CÁCH GHOSTAY */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs uppercase tracking-wider mb-1">
+          <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
             <CheckCircle2 size={16} /> Quy Trình Tiếp Tân & Quản Trị Lưu Trú
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0a2540] tracking-tight">
             Quản Lý Đơn Đặt ({bookings.length} Đơn)
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Quy chuẩn Thu tiền, Check-in (14h) & Check-out (12h) theo tiêu chuẩn
+          <p className="text-xs text-gray-500 mt-1">
+            Quy chuẩn thu tiền, check-in tiêu chuẩn 14:00 & check-out 12:00
           </p>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
           <button
+            type="button"
+            onClick={() => setIsWalkInOpen(true)}
+            className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 cursor-pointer transition active:scale-95"
+          >
+            <UserPlus size={16} /> Đặt phòng tại quầy (Walk-in)
+          </button>
+          <button
+            type="button"
             onClick={fetchOwnerBookings}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition cursor-pointer"
+            className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition cursor-pointer"
             title="Làm mới danh sách"
           >
             <RefreshCw size={16} />
@@ -340,26 +336,27 @@ export default function BookingListPage() {
         <div className="relative w-full md:w-80">
           <Search
             size={16}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
           />
           <input
             type="text"
             placeholder="Tìm theo mã đơn, tên khách, SĐT..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border rounded-2xl text-xs font-medium focus:outline-blue-600 shadow-xs"
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#003580] shadow-xs"
           />
         </div>
 
-        <div className="bg-white p-1.5 rounded-2xl border shadow-xs flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
+        <div className="bg-white p-1.5 rounded-2xl border border-gray-200 shadow-xs flex items-center gap-1 overflow-x-auto w-full md:w-auto">
           {STATUS_TABS.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setStatusTab(tab.id)}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
                 statusTab === tab.id
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-600 hover:bg-slate-100"
+                  ? "bg-[#003580] text-white shadow-xs"
+                  : "text-gray-600 hover:bg-gray-100"
               }`}
             >
               {tab.label}
@@ -370,167 +367,168 @@ export default function BookingListPage() {
 
       {/* BẢNG ĐƠN ĐẶT PHÒNG */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border">
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
           <LoadingSpinner
             size="lg"
-            label="Đang tải danh sách đơn từ PostgreSQL..."
+            label="Đang tải danh sách đơn đặt phòng..."
           />
         </div>
       ) : filteredBookings.length > 0 ? (
-        <div className="bg-white rounded-3xl border overflow-hidden shadow-xs">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b">
-              <tr>
-                <th className="py-4 px-5">Mã Đơn & Khách Hàng</th>
-                <th className="py-4 px-4">Hạng Phòng & Cơ Sở</th>
-                <th className="py-4 px-4">Ngày Nhận / Trả (Giờ VN)</th>
-                <th className="py-4 px-4">Tổng Hóa Đơn</th>
-                <th className="py-4 px-4 text-center">Thanh Toán</th>
-                <th className="py-4 px-5 text-right">Nghiệp Vụ Lễ Tân</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredBookings.map((b) => {
-                const isPaid = b.payment_status === "paid";
+        <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
+                <tr>
+                  <th className="py-4 px-5">Mã Đơn & Khách Hàng</th>
+                  <th className="py-4 px-4">Hạng Phòng & Cơ Sở</th>
+                  <th className="py-4 px-4">Ngày Nhận / Trả (Giờ VN)</th>
+                  <th className="py-4 px-4">Tổng Hóa Đơn</th>
+                  <th className="py-4 px-4 text-center">Thanh Toán</th>
+                  <th className="py-4 px-5 text-right">Nghiệp Vụ Lễ Tân</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 font-medium">
+                {filteredBookings.map((b) => {
+                  const isPaid = b.payment_status === "paid";
 
-                return (
-                  <tr key={b.id} className="hover:bg-slate-50/80">
-                    <td className="py-4 px-5">
-                      <span className="font-mono font-bold text-blue-900 flex items-center gap-1">
-                        #{b.booking_code}
-                        {b.booking_code?.startsWith("WI") && (
-                          <span className="px-1.5 py-0.2 bg-purple-100 text-purple-700 text-[9px] font-bold rounded">
-                            Walk-in
+                  return (
+                    <tr key={b.id} className="hover:bg-blue-50/40 transition">
+                      <td className="py-4 px-5">
+                        <span className="font-mono font-bold text-[#003580] flex items-center gap-1.5">
+                          #{b.booking_code}
+                          {b.booking_code?.startsWith("WI") && (
+                            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[9px] font-black rounded-md">
+                              Walk-in
+                            </span>
+                          )}
+                        </span>
+                        <strong className="block text-gray-900 mt-1 font-bold">
+                          {b.customer_name || b.guest_name || "Khách tại quầy"}
+                        </strong>
+                        <span className="text-gray-400 block text-[11px]">
+                          {b.guest_phone || b.contact_phone || "---"}
+                        </span>
+                        {b.created_at && (
+                          <span className="text-[10px] text-gray-400 block mt-0.5">
+                            Đặt lúc: {formatBookingTime(b.created_at)}
                           </span>
                         )}
-                      </span>
-                      <strong className="block text-slate-900 mt-0.5">
-                        {b.customer_name || b.guest_name || "Khách tại quầy"}
-                      </strong>
-                      <span className="text-slate-400 block">
-                        {b.guest_phone || b.contact_phone || "---"}
-                      </span>
-                      {b.created_at && (
-                        <span className="text-[10px] text-slate-400 block mt-0.5">
-                          Đặt lúc: {formatBookingTime(b.created_at)}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        <p className="font-bold text-gray-900">
+                          {b.room_name || "Phòng tiêu chuẩn"}
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          {b.hotel_name}
+                        </p>
+
+                        {b.room_number ? (
+                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-blue-50 text-[#003580] font-bold text-[11px] rounded-lg border border-blue-200">
+                            🔑 Phòng: {b.room_number}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 italic block mt-0.5">
+                            (Chưa giao phòng)
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        <p className="font-bold text-emerald-700">
+                          Nhận: {formatStayDateTime(b.checkin_date, "14:00")}
+                        </p>
+                        <p className="text-gray-500 mt-0.5">
+                          Trả: {formatStayDateTime(b.checkout_date, "12:00")}
+                        </p>
+                      </td>
+
+                      <td className="py-4 px-4">
+                        <span className="font-black text-[#ff6a00] block text-sm tabular-nums">
+                          {formatVND(b.total_price)}
                         </span>
-                      )}
-                    </td>
-
-                    {/* CỘT HẠNG PHÒNG & HIỂN THỊ SỐ PHÒNG BÀN GIAO */}
-                    <td className="py-4 px-4">
-                      <p className="font-bold text-slate-800">
-                        {b.room_name || "Phòng tiêu chuẩn"}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        {b.hotel_name}
-                      </p>
-
-                      {/* 👉 HIỂN THỊ SỐ PHÒNG (P.201) NẾU ĐÃ CHECK-IN */}
-                      {b.room_number ? (
-                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-blue-50 text-blue-700 font-bold text-[11px] rounded-md border border-blue-200">
-                          🔑 Phòng: {b.room_number}
+                        <span className="text-[10px] text-gray-400 font-bold uppercase">
+                          Trạng thái:{" "}
+                          {b.status === "checked_in"
+                            ? "Đang ở"
+                            : b.status === "confirmed"
+                              ? "Đã duyệt"
+                              : b.status}
                         </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 italic block mt-0.5">
-                          (Chưa giao phòng)
+                      </td>
+
+                      <td className="py-4 px-4 text-center">
+                        <span
+                          className={`inline-block px-2.5 py-1 rounded-full font-bold text-[10px] ${
+                            isPaid
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {isPaid ? "✓ Đã thanh toán" : "Chưa thanh toán"}
                         </span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* CỘT NGÀY NHẬN / TRẢ ĐÃ FIX MÚI GIỜ VIỆT NAM */}
-                    <td className="py-4 px-4">
-                      <p className="font-bold text-emerald-800">
-                        Nhận: {formatStayDateTime(b.checkin_date, "14:00")}
-                      </p>
-                      <p className="text-slate-500 mt-0.5">
-                        Trả: {formatStayDateTime(b.checkout_date, "12:00")}
-                      </p>
-                    </td>
+                      <td className="py-4 px-5 text-right">
+                        <div className="flex justify-end gap-1.5">
+                          {!isPaid && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickPay(b.id)}
+                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-[11px] flex items-center gap-1 cursor-pointer transition"
+                              title="Xác nhận khách đã nộp tiền"
+                            >
+                              <DollarSign size={13} /> Thu tiền
+                            </button>
+                          )}
 
-                    <td className="py-4 px-4">
-                      <span className="font-black text-[#ff6a00] block text-sm">
-                        {formatVND(b.total_price)}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase">
-                        Trạng thái:{" "}
-                        {b.status === "checked_in"
-                          ? "Đang ở"
-                          : b.status === "confirmed"
-                            ? "Đã duyệt"
-                            : b.status}
-                      </span>
-                    </td>
+                          {b.status === "pending" && (
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmOrder(b.id)}
+                              className="px-3 py-1.5 bg-[#006ce4] hover:bg-blue-700 text-white font-bold rounded-xl cursor-pointer transition shadow-2xs"
+                            >
+                              Xác nhận
+                            </button>
+                          )}
 
-                    {/* CỘT THANH TOÁN */}
-                    <td className="py-4 px-4 text-center">
-                      <span
-                        className={`inline-block px-2.5 py-1 rounded-full font-bold text-[10px] ${
-                          isPaid
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {isPaid ? "✓ Đã thanh toán" : "⚠️ Chưa thanh toán"}
-                      </span>
-                    </td>
+                          {b.status === "confirmed" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCheckInModal(b);
+                                setAssignedRoom(b.room_number || "P.201");
+                                setEarlyOption("none");
+                                setPayMethodAtCheckIn("cash");
+                              }}
+                              className="px-3.5 py-1.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                            >
+                              <Key size={13} /> Check-in
+                            </button>
+                          )}
 
-                    {/* CỘT THAO TÁC NGHIỆP VỤ */}
-                    <td className="py-4 px-5 text-right">
-                      <div className="flex justify-end gap-1.5">
-                        {!isPaid && (
-                          <button
-                            onClick={() => handleQuickPay(b.id)}
-                            className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-[11px] flex items-center gap-1 cursor-pointer"
-                            title="Xác nhận khách đã nộp tiền"
-                          >
-                            <DollarSign size={13} /> Thu tiền
-                          </button>
-                        )}
-
-                        {b.status === "pending" && (
-                          <button
-                            onClick={() => handleConfirmOrder(b.id)}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl cursor-pointer"
-                          >
-                            Xác nhận
-                          </button>
-                        )}
-
-                        {b.status === "confirmed" && (
-                          <button
-                            onClick={() => {
-                              setCheckInModal(b);
-                              setAssignedRoom(b.room_number || "P.201");
-                              setEarlyOption("none");
-                              setPayMethodAtCheckIn("cash");
-                            }}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-1 cursor-pointer"
-                          >
-                            <Key size={13} /> Check-in
-                          </button>
-                        )}
-
-                        {b.status === "checked_in" && (
-                          <button
-                            onClick={() => {
-                              setCheckOutModal(b);
-                              setLateOption("none");
-                              setMinibarFee(0);
-                              setOtherFee(0);
-                            }}
-                            className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white font-bold rounded-xl flex items-center gap-1 cursor-pointer"
-                          >
-                            <LogOut size={13} /> Check-out
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          {b.status === "checked_in" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCheckOutModal(b);
+                                setLateOption("none");
+                                setMinibarFee(0);
+                                setOtherFee(0);
+                              }}
+                              className="px-3.5 py-1.5 bg-gray-900 hover:bg-black text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                            >
+                              <LogOut size={13} /> Check-out
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <EmptyState
@@ -540,44 +538,49 @@ export default function BookingListPage() {
         />
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          MODAL CHECK-IN: NHẬP VÀ GIAO SỐ PHÒNG THẬT
-         ───────────────────────────────────────────────────────────── */}
+      {/* MODAL CHECK-IN */}
       {checkInModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
-            <div className="flex justify-between items-center border-b pb-3">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-200 space-y-4 text-xs font-sans">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
-                  <Key size={18} className="text-emerald-600" /> Thủ Tục
-                  Check-in & Bàn Giao Phòng
+                <h3 className="font-black text-base text-[#0a2540] flex items-center gap-1.5">
+                  <Key size={18} className="text-[#003580]" /> Thủ Tục Check-in
                 </h3>
-                <p className="text-[11px] text-slate-400">
-                  Giờ chuẩn nhận phòng từ 14:00 chiều
+                <p className="text-[11px] text-gray-500">
+                  Giờ chuẩn nhận phòng từ 14:00
                 </p>
               </div>
-              <button onClick={() => setCheckInModal(null)}>
+              <button
+                type="button"
+                onClick={() => setCheckInModal(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handlePerformCheckIn} className="space-y-3">
-              <div className="p-3 bg-slate-50 rounded-xl space-y-1">
-                <p className="text-slate-600">
-                  Khách hàng: <b>{checkInModal.customer_name}</b>
+            <form onSubmit={handlePerformCheckIn} className="space-y-3.5">
+              <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-2xl space-y-1">
+                <p className="text-gray-600">
+                  Khách hàng:{" "}
+                  <b className="text-gray-900">{checkInModal.customer_name}</b>
                 </p>
-                <p className="text-slate-600">
-                  Hạng phòng: <b>{checkInModal.room_name}</b>
+                <p className="text-gray-600">
+                  Hạng phòng:{" "}
+                  <b className="text-gray-900">{checkInModal.room_name}</b>
                 </p>
-                <p className="text-slate-600">
+                <p className="text-gray-600">
                   Thời gian nhận:{" "}
-                  <b className="text-emerald-800">
+                  <b className="text-emerald-700">
                     {formatStayDateTime(checkInModal.checkin_date, "14:00")}
                   </b>
                 </p>
-                <p className="text-slate-600">
+                <p className="text-gray-600">
                   Tiền phòng cơ bản:{" "}
-                  <b>{formatVND(checkInModal.total_price)}</b>
+                  <b className="text-gray-900">
+                    {formatVND(checkInModal.total_price)}
+                  </b>
                 </p>
               </div>
 
@@ -587,52 +590,48 @@ export default function BookingListPage() {
                     <AlertCircle size={15} /> Khách CHƯA thanh toán tiền phòng!
                   </p>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Xác nhận hình thức thu tiền tại quầy:
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                      Hình thức thu tiền tại quầy:
                     </label>
                     <select
                       value={payMethodAtCheckIn}
                       onChange={(e) => setPayMethodAtCheckIn(e.target.value)}
-                      className="w-full p-2 border rounded-xl font-bold bg-white"
+                      className="w-full p-2 border border-gray-200 rounded-xl font-bold bg-white text-xs outline-none focus:border-[#003580]"
                     >
-                      <option value="cash">
-                        💵 Đã thu tiền mặt đủ tại quầy
-                      </option>
+                      <option value="cash">💵 Thu tiền mặt trực tiếp</option>
                       <option value="transfer">
-                        📱 Khách đã quét mã QR chuyển khoản
+                        📱 Quét mã QR chuyển khoản
                       </option>
                     </select>
                   </div>
                 </div>
               ) : (
-                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 font-bold flex items-center gap-1.5">
-                  <CheckCircle2 size={16} /> Đơn phòng này đã thanh toán trước
-                  (paid)
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 font-bold flex items-center gap-1.5">
+                  <CheckCircle2 size={16} /> Đơn phòng này đã thanh toán đủ 100%
                 </div>
               )}
 
-              {/* Ô NHẬP SỐ PHÒNG BÀN GIAO */}
               <div>
-                <label className="block font-bold mb-1">
-                  Số phòng bàn giao (Giao chìa khóa) *
+                <label className="block font-bold mb-1 text-gray-800">
+                  Số phòng bàn giao (Chìa khóa) *
                 </label>
                 <input
                   required
                   value={assignedRoom}
                   onChange={(e) => setAssignedRoom(e.target.value)}
                   placeholder="VD: P.201, Phòng 305..."
-                  className="w-full p-2.5 border rounded-xl font-bold text-slate-900 bg-slate-50"
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-bold text-gray-900 bg-gray-50 focus:bg-white outline-none focus:border-[#003580]"
                 />
               </div>
 
               <div>
-                <label className="block font-bold mb-1">
-                  Quy định nhận phòng sớm (Early Check-in)
+                <label className="block font-bold mb-1 text-gray-800">
+                  Quy định nhận phòng sớm
                 </label>
                 <select
                   value={earlyOption}
                   onChange={(e) => setEarlyOption(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl font-medium bg-white"
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-medium bg-white outline-none focus:border-[#003580]"
                 >
                   <option value="none">
                     Đúng giờ chuẩn (Sau 14:00) - Miễn phụ thu
@@ -646,21 +645,21 @@ export default function BookingListPage() {
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t">
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setCheckInModal(null)}
-                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
+                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl font-bold cursor-pointer hover:bg-gray-50"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer shadow-sm transition active:scale-95"
                 >
                   {checkInModal.payment_status !== "paid"
-                    ? "✓ Xác nhận đã thu tiền & Giao chìa khóa"
-                    : "✓ Bàn giao chìa khóa (Check-in)"}
+                    ? "✓ Thu tiền & Giao phòng"
+                    : "✓ Bàn giao chìa khóa"}
                 </button>
               </div>
             </form>
@@ -671,76 +670,83 @@ export default function BookingListPage() {
       {/* MODAL CHECK-OUT */}
       {checkOutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border space-y-4 text-xs">
-            <div className="flex justify-between items-center border-b pb-3">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-gray-200 space-y-4 text-xs font-sans">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
-                  <Receipt size={18} className="text-blue-600" /> Quyết Toán &
-                  Trả Phòng (Check-out)
+                <h3 className="font-black text-base text-[#0a2540] flex items-center gap-1.5">
+                  <Receipt size={18} className="text-[#003580]" /> Quyết Toán &
+                  Trả Phòng
                 </h3>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-gray-500">
                   Giờ chuẩn trả phòng trước 12:00 trưa
                 </p>
               </div>
-              <button onClick={() => setCheckOutModal(null)}>
+              <button
+                type="button"
+                onClick={() => setCheckOutModal(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handlePerformCheckOut} className="space-y-3">
-              <div className="p-3 bg-slate-50 rounded-xl space-y-1">
-                <p className="text-slate-600">
-                  Khách hàng: <b>{checkOutModal.customer_name}</b>
+            <form onSubmit={handlePerformCheckOut} className="space-y-3.5">
+              <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-2xl space-y-1">
+                <p className="text-gray-600">
+                  Khách hàng:{" "}
+                  <b className="text-gray-900">{checkOutModal.customer_name}</b>
                 </p>
                 {checkOutModal.room_number && (
-                  <p className="text-slate-600">
-                    Phòng đang ở:{" "}
-                    <b className="text-blue-700 font-bold">
+                  <p className="text-gray-600">
+                    Phòng:{" "}
+                    <b className="text-[#003580] font-bold">
                       {checkOutModal.room_number}
                     </b>
                   </p>
                 )}
-                <p className="text-slate-600">
+                <p className="text-gray-600">
                   Thời gian trả:{" "}
-                  <b className="text-slate-900">
+                  <b className="text-gray-900">
                     {formatStayDateTime(checkOutModal.checkout_date, "12:00")}
                   </b>
                 </p>
-                <p className="text-slate-600">
-                  Tiền phòng cơ bản:{" "}
-                  <b>{formatVND(checkOutModal.total_price)}</b>
+                <p className="text-gray-600">
+                  Tiền phòng:{" "}
+                  <b className="text-gray-900">
+                    {formatVND(checkOutModal.total_price)}
+                  </b>
                 </p>
               </div>
 
               <div>
-                <label className="block font-bold mb-1">
-                  Quy định trả phòng trễ (Late Check-out)
+                <label className="block font-bold mb-1 text-gray-800">
+                  Quy định trả phòng trễ
                 </label>
                 <select
                   value={lateOption}
                   onChange={(e) => setLateOption(e.target.value)}
-                  className="w-full p-2.5 border rounded-xl font-medium bg-white"
+                  className="w-full p-2.5 border border-gray-200 rounded-xl font-medium bg-white outline-none focus:border-[#003580]"
                 >
                   <option value="none">
                     Đúng giờ (Trước 12:00) - Không phụ thu
                   </option>
                   <option value="30">
-                    Trả phòng từ sau 12:00 - 15:00 (+30% tiền phòng)
+                    Trả phòng sau 12:00 - 15:00 (+30% tiền phòng)
                   </option>
                   <option value="50">
-                    Trả phòng từ sau 15:00 - 18:00 (+50% tiền phòng)
+                    Trả phòng sau 15:00 - 18:00 (+50% tiền phòng)
                   </option>
                   <option value="100">
-                    Trả phòng sau 18:00 (+100% tính nguyên 1 ngày)
+                    Trả phòng sau 18:00 (+100% nguyên ngày)
                   </option>
                 </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold mb-1 flex items-center gap-1">
-                    <Coffee size={13} className="text-amber-600" /> Tiền Minibar
-                    / Nước uống
+                  <label className="block font-bold mb-1 flex items-center gap-1 text-gray-800">
+                    <Coffee size={13} className="text-amber-600" /> Minibar / Đồ
+                    uống
                   </label>
                   <input
                     type="number"
@@ -748,12 +754,12 @@ export default function BookingListPage() {
                     step="1000"
                     value={minibarFee}
                     onChange={(e) => setMinibarFee(e.target.value)}
-                    className="w-full p-2 border rounded-xl font-bold"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-bold outline-none focus:border-[#003580]"
                     placeholder="0 đ"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold mb-1">
+                  <label className="block font-bold mb-1 text-gray-800">
                     Dịch vụ khác / Đền bù
                   </label>
                   <input
@@ -762,23 +768,23 @@ export default function BookingListPage() {
                     step="1000"
                     value={otherFee}
                     onChange={(e) => setOtherFee(e.target.value)}
-                    className="w-full p-2 border rounded-xl font-bold"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-bold outline-none focus:border-[#003580]"
                     placeholder="0 đ"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t">
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setCheckOutModal(null)}
-                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
+                  className="px-4 py-2 border border-gray-200 rounded-xl font-bold cursor-pointer hover:bg-gray-50 text-gray-700"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-slate-900 hover:bg-black text-white font-bold rounded-xl cursor-pointer"
+                  className="px-5 py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl cursor-pointer shadow-sm transition active:scale-95"
                 >
                   Hoàn tất quyết toán & Thu hồi phòng
                 </button>
@@ -788,29 +794,33 @@ export default function BookingListPage() {
         </div>
       )}
 
-      {/* MODAL WALK-IN */}
+      {/* MODAL WALK-IN TẠI QUẦY */}
       {isWalkInOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border space-y-4 text-xs">
-            <div className="flex justify-between items-center border-b pb-3">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-gray-200 space-y-4 text-xs font-sans">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
-                  <UserPlus size={18} className="text-blue-600" /> Tạo Đơn Đặt
-                  Phòng Tại Quầy (Walk-in)
+                <h3 className="font-black text-base text-[#0a2540] flex items-center gap-1.5">
+                  <UserPlus size={18} className="text-[#003580]" /> Tạo Đơn Đặt
+                  Phòng Tại Quầy
                 </h3>
-                <p className="text-[11px] text-slate-400">
-                  Dành cho khách đến trực tiếp lễ tân không qua website
+                <p className="text-[11px] text-gray-500">
+                  Dành cho khách đến trực tiếp lễ tân không qua đặt online
                 </p>
               </div>
-              <button onClick={() => setIsWalkInOpen(false)}>
+              <button
+                type="button"
+                onClick={() => setIsWalkInOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+              >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateWalkIn} className="space-y-3">
+            <form onSubmit={handleCreateWalkIn} className="space-y-3.5">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold mb-1">
+                  <label className="block font-bold mb-1 text-gray-800">
                     Cơ sở khách sạn *
                   </label>
                   <select
@@ -819,7 +829,7 @@ export default function BookingListPage() {
                     onChange={(e) =>
                       setWalkInForm({ ...walkInForm, hotel_id: e.target.value })
                     }
-                    className="w-full p-2.5 border rounded-xl font-bold bg-slate-50"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-bold bg-gray-50 outline-none focus:border-[#003580]"
                   >
                     {hotels.map((h) => (
                       <option key={h.id} value={h.id}>
@@ -829,7 +839,9 @@ export default function BookingListPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold mb-1">Hạng phòng *</label>
+                  <label className="block font-bold mb-1 text-gray-800">
+                    Hạng phòng *
+                  </label>
                   <select
                     required
                     value={walkInForm.room_id}
@@ -846,7 +858,7 @@ export default function BookingListPage() {
                           : walkInForm.total_price,
                       });
                     }}
-                    className="w-full p-2.5 border rounded-xl font-bold bg-slate-50"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-bold bg-gray-50 outline-none focus:border-[#003580]"
                   >
                     {rooms.map((r) => (
                       <option key={r.id} value={r.id}>
@@ -859,7 +871,7 @@ export default function BookingListPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold mb-1">
+                  <label className="block font-bold mb-1 text-gray-800">
                     Họ và tên khách *
                   </label>
                   <input
@@ -872,11 +884,11 @@ export default function BookingListPage() {
                       })
                     }
                     placeholder="VD: Anh Tuấn, Chị Hoa..."
-                    className="w-full p-2.5 border rounded-xl font-bold"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-bold outline-none focus:border-[#003580]"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold mb-1">
+                  <label className="block font-bold mb-1 text-gray-800">
                     Số điện thoại liên hệ
                   </label>
                   <input
@@ -888,15 +900,15 @@ export default function BookingListPage() {
                       })
                     }
                     placeholder="0912 345 678"
-                    className="w-full p-2.5 border rounded-xl"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl outline-none focus:border-[#003580]"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold mb-1">
-                    Giá thanh toán thực tế (VNĐ)
+                  <label className="block font-bold mb-1 text-gray-800">
+                    Giá thanh toán (VNĐ)
                   </label>
                   <input
                     type="number"
@@ -908,11 +920,11 @@ export default function BookingListPage() {
                         total_price: e.target.value,
                       })
                     }
-                    className="w-full p-2.5 border rounded-xl font-black text-[#ff6a00]"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-black text-[#ff6a00] outline-none focus:border-[#003580]"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold mb-1">
+                  <label className="block font-bold mb-1 text-gray-800">
                     Hình thức thu tiền
                   </label>
                   <select
@@ -923,7 +935,7 @@ export default function BookingListPage() {
                         payment_method: e.target.value,
                       })
                     }
-                    className="w-full p-2.5 border rounded-xl font-bold bg-white"
+                    className="w-full p-2.5 border border-gray-200 rounded-xl font-bold bg-white outline-none focus:border-[#003580]"
                   >
                     <option value="cash">💵 Đã thu tiền mặt tại quầy</option>
                     <option value="transfer">📱 Đã chuyển khoản qua QR</option>
@@ -931,17 +943,17 @@ export default function BookingListPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t">
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => setIsWalkInOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold cursor-pointer"
+                  className="px-4 py-2 border border-gray-200 rounded-xl font-bold cursor-pointer hover:bg-gray-50 text-gray-700"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer"
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer shadow-sm transition active:scale-95"
                 >
                   Lưu & Thu tiền hoàn tất
                 </button>
