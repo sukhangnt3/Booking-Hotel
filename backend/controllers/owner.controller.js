@@ -235,7 +235,8 @@ async function getOwnerStats(req, res, next) {
          AND (
            (b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date)
            OR (b.checkin_date >= $${pStart}::date AND b.checkin_date <= $${pEnd}::date)
-         )`,
+         )
+       GROUP BY 1`,
       timeParams,
     );
     const cancelledAmount = Number(
@@ -626,7 +627,7 @@ async function getOwnerBookings(req, res, next) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN THỜI GIAN THỰC (ĐÃ XÓA AUTO-ASSIGN NGẦM) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN THỜI GIAN THỰC ───
 async function getRoomMapData(req, res, next) {
   try {
     const userId = req.user?.id || req.user?.userId || req.auth?.sub;
@@ -684,7 +685,9 @@ async function getRoomMapData(req, res, next) {
                 ) AS booked_room_type_id
          FROM public.booking b
          WHERE b.hotel_id::text = $1 
-           AND b.status NOT IN ('cancelled', 'checked_out')
+           AND b.status IN ('confirmed', 'checked_in')
+           AND b.room_number IS NOT NULL 
+           AND TRIM(b.room_number) <> ''
          ORDER BY b.created_at DESC`,
         [hotelId],
       );
@@ -772,12 +775,12 @@ async function getRoomMapData(req, res, next) {
       }
     };
 
-    // 🌟 CHỈ GẮN BOOKING KHI ĐÃ CÓ SỐ PHÒNG VÀ ĐÃ XÁC NHẬN (KHÔNG GẮN ĐƠN PENDING)
+    // 🌟 CHỈ GẮN PHÒNG KHI ĐÃ CÓ SỐ PHÒNG TRÙNG KHỚP (KHÔNG TỰ TIỆN GÁN ĐƠN PENDING)
     for (const room of roomList) {
       const cleanRoomDigits = String(room.room_number).replace(/[^0-9]/g, "");
       const match = activeBookings.find((b) => {
         if (usedBookingIds.has(b.id) || !b.room_number) return false;
-        if (b.status === "pending") return false; // Chờ lễ tân chọn phòng thì không gắn lên đây
+        if (b.status === "pending") return false;
 
         const bCleanDigits = String(b.room_number).replace(/[^0-9]/g, "");
         return (
@@ -819,18 +822,17 @@ async function getRoomMapData(req, res, next) {
   }
 }
 
-// ─── 3.1. LẤY DANH SÁCH ĐƠN ONLINE VỪA THANH TOÁN SEPAY ĐANG CHỜ LỄ TÂN XẾP PHÒNG ───
+// ─── 3.1. LẤY DANH SÁCH ĐƠN ONLINE ĐANG CHỜ LỄ TÂN XẾP PHÒNG (SIÊU LINH HOẠT) ───
 async function getPendingOnlineBookings(req, res, next) {
   try {
-    const hotelId = req.query.hotel_id;
-    if (!hotelId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Thiếu hotel_id." });
-    }
+    const rawHotelId = req.query.hotel_id
+      ? String(req.query.hotel_id).trim()
+      : "";
 
-    const result = await pool.query(
-      `SELECT 
+    // 🌟 TÌM KIẾM TOÀN BỘ ĐƠN ONLINE CHƯA XẾP PHÒNG
+    // Cho phép tìm theo hotel_id nếu có, hoặc nếu không truyền thì lấy tất cả đơn của hệ thống chưa bị gán phòng
+    const querySql = `
+      SELECT 
          b.id,
          b.booking_code,
          b.customer_name,
@@ -845,6 +847,7 @@ async function getPendingOnlineBookings(req, res, next) {
          b.payment_status,
          b.status,
          b.room_number,
+         b.hotel_id,
          COALESCE(p.paid_amount, CASE WHEN b.payment_status = 'paid' THEN b.total_price ELSE 0 END) AS paid_amount,
          COALESCE(br.room_name, r.name, 'Phòng tiêu chuẩn') AS room_type_name,
          COALESCE(br.room_id, r.id) AS room_type_id
@@ -852,21 +855,28 @@ async function getPendingOnlineBookings(req, res, next) {
        LEFT JOIN public.booking_room br ON br.booking_id = b.id
        LEFT JOIN public.room r ON r.id = br.room_id
        LEFT JOIN public.payment p ON p.booking_id = b.id
-       WHERE b.hotel_id::text = $1
-         AND b.status NOT IN ('checked_in', 'checked_out', 'cancelled')
+       WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled')
          AND (
            b.status = 'pending'
            OR b.room_number IS NULL 
            OR TRIM(b.room_number) = ''
            OR b.room_number ILIKE '%chưa%'
          )
-       ORDER BY b.created_at DESC`,
-      [hotelId],
-    );
+         AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1)
+       ORDER BY b.created_at DESC
+    `;
+
+    const result = await pool.query(querySql, [rawHotelId]);
 
     console.log(
-      `📋 [LỄ TÂN]: Tìm thấy ${result.rows.length} đơn đang chờ xếp phòng tại KS ${hotelId}`,
+      `📋 [LỄ TÂN API]: Tìm thấy ${result.rows.length} đơn đang chờ xếp phòng (hotel_id filter: "${rawHotelId}")`,
     );
+    if (result.rows.length > 0) {
+      console.log(
+        `👉 Danh sách mã đơn tìm được:`,
+        result.rows.map((r) => r.booking_code).join(", "),
+      );
+    }
 
     return res.json({
       success: true,

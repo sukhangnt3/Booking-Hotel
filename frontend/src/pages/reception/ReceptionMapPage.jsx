@@ -11,6 +11,7 @@ import {
   FileDown,
   Check,
   ClipboardList,
+  Sparkles,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 import { LoadingSpinner } from "@/components/common";
@@ -221,31 +222,29 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // 🌟 LẤY DANH SÁCH ĐƠN ONLINE CHỜ XÁC NHẬN
+  // 🌟 LẤY TOÀN BỘ ĐƠN ONLINE CHỜ DUYỆT (TỰ ĐỘNG LẤY NGAY CẢ KHI CHƯA CHỌN HOTEL_ID)
   const fetchPendingBookings = useCallback(async () => {
-    if (!selectedHotelId) {
-      setPendingBookings([]);
-      return;
-    }
     try {
-      const res = await apiClient.get(
-        `/owner/bookings/pending-online?hotel_id=${selectedHotelId}&_t=${Date.now()}`,
-      );
-      setPendingBookings(res.data?.data || []);
+      const url = selectedHotelId
+        ? `/owner/bookings/pending-online?hotel_id=${selectedHotelId}&_t=${Date.now()}`
+        : `/owner/bookings/pending-online?_t=${Date.now()}`;
+
+      const res = await apiClient.get(url);
+      const data = res.data?.data || [];
+      setPendingBookings(data);
     } catch (err) {
       console.warn("Chưa lấy được đơn chờ xác nhận:", err.message);
-      setPendingBookings([]);
     }
   }, [selectedHotelId]);
 
-  // Tự động load dữ liệu và refresh định kỳ mỗi 15 giây
+  // Tự động load dữ liệu và refresh định kỳ mỗi 5 giây để bắt khách vừa đặt ngay lập tức
   useEffect(() => {
     fetchRoomMap();
     fetchPendingBookings();
 
     const interval = setInterval(() => {
       fetchPendingBookings();
-    }, 15000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [fetchRoomMap, fetchPendingBookings]);
@@ -325,7 +324,7 @@ export default function ReceptionMapPage() {
       await apiClient.post("/owner/bookings/confirm-assign-room", {
         booking_id: assigningBooking.id,
         room_number: selectedAssignRoom,
-        hotel_id: selectedHotelId,
+        hotel_id: selectedHotelId || assigningBooking.hotel_id,
       });
 
       alert(
@@ -703,7 +702,6 @@ export default function ReceptionMapPage() {
       {/* ─── DÒNG 1: TOOLBAR HEADER TIẾP TÂN ─── */}
       <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between shadow-xs sticky top-0 z-20 gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          {/* Ô tìm kiếm */}
           <div className="relative flex items-center">
             <input
               type="text"
@@ -715,7 +713,6 @@ export default function ReceptionMapPage() {
             <Search size={14} className="absolute right-3 text-gray-400" />
           </div>
 
-          {/* Chọn cơ sở khách sạn */}
           <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5">
             <Building2 size={14} className="text-[#003580]" />
             <select
@@ -736,15 +733,14 @@ export default function ReceptionMapPage() {
           </div>
         </div>
 
-        {/* 🌟 CỤM BÊN PHẢI: NÚT CHỜ XÁC NHẬN TO RÕ RÀNG & NÚT ĐẶT PHÒNG NHANH */}
+        {/* 🌟 CỤM BÊN PHẢI: NÚT CHỜ XÁC NHẬN TO RÕ RÀNG */}
         <div className="flex items-center gap-3">
-          {/* 🌟 NÚT 1: CHỜ XÁC NHẬN (VỊ TRÍ NỔI BẬT NHẤT TRÊN THANH TOOLBAR) */}
           <button
             type="button"
             onClick={() => setIsPendingModalOpen(true)}
             className={`px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition cursor-pointer border shadow-xs ${
               pendingBookings.length > 0
-                ? "bg-emerald-50 border-emerald-500 text-emerald-800 animate-bounce ring-2 ring-emerald-400/30"
+                ? "bg-emerald-50 border-emerald-500 text-emerald-800 animate-pulse ring-2 ring-emerald-400/40"
                 : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
             }`}
           >
@@ -768,7 +764,6 @@ export default function ReceptionMapPage() {
             </span>
           </button>
 
-          {/* Nút đặt phòng nhanh */}
           <button
             type="button"
             onClick={() => handleOpenQuickBooking()}
@@ -780,16 +775,15 @@ export default function ReceptionMapPage() {
         </div>
       </header>
 
-      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI GIỐNG KIOTVIET (Ảnh 1) ─── */}
+      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI (Ảnh 1) ─── */}
       <div className="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center justify-between gap-4 flex-wrap text-xs">
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 🌟 NÚT 2: TAB TRẠNG THÁI "CHỜ XÁC NHẬN" (Bấm vào mở luôn Modal Ảnh 1) */}
           <button
             type="button"
             onClick={() => setIsPendingModalOpen(true)}
             className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
               pendingBookings.length > 0
-                ? "bg-blue-50 border-blue-400 text-blue-800 font-extrabold"
+                ? "bg-blue-50 border-blue-400 text-blue-800 font-extrabold shadow-xs"
                 : "bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200"
             }`}
           >
@@ -797,7 +791,6 @@ export default function ReceptionMapPage() {
             <span>● Chờ xác nhận ({pendingBookings.length})</span>
           </button>
 
-          {/* Các bộ lọc trạng thái phòng */}
           <button
             type="button"
             onClick={() =>
@@ -857,6 +850,28 @@ export default function ReceptionMapPage() {
           Tổng cộng: <b className="text-gray-900">{rooms.length} phòng</b>
         </div>
       </div>
+
+      {/* 🌟 BANNER CẢNH BÁO TỰ ĐỘNG KHI CÓ KHÁCH VỪA THANH TOÁN (KHÔNG THỂ BỊ BỎ LỠ) */}
+      {pendingBookings.length > 0 && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-5 py-3 rounded-2xl shadow-lg flex items-center justify-between flex-wrap gap-3 animate-bounce">
+            <div className="flex items-center gap-3">
+              <Sparkles className="animate-spin text-amber-300" size={20} />
+              <span className="font-extrabold text-sm">
+                Có {pendingBookings.length} đơn đặt phòng online vừa thanh toán
+                thành công đang chờ xếp phòng!
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPendingModalOpen(true)}
+              className="px-4 py-1.5 bg-white text-emerald-800 rounded-xl font-black text-xs shadow hover:bg-emerald-50 cursor-pointer transition"
+            >
+              Chọn số phòng ngay →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── SƠ ĐỒ PHÒNG ─── */}
       <main className="p-4 sm:p-6 space-y-6">
