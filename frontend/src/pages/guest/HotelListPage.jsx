@@ -16,6 +16,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Flame,
+  Clock,
+  Sun,
+  Hourglass,
 } from "lucide-react";
 import {
   format,
@@ -45,7 +48,6 @@ const BACKEND_BASE_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000"
 ).replace(/\/api\/?$/, "");
 
-// Bản đồ ảnh riêng biệt cho từng thành phố
 const CITY_LANDMARK_IMAGES = {
   "Hồ Chí Minh":
     "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800",
@@ -125,6 +127,17 @@ const removeVietnameseTones = (str) => {
     .trim();
 };
 
+const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
+  if (!date) return "";
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "";
+    return format(d, pattern, { locale: vi });
+  } catch {
+    return "";
+  }
+};
+
 export default function HotelListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -132,11 +145,15 @@ export default function HotelListPage() {
 
   const today = startOfToday();
 
-  // Đọc params từ URL
+  // Đọc các giá trị tìm kiếm từ URL
   const initialDestination =
     searchParams.get("destination") || searchParams.get("search") || "";
   const initialCheckInStr = searchParams.get("checkIn") || "";
   const initialCheckOutStr = searchParams.get("checkOut") || "";
+  const initialRentalType = searchParams.get("rentalType") || "DAY";
+  const initialCheckInTime = searchParams.get("checkInTime") || "14:00";
+  const initialDuration = Number(searchParams.get("duration")) || 1;
+  const initialSessionShift = searchParams.get("sessionShift") || "MORNING";
   const initialAdults = Number(searchParams.get("adults")) || 2;
   const initialChildren = Number(searchParams.get("children")) || 0;
   const initialRooms = Number(searchParams.get("rooms")) || 1;
@@ -144,8 +161,13 @@ export default function HotelListPage() {
     searchParams.get("stars")?.split(",").map(Number).filter(Boolean) || [];
   const sortBy = searchParams.get("sortBy") || "popular";
 
-  // State cho thanh tìm kiếm ngang
+  // State thanh tìm kiếm
   const [destInput, setDestInput] = useState(initialDestination);
+  const [rentalType, setRentalType] = useState(initialRentalType);
+  const [checkInTime, setCheckInTime] = useState(initialCheckInTime);
+  const [stayDuration, setStayDuration] = useState(initialDuration);
+  const [sessionShift, setSessionShift] = useState(initialSessionShift);
+
   const [checkInDate, setCheckInDate] = useState(
     initialCheckInStr ? new Date(initialCheckInStr) : today,
   );
@@ -156,21 +178,18 @@ export default function HotelListPage() {
   const [children, setChildren] = useState(initialChildren);
   const [rooms, setRooms] = useState(initialRooms);
 
-  // Dropdown popup state
   const [isDestDropdownOpen, setIsDestDropdownOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isGuestOpen, setIsGuestOpen] = useState(false);
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
   const [hoverDate, setHoverDate] = useState(null);
 
-  // Danh sách các điểm đến đang mở bán (giống hệt Homepage)
   const [trendingDestinations, setTrendingDestinations] = useState([]);
 
   const destRef = useRef(null);
   const calendarRef = useRef(null);
   const guestRef = useRef(null);
 
-  // State dữ liệu danh sách khách sạn
   const [hotels, setHotels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState({});
@@ -179,28 +198,23 @@ export default function HotelListPage() {
   const [selectedStars, setSelectedStars] = useState(initialStars);
   const [selectedRating, setSelectedRating] = useState(null);
 
-  // Khoảng giá tự động quét theo giá thực tế
   const [priceBounds, setPriceBounds] = useState({ min: 0, max: 5000000 });
   const [userPriceRange, setUserPriceRange] = useState([0, 5000000]);
 
-  // Đóng dropdown khi click bên ngoài
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (destRef.current && !destRef.current.contains(e.target)) {
+      if (destRef.current && !destRef.current.contains(e.target))
         setIsDestDropdownOpen(false);
-      }
-      if (calendarRef.current && !calendarRef.current.contains(e.target)) {
+      if (calendarRef.current && !calendarRef.current.contains(e.target))
         setIsCalendarOpen(false);
-      }
-      if (guestRef.current && !guestRef.current.contains(e.target)) {
+      if (guestRef.current && !guestRef.current.contains(e.target))
         setIsGuestOpen(false);
-      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Lấy toàn bộ danh sách khách sạn để thống kê điểm đến đang mở bán
+  // Lấy các điểm đến đang mở bán từ khách sạn
   useEffect(() => {
     let isMounted = true;
 
@@ -230,9 +244,7 @@ export default function HotelListPage() {
             countText: `${c.hotelCount} cơ sở lưu trú`,
           }));
 
-        if (isMounted) {
-          setTrendingDestinations(validTrending);
-        }
+        if (isMounted) setTrendingDestinations(validTrending);
       } catch (e) {
         console.warn("Lỗi tải điểm đến mở bán:", e);
       }
@@ -245,7 +257,7 @@ export default function HotelListPage() {
     };
   }, []);
 
-  // Gọi API lấy khách sạn mỗi khi URL Params thay đổi
+  // Gọi API lấy khách sạn theo URL searchParams
   useEffect(() => {
     let isMounted = true;
 
@@ -295,7 +307,6 @@ export default function HotelListPage() {
           };
         });
 
-        // Tính min max tự động theo giá thực tế
         if (formattedList.length > 0) {
           const allPrices = formattedList.map((h) => h.salePrice);
           const realMin = Math.min(...allPrices);
@@ -349,14 +360,12 @@ export default function HotelListPage() {
     setSearchParams(updated);
   };
 
-  // Xử lý khi chọn nhanh điểm đến từ Dropdown
   const handleSelectDestination = (destName) => {
     setDestInput(destName);
     setIsDestDropdownOpen(false);
-    setIsCalendarOpen(true); // Tự động mở tiếp Datepicker chọn ngày
+    setIsCalendarOpen(true);
   };
 
-  // Xử lý bấm nút Tìm kiếm
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
     const query = {};
@@ -364,8 +373,20 @@ export default function HotelListPage() {
       query.destination = destInput.trim();
       query.search = destInput.trim();
     }
+    query.rentalType = rentalType;
+    query.checkInTime = checkInTime;
+    query.duration = stayDuration.toString();
+    if (rentalType === "HALF_DAY") {
+      query.sessionShift = sessionShift;
+    }
+
     if (checkInDate) query.checkIn = format(checkInDate, "yyyy-MM-dd");
-    if (checkOutDate) query.checkOut = format(checkOutDate, "yyyy-MM-dd");
+    if (rentalType === "DAY") {
+      if (checkOutDate) query.checkOut = format(checkOutDate, "yyyy-MM-dd");
+    } else {
+      query.checkOut = format(checkInDate, "yyyy-MM-dd");
+    }
+
     query.adults = adults.toString();
     query.children = children.toString();
     query.rooms = rooms.toString();
@@ -380,6 +401,13 @@ export default function HotelListPage() {
 
   const handleDateClick = (date) => {
     if (isBefore(date, today)) return;
+
+    if (rentalType !== "DAY") {
+      setCheckInDate(date);
+      setIsCalendarOpen(false);
+      return;
+    }
+
     if (!checkInDate || (checkInDate && checkOutDate)) {
       setCheckInDate(date);
       setCheckOutDate(null);
@@ -418,7 +446,6 @@ export default function HotelListPage() {
     updateUrlParams({ stars: "" });
   };
 
-  // Đếm số lượng khách sạn hiển thị bên cạnh bộ lọc
   const filterCounts = useMemo(() => {
     const counts = {
       stars: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
@@ -428,7 +455,6 @@ export default function HotelListPage() {
     hotels.forEach((h) => {
       const star = Math.round(h.star_rating);
       if (counts.stars[star] !== undefined) counts.stars[star]++;
-
       if (h.rating >= 9.0) counts.ratings[9]++;
       if (h.rating >= 8.0) counts.ratings[8]++;
       if (h.rating >= 7.0) counts.ratings[7]++;
@@ -438,31 +464,26 @@ export default function HotelListPage() {
     return counts;
   }, [hotels]);
 
-  // Bộ lọc dữ liệu
   const filteredHotels = useMemo(() => {
     return hotels.filter((hotel) => {
       const price = Number(hotel.salePrice || 0);
       const star = Number(hotel.star_rating || 0);
       const score = Number(hotel.rating || 0);
 
-      // 1. Tìm nhanh theo tên khách sạn
       if (searchHotelName.trim()) {
         const nameSearchKey = removeVietnameseTones(searchHotelName);
         const nameKey = removeVietnameseTones(hotel.name);
         if (!nameKey.includes(nameSearchKey)) return false;
       }
 
-      // 2. Lọc theo khoảng giá Min - Max thực tế
       if (price < userPriceRange[0] || price > userPriceRange[1]) {
         return false;
       }
 
-      // 3. Lọc theo số sao
       if (selectedStars.length > 0 && !selectedStars.includes(star)) {
         return false;
       }
 
-      // 4. Lọc theo điểm đánh giá của khách (1 - 10 điểm)
       if (selectedRating !== null && score < selectedRating) {
         return false;
       }
@@ -535,7 +556,7 @@ export default function HotelListPage() {
     return (
       <div className="flex-1 min-w-[260px]">
         <div className="text-center font-black text-sm text-gray-900 mb-4 tracking-tight">
-          {format(monthDate, "'Tháng' M, yyyy", { locale: vi })}
+          {safeFormatDate(monthDate, "'Tháng' M, yyyy")}
         </div>
         <div className="grid grid-cols-7 gap-1 text-center mb-2 pb-1 border-b border-gray-100">
           {weekHeaders.map((w, idx) => (
@@ -554,13 +575,18 @@ export default function HotelListPage() {
           {days.map((day) => {
             const isPast = isBefore(day, today);
             const isStart = checkInDate && isSameDay(day, checkInDate);
-            const isEnd = checkOutDate && isSameDay(day, checkOutDate);
+            const isEnd =
+              rentalType === "DAY" &&
+              checkOutDate &&
+              isSameDay(day, checkOutDate);
             const isInRange =
+              rentalType === "DAY" &&
               checkInDate &&
               checkOutDate &&
               isWithinInterval(day, { start: checkInDate, end: checkOutDate });
 
             const isHoverRange =
+              rentalType === "DAY" &&
               checkInDate &&
               !checkOutDate &&
               hoverDate &&
@@ -574,7 +600,7 @@ export default function HotelListPage() {
 
             if (isPast) {
               btnClasses += "text-gray-300 font-normal cursor-not-allowed";
-            } else if (isStart && isEnd) {
+            } else if (isStart && (isEnd || rentalType !== "DAY")) {
               btnClasses +=
                 "bg-[#006ce4] text-white rounded-lg z-10 font-black shadow-md";
             } else if (isStart) {
@@ -602,7 +628,7 @@ export default function HotelListPage() {
                 onMouseEnter={() => !checkOutDate && setHoverDate(day)}
                 className={btnClasses}
               >
-                {format(day, "d")}
+                {safeFormatDate(day, "d")}
               </button>
             );
           })}
@@ -616,10 +642,10 @@ export default function HotelListPage() {
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* ─── THANH TÌM KIẾM NGANG KÈM DROPDOWN GỢI Ý ĐIỂM ĐẾN MỞ BÁN (CHUẨN 100% NHƯ HOMEPAGE) ─── */}
+        {/* ─── THANH TÌM KIẾM NGANG KÈM BỘ CHỌN GIỜ / NGÀY / ĐÊM / BUỔI ─── */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6 relative">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-            {/* Ô 1: Điểm đến (Có Dropdown lưới 3 cột có ảnh như ảnh bạn gửi) */}
+            {/* Ô 1: Điểm đến (Có Dropdown lưới 3 cột có ảnh chuẩn 100% như Homepage) */}
             <div ref={destRef} className="md:col-span-4 relative">
               <div
                 onClick={() => setIsDestDropdownOpen(true)}
@@ -628,7 +654,7 @@ export default function HotelListPage() {
                 <Search size={18} className="text-gray-400 shrink-0 mr-2.5" />
                 <input
                   type="text"
-                  placeholder="Bạn muốn đi đâu? (Nhập tên khách sạn hoặc thành phố...)"
+                  placeholder="Bạn muốn đi đâu? (Tên khách sạn, TP...)"
                   value={destInput}
                   onFocus={() => setIsDestDropdownOpen(true)}
                   onChange={(e) => {
@@ -640,7 +666,7 @@ export default function HotelListPage() {
                 />
               </div>
 
-              {/* 🌟 DROPDOWN GỢI Ý ĐIỂM ĐẾN CÓ CHỖ NGHỈ ĐANG MỞ BÁN GIỐNG 100% NHƯ ẢNH 🌟 */}
+              {/* DROPDOWN GỢI Ý ĐIỂM ĐẾN CÓ CHỖ NGHỈ ĐANG MỞ BÁN */}
               {isDestDropdownOpen && trendingDestinations.length > 0 && (
                 <div className="absolute left-0 top-full mt-2 w-full sm:w-[620px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-5 z-50 animate-in fade-in zoom-in-95">
                   <h4 className="font-extrabold text-sm text-gray-900 mb-3.5 flex items-center gap-1.5">
@@ -683,7 +709,7 @@ export default function HotelListPage() {
               )}
             </div>
 
-            {/* Ô 2: Ngày nhận / trả phòng */}
+            {/* Ô 2: Ngày & Hình thức thuê (Giờ / Ngày / Đêm / Buổi) */}
             <div
               ref={calendarRef}
               onClick={() => setIsCalendarOpen(!isCalendarOpen)}
@@ -691,32 +717,221 @@ export default function HotelListPage() {
             >
               <div className="flex items-center gap-2">
                 <CalendarIcon size={16} className="text-gray-400" />
-                <span className="text-xs font-bold text-gray-800">
-                  {checkInDate
-                    ? format(checkInDate, "dd/MM/yyyy")
-                    : "--/--/----"}
-                </span>
+                <div>
+                  <span className="text-[10px] font-black text-slate-500 block leading-tight">
+                    {rentalType === "HOUR"
+                      ? `Theo giờ (${checkInTime})`
+                      : rentalType === "OVERNIGHT"
+                        ? `Qua đêm (${checkInTime})`
+                        : rentalType === "HALF_DAY"
+                          ? `Theo buổi`
+                          : safeFormatDate(checkInDate, "EEEE")}
+                  </span>
+                  <span className="text-xs font-bold text-gray-800 leading-none">
+                    {safeFormatDate(checkInDate, "dd/MM/yyyy")}
+                  </span>
+                </div>
               </div>
 
               <div className="flex items-center gap-1 text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                <span>{totalNights}</span>
-                <Moon size={10} fill="currentColor" />
+                <span>
+                  {rentalType === "HOUR"
+                    ? `${stayDuration} Giờ`
+                    : rentalType === "OVERNIGHT"
+                      ? "Qua đêm"
+                      : rentalType === "HALF_DAY"
+                        ? "1 Buổi"
+                        : `${totalNights} đêm`}
+                </span>
+                {rentalType === "HOUR" ? (
+                  <Clock size={11} />
+                ) : rentalType === "HALF_DAY" ? (
+                  <Hourglass size={11} />
+                ) : (
+                  <Moon size={11} fill="currentColor" />
+                )}
               </div>
 
               <div className="flex items-center gap-2">
                 <CalendarIcon size={16} className="text-gray-400" />
-                <span className="text-xs font-bold text-gray-800">
-                  {checkOutDate
-                    ? format(checkOutDate, "dd/MM/yyyy")
-                    : "--/--/----"}
-                </span>
+                <div>
+                  <span className="text-[10px] font-black text-slate-500 block leading-tight">
+                    {rentalType === "DAY" ? "Trả phòng" : "Trong ngày"}
+                  </span>
+                  <span className="text-xs font-bold text-gray-800 leading-none">
+                    {rentalType === "DAY"
+                      ? safeFormatDate(checkOutDate, "dd/MM/yyyy")
+                      : safeFormatDate(checkInDate, "dd/MM/yyyy")}
+                  </span>
+                </div>
               </div>
 
+              {/* POPUP CHỌN HÌNH THỨC THUÊ: GIỜ / NGÀY / ĐÊM / BUỔI */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
                   className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-5 w-[320px] sm:w-[580px] md:w-[620px] animate-in fade-in cursor-default"
                 >
+                  {/* HÀNG 4 TABS */}
+                  <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl mb-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRentalType("HOUR");
+                        setStayDuration(1);
+                      }}
+                      className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                        rentalType === "HOUR"
+                          ? "bg-[#006ce4] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Clock size={14} /> <span>Giờ</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRentalType("DAY");
+                        setStayDuration(1);
+                      }}
+                      className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                        rentalType === "DAY"
+                          ? "bg-[#006ce4] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Sun size={14} /> <span>Ngày</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRentalType("OVERNIGHT");
+                        setCheckInTime("21:00");
+                        setStayDuration(1);
+                      }}
+                      className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                        rentalType === "OVERNIGHT"
+                          ? "bg-[#006ce4] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Moon size={14} /> <span>Đêm</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRentalType("HALF_DAY");
+                        setStayDuration(1);
+                      }}
+                      className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                        rentalType === "HALF_DAY"
+                          ? "bg-[#006ce4] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Hourglass size={14} /> <span>Buổi</span>
+                    </button>
+                  </div>
+
+                  {/* ĐIỀU KHIỂN CHO TỪNG LOẠI HÌNH */}
+                  {rentalType === "HOUR" && (
+                    <div className="grid grid-cols-2 gap-3 mb-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Giờ nhận phòng:
+                        </label>
+                        <select
+                          value={checkInTime}
+                          onChange={(e) => setCheckInTime(e.target.value)}
+                          className="w-full p-2 bg-white border rounded-lg font-bold text-xs"
+                        >
+                          {[...Array(24)].map((_, i) => {
+                            const t = `${String(i).padStart(2, "0")}:00`;
+                            return (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Số giờ lưu trú:
+                        </label>
+                        <div className="flex items-center justify-between border bg-white rounded-lg p-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setStayDuration((d) => Math.max(1, d - 1))
+                            }
+                            className="w-6 h-6 flex items-center justify-center font-bold text-slate-700"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-black">
+                            {stayDuration} Giờ
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setStayDuration((d) => Math.min(12, d + 1))
+                            }
+                            className="w-6 h-6 flex items-center justify-center font-bold text-slate-700"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {rentalType === "HALF_DAY" && (
+                    <div className="mb-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        Chọn khung buổi:
+                      </label>
+                      <select
+                        value={sessionShift}
+                        onChange={(e) => setSessionShift(e.target.value)}
+                        className="w-full p-2 bg-white border rounded-lg font-bold text-xs"
+                      >
+                        <option value="MORNING">
+                          Buổi Sáng (07:00 – 12:00)
+                        </option>
+                        <option value="AFTERNOON">
+                          Buổi Chiều (12:00 – 18:00)
+                        </option>
+                        <option value="EVENING">
+                          Buổi Tối (18:00 – 23:00)
+                        </option>
+                      </select>
+                    </div>
+                  )}
+
+                  {rentalType === "OVERNIGHT" && (
+                    <div className="mb-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100 flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        Giờ nhận đêm:
+                      </span>
+                      <select
+                        value={checkInTime}
+                        onChange={(e) => setCheckInTime(e.target.value)}
+                        className="p-1.5 bg-white border rounded-lg font-bold text-xs"
+                      >
+                        <option value="20:00">20:00 tối</option>
+                        <option value="21:00">21:00 tối</option>
+                        <option value="22:00">22:00 đêm</option>
+                        <option value="23:00">23:00 đêm</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* LỊCH THÁNG CHỌN NGÀY */}
                   <div className="flex justify-between items-center mb-3 px-1">
                     <button
                       type="button"
@@ -733,9 +948,11 @@ export default function HotelListPage() {
                     </button>
 
                     <span className="text-xs font-bold text-gray-500">
-                      {!checkOutDate
-                        ? "👉 Chọn ngày trả phòng"
-                        : "✓ Đã chọn xong ngày"}
+                      {rentalType === "DAY"
+                        ? !checkOutDate
+                          ? "👉 Chọn ngày trả phòng"
+                          : "✓ Đã chọn xong ngày"
+                        : "👉 Chọn ngày nhận phòng"}
                     </span>
 
                     <button
@@ -790,7 +1007,6 @@ export default function HotelListPage() {
                   onClick={(e) => e.stopPropagation()}
                   className="absolute left-0 right-0 md:left-auto md:w-72 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 space-y-3.5 cursor-default"
                 >
-                  {/* Chọn số phòng */}
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-gray-800 block">
@@ -821,7 +1037,6 @@ export default function HotelListPage() {
                     </div>
                   </div>
 
-                  {/* Chọn số người lớn */}
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-gray-800 block">
@@ -852,7 +1067,6 @@ export default function HotelListPage() {
                     </div>
                   </div>
 
-                  {/* Chọn số trẻ em */}
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-xs font-bold text-gray-800 block">
@@ -906,7 +1120,7 @@ export default function HotelListPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* ─── SIDEBAR BỘ LỌC CHUẨN GIAO DIỆN BOOKING.COM ─── */}
+          {/* SIDEBAR BỘ LỌC */}
           <aside className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-6 sticky top-20">
             <div className="flex items-center justify-between pb-2 border-b border-gray-100">
               <h2 className="font-extrabold text-base text-gray-900 flex items-center gap-1.5">
@@ -921,7 +1135,6 @@ export default function HotelListPage() {
               </button>
             </div>
 
-            {/* Ô tìm nhanh theo tên chỗ nghỉ */}
             <div>
               <input
                 type="text"
@@ -932,7 +1145,6 @@ export default function HotelListPage() {
               />
             </div>
 
-            {/* BỘ LỌC 1: NGÂN SÁCH CỦA BẠN (MỖI ĐÊM) THEO DẢI MIN-MAX THỰC TẾ */}
             <div className="space-y-3 pt-2 border-t border-gray-100">
               <h3 className="text-sm font-extrabold text-gray-900">
                 Ngân sách của bạn (mỗi đêm)
@@ -942,7 +1154,6 @@ export default function HotelListPage() {
                 {formatVND(userPriceRange[0])} – {formatVND(userPriceRange[1])}
               </div>
 
-              {/* Biểu đồ tần suất giá mô phỏng Booking.com */}
               <div className="flex items-end gap-1 h-9 px-1 pt-2">
                 {[20, 45, 80, 60, 100, 75, 40, 90, 50, 30, 15].map((h, i) => (
                   <div
@@ -953,7 +1164,6 @@ export default function HotelListPage() {
                 ))}
               </div>
 
-              {/* Thanh trượt dải giá */}
               <div className="space-y-2">
                 <input
                   type="range"
@@ -976,7 +1186,6 @@ export default function HotelListPage() {
               </div>
             </div>
 
-            {/* BỘ LỌC 2: ĐIỂM ĐÁNH GIÁ CỦA KHÁCH (1 - 10 ĐIỂM) KÈM SỐ LƯỢNG */}
             <div className="space-y-2.5 pt-4 border-t border-gray-100">
               <h3 className="text-sm font-extrabold text-gray-900">
                 Điểm đánh giá của khách
@@ -1020,7 +1229,6 @@ export default function HotelListPage() {
               </div>
             </div>
 
-            {/* BỘ LỌC 3: HẠNG SAO KHÁCH SẠN */}
             <div className="space-y-2.5 pt-4 border-t border-gray-100">
               <h3 className="text-sm font-extrabold text-gray-900">
                 Hạng sao khách sạn
@@ -1057,7 +1265,7 @@ export default function HotelListPage() {
             </div>
           </aside>
 
-          {/* ─── MAIN: DANH SÁCH CÁC CHỖ NGHỈ ─── */}
+          {/* MAIN LIST */}
           <main className="lg:col-span-8 xl:col-span-9 space-y-4">
             <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between flex-wrap gap-3">
               <span className="text-xs font-bold text-gray-600">
@@ -1110,12 +1318,11 @@ export default function HotelListPage() {
                       key={id}
                       onClick={() =>
                         navigate(
-                          `/hotel/${id}?checkIn=${format(checkInDate, "yyyy-MM-dd")}&checkOut=${format(checkOutDate, "yyyy-MM-dd")}&adults=${adults}&children=${children}&rooms=${rooms}`,
+                          `/hotel/${id}?checkIn=${format(checkInDate, "yyyy-MM-dd")}&checkOut=${format(checkOutDate, "yyyy-MM-dd")}&rentalType=${rentalType}&checkInTime=${checkInTime}&duration=${stayDuration}&sessionShift=${sessionShift}&adults=${adults}&children=${children}&rooms=${rooms}`,
                         )
                       }
                       className="bg-white rounded-2xl border border-gray-200 p-4 hover:border-[#006ce4] hover:shadow-xl transition-all duration-300 cursor-pointer group flex flex-col md:flex-row gap-5"
                     >
-                      {/* ẢNH ĐẠI DIỆN */}
                       <div className="relative w-full md:w-64 h-52 shrink-0 rounded-xl overflow-hidden bg-gray-100">
                         <img
                           src={hotel.image}
@@ -1138,7 +1345,6 @@ export default function HotelListPage() {
                         </button>
                       </div>
 
-                      {/* THÔNG TIN CHI TIẾT */}
                       <div className="flex-1 flex flex-col justify-between py-1">
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1154,7 +1360,6 @@ export default function HotelListPage() {
                             )}
                           </div>
 
-                          {/* Vị trí & Khoảng cách */}
                           <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1 flex-wrap">
                             <div className="flex items-center gap-1">
                               <MapPin
@@ -1180,7 +1385,6 @@ export default function HotelListPage() {
                               )}
                           </div>
 
-                          {/* Huy hiệu giáp biển */}
                           {hotel.is_beachfront && (
                             <div className="pt-1">
                               <span className="inline-flex items-center gap-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-[11px] font-bold px-2 py-0.5 rounded-md shadow-2xs">
@@ -1199,9 +1403,7 @@ export default function HotelListPage() {
                           </p>
                         </div>
 
-                        {/* PHẦN GIÁ VÀ ĐIỂM ĐÁNH GIÁ CHUẨN BOOKING.COM */}
                         <div className="flex items-end justify-between pt-4 border-t border-gray-100 mt-3">
-                          {/* Điểm đánh giá bên trái */}
                           <div className="flex items-center gap-2">
                             <div className="bg-[#003580] text-white font-black text-sm w-9 h-9 rounded-lg flex items-center justify-center shadow-xs">
                               {score > 0 ? score.toFixed(1) : "---"}
@@ -1218,7 +1420,6 @@ export default function HotelListPage() {
                             </div>
                           </div>
 
-                          {/* Giá phòng bên phải */}
                           <div className="text-right">
                             <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">
                               Giá mỗi đêm từ
@@ -1234,7 +1435,7 @@ export default function HotelListPage() {
                               type="button"
                               onClick={() =>
                                 navigate(
-                                  `/hotel/${id}?checkIn=${format(checkInDate, "yyyy-MM-dd")}&checkOut=${format(checkOutDate, "yyyy-MM-dd")}&adults=${adults}&children=${children}&rooms=${rooms}`,
+                                  `/hotel/${id}?checkIn=${format(checkInDate, "yyyy-MM-dd")}&checkOut=${format(checkOutDate, "yyyy-MM-dd")}&rentalType=${rentalType}&checkInTime=${checkInTime}&duration=${stayDuration}&sessionShift=${sessionShift}&adults=${adults}&children=${children}&rooms=${rooms}`,
                                 )
                               }
                               className="mt-2 px-4 py-1.5 bg-[#006ce4] hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"
