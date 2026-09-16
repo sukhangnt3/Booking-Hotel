@@ -15,7 +15,7 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
-  Building,
+  Flame,
 } from "lucide-react";
 import {
   format,
@@ -40,11 +40,62 @@ import { LoadingSpinner, EmptyState, Breadcrumb } from "@/components/common";
 
 import { hotelService } from "@/services";
 import { useAuthStore } from "@/stores/authStore";
-import apiClient from "@/services/apiClient";
 
 const BACKEND_BASE_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000"
 ).replace(/\/api\/?$/, "");
+
+// Bản đồ ảnh riêng biệt cho từng thành phố
+const CITY_LANDMARK_IMAGES = {
+  "Hồ Chí Minh":
+    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=800",
+  "Khánh Hòa":
+    "https://images.unsplash.com/photo-1575986767340-5d17ae767ab0?w=800",
+  "Nha Trang":
+    "https://images.unsplash.com/photo-1575986767340-5d17ae767ab0?w=800",
+  "Hà Nội":
+    "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
+  "Đà Nẵng": "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800",
+  "Phú Quốc":
+    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
+  "Đà Lạt":
+    "https://images.unsplash.com/photo-1517824806704-9040b037703b?w=800",
+  "Vũng Tàu":
+    "https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?w=800",
+  "Đồng Tháp":
+    "https://images.unsplash.com/photo-1528127269322-539801943592?w=800",
+};
+
+const DEFAULT_LANDMARK =
+  "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800";
+
+const getCityLandmarkImage = (cityName = "") => {
+  const norm = cityName
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .trim();
+
+  if (norm.includes("khanh hoa") || norm.includes("nha trang")) {
+    return CITY_LANDMARK_IMAGES["Khánh Hòa"];
+  }
+  if (
+    norm.includes("ho chi minh") ||
+    norm.includes("sai gon") ||
+    norm.includes("hcm")
+  ) {
+    return CITY_LANDMARK_IMAGES["Hồ Chí Minh"];
+  }
+  if (norm.includes("dong thap")) return CITY_LANDMARK_IMAGES["Đồng Tháp"];
+  if (norm.includes("ha noi")) return CITY_LANDMARK_IMAGES["Hà Nội"];
+  if (norm.includes("da nang")) return CITY_LANDMARK_IMAGES["Đà Nẵng"];
+  if (norm.includes("phu quoc")) return CITY_LANDMARK_IMAGES["Phú Quốc"];
+  if (norm.includes("da lat")) return CITY_LANDMARK_IMAGES["Đà Lạt"];
+  if (norm.includes("vung tau")) return CITY_LANDMARK_IMAGES["Vũng Tàu"];
+
+  return CITY_LANDMARK_IMAGES[cityName] || DEFAULT_LANDMARK;
+};
 
 const parseImageUrl = (img) => {
   if (!img)
@@ -112,8 +163,8 @@ export default function HotelListPage() {
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
   const [hoverDate, setHoverDate] = useState(null);
 
-  // Danh sách gợi ý điểm đến
-  const [destinationSuggestions, setDestinationSuggestions] = useState([]);
+  // Danh sách các điểm đến đang mở bán (giống hệt Homepage)
+  const [trendingDestinations, setTrendingDestinations] = useState([]);
 
   const destRef = useRef(null);
   const calendarRef = useRef(null);
@@ -149,30 +200,50 @@ export default function HotelListPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Gọi API gợi ý điểm đến khi nhập ô tìm kiếm hoặc click vào ô
+  // Lấy toàn bộ danh sách khách sạn để thống kê điểm đến đang mở bán
   useEffect(() => {
     let isMounted = true;
-    const fetchSuggestions = async () => {
+
+    const fetchAllHotelsForDestinations = async () => {
       try {
-        const query = destInput.trim();
-        const res = await apiClient.get(`/hotels/destinations`, {
-          params: { q: query },
+        const res = await hotelService.getAll();
+        const allList = Array.isArray(res) ? res : res?.data || [];
+
+        const cityStatsMap = new Map();
+        allList.forEach((h) => {
+          const cityName = h.city ? h.city.trim() : "Hồ Chí Minh";
+          if (!cityStatsMap.has(cityName)) {
+            cityStatsMap.set(cityName, {
+              name: cityName,
+              hotelCount: 0,
+              image: getCityLandmarkImage(cityName),
+            });
+          }
+          cityStatsMap.get(cityName).hotelCount += 1;
         });
-        const list = res?.data || res?.destinations || [];
+
+        const validTrending = Array.from(cityStatsMap.values())
+          .filter((c) => c.hotelCount > 0)
+          .sort((a, b) => b.hotelCount - a.hotelCount)
+          .map((c) => ({
+            ...c,
+            countText: `${c.hotelCount} cơ sở lưu trú`,
+          }));
+
         if (isMounted) {
-          setDestinationSuggestions(Array.isArray(list) ? list : []);
+          setTrendingDestinations(validTrending);
         }
-      } catch {
-        if (isMounted) setDestinationSuggestions([]);
+      } catch (e) {
+        console.warn("Lỗi tải điểm đến mở bán:", e);
       }
     };
 
-    fetchSuggestions();
+    fetchAllHotelsForDestinations();
 
     return () => {
       isMounted = false;
     };
-  }, [destInput]);
+  }, []);
 
   // Gọi API lấy khách sạn mỗi khi URL Params thay đổi
   useEffect(() => {
@@ -278,11 +349,11 @@ export default function HotelListPage() {
     setSearchParams(updated);
   };
 
-  // Xử lý chọn nhanh điểm đến từ Dropdown
-  const handleSelectSuggestion = (placeName) => {
-    setDestInput(placeName);
+  // Xử lý khi chọn nhanh điểm đến từ Dropdown
+  const handleSelectDestination = (destName) => {
+    setDestInput(destName);
     setIsDestDropdownOpen(false);
-    setIsCalendarOpen(true); // Tự động mở lịch tiếp theo chuẩn UX
+    setIsCalendarOpen(true); // Tự động mở tiếp Datepicker chọn ngày
   };
 
   // Xử lý bấm nút Tìm kiếm
@@ -545,10 +616,10 @@ export default function HotelListPage() {
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* ─── THANH TÌM KIẾM NGANG KÈM GỢI Ý ĐỊA ĐIỂM CHUẨN VIVA / BOOKING ─── */}
+        {/* ─── THANH TÌM KIẾM NGANG KÈM DROPDOWN GỢI Ý ĐIỂM ĐẾN MỞ BÁN (CHUẨN 100% NHƯ HOMEPAGE) ─── */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6 relative">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-            {/* Ô 1: Điểm đến (Có Dropdown gợi ý Nội địa) */}
+            {/* Ô 1: Điểm đến (Có Dropdown lưới 3 cột có ảnh như ảnh bạn gửi) */}
             <div ref={destRef} className="md:col-span-4 relative">
               <div
                 onClick={() => setIsDestDropdownOpen(true)}
@@ -557,7 +628,7 @@ export default function HotelListPage() {
                 <Search size={18} className="text-gray-400 shrink-0 mr-2.5" />
                 <input
                   type="text"
-                  placeholder="Bạn muốn đi đâu? (Đà Lạt, Nha Trang...)"
+                  placeholder="Bạn muốn đi đâu? (Nhập tên khách sạn hoặc thành phố...)"
                   value={destInput}
                   onFocus={() => setIsDestDropdownOpen(true)}
                   onChange={(e) => {
@@ -569,82 +640,44 @@ export default function HotelListPage() {
                 />
               </div>
 
-              {/* 🌟 DROPDOWN GỢI Ý ĐỊA ĐIỂM CHUẨN NHƯ ẢNH BẠN GỬI 🌟 */}
-              {isDestDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-full min-w-[320px] sm:min-w-[380px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-2 z-50 animate-in fade-in zoom-in-95">
-                  <div className="px-3 py-1.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                    Nội địa
-                  </div>
+              {/* 🌟 DROPDOWN GỢI Ý ĐIỂM ĐẾN CÓ CHỖ NGHỈ ĐANG MỞ BÁN GIỐNG 100% NHƯ ẢNH 🌟 */}
+              {isDestDropdownOpen && trendingDestinations.length > 0 && (
+                <div className="absolute left-0 top-full mt-2 w-full sm:w-[620px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-5 z-50 animate-in fade-in zoom-in-95">
+                  <h4 className="font-extrabold text-sm text-gray-900 mb-3.5 flex items-center gap-1.5">
+                    <Flame size={16} className="text-orange-500" />
+                    Điểm đến có chỗ nghỉ đang mở bán
+                  </h4>
 
-                  <div className="space-y-0.5 max-h-72 overflow-y-auto custom-scrollbar">
-                    {destinationSuggestions.length > 0
-                      ? destinationSuggestions.map((item, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => handleSelectSuggestion(item.name)}
-                            className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-100/80 cursor-pointer transition group"
-                          >
-                            <div className="flex items-center gap-3 overflow-hidden">
-                              <MapPin
-                                size={16}
-                                className="text-gray-400 group-hover:text-[#006ce4] shrink-0 transition-colors"
-                              />
-                              <div className="truncate">
-                                <span className="font-bold text-xs text-gray-800 group-hover:text-[#006ce4] transition-colors block truncate">
-                                  {item.name}
-                                </span>
-                                {item.type === "hotel" && (
-                                  <span className="text-[10px] text-gray-400 block truncate">
-                                    Khách sạn
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <span className="text-xs text-gray-400 font-medium shrink-0 pl-2">
-                              {item.hotel_count || 1} khách sạn
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {trendingDestinations
+                      .filter((item) =>
+                        destInput.trim()
+                          ? removeVietnameseTones(item.name).includes(
+                              removeVietnameseTones(destInput),
+                            )
+                          : true,
+                      )
+                      .map((item) => (
+                        <div
+                          key={item.name}
+                          onClick={() => handleSelectDestination(item.name)}
+                          className="flex items-center gap-3 p-2 rounded-xl hover:bg-blue-50/60 cursor-pointer transition-colors group"
+                        >
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="w-11 h-11 rounded-xl object-cover shrink-0 shadow-sm group-hover:scale-105 transition-transform"
+                          />
+                          <div className="overflow-hidden">
+                            <span className="font-bold text-sm text-gray-900 block group-hover:text-[#006ce4] transition-colors truncate">
+                              {item.name}
+                            </span>
+                            <span className="text-[11px] text-gray-500 font-medium block truncate">
+                              {item.countText}
                             </span>
                           </div>
-                        ))
-                      : // Danh mục mặc định khi chưa gõ gì
-                        [
-                          { name: "Đà Lạt", count: 18 },
-                          { name: "Trung tâm TP Đà Lạt - Đà Lạt", count: 12 },
-                          { name: "Nha Trang", count: 25 },
-                          { name: "Đà Nẵng", count: 32 },
-                          { name: "Hồ Chí Minh", count: 45 },
-                          { name: "Hà Nội", count: 38 },
-                          { name: "Vũng Tàu", count: 20 },
-                          { name: "Phú Quốc", count: 22 },
-                        ]
-                          .filter((p) =>
-                            destInput.trim()
-                              ? removeVietnameseTones(p.name).includes(
-                                  removeVietnameseTones(destInput),
-                                )
-                              : true,
-                          )
-                          .map((item, idx) => (
-                            <div
-                              key={idx}
-                              onClick={() => handleSelectSuggestion(item.name)}
-                              className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-100/80 cursor-pointer transition group"
-                            >
-                              <div className="flex items-center gap-3 overflow-hidden">
-                                <MapPin
-                                  size={16}
-                                  className="text-gray-400 group-hover:text-[#006ce4] shrink-0 transition-colors"
-                                />
-                                <span className="font-bold text-xs text-gray-800 group-hover:text-[#006ce4] transition-colors truncate">
-                                  {item.name}
-                                </span>
-                              </div>
-
-                              <span className="text-xs text-gray-400 font-medium shrink-0 pl-2">
-                                {item.count} khách sạn
-                              </span>
-                            </div>
-                          ))}
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}
