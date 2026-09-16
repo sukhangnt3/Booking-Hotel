@@ -85,7 +85,7 @@ const OwnerLayout = () => {
   const ownerNavItems = [
     {
       path: "/owner/dashboard",
-      label: "Tổng quan & Báo cáo",
+      label: "Dashboard",
       icon: <LayoutDashboard size={18} />,
     },
     {
