@@ -15,7 +15,7 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
-  Flame,
+  Building,
 } from "lucide-react";
 import {
   format,
@@ -40,6 +40,7 @@ import { LoadingSpinner, EmptyState, Breadcrumb } from "@/components/common";
 
 import { hotelService } from "@/services";
 import { useAuthStore } from "@/stores/authStore";
+import apiClient from "@/services/apiClient";
 
 const BACKEND_BASE_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000"
@@ -104,11 +105,17 @@ export default function HotelListPage() {
   const [children, setChildren] = useState(initialChildren);
   const [rooms, setRooms] = useState(initialRooms);
 
+  // Dropdown popup state
+  const [isDestDropdownOpen, setIsDestDropdownOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isGuestOpen, setIsGuestOpen] = useState(false);
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
   const [hoverDate, setHoverDate] = useState(null);
 
+  // Danh sách gợi ý điểm đến
+  const [destinationSuggestions, setDestinationSuggestions] = useState([]);
+
+  const destRef = useRef(null);
   const calendarRef = useRef(null);
   const guestRef = useRef(null);
 
@@ -128,6 +135,9 @@ export default function HotelListPage() {
   // Đóng dropdown khi click bên ngoài
   useEffect(() => {
     const handleClickOutside = (e) => {
+      if (destRef.current && !destRef.current.contains(e.target)) {
+        setIsDestDropdownOpen(false);
+      }
       if (calendarRef.current && !calendarRef.current.contains(e.target)) {
         setIsCalendarOpen(false);
       }
@@ -138,6 +148,31 @@ export default function HotelListPage() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Gọi API gợi ý điểm đến khi nhập ô tìm kiếm hoặc click vào ô
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSuggestions = async () => {
+      try {
+        const query = destInput.trim();
+        const res = await apiClient.get(`/hotels/destinations`, {
+          params: { q: query },
+        });
+        const list = res?.data || res?.destinations || [];
+        if (isMounted) {
+          setDestinationSuggestions(Array.isArray(list) ? list : []);
+        }
+      } catch {
+        if (isMounted) setDestinationSuggestions([]);
+      }
+    };
+
+    fetchSuggestions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [destInput]);
 
   // Gọi API lấy khách sạn mỗi khi URL Params thay đổi
   useEffect(() => {
@@ -243,7 +278,14 @@ export default function HotelListPage() {
     setSearchParams(updated);
   };
 
-  // Xử lý bấm nút Tìm kiếm ở thanh tìm kiếm ngang
+  // Xử lý chọn nhanh điểm đến từ Dropdown
+  const handleSelectSuggestion = (placeName) => {
+    setDestInput(placeName);
+    setIsDestDropdownOpen(false);
+    setIsCalendarOpen(true); // Tự động mở lịch tiếp theo chuẩn UX
+  };
+
+  // Xử lý bấm nút Tìm kiếm
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
     const query = {};
@@ -259,6 +301,7 @@ export default function HotelListPage() {
     if (selectedStars.length > 0) query.stars = selectedStars.join(",");
     query.sortBy = sortBy;
 
+    setIsDestDropdownOpen(false);
     setIsCalendarOpen(false);
     setIsGuestOpen(false);
     setSearchParams(query);
@@ -502,20 +545,109 @@ export default function HotelListPage() {
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* ─── THANH TÌM KIẾM NGANG GIỐNG HOMEPAGE (ĐÃ ĐẦY ĐỦ TRẺ EM, PHÒNG, NGÀY) ─── */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6">
+        {/* ─── THANH TÌM KIẾM NGANG KÈM GỢI Ý ĐỊA ĐIỂM CHUẨN VIVA / BOOKING ─── */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6 relative">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-            {/* Ô 1: Điểm đến */}
-            <div className="md:col-span-4 relative flex items-center bg-slate-50 rounded-xl px-3.5 h-12 border border-gray-200 focus-within:border-blue-600 transition-colors">
-              <Search size={18} className="text-gray-400 shrink-0 mr-2.5" />
-              <input
-                type="text"
-                placeholder="Bạn muốn đi đâu? (Tên khách sạn, TP...)"
-                value={destInput}
-                onChange={(e) => setDestInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
-                className="w-full text-xs md:text-sm font-bold text-gray-800 focus:outline-none placeholder:text-gray-400 placeholder:font-normal bg-transparent"
-              />
+            {/* Ô 1: Điểm đến (Có Dropdown gợi ý Nội địa) */}
+            <div ref={destRef} className="md:col-span-4 relative">
+              <div
+                onClick={() => setIsDestDropdownOpen(true)}
+                className="flex items-center bg-slate-50 rounded-xl px-3.5 h-12 border border-gray-200 focus-within:border-blue-600 focus-within:bg-white transition-colors cursor-pointer"
+              >
+                <Search size={18} className="text-gray-400 shrink-0 mr-2.5" />
+                <input
+                  type="text"
+                  placeholder="Bạn muốn đi đâu? (Đà Lạt, Nha Trang...)"
+                  value={destInput}
+                  onFocus={() => setIsDestDropdownOpen(true)}
+                  onChange={(e) => {
+                    setDestInput(e.target.value);
+                    setIsDestDropdownOpen(true);
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+                  className="w-full text-xs md:text-sm font-bold text-gray-800 focus:outline-none placeholder:text-gray-400 placeholder:font-normal bg-transparent"
+                />
+              </div>
+
+              {/* 🌟 DROPDOWN GỢI Ý ĐỊA ĐIỂM CHUẨN NHƯ ẢNH BẠN GỬI 🌟 */}
+              {isDestDropdownOpen && (
+                <div className="absolute left-0 top-full mt-2 w-full min-w-[320px] sm:min-w-[380px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-2 z-50 animate-in fade-in zoom-in-95">
+                  <div className="px-3 py-1.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                    Nội địa
+                  </div>
+
+                  <div className="space-y-0.5 max-h-72 overflow-y-auto custom-scrollbar">
+                    {destinationSuggestions.length > 0
+                      ? destinationSuggestions.map((item, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => handleSelectSuggestion(item.name)}
+                            className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-100/80 cursor-pointer transition group"
+                          >
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <MapPin
+                                size={16}
+                                className="text-gray-400 group-hover:text-[#006ce4] shrink-0 transition-colors"
+                              />
+                              <div className="truncate">
+                                <span className="font-bold text-xs text-gray-800 group-hover:text-[#006ce4] transition-colors block truncate">
+                                  {item.name}
+                                </span>
+                                {item.type === "hotel" && (
+                                  <span className="text-[10px] text-gray-400 block truncate">
+                                    Khách sạn
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <span className="text-xs text-gray-400 font-medium shrink-0 pl-2">
+                              {item.hotel_count || 1} khách sạn
+                            </span>
+                          </div>
+                        ))
+                      : // Danh mục mặc định khi chưa gõ gì
+                        [
+                          { name: "Đà Lạt", count: 18 },
+                          { name: "Trung tâm TP Đà Lạt - Đà Lạt", count: 12 },
+                          { name: "Nha Trang", count: 25 },
+                          { name: "Đà Nẵng", count: 32 },
+                          { name: "Hồ Chí Minh", count: 45 },
+                          { name: "Hà Nội", count: 38 },
+                          { name: "Vũng Tàu", count: 20 },
+                          { name: "Phú Quốc", count: 22 },
+                        ]
+                          .filter((p) =>
+                            destInput.trim()
+                              ? removeVietnameseTones(p.name).includes(
+                                  removeVietnameseTones(destInput),
+                                )
+                              : true,
+                          )
+                          .map((item, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => handleSelectSuggestion(item.name)}
+                              className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-100/80 cursor-pointer transition group"
+                            >
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                <MapPin
+                                  size={16}
+                                  className="text-gray-400 group-hover:text-[#006ce4] shrink-0 transition-colors"
+                                />
+                                <span className="font-bold text-xs text-gray-800 group-hover:text-[#006ce4] transition-colors truncate">
+                                  {item.name}
+                                </span>
+                              </div>
+
+                              <span className="text-xs text-gray-400 font-medium shrink-0 pl-2">
+                                {item.count} khách sạn
+                              </span>
+                            </div>
+                          ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Ô 2: Ngày nhận / trả phòng */}
@@ -615,7 +747,7 @@ export default function HotelListPage() {
                 <span className="text-xs font-bold text-gray-800 block truncate">
                   {rooms} Phòng · {adults} Lớn
                 </span>
-                <span className="text-[10px] text-gray-500 font-medium truncate block">
+                <span className="text-[10px] text-gray-500 font-medium block truncate">
                   {children > 0 ? `${children} trẻ em` : "0 trẻ em"}
                 </span>
               </div>
