@@ -82,7 +82,7 @@ async function cleanupExpiredLocks() {
   } catch (e) {}
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (KHÔNG GÁN SỐ PHÒNG CỤ THỂ CHO ĐƠN ONLINE) ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (CHẶN TUYỆT ĐỐI NẾU HẾT PHÒNG THỰC TẾ) ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -178,10 +178,16 @@ async function createBooking(req, res, next) {
       : Number(hotelData.commission_rate ?? 18.0);
 
     if (room_id) {
+      // 🌟 TÍNH SỐ PHÒNG THỰC TẾ: Ưu tiên đếm số phòng vật lý trong room_unit
       const roomStockRes = await client.query(
-        `SELECT id, name, base_price, COALESCE(amount, 1)::int AS total_stock 
-         FROM public.room 
-         WHERE id = $1 AND is_active = true 
+        `SELECT r.id, r.name, r.base_price,
+                COALESCE(
+                  NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+                  r.amount,
+                  1
+                ) AS total_stock
+         FROM public.room r
+         WHERE r.id = $1 AND r.is_active = true 
          FOR UPDATE`,
         [room_id],
       );
@@ -196,9 +202,10 @@ async function createBooking(req, res, next) {
       }
 
       const roomData = roomStockRes.rows[0];
-      const maxStock = roomData.total_stock;
+      const maxStock = Number(roomData.total_stock);
 
-      // Kiểm tra xung đột chuẩn từng đêm: tính cả confirmed, checked_in, paid và pending gần đây
+      // 🌟 KIỂM TRA XUNG ĐỘT TOÀN DIỆN:
+      // Tính cả: Khách online đã thanh toán, khách đang được lễ tân xếp phòng, khách ở tại quầy
       const conflictCheckSql = `
         WITH days AS (
           SELECT generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval)::date AS day
@@ -213,7 +220,7 @@ async function createBooking(req, res, next) {
           GROUP BY lock_date
         ),
         daily_bookings AS (
-          SELECT days.day, COALESCE(SUM(br.quantity), 0)::int AS booked_qty
+          SELECT days.day, COUNT(DISTINCT b.id)::int AS booked_qty
           FROM days
           JOIN public.booking b 
             ON b.checkin_date <= days.day 
@@ -223,9 +230,15 @@ async function createBooking(req, res, next) {
              OR b.payment_status = 'paid'
              OR (b.status = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
            )
-          JOIN public.booking_room br 
-            ON br.booking_id = b.id 
-           AND br.room_id = $1
+           AND (
+             EXISTS (
+               SELECT 1 FROM public.booking_room br 
+               WHERE br.booking_id = b.id AND br.room_id = $1
+             )
+             OR b.room_number IN (
+               SELECT ru.room_number FROM public.room_unit ru WHERE ru.room_id = $1
+             )
+           )
           GROUP BY days.day
         )
         SELECT days.day,
@@ -251,7 +264,7 @@ async function createBooking(req, res, next) {
         client.release();
         return res.status(400).json({
           success: false,
-          message: `Rất tiếc! Hạng phòng "${roomData.name}" đã hết chỗ trong khoảng thời gian này. Vui lòng chọn ngày khác!`,
+          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đã có khách ở kín tất cả các phòng vật lý trong khoảng thời gian này. Hệ thống không thể nhận thêm đặt phòng!`,
         });
       }
     }

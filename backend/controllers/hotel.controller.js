@@ -358,6 +358,7 @@ async function listHotels(req, res, next) {
     const checkOut = parseSearchDate(
       req.query.checkOut || req.query.checkout_date,
     );
+
     if (
       (req.query.checkIn ||
         req.query.checkin_date ||
@@ -441,6 +442,7 @@ async function listHotels(req, res, next) {
       const checkOutParam = params.length - 2;
       const adultsParam = params.length - 1;
       const roomsParam = params.length;
+
       where += ` AND EXISTS (
           SELECT 1
           FROM public.room ar
@@ -455,18 +457,24 @@ async function listHotels(req, res, next) {
                 INTERVAL '1 day'
               ) AS stay(night_date)
               WHERE (
-                COALESCE(ar.amount, 1)
+                COALESCE(
+                  NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = ar.id), 0),
+                  ar.amount,
+                  1
+                )
                 - COALESCE((
-                    SELECT SUM(br.quantity)::int
-                    FROM public.booking_room br
-                    JOIN public.booking b ON b.id = br.booking_id
-                    WHERE br.room_id = ar.id
-                      AND b.checkin_date <= stay.night_date
+                    SELECT COUNT(DISTINCT b.id)::int
+                    FROM public.booking b
+                    WHERE b.checkin_date <= stay.night_date
                       AND b.checkout_date > stay.night_date
                       AND (
                         b.status::text IN ('confirmed', 'checked_in')
                         OR b.payment_status::text = 'paid'
                         OR (b.status::text = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+                      )
+                      AND (
+                        EXISTS (SELECT 1 FROM public.booking_room br WHERE br.booking_id = b.id AND br.room_id = ar.id)
+                        OR b.room_number IN (SELECT ru.room_number FROM public.room_unit ru WHERE ru.room_id = ar.id)
                       )
                   ), 0)
                 - COALESCE((
@@ -590,6 +598,11 @@ async function getHotelById(req, res, next) {
         `SELECT 
          r.*,
          COALESCE(
+           NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+           r.amount,
+           1
+         ) AS amount,
+         COALESCE(
            (SELECT img.path FROM public.image img WHERE img.room_id = r.id LIMIT 1),
            (SELECT img.path FROM public.image img WHERE img.hotel_id = r.hotel_id ORDER BY img.is_thumbnail DESC LIMIT 1)
          ) AS image,
@@ -638,7 +651,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (ĐÃ SỬA LỖI OVERBOOKING) ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
@@ -673,18 +686,24 @@ async function listHotelRoomAvailability(req, res, next) {
           'active' AS day_status,
           GREATEST(
             0,
-            COALESCE(r.amount, 1)
+            COALESCE(
+              NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+              r.amount,
+              1
+            )
             - COALESCE((
-                SELECT SUM(br.quantity)::int
-                FROM public.booking_room br
-                JOIN public.booking b ON b.id = br.booking_id
-                WHERE br.room_id = r.id 
-                  AND b.checkin_date <= sn.night_date
+                SELECT COUNT(DISTINCT b.id)::int
+                FROM public.booking b
+                WHERE b.checkin_date <= sn.night_date
                   AND b.checkout_date > sn.night_date
                   AND (
                     b.status IN ('confirmed', 'checked_in')
                     OR b.payment_status = 'paid'
                     OR (b.status = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+                  )
+                  AND (
+                    EXISTS (SELECT 1 FROM public.booking_room br WHERE br.booking_id = b.id AND br.room_id = r.id)
+                    OR b.room_number IN (SELECT ru.room_number FROM public.room_unit ru WHERE ru.room_id = r.id)
                   )
               ), 0)
             - COALESCE((
@@ -708,7 +727,11 @@ async function listHotelRoomAvailability(req, res, next) {
         r.name,
         r.capacity,
         r.base_price,
-        r.amount AS total_rooms,
+        COALESCE(
+          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+          r.amount,
+          1
+        ) AS total_rooms,
         r.bed_type,
         r.room_area,
         r.room_view,
