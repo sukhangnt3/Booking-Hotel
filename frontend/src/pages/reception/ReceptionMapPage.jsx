@@ -81,7 +81,7 @@ export default function ReceptionMapPage() {
   const [activeRoomData, setActiveRoomData] = useState(null);
   const [changeRoomTarget, setChangeRoomTarget] = useState(null);
 
-  // STATE CHO ĐƠN CHỜ XÁC NHẬN (ONLINE VỪA QUÉT QR)
+  // STATE CHO ĐƠN CHỜ XÁC NHẬN
   const [pendingBookings, setPendingBookings] = useState([]);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [assigningBooking, setAssigningBooking] = useState(null);
@@ -222,7 +222,7 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // LẤY CÁC ĐƠN ĐÃ THANH TOÁN CHỜ LỄ TÂN GÁN PHÒNG
+  // 🌟 ĐÃ SỬA LỖI BÓC TÁCH DỮ LIỆU TẠI ĐÂY: HỖ TRỢ CẢ RES VÀ RES.DATA
   const fetchPendingBookings = useCallback(async () => {
     try {
       const url = selectedHotelId
@@ -230,21 +230,34 @@ export default function ReceptionMapPage() {
         : `/owner/bookings/pending-online?_t=${Date.now()}`;
 
       const res = await apiClient.get(url);
-      const data = res.data?.data || [];
-      setPendingBookings(data);
+
+      // Bóc tách linh hoạt để không bao giờ bị undefined
+      let list = [];
+      if (Array.isArray(res)) {
+        list = res;
+      } else if (Array.isArray(res?.data)) {
+        list = res.data;
+      } else if (Array.isArray(res?.data?.data)) {
+        list = res.data.data;
+      } else if (Array.isArray(res?.bookings)) {
+        list = res.bookings;
+      }
+
+      console.log(`🎯 [FRONTEND]: Nhận được ${list.length} đơn từ API!`, list);
+      setPendingBookings(list);
     } catch (err) {
       console.warn("Chưa lấy được đơn chờ xác nhận:", err.message);
     }
   }, [selectedHotelId]);
 
-  // Tự động load và refresh mỗi 5 giây
+  // Tự động load và refresh mỗi 4 giây
   useEffect(() => {
     fetchRoomMap();
     fetchPendingBookings();
 
     const interval = setInterval(() => {
       fetchPendingBookings();
-    }, 5000);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [fetchRoomMap, fetchPendingBookings]);
@@ -300,7 +313,7 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // 🌟 DANH SÁCH PHÒNG TRỐNG ĐỂ GÁN (ƯU TIÊN CÙNG HẠNG HOẶC CHO PHÉP NÂNG HẠNG)
+  // Danh sách phòng trống để gán cho đơn
   const availableRoomsForAssign = useMemo(() => {
     if (!assigningBooking) return [];
 
@@ -321,7 +334,7 @@ export default function ReceptionMapPage() {
     return sameTypeRooms.length > 0 ? sameTypeRooms : vacantRooms;
   }, [rooms, assigningBooking]);
 
-  // 🌟 LỄ TÂN BẤM "XÁC NHẬN" VÀ GÁN PHÒNG
+  // Lễ tân bấm xác nhận gán số phòng
   const handleConfirmAssignRoom = async () => {
     if (!selectedAssignRoom) {
       return alert("Vui lòng chọn số phòng trong danh sách!");
@@ -335,13 +348,13 @@ export default function ReceptionMapPage() {
       });
 
       alert(
-        `✓ Đã xác nhận đơn ${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công! Phòng đã chuyển sang trạng thái "Đã đặt trước".`,
+        `✓ Đã xác nhận đơn ${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công! Phòng đã chuyển sang trạng thái "Đã đặt trước" (Màu vàng).`,
       );
       setAssigningBooking(null);
       setSelectedAssignRoom("");
       setIsPendingModalOpen(false);
 
-      // Tải lại sơ đồ phòng và đơn chờ ngay lập tức
+      // Cập nhật lại dữ liệu ngay lập tức
       await Promise.all([fetchRoomMap(), fetchPendingBookings()]);
     } catch (err) {
       alert(
@@ -479,11 +492,7 @@ export default function ReceptionMapPage() {
           room_legs: roomLegs,
         },
       );
-      alert(
-        `✓ Đã đổi sang phòng ${newRoomNumber} thành công! (${
-          mode === "split_stay" ? "Tính thời gian cả 2 phòng" : "Chuyển toàn bộ"
-        })`,
-      );
+      alert(`✓ Đã đổi sang phòng ${newRoomNumber} thành công!`);
       setActiveModalType(null);
       setActiveRoomData(null);
       await fetchRoomMap();
@@ -858,7 +867,7 @@ export default function ReceptionMapPage() {
         </div>
       </div>
 
-      {/* BANNER THÔNG BÁO TỰ ĐỘNG KHI CÓ KHÁCH VỪA THANH TOÁN */}
+      {/* BANNER THÔNG BÁO KHI CÓ ĐƠN CHỜ XÁC NHẬN */}
       {pendingBookings.length > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
           <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-5 py-3 rounded-2xl shadow-lg flex items-center justify-between flex-wrap gap-3 animate-bounce">
