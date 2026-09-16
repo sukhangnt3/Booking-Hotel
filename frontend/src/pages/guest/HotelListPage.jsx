@@ -1,19 +1,41 @@
 // src/pages/guest/HotelListPage.jsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   MapPin,
   Heart,
-  CalendarDays,
+  Calendar as CalendarIcon,
+  Moon,
   Users,
+  Search,
   ArrowUpDown,
   Waves,
   Navigation,
   Star,
   SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  Flame,
 } from "lucide-react";
+import {
+  format,
+  addMonths,
+  subMonths,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  getDay,
+  isSameDay,
+  isBefore,
+  isAfter,
+  startOfToday,
+  differenceInDays,
+  addDays,
+  isWithinInterval,
+} from "date-fns";
+import { vi } from "date-fns/locale";
 
-import { Button, StarRating } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { LoadingSpinner, EmptyState, Breadcrumb } from "@/components/common";
 
 import { hotelService } from "@/services";
@@ -56,40 +78,88 @@ export default function HotelListPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
 
-  const destination =
+  const today = startOfToday();
+
+  // Đọc params từ URL
+  const initialDestination =
     searchParams.get("destination") || searchParams.get("search") || "";
-  const checkIn = searchParams.get("checkIn") || "";
-  const checkOut = searchParams.get("checkOut") || "";
-  const adults = searchParams.get("adults") || "2";
+  const initialCheckInStr = searchParams.get("checkIn") || "";
+  const initialCheckOutStr = searchParams.get("checkOut") || "";
+  const initialAdults = Number(searchParams.get("adults")) || 2;
+  const initialChildren = Number(searchParams.get("children")) || 0;
+  const initialRooms = Number(searchParams.get("rooms")) || 1;
   const initialStars =
     searchParams.get("stars")?.split(",").map(Number).filter(Boolean) || [];
   const sortBy = searchParams.get("sortBy") || "popular";
 
+  // State cho thanh tìm kiếm ngang
+  const [destInput, setDestInput] = useState(initialDestination);
+  const [checkInDate, setCheckInDate] = useState(
+    initialCheckInStr ? new Date(initialCheckInStr) : today,
+  );
+  const [checkOutDate, setCheckOutDate] = useState(
+    initialCheckOutStr ? new Date(initialCheckOutStr) : addDays(today, 1),
+  );
+  const [adults, setAdults] = useState(initialAdults);
+  const [children, setChildren] = useState(initialChildren);
+  const [rooms, setRooms] = useState(initialRooms);
+
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isGuestOpen, setIsGuestOpen] = useState(false);
+  const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
+  const [hoverDate, setHoverDate] = useState(null);
+
+  const calendarRef = useRef(null);
+  const guestRef = useRef(null);
+
+  // State dữ liệu danh sách khách sạn
   const [hotels, setHotels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState({});
 
   const [searchHotelName, setSearchHotelName] = useState("");
   const [selectedStars, setSelectedStars] = useState(initialStars);
-  const [selectedRating, setSelectedRating] = useState(null); // Điểm tối thiểu (6, 7, 8, 9)
+  const [selectedRating, setSelectedRating] = useState(null);
 
-  // Khoảng giá thực tế tự động quét từ danh sách phòng trả về
+  // Khoảng giá tự động quét theo giá thực tế
   const [priceBounds, setPriceBounds] = useState({ min: 0, max: 5000000 });
   const [userPriceRange, setUserPriceRange] = useState([0, 5000000]);
 
+  // Đóng dropdown khi click bên ngoài
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (calendarRef.current && !calendarRef.current.contains(e.target)) {
+        setIsCalendarOpen(false);
+      }
+      if (guestRef.current && !guestRef.current.contains(e.target)) {
+        setIsGuestOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Gọi API lấy khách sạn mỗi khi URL Params thay đổi
   useEffect(() => {
     let isMounted = true;
 
     const fetchHotelsAndFavorites = async () => {
       setLoading(true);
       try {
+        const destQuery =
+          searchParams.get("destination") || searchParams.get("search") || "";
+        const inQuery = searchParams.get("checkIn") || "";
+        const outQuery = searchParams.get("checkOut") || "";
+        const adQuery = searchParams.get("adults") || "2";
+        const sortQuery = searchParams.get("sortBy") || "popular";
+
         const res = await (hotelService.searchHotels
           ? hotelService.searchHotels({
-              destination,
-              checkIn,
-              checkOut,
-              adults,
-              sortBy,
+              destination: destQuery,
+              checkIn: inQuery,
+              checkOut: outQuery,
+              adults: adQuery,
+              sortBy: sortQuery,
             })
           : hotelService.getAll());
         const apiHotels = Array.isArray(res) ? res : res?.data || [];
@@ -119,13 +189,12 @@ export default function HotelListPage() {
           };
         });
 
-        // Tự động tính Min và Max theo giá thực tế của các khách sạn vừa tìm thấy
+        // Tính min max tự động theo giá thực tế
         if (formattedList.length > 0) {
           const allPrices = formattedList.map((h) => h.salePrice);
           const realMin = Math.min(...allPrices);
           const realMax = Math.max(...allPrices);
 
-          // Làm tròn đẹp mắt (bội số của 50.000đ)
           const roundedMin = Math.floor(realMin / 50000) * 50000;
           const roundedMax = Math.ceil(realMax / 50000) * 50000 || 5000000;
 
@@ -163,7 +232,7 @@ export default function HotelListPage() {
     return () => {
       isMounted = false;
     };
-  }, [destination, checkIn, checkOut, adults, sortBy, isAuthenticated]);
+  }, [searchParams, isAuthenticated]);
 
   const updateUrlParams = (newParams) => {
     const current = Object.fromEntries(searchParams.entries());
@@ -173,6 +242,47 @@ export default function HotelListPage() {
     });
     setSearchParams(updated);
   };
+
+  // Xử lý bấm nút Tìm kiếm ở thanh tìm kiếm ngang
+  const handleSearchSubmit = (e) => {
+    if (e) e.preventDefault();
+    const query = {};
+    if (destInput.trim()) {
+      query.destination = destInput.trim();
+      query.search = destInput.trim();
+    }
+    if (checkInDate) query.checkIn = format(checkInDate, "yyyy-MM-dd");
+    if (checkOutDate) query.checkOut = format(checkOutDate, "yyyy-MM-dd");
+    query.adults = adults.toString();
+    query.children = children.toString();
+    query.rooms = rooms.toString();
+    if (selectedStars.length > 0) query.stars = selectedStars.join(",");
+    query.sortBy = sortBy;
+
+    setIsCalendarOpen(false);
+    setIsGuestOpen(false);
+    setSearchParams(query);
+  };
+
+  const handleDateClick = (date) => {
+    if (isBefore(date, today)) return;
+    if (!checkInDate || (checkInDate && checkOutDate)) {
+      setCheckInDate(date);
+      setCheckOutDate(null);
+    } else if (checkInDate && !checkOutDate) {
+      if (isBefore(date, checkInDate) || isSameDay(date, checkInDate)) {
+        setCheckInDate(date);
+      } else {
+        setCheckOutDate(date);
+        setIsCalendarOpen(false);
+      }
+    }
+  };
+
+  const totalNights =
+    checkInDate && checkOutDate
+      ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
+      : 1;
 
   const handleStarToggle = (star) => {
     const newStars = selectedStars.includes(star)
@@ -191,10 +301,10 @@ export default function HotelListPage() {
     setSelectedStars([]);
     setSelectedRating(null);
     setUserPriceRange([priceBounds.min, priceBounds.max]);
-    updateUrlParams({ stars: "", destination: "" });
+    updateUrlParams({ stars: "" });
   };
 
-  // Đếm số lượng khách sạn theo từng tiêu chí để hiển thị bên cạnh checkbox
+  // Đếm số lượng khách sạn hiển thị bên cạnh bộ lọc
   const filterCounts = useMemo(() => {
     const counts = {
       stars: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
@@ -203,9 +313,7 @@ export default function HotelListPage() {
 
     hotels.forEach((h) => {
       const star = Math.round(h.star_rating);
-      if (counts.stars[star] !== undefined) {
-        counts.stars[star]++;
-      }
+      if (counts.stars[star] !== undefined) counts.stars[star]++;
 
       if (h.rating >= 9.0) counts.ratings[9]++;
       if (h.rating >= 8.0) counts.ratings[8]++;
@@ -216,61 +324,38 @@ export default function HotelListPage() {
     return counts;
   }, [hotels]);
 
-  // Bộ lọc khách sạn
+  // Bộ lọc dữ liệu
   const filteredHotels = useMemo(() => {
     return hotels.filter((hotel) => {
       const price = Number(hotel.salePrice || 0);
       const star = Number(hotel.star_rating || 0);
       const score = Number(hotel.rating || 0);
 
-      // 1. Lọc theo địa điểm
-      if (destination.trim()) {
-        const destKey = removeVietnameseTones(destination);
-        const nameKey = removeVietnameseTones(hotel.name);
-        const cityKey = removeVietnameseTones(hotel.city);
-        const addrKey = removeVietnameseTones(hotel.address || "");
-
-        const matchDest =
-          nameKey.includes(destKey) ||
-          cityKey.includes(destKey) ||
-          addrKey.includes(destKey) ||
-          destKey.includes(cityKey);
-
-        if (!matchDest) return false;
-      }
-
-      // 2. Tìm nhanh theo tên khách sạn
+      // 1. Tìm nhanh theo tên khách sạn
       if (searchHotelName.trim()) {
         const nameSearchKey = removeVietnameseTones(searchHotelName);
         const nameKey = removeVietnameseTones(hotel.name);
         if (!nameKey.includes(nameSearchKey)) return false;
       }
 
-      // 3. Lọc theo dải ngân sách Min - Max thực tế
+      // 2. Lọc theo khoảng giá Min - Max thực tế
       if (price < userPriceRange[0] || price > userPriceRange[1]) {
         return false;
       }
 
-      // 4. Lọc theo số sao
+      // 3. Lọc theo số sao
       if (selectedStars.length > 0 && !selectedStars.includes(star)) {
         return false;
       }
 
-      // 5. Lọc theo điểm đánh giá của khách (1 - 10 điểm)
+      // 4. Lọc theo điểm đánh giá của khách (1 - 10 điểm)
       if (selectedRating !== null && score < selectedRating) {
         return false;
       }
 
       return true;
     });
-  }, [
-    hotels,
-    destination,
-    searchHotelName,
-    userPriceRange,
-    selectedStars,
-    selectedRating,
-  ]);
+  }, [hotels, searchHotelName, userPriceRange, selectedStars, selectedRating]);
 
   const sortedHotels = useMemo(() => {
     const list = [...filteredHotels];
@@ -309,57 +394,354 @@ export default function HotelListPage() {
   const breadcrumbs = [
     { label: "Trang chủ", link: "/" },
     { label: "Khách sạn", link: "/hotels" },
-    { label: destination ? `Chỗ nghỉ tại ${destination}` : "Tất cả chỗ nghỉ" },
+    {
+      label: initialDestination
+        ? `Chỗ nghỉ tại ${initialDestination}`
+        : "Tất cả chỗ nghỉ",
+    },
   ];
+
+  const renderMonthCalendar = (monthDate) => {
+    const start = startOfMonth(monthDate);
+    const end = endOfMonth(monthDate);
+    const days = eachDayOfInterval({ start, end });
+    const startDayIndex = (getDay(start) + 6) % 7;
+    const blanks = Array.from({ length: startDayIndex });
+
+    const weekHeaders = [
+      { label: "T2", isWeekend: false },
+      { label: "T3", isWeekend: false },
+      { label: "T4", isWeekend: false },
+      { label: "T5", isWeekend: false },
+      { label: "T6", isWeekend: false },
+      { label: "T7", isWeekend: true },
+      { label: "CN", isWeekend: true },
+    ];
+
+    return (
+      <div className="flex-1 min-w-[260px]">
+        <div className="text-center font-black text-sm text-gray-900 mb-4 tracking-tight">
+          {format(monthDate, "'Tháng' M, yyyy", { locale: vi })}
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center mb-2 pb-1 border-b border-gray-100">
+          {weekHeaders.map((w, idx) => (
+            <span
+              key={idx}
+              className={`text-xs font-bold ${w.isWeekend ? "text-[#006ce4]" : "text-gray-700"}`}
+            >
+              {w.label}
+            </span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-y-1 text-center text-xs">
+          {blanks.map((_, i) => (
+            <div key={`blank-${i}`} className="h-9" />
+          ))}
+          {days.map((day) => {
+            const isPast = isBefore(day, today);
+            const isStart = checkInDate && isSameDay(day, checkInDate);
+            const isEnd = checkOutDate && isSameDay(day, checkOutDate);
+            const isInRange =
+              checkInDate &&
+              checkOutDate &&
+              isWithinInterval(day, { start: checkInDate, end: checkOutDate });
+
+            const isHoverRange =
+              checkInDate &&
+              !checkOutDate &&
+              hoverDate &&
+              isAfter(hoverDate, checkInDate) &&
+              isWithinInterval(day, { start: checkInDate, end: hoverDate });
+
+            const isWeekend = getDay(day) === 0 || getDay(day) === 6;
+
+            let btnClasses =
+              "h-9 w-full flex items-center justify-center text-xs transition-all relative ";
+
+            if (isPast) {
+              btnClasses += "text-gray-300 font-normal cursor-not-allowed";
+            } else if (isStart && isEnd) {
+              btnClasses +=
+                "bg-[#006ce4] text-white rounded-lg z-10 font-black shadow-md";
+            } else if (isStart) {
+              btnClasses +=
+                "bg-[#006ce4] text-white rounded-l-lg z-10 font-black shadow-md " +
+                (checkOutDate ? "rounded-r-none" : "rounded-r-lg");
+            } else if (isEnd) {
+              btnClasses +=
+                "bg-[#006ce4] text-white rounded-r-lg rounded-l-none z-10 font-black shadow-md";
+            } else if (isInRange || isHoverRange) {
+              btnClasses +=
+                "bg-blue-50 text-blue-900 font-bold hover:bg-blue-100";
+            } else {
+              btnClasses += isWeekend
+                ? "text-[#006ce4] font-bold hover:bg-gray-100 rounded-lg cursor-pointer"
+                : "text-gray-900 font-semibold hover:bg-gray-100 rounded-lg cursor-pointer";
+            }
+
+            return (
+              <button
+                key={day.toISOString()}
+                type="button"
+                disabled={isPast}
+                onClick={() => handleDateClick(day)}
+                onMouseEnter={() => !checkOutDate && setHoverDate(day)}
+                className={btnClasses}
+              >
+                {format(day, "d")}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="bg-[#f5f7fa] min-h-screen pb-16 font-sans text-gray-800">
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* BANNER THÔNG BÁO TÌNH TRẠNG CHỖ TRỐNG CHUẨN BOOKING.COM */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs mt-3 mb-4 flex items-center justify-between gap-3 text-xs text-slate-700">
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-blue-100 text-[#003580] flex items-center justify-center font-bold text-[11px] shrink-0">
-              i
-            </span>
-            <span>
-              Dựa vào tìm kiếm của bạn, các chỗ nghỉ dưới đây đang có giá phòng
-              và tình trạng phòng trống thực tế theo thời gian thực.
-            </span>
-          </div>
-        </div>
-
-        {/* HEADER TÌM KIẾM */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-black text-gray-900 tracking-tight">
-              {destination ? `Chỗ nghỉ tại ${destination}` : "Tất cả chỗ nghỉ"}
-            </h1>
-            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1.5 font-medium flex-wrap">
-              <span className="flex items-center gap-1">
-                <CalendarDays size={14} className="text-[#006ce4]" />
-                {checkIn || "Hôm nay"} — {checkOut || "Ngày mai"}
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                <Users size={14} className="text-[#006ce4]" />
-                {adults} người lớn
-              </span>
+        {/* ─── THANH TÌM KIẾM NGANG GIỐNG HOMEPAGE (ĐÃ ĐẦY ĐỦ TRẺ EM, PHÒNG, NGÀY) ─── */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
+            {/* Ô 1: Điểm đến */}
+            <div className="md:col-span-4 relative flex items-center bg-slate-50 rounded-xl px-3.5 h-12 border border-gray-200 focus-within:border-blue-600 transition-colors">
+              <Search size={18} className="text-gray-400 shrink-0 mr-2.5" />
+              <input
+                type="text"
+                placeholder="Bạn muốn đi đâu? (Tên khách sạn, TP...)"
+                value={destInput}
+                onChange={(e) => setDestInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+                className="w-full text-xs md:text-sm font-bold text-gray-800 focus:outline-none placeholder:text-gray-400 placeholder:font-normal bg-transparent"
+              />
             </div>
-          </div>
 
-          <Button
-            variant="outline"
-            className="text-xs font-bold border-gray-300 self-start md:self-auto cursor-pointer"
-            onClick={() => navigate("/")}
-          >
-            Đổi tìm kiếm
-          </Button>
+            {/* Ô 2: Ngày nhận / trả phòng */}
+            <div
+              ref={calendarRef}
+              onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+              className="relative md:col-span-4 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-gray-200 p-2.5 h-12 cursor-pointer flex items-center justify-between hover:border-blue-600 transition-all select-none"
+            >
+              <div className="flex items-center gap-2">
+                <CalendarIcon size={16} className="text-gray-400" />
+                <span className="text-xs font-bold text-gray-800">
+                  {checkInDate
+                    ? format(checkInDate, "dd/MM/yyyy")
+                    : "--/--/----"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                <span>{totalNights}</span>
+                <Moon size={10} fill="currentColor" />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <CalendarIcon size={16} className="text-gray-400" />
+                <span className="text-xs font-bold text-gray-800">
+                  {checkOutDate
+                    ? format(checkOutDate, "dd/MM/yyyy")
+                    : "--/--/----"}
+                </span>
+              </div>
+
+              {isCalendarOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-5 w-[320px] sm:w-[580px] md:w-[620px] animate-in fade-in cursor-default"
+                >
+                  <div className="flex justify-between items-center mb-3 px-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCurrentCalendarMonth((prev) => subMonths(prev, 1))
+                      }
+                      disabled={isBefore(
+                        startOfMonth(currentCalendarMonth),
+                        startOfMonth(today),
+                      )}
+                      className="p-1.5 rounded-full hover:bg-gray-100 text-gray-700 disabled:opacity-20 cursor-pointer"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+
+                    <span className="text-xs font-bold text-gray-500">
+                      {!checkOutDate
+                        ? "👉 Chọn ngày trả phòng"
+                        : "✓ Đã chọn xong ngày"}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCurrentCalendarMonth((prev) => addMonths(prev, 1))
+                      }
+                      className="p-1.5 rounded-full hover:bg-gray-100 text-gray-700 cursor-pointer"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-6 sm:divide-x sm:divide-gray-100">
+                    {renderMonthCalendar(currentCalendarMonth)}
+                    <div className="hidden sm:block sm:pl-6">
+                      {renderMonthCalendar(addMonths(currentCalendarMonth, 1))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-end text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setIsCalendarOpen(false)}
+                      className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl shadow cursor-pointer"
+                    >
+                      Xong
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Ô 3: Bộ chọn Phòng, Người lớn, Trẻ em */}
+            <div
+              ref={guestRef}
+              onClick={() => setIsGuestOpen(!isGuestOpen)}
+              className="relative md:col-span-2 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-gray-200 p-2.5 h-12 cursor-pointer flex items-center gap-2 hover:border-blue-600 transition-all select-none"
+            >
+              <Users size={18} className="text-gray-400 shrink-0" />
+              <div className="leading-tight overflow-hidden">
+                <span className="text-xs font-bold text-gray-800 block truncate">
+                  {rooms} Phòng · {adults} Lớn
+                </span>
+                <span className="text-[10px] text-gray-500 font-medium truncate block">
+                  {children > 0 ? `${children} trẻ em` : "0 trẻ em"}
+                </span>
+              </div>
+
+              {isGuestOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute left-0 right-0 md:left-auto md:w-72 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 space-y-3.5 cursor-default"
+                >
+                  {/* Chọn số phòng */}
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-gray-800 block">
+                        Phòng
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        Số lượng phòng
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRooms((r) => Math.max(1, r - 1))}
+                        className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="text-xs font-black w-5 text-center">
+                        {rooms}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setRooms((r) => r + 1)}
+                        className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chọn số người lớn */}
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-gray-800 block">
+                        Người lớn
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        Từ 12 tuổi trở lên
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAdults((a) => Math.max(1, a - 1))}
+                        className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="text-xs font-black w-5 text-center">
+                        {adults}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setAdults((a) => a + 1)}
+                        className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chọn số trẻ em */}
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-xs font-bold text-gray-800 block">
+                        Trẻ em
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        Từ 0 - 11 tuổi
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setChildren((c) => Math.max(0, c - 1))}
+                        className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="text-xs font-black w-5 text-center">
+                        {children}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setChildren((c) => c + 1)}
+                        className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsGuestOpen(false)}
+                    className="w-full py-2 bg-[#003580] hover:bg-blue-900 text-white text-xs font-bold rounded-xl mt-2 cursor-pointer shadow-sm transition"
+                  >
+                    Áp dụng
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Ô 4: Nút tìm kiếm */}
+            <button
+              type="button"
+              onClick={handleSearchSubmit}
+              className="md:col-span-2 h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center cursor-pointer"
+            >
+              Tìm kiếm
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* SIDEBAR BỘ LỌC CHUẨN GIAO DIỆN BOOKING.COM */}
+          {/* ─── SIDEBAR BỘ LỌC CHUẨN GIAO DIỆN BOOKING.COM ─── */}
           <aside className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-6 sticky top-20">
             <div className="flex items-center justify-between pb-2 border-b border-gray-100">
               <h2 className="font-extrabold text-base text-gray-900 flex items-center gap-1.5">
@@ -374,7 +756,7 @@ export default function HotelListPage() {
               </button>
             </div>
 
-            {/* Ô tìm nhanh tên khách sạn */}
+            {/* Ô tìm nhanh theo tên chỗ nghỉ */}
             <div>
               <input
                 type="text"
@@ -385,7 +767,7 @@ export default function HotelListPage() {
               />
             </div>
 
-            {/* BỘ LỌC 1: NGÂN SÁCH CỦA BẠN (MỖI ĐÊM) VỚI DẢI MIN-MAX THỰC TẾ */}
+            {/* BỘ LỌC 1: NGÂN SÁCH CỦA BẠN (MỖI ĐÊM) THEO DẢI MIN-MAX THỰC TẾ */}
             <div className="space-y-3 pt-2 border-t border-gray-100">
               <h3 className="text-sm font-extrabold text-gray-900">
                 Ngân sách của bạn (mỗi đêm)
@@ -395,7 +777,7 @@ export default function HotelListPage() {
                 {formatVND(userPriceRange[0])} – {formatVND(userPriceRange[1])}
               </div>
 
-              {/* Biểu đồ phân bổ giá mô phỏng Booking.com */}
+              {/* Biểu đồ tần suất giá mô phỏng Booking.com */}
               <div className="flex items-end gap-1 h-9 px-1 pt-2">
                 {[20, 45, 80, 60, 100, 75, 40, 90, 50, 30, 15].map((h, i) => (
                   <div
@@ -406,7 +788,7 @@ export default function HotelListPage() {
                 ))}
               </div>
 
-              {/* Thanh kéo dải giá */}
+              {/* Thanh trượt dải giá */}
               <div className="space-y-2">
                 <input
                   type="range"
@@ -473,7 +855,7 @@ export default function HotelListPage() {
               </div>
             </div>
 
-            {/* BỘ LỌC 3: HẠNG SAO KÈM SỐ LƯỢNG */}
+            {/* BỘ LỌC 3: HẠNG SAO KHÁCH SẠN */}
             <div className="space-y-2.5 pt-4 border-t border-gray-100">
               <h3 className="text-sm font-extrabold text-gray-900">
                 Hạng sao khách sạn
@@ -510,7 +892,7 @@ export default function HotelListPage() {
             </div>
           </aside>
 
-          {/* MAIN LIST DANH SÁCH KHÁCH SẠN */}
+          {/* ─── MAIN: DANH SÁCH CÁC CHỖ NGHỈ ─── */}
           <main className="lg:col-span-8 xl:col-span-9 space-y-4">
             <div className="bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between flex-wrap gap-3">
               <span className="text-xs font-bold text-gray-600">
@@ -563,7 +945,7 @@ export default function HotelListPage() {
                       key={id}
                       onClick={() =>
                         navigate(
-                          `/hotel/${id}?checkIn=${checkIn}&checkOut=${checkOut}&adults=${adults}`,
+                          `/hotel/${id}?checkIn=${format(checkInDate, "yyyy-MM-dd")}&checkOut=${format(checkOutDate, "yyyy-MM-dd")}&adults=${adults}&children=${children}&rooms=${rooms}`,
                         )
                       }
                       className="bg-white rounded-2xl border border-gray-200 p-4 hover:border-[#006ce4] hover:shadow-xl transition-all duration-300 cursor-pointer group flex flex-col md:flex-row gap-5"
@@ -687,7 +1069,7 @@ export default function HotelListPage() {
                               type="button"
                               onClick={() =>
                                 navigate(
-                                  `/hotel/${id}?checkIn=${checkIn}&checkOut=${checkOut}&adults=${adults}`,
+                                  `/hotel/${id}?checkIn=${format(checkInDate, "yyyy-MM-dd")}&checkOut=${format(checkOutDate, "yyyy-MM-dd")}&adults=${adults}&children=${children}&rooms=${rooms}`,
                                 )
                               }
                               className="mt-2 px-4 py-1.5 bg-[#006ce4] hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"
