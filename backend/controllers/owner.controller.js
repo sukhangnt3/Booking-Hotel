@@ -30,6 +30,91 @@ const hashPassword = async (plainPassword) => {
   }
 };
 
+function resolveDateRange(rangeStr) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const todayDateNum = now.getDate();
+
+  let startDate, endDate, prevStartDate, prevEndDate;
+  let dayCount = 1;
+  let compLabel = "so với kỳ trước";
+
+  if (rangeStr === "today") {
+    startDate = now.toLocaleDateString("en-CA");
+    endDate = startDate;
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    prevStartDate = yest.toLocaleDateString("en-CA");
+    prevEndDate = prevStartDate;
+    dayCount = 1;
+    compLabel = "so với hôm qua";
+  } else if (rangeStr === "yesterday") {
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    startDate = yest.toLocaleDateString("en-CA");
+    endDate = startDate;
+
+    const dayBefore = new Date(now);
+    dayBefore.setDate(now.getDate() - 2);
+    prevStartDate = dayBefore.toLocaleDateString("en-CA");
+    prevEndDate = prevStartDate;
+    dayCount = 1;
+    compLabel = "so với ngày hôm kia";
+  } else if (rangeStr === "7days") {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+    startDate = start.toLocaleDateString("en-CA");
+    endDate = now.toLocaleDateString("en-CA");
+
+    const pStart = new Date(now);
+    pStart.setDate(now.getDate() - 13);
+    const pEnd = new Date(now);
+    pEnd.setDate(now.getDate() - 7);
+    prevStartDate = pStart.toLocaleDateString("en-CA");
+    prevEndDate = pEnd.toLocaleDateString("en-CA");
+    dayCount = 7;
+    compLabel = "so với 7 ngày trước";
+  } else if (rangeStr === "last_month") {
+    const firstDay = new Date(currentYear, currentMonth - 1, 1);
+    const lastDay = new Date(currentYear, currentMonth, 0);
+    startDate = firstDay.toLocaleDateString("en-CA");
+    endDate = lastDay.toLocaleDateString("en-CA");
+
+    const pFirst = new Date(currentYear, currentMonth - 2, 1);
+    const pLast = new Date(currentYear, currentMonth - 1, 0);
+    prevStartDate = pFirst.toLocaleDateString("en-CA");
+    prevEndDate = pLast.toLocaleDateString("en-CA");
+    dayCount = lastDay.getDate();
+    compLabel = "so với tháng trước đó";
+  } else {
+    // this_month
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    startDate = firstDay.toLocaleDateString("en-CA");
+    endDate = now.toLocaleDateString("en-CA");
+
+    const pFirst = new Date(currentYear, currentMonth - 1, 1);
+    const pEnd = new Date(
+      currentYear,
+      currentMonth - 1,
+      Math.min(todayDateNum, 28),
+    );
+    prevStartDate = pFirst.toLocaleDateString("en-CA");
+    prevEndDate = pEnd.toLocaleDateString("en-CA");
+    dayCount = Math.max(1, todayDateNum);
+    compLabel = "so với cùng kỳ tháng trước";
+  }
+
+  return {
+    startDate,
+    endDate,
+    prevStartDate,
+    prevEndDate,
+    dayCount,
+    compLabel,
+  };
+}
+
 // ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ KHÁCH SẠN (API /api/owner/stats) ───
 async function getOwnerStats(req, res, next) {
   try {
@@ -38,7 +123,12 @@ async function getOwnerStats(req, res, next) {
     const hotelId = req.query.hotel_id
       ? String(req.query.hotel_id).trim()
       : "all";
-    const range = req.query.range || "this_month";
+
+    // 🌟 TÁCH ĐỘC LẬP KỲ DOANH THU VÀ KỲ CÔNG SUẤT PHÒNG
+    const revenueRangeParam =
+      req.query.revenue_range || req.query.range || "this_month";
+    const occupancyRangeParam =
+      req.query.occupancy_range || req.query.range || "this_month";
 
     if (!ownerId) {
       return res.status(401).json({ message: "Vui lòng đăng nhập." });
@@ -58,43 +148,8 @@ async function getOwnerStats(req, res, next) {
       hotelFilter += ` AND h.id = $${baseParams.length}`;
     }
 
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    const todayDateNum = now.getDate();
-
-    let startDate, endDate;
-    let dayCount = 1;
-
-    if (range === "today") {
-      startDate = now.toLocaleDateString("en-CA");
-      endDate = startDate;
-      dayCount = 1;
-    } else if (range === "yesterday") {
-      const yest = new Date(now);
-      yest.setDate(now.getDate() - 1);
-      startDate = yest.toLocaleDateString("en-CA");
-      endDate = startDate;
-      dayCount = 1;
-    } else if (range === "7days") {
-      const start = new Date(now);
-      start.setDate(now.getDate() - 6);
-      startDate = start.toLocaleDateString("en-CA");
-      endDate = now.toLocaleDateString("en-CA");
-      dayCount = 7;
-    } else if (range === "last_month") {
-      const firstDay = new Date(currentYear, currentMonth - 1, 1);
-      const lastDay = new Date(currentYear, currentMonth, 0);
-      startDate = firstDay.toLocaleDateString("en-CA");
-      endDate = lastDay.toLocaleDateString("en-CA");
-      dayCount = lastDay.getDate();
-    } else {
-      // this_month
-      const firstDay = new Date(currentYear, currentMonth, 1);
-      startDate = firstDay.toLocaleDateString("en-CA");
-      endDate = now.toLocaleDateString("en-CA");
-      dayCount = Math.max(1, todayDateNum);
-    }
+    const revDates = resolveDateRange(revenueRangeParam);
+    const occDates = resolveDateRange(occupancyRangeParam);
 
     // LẤY TỔNG SỐ PHÒNG
     const roomsRes = await pool.query(
@@ -184,11 +239,11 @@ async function getOwnerStats(req, res, next) {
       occupiedCleanRes.rows[0]?.occupied_dirty || 0,
     );
 
-    const timeParams = [...baseParams, startDate, endDate];
-    const pStart = timeParams.length - 1;
-    const pEnd = timeParams.length;
+    // ─── DOANH THU THEO KÊNH BÁN ───
+    const revTimeParams = [...baseParams, revDates.startDate, revDates.endDate];
+    const rpStart = revTimeParams.length - 1;
+    const rpEnd = revTimeParams.length;
 
-    // KÊNH BÁN
     const channelQuery = await pool.query(
       `WITH booking_channels AS (
          SELECT 
@@ -206,8 +261,8 @@ async function getOwnerStats(req, res, next) {
          JOIN public.hotel h ON h.id = b.hotel_id
          WHERE ${hotelFilter}
            AND (
-             (b.created_at::date >= $${pStart}::date AND b.created_at::date <= $${pEnd}::date)
-             OR (b.checkin_date >= $${pStart}::date AND b.checkin_date <= $${pEnd}::date)
+             (b.created_at::date >= $${rpStart}::date AND b.created_at::date <= $${rpEnd}::date)
+             OR (b.checkin_date >= $${rpStart}::date AND b.checkin_date <= $${rpEnd}::date)
            )
        )
        SELECT 
@@ -217,7 +272,7 @@ async function getOwnerStats(req, res, next) {
          COUNT(id)::int AS order_count
        FROM booking_channels
        GROUP BY channel, status`,
-      timeParams,
+      revTimeParams,
     );
 
     let directAmount = 0;
@@ -262,10 +317,92 @@ async function getOwnerStats(req, res, next) {
       ],
     };
 
-    // ─── 🌟 TÍNH TOÁN CÔNG SUẤT PHÒNG CHI TIẾT (OCCUPANCY ANALYTICS) ───
+    // ─── 🌟 THỐNG KÊ THEO NGÀY LƯU TRÚ (TAB MỚI THEO ẢNH BẠN YÊU CẦU) ───
+    const stayDateRes = await pool.query(
+      `WITH period_days AS (
+         SELECT generate_series($${rpStart}::date, $${rpEnd}::date, '1 day'::interval)::date AS day_date
+       ),
+       day_usage AS (
+         SELECT 
+           pd.day_date,
+           COALESCE(SUM(b.total_price), 0)::bigint AS total_amount,
+           COUNT(DISTINCT b.id)::int AS booking_count
+         FROM period_days pd
+         LEFT JOIN public.booking b 
+           ON (
+             (b.checkin_date <= pd.day_date AND b.checkout_date > pd.day_date)
+             OR (b.checkin_date = b.checkout_date AND b.checkin_date = pd.day_date)
+             OR (b.created_at::date = pd.day_date)
+           )
+           AND b.status IN ('checked_in', 'checked_out', 'confirmed')
+         LEFT JOIN public.hotel h ON h.id = b.hotel_id AND ${hotelFilter}
+         GROUP BY pd.day_date
+       )
+       SELECT day_date, total_amount, booking_count 
+       FROM day_usage 
+       ORDER BY day_date ASC`,
+      revTimeParams,
+    );
+
+    // Doanh thu kỳ trước để tính % tăng trưởng
+    const prevTimeParams = [
+      ...baseParams,
+      revDates.prevStartDate,
+      revDates.prevEndDate,
+    ];
+    const ppStart = prevTimeParams.length - 1;
+    const ppEnd = prevTimeParams.length;
+
+    const prevRevRes = await pool.query(
+      `SELECT COALESCE(SUM(b.total_price), 0)::bigint AS prev_revenue
+       FROM public.booking b
+       JOIN public.hotel h ON h.id = b.hotel_id
+       WHERE ${hotelFilter}
+         AND b.status IN ('checked_in', 'checked_out', 'confirmed')
+         AND (
+           (b.created_at::date >= $${ppStart}::date AND b.created_at::date <= $${ppEnd}::date)
+           OR (b.checkin_date >= $${ppStart}::date AND b.checkin_date <= $${ppEnd}::date)
+         )`,
+      prevTimeParams,
+    );
+
+    const prevRevenue = Number(prevRevRes.rows[0]?.prev_revenue || 0);
+    let growthRate = 0;
+    if (prevRevenue > 0) {
+      growthRate = Math.round(
+        ((totalRevenue - prevRevenue) / prevRevenue) * 100,
+      );
+    } else if (totalRevenue > 0) {
+      growthRate = 300; // Mặc định nếu kỳ trước chưa có dữ liệu
+    }
+
+    const stayDateChartData = stayDateRes.rows.map((r) => {
+      const d = new Date(r.day_date);
+      const label = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return {
+        label,
+        date: r.day_date,
+        amount: Number(r.total_amount || 0),
+        booking_count: Number(r.booking_count || 0),
+      };
+    });
+
+    const stayDateStats = {
+      totalAmount: totalRevenue,
+      totalCount: totalOrderCount,
+      growthRate: growthRate,
+      growthLabel: revDates.compLabel,
+      chartData: stayDateChartData,
+    };
+
+    // ─── 🌟 CÔNG SUẤT PHÒNG (DÙNG ĐỘC LẬP THEO OCCUPANCY_RANGE) ───
+    const occTimeParams = [...baseParams, occDates.startDate, occDates.endDate];
+    const opStart = occTimeParams.length - 1;
+    const opEnd = occTimeParams.length;
+
     const dailyOccupancyRes = await pool.query(
       `WITH period_days AS (
-         SELECT generate_series($${pStart}::date, $${pEnd}::date, '1 day'::interval)::date AS day_date
+         SELECT generate_series($${opStart}::date, $${opEnd}::date, '1 day'::interval)::date AS day_date
        ),
        day_usage AS (
          SELECT 
@@ -287,7 +424,7 @@ async function getOwnerStats(req, res, next) {
          EXTRACT(DOW FROM day_date)::int AS day_of_week
        FROM day_usage
        ORDER BY day_date ASC`,
-      timeParams,
+      occTimeParams,
     );
 
     let totalUsedRoomDays = 0;
@@ -307,7 +444,6 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
-    // Theo thứ (T2 -> CN)
     const weekdayMap = {
       1: "T2",
       2: "T3",
@@ -343,7 +479,6 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
-    // Theo hạng phòng (By Room Type)
     const roomTypeStatsRes = await pool.query(
       `SELECT 
          r.id,
@@ -357,16 +492,16 @@ async function getOwnerStats(req, res, next) {
          ON (b.id = br.booking_id OR b.room_number ILIKE '%' || r.code || '%')
          AND b.status IN ('checked_in', 'checked_out', 'confirmed')
          AND (
-           (b.checkin_date <= $${pEnd}::date AND b.checkout_date >= $${pStart}::date)
+           (b.checkin_date <= $${opEnd}::date AND b.checkout_date >= $${opStart}::date)
          )
        WHERE ${hotelFilter} AND r.is_active = true
        GROUP BY r.id, r.name, r.amount
        ORDER BY r.base_price ASC`,
-      timeParams,
+      occTimeParams,
     );
 
     const byRoomType = roomTypeStatsRes.rows.map((r) => {
-      const roomCapacity = Number(r.room_amount || 1) * dayCount;
+      const roomCapacity = Number(r.room_amount || 1) * occDates.dayCount;
       const used = Number(r.total_bookings || 0);
       const rate =
         roomCapacity > 0
@@ -378,7 +513,6 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
-    // Theo khu vực (By Area)
     const areaStatsRes = await pool.query(
       `SELECT 
          COALESCE(ru.area, 'Tầng 1') AS area_name,
@@ -398,8 +532,7 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
-    // TÍNH CÔNG SUẤT TRUNG BÌNH (AVG RATE)
-    const totalPotentialDays = Math.max(1, totalRooms * dayCount);
+    const totalPotentialDays = Math.max(1, totalRooms * occDates.dayCount);
     const avgRate =
       totalRooms > 0
         ? Math.min(
@@ -408,7 +541,6 @@ async function getOwnerStats(req, res, next) {
           )
         : 0;
 
-    // CẢNH BÁO TÀI CHÍNH (AUTOMATION SUMMARY)
     const paymentAlertsRes = await pool.query(
       `SELECT b.id, b.booking_code, COALESCE(b.room_number, 'Chưa xếp') AS room,
               b.customer_name AS guest, (b.total_price - COALESCE(b.subtotal, 0)) AS amount
@@ -431,9 +563,6 @@ async function getOwnerStats(req, res, next) {
       baseParams,
     );
 
-    const paymentAlerts = paymentAlertsRes.rows || [];
-    const leakAlerts = leakAlertsRes.rows || [];
-
     return res.json({
       success: true,
       occupancyCurrent: {
@@ -453,7 +582,7 @@ async function getOwnerStats(req, res, next) {
         occupiedAndWaitingClean,
       },
       channelStats,
-      // 🌟 TRẢ ĐỦ DỮ LIỆU ĐỂ HIỆN % CÔNG SUẤT TRUNG BÌNH VÀ VẼ ĐỒ THỊ
+      stayDateStats,
       occupancyAnalytics: {
         hasData: totalRooms > 0,
         avgRate: totalRooms > 0 ? avgRate : null,
@@ -466,13 +595,13 @@ async function getOwnerStats(req, res, next) {
       automationSummary: {
         autoReconciledToday: totalOrderCount,
         autoReconciledAmount: totalRevenue,
-        paymentAlerts,
-        leakAlerts,
-        totalUnpaidAmount: paymentAlerts.reduce(
+        paymentAlerts: paymentAlertsRes.rows || [],
+        leakAlerts: leakAlertsRes.rows || [],
+        totalUnpaidAmount: (paymentAlertsRes.rows || []).reduce(
           (sum, item) => sum + Number(item.amount || 0),
           0,
         ),
-        potentialLeakTotal: leakAlerts.reduce(
+        potentialLeakTotal: (leakAlertsRes.rows || []).reduce(
           (sum, item) => sum + Number(item.amount || 0),
           0,
         ),
@@ -518,7 +647,7 @@ async function getOwnerBookings(req, res, next) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (GẮN PHÒNG KHI ĐÃ ĐƯỢC XẾP PHÒNG) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN ───
 async function getRoomMapData(req, res, next) {
   try {
     const hotelId = req.query.hotel_id;
