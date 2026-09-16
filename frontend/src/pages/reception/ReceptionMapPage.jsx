@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   X,
   ClipboardList,
-  Sparkles,
   CalendarDays,
   Clock,
   Check,
@@ -68,7 +67,7 @@ export default function ReceptionMapPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 3 BỘ LỌC TRẠNG THÁI PHÒNG
+  // 3 BỘ LỌC TRẠNG THÁI PHÒNG (ĐÃ BỎ NÚT CHỜ XÁC NHẬN BỊ THỪA TẠI ĐÂY)
   const [statusFilters, setStatusFilters] = useState({
     incoming: true,
     occupied: true,
@@ -82,7 +81,7 @@ export default function ReceptionMapPage() {
   const [activeRoomData, setActiveRoomData] = useState(null);
   const [changeRoomTarget, setChangeRoomTarget] = useState(null);
 
-  // 🌟 STATE CHO ĐƠN CHỜ XÁC NHẬN (THEO ẢNH 1 & ẢNH 2)
+  // STATE CHO ĐƠN CHỜ XÁC NHẬN
   const [pendingBookings, setPendingBookings] = useState([]);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [assigningBooking, setAssigningBooking] = useState(null);
@@ -223,7 +222,7 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // 🌟 LẤY TOÀN BỘ ĐƠN ONLINE CHỜ DUYỆT (BÓC TÁCH CHÍNH XÁC KHÔNG BỊ TRỐNG)
+  // Lấy danh sách đơn chờ xác nhận từ backend
   const fetchPendingBookings = useCallback(async () => {
     try {
       const url = selectedHotelId
@@ -248,14 +247,14 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // Tự động làm mới mỗi 3 giây để bắt đơn thanh toán ngay lập tức
+  // Tự động load dữ liệu
   useEffect(() => {
     fetchRoomMap();
     fetchPendingBookings();
 
     const interval = setInterval(() => {
       fetchPendingBookings();
-    }, 3000);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [fetchRoomMap, fetchPendingBookings]);
@@ -311,7 +310,7 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // Danh sách các phòng trống khả dụng để chọn cho đơn
+  // Danh sách các phòng trống khả dụng để xếp phòng
   const availableRoomsForAssign = useMemo(() => {
     if (!assigningBooking) return [];
 
@@ -332,7 +331,7 @@ export default function ReceptionMapPage() {
     return sameTypeRooms.length > 0 ? sameTypeRooms : vacantRooms;
   }, [rooms, assigningBooking]);
 
-  // 🌟 LỄ TÂN BẤM "XÁC NHẬN" VÀ GÁN PHÒNG (ẢNH 2 ➜ BIẾN THÀNH ẢNH 3)
+  // Lễ tân xác nhận xếp phòng
   const handleConfirmAssignRoom = async () => {
     if (!selectedAssignRoom) {
       return alert("Vui lòng chọn số phòng trong danh sách!");
@@ -346,13 +345,12 @@ export default function ReceptionMapPage() {
       });
 
       alert(
-        `✓ Đã xác nhận đơn #${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công! Phòng đã chuyển sang trạng thái "Đã đặt trước".`,
+        `✓ Đã xác nhận đơn #${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công!`,
       );
       setAssigningBooking(null);
       setSelectedAssignRoom("");
       setIsPendingModalOpen(false);
 
-      // Tải lại sơ đồ phòng và đơn chờ ngay lập tức
       await Promise.all([fetchRoomMap(), fetchPendingBookings()]);
     } catch (err) {
       alert(
@@ -712,9 +710,9 @@ export default function ReceptionMapPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 text-gray-900 font-sans text-xs pb-16">
-      {/* ─── DÒNG 1: TOOLBAR HEADER TIẾP TÂN ─── */}
-      <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between shadow-xs sticky top-0 z-20 gap-4 flex-wrap">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans text-xs pb-16">
+      {/* ─── DÒNG 1: TOOLBAR HEADER TIẾP TÂN THEO PHONG CÁCH GOSTAY ─── */}
+      <header className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shadow-xs sticky top-0 z-20 gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="relative flex items-center">
             <input
@@ -722,12 +720,12 @@ export default function ReceptionMapPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Tìm số phòng, tên khách..."
-              className="pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-[#003580] focus:bg-white w-56 font-semibold"
+              className="pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-[#003580] focus:bg-white w-56 font-semibold"
             />
-            <Search size={14} className="absolute right-3 text-gray-400" />
+            <Search size={14} className="absolute right-3 text-slate-400" />
           </div>
 
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-1.5">
+          <div className="flex items-center gap-2 bg-blue-50/70 border border-blue-200/80 rounded-xl px-3 py-1.5">
             <Building2 size={14} className="text-[#003580]" />
             <select
               value={selectedHotelId}
@@ -738,7 +736,7 @@ export default function ReceptionMapPage() {
                 <option
                   key={h.id}
                   value={h.id}
-                  className="text-gray-900 font-bold"
+                  className="text-slate-900 font-bold"
                 >
                   🏨 {h.name}
                 </option>
@@ -747,31 +745,24 @@ export default function ReceptionMapPage() {
           </div>
         </div>
 
-        {/* 🌟 NÚT CHỜ XÁC NHẬN RỰC RỠ SỐ LƯỢNG */}
+        {/* 🌟 NÚT DUY NHẤT "CHỜ XÁC NHẬN" THEO TONE GOSTAY PMS (ĐÃ BỎ CÁI THỨ 2 BỊ DƯ & BỎ HIỆU ỨNG LAG) */}
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setIsPendingModalOpen(true)}
-            className={`px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition cursor-pointer border shadow-xs ${
+            className={`px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition cursor-pointer border shadow-2xs ${
               pendingBookings.length > 0
-                ? "bg-emerald-50 border-emerald-500 text-emerald-800 animate-pulse ring-2 ring-emerald-400/40"
-                : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                ? "bg-blue-50/80 border-[#003580] text-[#003580]"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
             }`}
           >
-            <ClipboardList
-              size={16}
-              className={
-                pendingBookings.length > 0
-                  ? "text-emerald-600"
-                  : "text-gray-500"
-              }
-            />
+            <ClipboardList size={16} className="text-[#003580]" />
             <span className="text-xs">Chờ xác nhận</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
                 pendingBookings.length > 0
-                  ? "bg-emerald-600 text-white"
-                  : "bg-gray-200 text-gray-700"
+                  ? "bg-[#003580] text-white"
+                  : "bg-slate-200 text-slate-700"
               }`}
             >
               {pendingBookings.length}
@@ -781,7 +772,7 @@ export default function ReceptionMapPage() {
           <button
             type="button"
             onClick={() => handleOpenQuickBooking()}
-            className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white rounded-xl cursor-pointer shadow-xs transition flex items-center gap-1.5 font-bold active:scale-95"
+            className="px-4 py-2 bg-[#003580] hover:bg-[#00224f] text-white rounded-xl cursor-pointer shadow-xs transition flex items-center gap-1.5 font-bold active:scale-95"
           >
             <Plus size={16} />
             <span>+ Đặt phòng</span>
@@ -789,22 +780,9 @@ export default function ReceptionMapPage() {
         </div>
       </header>
 
-      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI ─── */}
-      <div className="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center justify-between gap-4 flex-wrap text-xs">
+      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI (ĐÃ BỎ NÚT CHỜ XÁC NHẬN BỊ TRÙNG LẶP TẠI ĐÂY) ─── */}
+      <div className="bg-white border-b border-slate-200 px-5 py-2.5 flex items-center justify-between gap-4 flex-wrap text-xs">
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setIsPendingModalOpen(true)}
-            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
-              pendingBookings.length > 0
-                ? "bg-blue-50 border-blue-400 text-blue-800 font-extrabold shadow-xs"
-                : "bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-blue-600 inline-block animate-ping" />
-            <span>● Chờ xác nhận ({pendingBookings.length})</span>
-          </button>
-
           <button
             type="button"
             onClick={() =>
@@ -813,10 +791,10 @@ export default function ReceptionMapPage() {
                 incoming: !statusFilters.incoming,
               })
             }
-            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+            className={`px-3.5 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
               statusFilters.incoming
-                ? "bg-amber-50 border-amber-400 text-amber-800"
-                : "bg-gray-100 border-gray-200 text-gray-400"
+                ? "bg-amber-50 border-amber-400 text-amber-900"
+                : "bg-slate-100 border-slate-200 text-slate-400"
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
@@ -831,10 +809,10 @@ export default function ReceptionMapPage() {
                 occupied: !statusFilters.occupied,
               })
             }
-            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+            className={`px-3.5 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
               statusFilters.occupied
                 ? "bg-blue-50 border-blue-400 text-[#003580]"
-                : "bg-gray-100 border-gray-200 text-gray-400"
+                : "bg-slate-100 border-slate-200 text-slate-400"
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-[#003580] inline-block" />
@@ -849,56 +827,34 @@ export default function ReceptionMapPage() {
                 available: !statusFilters.available,
               })
             }
-            className={`px-3 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+            className={`px-3.5 py-1 rounded-full font-bold flex items-center gap-1.5 transition cursor-pointer border ${
               statusFilters.available
-                ? "bg-gray-100 border-gray-300 text-gray-800"
-                : "bg-gray-50 border-gray-200 text-gray-400"
+                ? "bg-slate-100 border-slate-300 text-slate-800"
+                : "bg-slate-50 border-slate-200 text-slate-400"
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
             <span>● Đang trống ({counts.available})</span>
           </button>
         </div>
 
-        <div className="text-gray-500 font-semibold text-[11px]">
-          Tổng cộng: <b className="text-gray-900">{rooms.length} phòng</b>
+        <div className="text-slate-500 font-semibold text-[11px]">
+          Tổng cộng: <b className="text-slate-900">{rooms.length} phòng</b>
         </div>
       </div>
 
-      {/* BANNER THÔNG BÁO TỰ ĐỘNG */}
-      {pendingBookings.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-5 py-3 rounded-2xl shadow-lg flex items-center justify-between flex-wrap gap-3 animate-bounce">
-            <div className="flex items-center gap-3">
-              <Sparkles className="animate-spin text-amber-300" size={20} />
-              <span className="font-extrabold text-sm">
-                Có {pendingBookings.length} đơn đặt phòng online vừa thanh toán
-                thành công đang chờ xếp phòng!
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsPendingModalOpen(true)}
-              className="px-4 py-1.5 bg-white text-emerald-800 rounded-xl font-black text-xs shadow hover:bg-emerald-50 cursor-pointer transition"
-            >
-              Chọn số phòng ngay →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ─── SƠ ĐỒ PHÒNG (ẢNH 3 - THẺ PHÒNG MÀU VÀNG HỔ PHÁCH) ─── */}
+      {/* ─── SƠ ĐỒ PHÒNG ─── */}
       <main className="p-4 sm:p-6 space-y-6">
         {loading ? (
           <div className="py-24 flex justify-center">
             <LoadingSpinner size="lg" label="Đang đồng bộ sơ đồ phòng..." />
           </div>
         ) : hotels.length === 0 ? (
-          <div className="py-24 text-center text-gray-400 font-medium">
+          <div className="py-24 text-center text-slate-400 font-medium">
             Tài khoản này chưa được phân công cơ sở khách sạn nào.
           </div>
         ) : Object.keys(groupedRooms).length === 0 ? (
-          <div className="py-24 text-center text-gray-400 font-medium">
+          <div className="py-24 text-center text-slate-400 font-medium">
             Không tìm thấy phòng nào phù hợp với bộ lọc tìm kiếm.
           </div>
         ) : (
@@ -908,7 +864,7 @@ export default function ReceptionMapPage() {
               <div key={area} className="space-y-3">
                 <div className="flex items-center gap-2 font-black text-[#0a2540] text-sm">
                   <span>{area}</span>
-                  <span className="bg-[#003580] text-white text-[11px] font-black px-2 py-0.5 rounded-full">
+                  <span className="bg-[#003580] text-white text-[11px] font-black px-2.5 py-0.5 rounded-full">
                     {roomList.length} phòng
                   </span>
                 </div>
@@ -950,39 +906,39 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* ─── MODAL 1: "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (CHUẨN THEO ẢNH 1) ─── */}
+      {/* ─── MODAL 1: "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (THEO TONE GOSTAY PMS) ─── */}
       {isPendingModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
-            {/* Header Modal 1 */}
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+          <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
+            {/* Header Modal 1 - GoStay Navy */}
+            <div className="px-6 py-4 bg-[#003580] text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="font-extrabold text-gray-900 text-base">
+                <span className="font-extrabold text-base">
                   Khách đặt online
                 </span>
-                <span className="text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full font-black text-xs">
-                  Chờ xác nhận ({pendingBookings.length})
+                <span className="bg-white/20 text-white px-2.5 py-0.5 rounded-full font-bold text-xs">
+                  Chờ xếp phòng ({pendingBookings.length})
                 </span>
               </div>
               <button
                 onClick={() => setIsPendingModalOpen(false)}
-                className="text-gray-400 hover:text-gray-700 p-1.5 rounded-xl hover:bg-gray-200/60 cursor-pointer transition"
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer transition"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Bảng danh sách đơn (Ảnh 1) */}
+            {/* Bảng danh sách đơn */}
             <div className="p-6 overflow-y-auto flex-1">
               {pendingBookings.length === 0 ? (
                 <div className="py-16 text-center space-y-2">
-                  <div className="w-12 h-12 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center mx-auto">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
                     <ClipboardList size={24} />
                   </div>
-                  <div className="text-gray-500 font-bold text-sm">
+                  <div className="text-slate-600 font-bold text-sm">
                     Hiện không có đơn đặt phòng nào đang chờ xác nhận
                   </div>
-                  <div className="text-gray-400 text-xs">
+                  <div className="text-slate-400 text-xs">
                     Khi khách thanh toán QR thành công, đơn đặt phòng sẽ tự động
                     xuất hiện tại đây.
                   </div>
@@ -990,57 +946,57 @@ export default function ReceptionMapPage() {
               ) : (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-gray-200 text-gray-400 text-[11px] font-bold uppercase tracking-wider">
+                    <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
                       <th className="pb-3.5 px-3">Mã đặt phòng</th>
-                      <th className="pb-3.5 px-3">Mã kênh bán</th>
+                      <th className="pb-3.5 px-3">Kênh bán</th>
                       <th className="pb-3.5 px-3">Khách đặt</th>
                       <th className="pb-3.5 px-3">Lưu trú</th>
-                      <th className="pb-3.5 px-3">Phòng đặt</th>
+                      <th className="pb-3.5 px-3">Hạng phòng</th>
                       <th className="pb-3.5 px-3 text-right">Tổng cộng</th>
                       <th className="pb-3.5 px-3 text-right">Khách đã trả</th>
                       <th className="pb-3.5 px-3 text-center">Thao tác</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100 text-xs font-semibold">
+                  <tbody className="divide-y divide-slate-100 text-xs font-semibold">
                     {pendingBookings.map((b) => (
                       <tr key={b.id} className="hover:bg-blue-50/40 transition">
                         <td className="py-4 px-3 font-bold text-[#003580]">
                           #{b.booking_code}
-                          <div className="text-[10px] text-gray-400 font-normal">
+                          <div className="text-[10px] text-slate-400 font-normal">
                             {formatDisplayDateTime(b.created_at)}
                           </div>
                         </td>
-                        <td className="py-4 px-3 text-gray-500">
-                          <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[10px] font-bold">
-                            GoStay Web
+                        <td className="py-4 px-3 text-slate-500">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
+                            GoStay Online
                           </span>
                         </td>
                         <td className="py-4 px-3">
-                          <div className="font-bold text-gray-900 text-sm">
+                          <div className="font-bold text-slate-900 text-sm">
                             {b.customer_name}
                           </div>
-                          <div className="text-gray-500 text-[11px]">
+                          <div className="text-slate-500 text-[11px]">
                             {b.guest_phone || b.guest_email || "Chưa có SĐT"}
                           </div>
                         </td>
-                        <td className="py-4 px-3 text-gray-700">
+                        <td className="py-4 px-3 text-slate-700">
                           <div>
                             {formatDisplayDateTime(b.checkin_date)} -{" "}
                             {formatDisplayDateTime(b.checkout_date)}
                           </div>
-                          <div className="text-[10px] text-gray-400 mt-0.5">
+                          <div className="text-[10px] text-slate-400 mt-0.5">
                             {b.adult_total} người lớn, {b.children_total} trẻ em
                           </div>
                         </td>
-                        <td className="py-4 px-3 text-gray-800">
+                        <td className="py-4 px-3 text-slate-800">
                           <span className="bg-blue-50 border border-blue-200 text-[#003580] px-2.5 py-1 rounded-md text-[11px] font-bold">
-                            1 {b.room_type_name || "DELUXE"}
+                            1 {b.room_type_name || "Phòng tiêu chuẩn"}
                           </span>
                         </td>
-                        <td className="py-4 px-3 text-right font-black text-gray-900 text-sm tabular-nums">
+                        <td className="py-4 px-3 text-right font-black text-slate-900 text-sm tabular-nums">
                           {formatVND(b.total_price)}
                         </td>
-                        <td className="py-4 px-3 text-right font-black text-emerald-600 text-sm tabular-nums">
+                        <td className="py-4 px-3 text-right font-black text-emerald-700 text-sm tabular-nums">
                           {formatVND(b.paid_amount || b.total_price)}
                         </td>
                         <td className="py-4 px-3 text-center">
@@ -1050,7 +1006,7 @@ export default function ReceptionMapPage() {
                               setAssigningBooking(b);
                               setSelectedAssignRoom("");
                             }}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 mx-auto"
+                            className="px-4 py-2 bg-[#003580] hover:bg-[#00224f] text-white rounded-xl font-bold text-xs shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 mx-auto"
                           >
                             <Check size={14} />
                             <span>Xác nhận</span>
@@ -1064,14 +1020,12 @@ export default function ReceptionMapPage() {
             </div>
 
             {/* Chân Modal 1 */}
-            <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex justify-between items-center text-[11px] text-gray-500">
-              <span>
-                Khách sạn đang nhận đặt phòng online tự động qua cổng GoStay.
-              </span>
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-[11px] text-slate-500">
+              <span>Khách sạn đang nhận đặt phòng trực tuyến qua GoStay.</span>
               <button
                 type="button"
                 onClick={() => setIsPendingModalOpen(false)}
-                className="px-4 py-1.5 border border-gray-200 rounded-lg text-gray-700 font-bold hover:bg-gray-100 cursor-pointer"
+                className="px-4 py-1.5 border border-slate-200 rounded-lg text-slate-700 font-bold hover:bg-slate-100 cursor-pointer"
               >
                 Đóng
               </button>
@@ -1080,18 +1034,18 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN SỐ PHÒNG" (CHUẨN THEO ẢNH 2) ─── */}
+      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (TONE GOSTAY PMS) ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
-            {/* Header Modal 2 */}
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-black text-gray-900 text-base">
-                Xác nhận đặt phòng - {assigningBooking.booking_code}
+          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200">
+            {/* Header Modal 2 - GoStay Navy */}
+            <div className="px-6 py-4 bg-[#003580] text-white flex items-center justify-between">
+              <h3 className="font-black text-base">
+                Xác nhận đặt phòng - #{assigningBooking.booking_code}
               </h3>
               <button
                 onClick={() => setAssigningBooking(null)}
-                className="text-gray-400 hover:text-gray-700 cursor-pointer"
+                className="text-white/80 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-white/10"
               >
                 <X size={18} />
               </button>
@@ -1099,9 +1053,9 @@ export default function ReceptionMapPage() {
 
             <div className="p-6 space-y-5">
               {/* Tên & SĐT khách */}
-              <div className="text-gray-800 font-bold flex items-center gap-2 text-sm">
+              <div className="text-slate-800 font-bold flex items-center gap-2 text-sm">
                 <span>👤 {assigningBooking.customer_name}</span>
-                <span className="text-gray-400 font-normal">
+                <span className="text-slate-400 font-normal">
                   -{" "}
                   {assigningBooking.guest_phone ||
                     assigningBooking.guest_email ||
@@ -1109,26 +1063,26 @@ export default function ReceptionMapPage() {
                 </span>
               </div>
 
-              {/* Hộp chi tiết xếp phòng (Ảnh 2) */}
-              <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4">
+              {/* Hộp chi tiết xếp phòng */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4">
                 <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">
                     Hạng phòng
                   </div>
                   <div className="font-bold text-[#003580] text-sm">
-                    {assigningBooking.room_type_name || "DELUXE"}
+                    {assigningBooking.room_type_name || "Phòng tiêu chuẩn"}
                   </div>
                 </div>
 
-                {/* Ô CHỌN SỐ PHÒNG VIỀN XANH LÁ (ẢNH 2) */}
+                {/* Ô CHỌN SỐ PHÒNG VIỀN GOSTAY BLUE */}
                 <div className="min-w-[190px]">
-                  <div className="text-[10px] text-gray-600 font-bold uppercase mb-1">
+                  <div className="text-[10px] text-slate-600 font-bold uppercase mb-1">
                     Phòng <span className="text-rose-500">*</span>
                   </div>
                   <select
                     value={selectedAssignRoom}
                     onChange={(e) => setSelectedAssignRoom(e.target.value)}
-                    className="w-full bg-white border-2 border-emerald-500 text-emerald-900 font-bold rounded-xl p-2.5 text-xs outline-none shadow-xs cursor-pointer focus:ring-2 focus:ring-emerald-200"
+                    className="w-full bg-white border-2 border-[#003580] text-[#003580] font-bold rounded-xl p-2 text-xs outline-none shadow-xs cursor-pointer focus:ring-2 focus:ring-blue-200"
                   >
                     <option value="">-- Chọn số phòng --</option>
                     {availableRoomsForAssign.map((r) => (
@@ -1141,10 +1095,10 @@ export default function ReceptionMapPage() {
                 </div>
 
                 <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">
                     Nhận
                   </div>
-                  <div className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                  <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                     <CalendarDays size={13} className="text-[#006ce4]" />
                     <span>
                       {formatDisplayDateTime(assigningBooking.checkin_date)}
@@ -1153,16 +1107,16 @@ export default function ReceptionMapPage() {
                 </div>
 
                 <div className="text-center">
-                  <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 font-black text-xs border border-emerald-200">
+                  <span className="px-2.5 py-1 rounded-md bg-blue-50 text-[#003580] font-black text-xs border border-blue-200">
                     1 đêm
                   </span>
                 </div>
 
                 <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">
                     Trả
                   </div>
-                  <div className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                  <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                     <CalendarDays size={13} className="text-[#006ce4]" />
                     <span>
                       {formatDisplayDateTime(assigningBooking.checkout_date)}
@@ -1171,18 +1125,18 @@ export default function ReceptionMapPage() {
                 </div>
               </div>
 
-              <p className="text-xs text-gray-500 italic">
+              <p className="text-xs text-slate-500 italic">
                 Sau khi xác nhận, các phòng sẽ chuyển về trạng thái đặt trước
                 (Màu vàng trên sơ đồ phòng).
               </p>
             </div>
 
             {/* Footer Modal 2 */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setAssigningBooking(null)}
-                className="px-5 py-2.5 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 cursor-pointer"
+                className="px-5 py-2.5 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
               >
                 Hủy bỏ
               </button>
@@ -1190,7 +1144,7 @@ export default function ReceptionMapPage() {
                 type="button"
                 disabled={isSubmittingAssign}
                 onClick={handleConfirmAssignRoom}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-2 active:scale-95"
+                className="px-6 py-2.5 bg-[#003580] hover:bg-[#00224f] text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-2 active:scale-95"
               >
                 <Check size={16} />
                 <span>{isSubmittingAssign ? "Đang xử lý..." : "Xác nhận"}</span>
@@ -1200,7 +1154,7 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── MODAL 3: "CHI TIẾT PHÒNG ĐÃ ĐẶT TRƯỚC" (CHUẨN THEO ẢNH 3) ─── */}
+      {/* ─── MODAL 3: "CHI TIẾT PHÒNG ĐÃ ĐẶT TRƯỚC" ─── */}
       <IncomingRoomModal
         isOpen={activeModalType === "incoming"}
         room={activeRoomData}
