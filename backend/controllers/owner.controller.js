@@ -338,7 +338,7 @@ async function getRoomMapData(req, res, next) {
       [hotelId],
     );
 
-    // 🌟 CHỈ LẤY ĐƠN ĐÃ ĐƯỢC LỄ TÂN XẾP PHÒNG (receptionist_assigned = true)
+    // 🌟 CHỈ LẤY ĐƠN ĐÃ ĐƯỢC LỄ TÂN XẾP PHÒNG THÀNH CÔNG
     let activeBookings = [];
     try {
       const bookingsResult = await pool.query(
@@ -414,8 +414,8 @@ async function getRoomMapData(req, res, next) {
         children_total: Number(b.children_total || 0),
       };
 
-      // Nếu đơn đã check-in thì phòng là occupied (Đang sử dụng)
-      // Nếu đơn là confirmed (Lễ tân đã gán phòng) thì phòng là incoming (ĐÃ ĐẶT TRƯỚC)
+      // Đã xếp phòng (confirmed) -> "incoming" (Đã đặt trước - Màu vàng)
+      // Đã check-in (checked_in) -> "occupied" (Đang sử dụng - Màu xanh)
       targetRoom.status = b.status === "checked_in" ? "occupied" : "incoming";
     };
 
@@ -453,7 +453,7 @@ async function getPendingOnlineBookings(req, res, next) {
       ? String(req.query.hotel_id).trim()
       : "";
 
-    // 🌟 ĐIỀU KIỆN CHUẨN XÁC: Đã thanh toán (paid) và Lễ tân chưa xếp phòng (receptionist_assigned = false)
+    // 🌟 ĐIỀU KIỆN CHUẨN XÁC: Đã thanh toán tiền (paid), CHƯA có số phòng hoặc chưa được lễ tân gán
     const querySql = `
       SELECT 
          b.id,
@@ -480,7 +480,11 @@ async function getPendingOnlineBookings(req, res, next) {
        LEFT JOIN public.payment p ON p.booking_id = b.id
        WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled')
          AND (b.payment_status = 'paid' OR b.status = 'confirmed')
-         AND (b.receptionist_assigned IS NULL OR b.receptionist_assigned = false)
+         AND (
+           b.receptionist_assigned IS NOT TRUE 
+           OR b.room_number IS NULL 
+           OR TRIM(b.room_number) = ''
+         )
          AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1 OR b.hotel_id IS NULL)
        ORDER BY b.created_at DESC
        LIMIT 50
@@ -538,10 +542,6 @@ async function confirmAndAssignRoom(req, res, next) {
     );
 
     await client.query("COMMIT");
-
-    console.log(
-      `✅ [LỄ TÂN]: Đã xác nhận đơn ${booking.booking_code} và xếp vào phòng ${room_number}!`,
-    );
 
     return res.json({
       success: true,
@@ -739,7 +739,7 @@ async function handleAddBookingService(req, res, next) {
   return res.json({ success: true });
 }
 
-// ─── 8. NHẬN PHÒNG (CHECK-IN) KHI KHÁCH ĐẾN KHÁCH SẠN ───
+// ─── 8. NHẬN PHÒNG (CHECK-IN) ───
 async function handleOwnerCheckIn(req, res, next) {
   try {
     const { id } = req.params;

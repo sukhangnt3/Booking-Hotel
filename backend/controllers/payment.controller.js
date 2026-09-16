@@ -2,7 +2,6 @@
 require("dotenv").config();
 const pool = require("../config/database");
 
-// TỰ ĐỘNG TẠO BẢNG LƯU LỊCH SỬ QUYẾT TOÁN CỦA ADMIN
 pool
   .query(
     `
@@ -16,7 +15,6 @@ pool
   )
   .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
 
-// TÀI KHOẢN NGÂN HÀNG CỦA ADMIN (SEPAY THU TIỀN CỦA KHÁCH)
 const DEFAULT_PLATFORM_BANK = {
   bankId: "MB",
   bankBin: "970422",
@@ -90,7 +88,7 @@ async function checkPaymentStatus(req, res) {
   }
 }
 
-// ─── 3. WEBHOOK SEPAY: NHẬN TIỀN VÀ ĐẨY VÀO MỤC CHỜ LỄ TÂN CHỌN PHÒNG ───
+// ─── 3. WEBHOOK SEPAY: XÓA SỐ PHÒNG CŨ ĐỂ ÉP VÀO HÀNG CHỜ LỄ TÂN DUYỆT ───
 async function handleBankWebhook(req, res) {
   try {
     const body = req.body || {};
@@ -103,42 +101,89 @@ async function handleBankWebhook(req, res) {
         "",
     );
 
-    console.log("🔔 [SePay Webhook]:", {
-      content,
-      transferAmount: body.transferAmount,
-    });
+    const transferAmount = Number(body.transferAmount || body.amount || 0);
 
-    const matchBooking = content.match(/(DP\s*\d+|BK\s*\d+|[A-Z0-9]{6,15})/i);
+    console.log("🔔 [SEPAY WEBHOOK]:", { content, transferAmount });
 
-    if (matchBooking) {
-      const bookingCode = matchBooking[0].replace(/\s+/g, "").toUpperCase();
+    let matchedBooking = null;
 
-      // 🌟 ĐÁNH DẤU: ĐÃ THANH TOÁN (paid), STATUS 'pending' VÀ CHỜ LỄ TÂN CHỌN PHÒNG (receptionist_assigned = false)
-      const updateResult = await pool.query(
+    // Tìm mẫu BK... hoặc DP...
+    const matchSpecific = content.match(/(BK\s*\d+|DP\s*\d+)/i);
+    if (matchSpecific) {
+      const extractedCode = matchSpecific[0].replace(/\s+/g, "").toUpperCase();
+      const bRes = await pool.query(
+        `SELECT id, booking_code, hotel_id, total_price FROM public.booking 
+         WHERE booking_code ILIKE $1 LIMIT 1`,
+        [extractedCode],
+      );
+      if (bRes.rows.length > 0) {
+        matchedBooking = bRes.rows[0];
+      }
+    }
+
+    // Quét ngược dự phòng nếu ngân hàng thêm mã riêng
+    if (!matchedBooking) {
+      const pendingRes = await pool.query(
+        `SELECT id, booking_code, hotel_id, total_price FROM public.booking 
+         WHERE (payment_status IS NULL OR payment_status != 'paid')
+           AND status NOT IN ('cancelled', 'checked_out')
+         ORDER BY created_at DESC 
+         LIMIT 30`,
+      );
+
+      const normalizedContent = content
+        .replace(/[^A-Z0-9]/gi, "")
+        .toUpperCase();
+
+      for (const b of pendingRes.rows) {
+        const cleanBookingCode = b.booking_code
+          .replace(/[^A-Z0-9]/gi, "")
+          .toUpperCase();
+        if (normalizedContent.includes(cleanBookingCode)) {
+          matchedBooking = b;
+          break;
+        }
+      }
+    }
+
+    if (matchedBooking) {
+      // 🌟 ĐẶT: payment_status = 'paid', status = 'pending', receptionist_assigned = false, room_number = NULL
+      await pool.query(
         `UPDATE public.booking 
          SET payment_status = 'paid', 
              status = 'pending'::public.booking_status_enum,
              receptionist_assigned = false,
+             room_number = NULL,
              updated_at = NOW()
-         WHERE booking_code ILIKE $1 OR booking_code ILIKE $2
-         RETURNING id, booking_code`,
-        [bookingCode, `%${bookingCode}%`],
+         WHERE id = $1`,
+        [matchedBooking.id],
       );
 
-      if (updateResult.rows.length > 0) {
-        console.log(
-          `✅ [SePay]: Đã nhận tiền đơn ${bookingCode}! Đã chuyển thẳng vào mục Chờ Lễ Tân chọn phòng.`,
-        );
-      }
+      await pool
+        .query(
+          `UPDATE public.payment 
+         SET status = 'paid', 
+             paid_amount = $1, 
+             paid_at = NOW(), 
+             updated_at = NOW() 
+         WHERE booking_id = $2`,
+          [transferAmount || matchedBooking.total_price, matchedBooking.id],
+        )
+        .catch(() => {});
+
+      console.log(
+        `✅ [SEPAY THÀNH CÔNG]: Đơn ${matchedBooking.booking_code} đã vào hàng chờ Lễ tân!`,
+      );
     }
 
     return res.json({ success: true });
   } catch (error) {
+    console.error("❌ Lỗi SePay Webhook:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 }
 
-// ─── 3.1. NÚT DUYỆT THANH TOÁN TRÊN GIAO DIỆN TEST ───
+// ─── 4. DUYỆT THỦ CÔNG ───
 async function confirmManualPayment(req, res) {
   try {
     const { booking_code, bookingCode, code } = req.body || {};
@@ -153,22 +198,20 @@ async function confirmManualPayment(req, res) {
        SET payment_status = 'paid', 
            status = 'pending'::public.booking_status_enum,
            receptionist_assigned = false,
+           room_number = NULL,
            updated_at = NOW()
        WHERE booking_code ILIKE $1 OR id::text = $1
        RETURNING *`,
       [raw],
     );
 
-    console.log(
-      `✅ [Manual Payment]: Đã duyệt thanh toán đơn ${raw} sang Chờ Lễ Tân chọn phòng!`,
-    );
     return res.json({ success: true, booking: updateRes.rows[0] });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
 }
 
-// ─── 4. ADMIN BẤM XÁC NHẬN ĐÃ CHUYỂN TIỀN CHO OWNER ───
+// ─── 5. ADMIN QUYẾT TOÁN ───
 async function confirmManualPayout(req, res) {
   try {
     const { hotelId, hotel_id, amount } = req.body || {};
