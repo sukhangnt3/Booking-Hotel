@@ -343,7 +343,7 @@ function parseSearchDate(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
-// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI ───
+// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (TÍNH GIÁ THEO GIỜ / ĐÊM / BUỔI / NGÀY) ───
 async function listHotels(req, res, next) {
   try {
     const destination = (
@@ -359,11 +359,13 @@ async function listHotels(req, res, next) {
       req.query.checkOut || req.query.checkout_date,
     );
 
+    const rentalType = req.query.rentalType || "DAY";
+    const checkInTime = req.query.checkInTime || "14:00";
+    const duration = Math.max(1, Number(req.query.duration || 1));
+
     if (
-      (req.query.checkIn ||
-        req.query.checkin_date ||
-        req.query.checkOut ||
-        req.query.checkout_date) &&
+      rentalType === "DAY" &&
+      (req.query.checkIn || req.query.checkOut) &&
       (!checkIn || !checkOut || checkOut <= checkIn)
     ) {
       return res.status(400).json({
@@ -436,8 +438,16 @@ async function listHotels(req, res, next) {
         )`;
     }
 
-    if (checkIn && checkOut) {
-      params.push(checkIn, checkOut, adults, rooms);
+    // 🌟 KIỂM TRA PHÒNG TRỐNG (CÓ HỖ TRỢ LINH HOẠT THEO GIỜ HOẶC THEO NGÀY) 🌟
+    if (checkIn) {
+      const effectiveEnd =
+        rentalType === "DAY" && checkOut
+          ? checkOut
+          : new Date(new Date(checkIn).getTime() + 86400000)
+              .toISOString()
+              .slice(0, 10);
+
+      params.push(checkIn, effectiveEnd, adults, rooms);
       const checkInParam = params.length - 3;
       const checkOutParam = params.length - 2;
       const adultsParam = params.length - 1;
@@ -502,6 +512,7 @@ async function listHotels(req, res, next) {
             ? "h.average_rating DESC NULLS LAST, min_price ASC"
             : "h.created_at DESC, h.average_rating DESC NULLS LAST, min_price ASC";
 
+    // 🌟 TRẢ VỀ ĐẦY ĐỦ: GIÁ NGÀY, GIÁ GIỜ, GIÁ QUA ĐÊM, GIÁ BUỔI 🌟
     const sql = `
       SELECT
          h.id,
@@ -541,7 +552,34 @@ async function listHotels(req, res, next) {
              WHERE r.hotel_id = h.id AND r.is_active = true
            ),
            500000
-         ) AS min_price
+         ) AS min_price,
+         COALESCE(
+           (
+             SELECT MIN(r.hourly_price) 
+             FROM public.room r 
+             WHERE r.hotel_id = h.id AND r.is_active = true AND r.hourly_price > 0
+           ),
+           ROUND(COALESCE((SELECT MIN(r.base_price) FROM public.room r WHERE r.hotel_id = h.id AND r.is_active = true), 500000) * 0.25),
+           80000
+         ) AS min_hourly_price,
+         COALESCE(
+           (
+             SELECT MIN(r.overnight_price) 
+             FROM public.room r 
+             WHERE r.hotel_id = h.id AND r.is_active = true AND r.overnight_price > 0
+           ),
+           COALESCE((SELECT MIN(r.base_price) FROM public.room r WHERE r.hotel_id = h.id AND r.is_active = true), 500000),
+           350000
+         ) AS min_overnight_price,
+         COALESCE(
+           (
+             SELECT MIN(r.half_day_price) 
+             FROM public.room r 
+             WHERE r.hotel_id = h.id AND r.is_active = true AND r.half_day_price > 0
+           ),
+           ROUND(COALESCE((SELECT MIN(r.base_price) FROM public.room r WHERE r.hotel_id = h.id AND r.is_active = true), 500000) * 0.8),
+           250000
+         ) AS min_half_day_price
        FROM public.hotel h
        ${where}
       ORDER BY ${orderBy}
@@ -651,7 +689,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (NHẢ PHÒNG NGAY KHI CHECKED_OUT HOẶC CANCELLED) ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
