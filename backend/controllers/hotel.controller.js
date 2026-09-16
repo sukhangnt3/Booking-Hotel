@@ -467,10 +467,10 @@ async function listHotels(req, res, next) {
                     FROM public.booking b
                     WHERE b.checkin_date <= stay.night_date
                       AND b.checkout_date > stay.night_date
+                      AND b.status NOT IN ('checked_out', 'cancelled')
                       AND (
-                        b.status::text IN ('confirmed', 'checked_in')
-                        OR b.payment_status::text = 'paid'
-                        OR (b.status::text = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+                        b.status IN ('confirmed', 'checked_in')
+                        OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
                       )
                       AND (
                         EXISTS (SELECT 1 FROM public.booking_room br WHERE br.booking_id = b.id AND br.room_id = ar.id)
@@ -651,7 +651,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (NHẢ PHÒNG NGAY KHI CHECKED_OUT HOẶC CANCELLED) ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
@@ -696,10 +696,10 @@ async function listHotelRoomAvailability(req, res, next) {
                 FROM public.booking b
                 WHERE b.checkin_date <= sn.night_date
                   AND b.checkout_date > sn.night_date
+                  AND b.status NOT IN ('checked_out', 'cancelled')
                   AND (
                     b.status IN ('confirmed', 'checked_in')
-                    OR b.payment_status = 'paid'
-                    OR (b.status = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+                    OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
                   )
                   AND (
                     EXISTS (SELECT 1 FROM public.booking_room br WHERE br.booking_id = b.id AND br.room_id = r.id)

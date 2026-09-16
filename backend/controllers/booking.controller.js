@@ -82,7 +82,7 @@ async function cleanupExpiredLocks() {
   } catch (e) {}
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (CHẶN TUYỆT ĐỐI NẾU HẾT PHÒNG THỰC TẾ) ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (LOẠI BỎ CHECKED_OUT VÀ CANCELLED) ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -178,7 +178,6 @@ async function createBooking(req, res, next) {
       : Number(hotelData.commission_rate ?? 18.0);
 
     if (room_id) {
-      // 🌟 TÍNH SỐ PHÒNG THỰC TẾ: Ưu tiên đếm số phòng vật lý trong room_unit
       const roomStockRes = await client.query(
         `SELECT r.id, r.name, r.base_price,
                 COALESCE(
@@ -204,8 +203,6 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
-      // 🌟 KIỂM TRA XUNG ĐỘT TOÀN DIỆN:
-      // Tính cả: Khách online đã thanh toán, khách đang được lễ tân xếp phòng, khách ở tại quầy
       const conflictCheckSql = `
         WITH days AS (
           SELECT generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval)::date AS day
@@ -225,10 +222,10 @@ async function createBooking(req, res, next) {
           JOIN public.booking b 
             ON b.checkin_date <= days.day 
            AND b.checkout_date > days.day
+           AND b.status NOT IN ('checked_out', 'cancelled')
            AND (
              b.status IN ('confirmed', 'checked_in')
-             OR b.payment_status = 'paid'
-             OR (b.status = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+             OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
            )
            AND (
              EXISTS (
