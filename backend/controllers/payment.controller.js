@@ -113,10 +113,11 @@ async function handleBankWebhook(req, res) {
     if (matchBooking) {
       const bookingCode = matchBooking[0].replace(/\s+/g, "").toUpperCase();
 
-      // 🌟 ĐÁNH DẤU: ĐÃ THANH TOÁN (paid), CHỜ LỄ TÂN CHỌN PHÒNG (receptionist_assigned = false)
+      // 🌟 ĐÁNH DẤU: ĐÃ THANH TOÁN (paid), STATUS 'pending' VÀ CHỜ LỄ TÂN CHỌN PHÒNG (receptionist_assigned = false)
       const updateResult = await pool.query(
         `UPDATE public.booking 
          SET payment_status = 'paid', 
+             status = 'pending'::public.booking_status_enum,
              receptionist_assigned = false,
              updated_at = NOW()
          WHERE booking_code ILIKE $1 OR booking_code ILIKE $2
@@ -150,6 +151,7 @@ async function confirmManualPayment(req, res) {
     const updateRes = await pool.query(
       `UPDATE public.booking 
        SET payment_status = 'paid', 
+           status = 'pending'::public.booking_status_enum,
            receptionist_assigned = false,
            updated_at = NOW()
        WHERE booking_code ILIKE $1 OR id::text = $1

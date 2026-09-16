@@ -67,7 +67,7 @@ export default function ReceptionMapPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🌟 3 BỘ LỌC TRẠNG THÁI PHÒNG
+  // 3 BỘ LỌC TRẠNG THÁI PHÒNG
   const [statusFilters, setStatusFilters] = useState({
     incoming: true,
     occupied: true,
@@ -81,7 +81,7 @@ export default function ReceptionMapPage() {
   const [activeRoomData, setActiveRoomData] = useState(null);
   const [changeRoomTarget, setChangeRoomTarget] = useState(null);
 
-  // 🌟 STATE CHO ĐƠN CHỜ XÁC NHẬN (Ảnh 1 & Ảnh 2)
+  // STATE CHO ĐƠN CHỜ XÁC NHẬN (ONLINE VỪA QUÉT QR)
   const [pendingBookings, setPendingBookings] = useState([]);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [assigningBooking, setAssigningBooking] = useState(null);
@@ -222,7 +222,7 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // 🌟 LẤY TOÀN BỘ ĐƠN ONLINE CHỜ DUYỆT (TỰ ĐỘNG LẤY NGAY CẢ KHI CHƯA CHỌN HOTEL_ID)
+  // LẤY CÁC ĐƠN ĐÃ THANH TOÁN CHỜ LỄ TÂN GÁN PHÒNG
   const fetchPendingBookings = useCallback(async () => {
     try {
       const url = selectedHotelId
@@ -237,7 +237,7 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // Tự động load dữ liệu và refresh định kỳ mỗi 5 giây để bắt khách vừa đặt ngay lập tức
+  // Tự động load và refresh mỗi 5 giây
   useEffect(() => {
     fetchRoomMap();
     fetchPendingBookings();
@@ -300,21 +300,28 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // Danh sách các phòng trống khả dụng để chọn cho đơn
+  // 🌟 DANH SÁCH PHÒNG TRỐNG ĐỂ GÁN (ƯU TIÊN CÙNG HẠNG HOẶC CHO PHÉP NÂNG HẠNG)
   const availableRoomsForAssign = useMemo(() => {
     if (!assigningBooking) return [];
-    return rooms.filter(
+
+    const vacantRooms = rooms.filter(
+      (r) => r.status === "available" && !r.booking,
+    );
+
+    const sameTypeRooms = vacantRooms.filter(
       (r) =>
-        r.status === "available" &&
-        (!assigningBooking.room_type_id ||
-          String(r.room_type_id) === String(assigningBooking.room_type_id) ||
+        !assigningBooking.room_type_id ||
+        String(r.room_type_id) === String(assigningBooking.room_type_id) ||
+        (assigningBooking.room_type_name &&
           r.type_name
             ?.toLowerCase()
             .includes(assigningBooking.room_type_name?.toLowerCase())),
     );
+
+    return sameTypeRooms.length > 0 ? sameTypeRooms : vacantRooms;
   }, [rooms, assigningBooking]);
 
-  // 🌟 LỄ TÂN BẤM "XÁC NHẬN" VÀ GÁN PHÒNG (Ảnh 2 -> Chuyển thành Ảnh 3)
+  // 🌟 LỄ TÂN BẤM "XÁC NHẬN" VÀ GÁN PHÒNG
   const handleConfirmAssignRoom = async () => {
     if (!selectedAssignRoom) {
       return alert("Vui lòng chọn số phòng trong danh sách!");
@@ -328,13 +335,13 @@ export default function ReceptionMapPage() {
       });
 
       alert(
-        `✓ Đã xác nhận đơn ${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công!`,
+        `✓ Đã xác nhận đơn ${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công! Phòng đã chuyển sang trạng thái "Đã đặt trước".`,
       );
       setAssigningBooking(null);
       setSelectedAssignRoom("");
       setIsPendingModalOpen(false);
 
-      // Tải lại sơ đồ phòng và danh sách đơn chờ ngay lập tức
+      // Tải lại sơ đồ phòng và đơn chờ ngay lập tức
       await Promise.all([fetchRoomMap(), fetchPendingBookings()]);
     } catch (err) {
       alert(
@@ -733,7 +740,7 @@ export default function ReceptionMapPage() {
           </div>
         </div>
 
-        {/* 🌟 CỤM BÊN PHẢI: NÚT CHỜ XÁC NHẬN TO RÕ RÀNG */}
+        {/* CỤM BÊN PHẢI: NÚT CHỜ XÁC NHẬN */}
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -775,7 +782,7 @@ export default function ReceptionMapPage() {
         </div>
       </header>
 
-      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI (Ảnh 1) ─── */}
+      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI ─── */}
       <div className="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center justify-between gap-4 flex-wrap text-xs">
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -851,7 +858,7 @@ export default function ReceptionMapPage() {
         </div>
       </div>
 
-      {/* 🌟 BANNER CẢNH BÁO TỰ ĐỘNG KHI CÓ KHÁCH VỪA THANH TOÁN (KHÔNG THỂ BỊ BỎ LỠ) */}
+      {/* BANNER THÔNG BÁO TỰ ĐỘNG KHI CÓ KHÁCH VỪA THANH TOÁN */}
       {pendingBookings.length > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
           <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-5 py-3 rounded-2xl shadow-lg flex items-center justify-between flex-wrap gap-3 animate-bounce">
@@ -936,7 +943,7 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* ─── POPUP 1: MODAL "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (Ảnh 1) ─── */}
+      {/* ─── MODAL "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" ─── */}
       {isPendingModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
@@ -1043,7 +1050,7 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── POPUP 2: MODAL "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (Ảnh 2) ─── */}
+      {/* ─── MODAL "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
@@ -1089,7 +1096,8 @@ export default function ReceptionMapPage() {
                     <option value="">-- Chọn số phòng --</option>
                     {availableRoomsForAssign.map((r) => (
                       <option key={r.id} value={r.room_number}>
-                        Phòng {r.room_number} ({r.area || "Tầng 1"})
+                        Phòng {r.room_number} ({r.area || "Tầng 1"} -{" "}
+                        {r.type_name})
                       </option>
                     ))}
                   </select>
@@ -1115,7 +1123,8 @@ export default function ReceptionMapPage() {
               </div>
 
               <p className="text-[11px] text-gray-500 italic">
-                Sau khi xác nhận, các phòng sẽ chuyển về trạng thái đặt trước
+                Sau khi xác nhận, phòng sẽ chuyển sang trạng thái "Đã đặt trước"
+                (Màu vàng) trên sơ đồ phòng.
               </p>
             </div>
 
@@ -1140,7 +1149,7 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── 1. MODAL PHÒNG SẮP ĐẾN ─── */}
+      {/* ─── 1. MODAL PHÒNG ĐÃ ĐẶT TRƯỚC (INCOMING) ─── */}
       <IncomingRoomModal
         isOpen={activeModalType === "incoming"}
         room={activeRoomData}
@@ -1157,7 +1166,7 @@ export default function ReceptionMapPage() {
         formatVND={formatVND}
       />
 
-      {/* ─── 2. MODAL XÁC NHẬN NHẬN PHÒNG ─── */}
+      {/* ─── 2. MODAL XÁC NHẬN NHẬN PHÒNG (CHECK-IN) ─── */}
       <ConfirmCheckInModal
         isOpen={activeModalType === "confirm_checkin"}
         onClose={() => {
@@ -1228,7 +1237,7 @@ export default function ReceptionMapPage() {
         onConfirmChange={handleExecuteChangeRoom}
       />
 
-      {/* ─── 7. MODAL ĐẶT PHÒNG NHANH ─── */}
+      {/* ─── 7. MODAL ĐẶT PHÒNG NHANH TẠI QUẦY (WALK-IN) ─── */}
       <QuickBookingModal
         isOpen={activeModalType === "quick_booking"}
         onClose={() => setActiveModalType(null)}

@@ -248,81 +248,6 @@ async function getOwnerStats(req, res, next) {
       ],
     };
 
-    const dailyOccupiedCTE = `
-      WITH period_days AS (
-        SELECT generate_series($${pStart}::date, $${pEnd}::date, '1 day'::interval)::date AS day_date
-      ),
-      daily_occupied_rooms AS (
-        SELECT DISTINCT
-          pd.day_date,
-          COALESCE(b.room_number, 'P001') AS room_num,
-          COALESCE(br.room_id, r.id) AS room_type_id,
-          COALESCE(ru.area, 'Tầng 1') AS area_name
-        FROM period_days pd
-        JOIN public.booking b 
-          ON (
-            (b.checkin_date <= pd.day_date AND b.checkout_date > pd.day_date)
-            OR (b.checkin_date = b.checkout_date AND b.checkin_date = pd.day_date)
-          )
-          AND b.status IN ('checked_in', 'checked_out', 'confirmed')
-        JOIN public.hotel h ON h.id = b.hotel_id
-        LEFT JOIN public.booking_room br ON br.booking_id = b.id
-        LEFT JOIN public.room r ON r.hotel_id = b.hotel_id AND (r.name ILIKE b.room_number OR b.room_number ILIKE '%' || r.code || '%')
-        LEFT JOIN public.room_unit ru ON ru.hotel_id = b.hotel_id AND (ru.room_number = b.room_number OR ru.room_number ILIKE '%' || b.room_number || '%')
-        WHERE ${hotelFilter}
-      ),
-      room_units_count AS (
-        SELECT room_id, COUNT(id)::int AS unit_count 
-        FROM public.room_unit 
-        GROUP BY room_id
-      )
-    `;
-
-    const roomTypeOccupancyRes = await pool.query(
-      ` ${dailyOccupiedCTE}
-        SELECT 
-          r.id,
-          r.name,
-          COALESCE(r.amount, ruc.unit_count, 1)::int AS total_rooms,
-          COUNT(dor.day_date)::int AS used_room_days
-        FROM public.room r
-        JOIN public.hotel h ON h.id = r.hotel_id
-        LEFT JOIN room_units_count ruc ON ruc.room_id = r.id
-        LEFT JOIN daily_occupied_rooms dor ON dor.room_type_id = r.id
-        WHERE ${hotelFilter} AND r.is_active = true
-        GROUP BY r.id, r.name, r.amount, ruc.unit_count, r.base_price
-        ORDER BY r.base_price ASC`,
-      timeParams,
-    );
-
-    let totalHotelUsedRoomDays = 0;
-    const occupancyByRoomType = roomTypeOccupancyRes.rows.map((r) => {
-      const roomTotal = Number(r.total_rooms || 1);
-      const roomCapacity = roomTotal * dayCount;
-      const usedDays = Number(r.used_room_days || 0);
-      totalHotelUsedRoomDays += usedDays;
-
-      const rate =
-        roomCapacity > 0
-          ? Number(Math.min(100, (usedDays / roomCapacity) * 100).toFixed(2))
-          : 0;
-      return {
-        name: r.name,
-        rate: rate,
-      };
-    });
-
-    const totalHotelCapacity = Math.max(1, totalRooms * dayCount);
-    const avgOccupancyRate =
-      totalHotelUsedRoomDays > 0
-        ? Number(
-            Math.min(
-              100,
-              (totalHotelUsedRoomDays / totalHotelCapacity) * 100,
-            ).toFixed(2),
-          )
-        : 0;
-
     return res.json({
       success: true,
       occupancyCurrent: {
@@ -489,6 +414,8 @@ async function getRoomMapData(req, res, next) {
         children_total: Number(b.children_total || 0),
       };
 
+      // Nếu đơn đã check-in thì phòng là occupied (Đang sử dụng)
+      // Nếu đơn là confirmed (Lễ tân đã gán phòng) thì phòng là incoming (ĐÃ ĐẶT TRƯỚC)
       targetRoom.status = b.status === "checked_in" ? "occupied" : "incoming";
     };
 
@@ -519,15 +446,14 @@ async function getRoomMapData(req, res, next) {
   }
 }
 
-// ─── 3.1. LẤY TẤT CẢ ĐƠN ONLINE CHỜ LỄ TÂN CHỌN PHÒNG (100% HIỆN RA) ───
+// ─── 3.1. LẤY TẤT CẢ ĐƠN ONLINE ĐÃ THANH TOÁN CHỜ LỄ TÂN CHỌN PHÒNG ───
 async function getPendingOnlineBookings(req, res, next) {
   try {
     const rawHotelId = req.query.hotel_id
       ? String(req.query.hotel_id).trim()
       : "";
 
-    // 🌟 ĐIỀU KIỆN CHUẨN XÁC TUYỆT ĐỐI:
-    // Lấy mọi đơn online chưa trả phòng/chưa hủy mà LỄ TÂN CHƯA CHỌN PHÒNG (receptionist_assigned != true)
+    // 🌟 ĐIỀU KIỆN CHUẨN XÁC: Đã thanh toán (paid) và Lễ tân chưa xếp phòng (receptionist_assigned = false)
     const querySql = `
       SELECT 
          b.id,
@@ -553,6 +479,7 @@ async function getPendingOnlineBookings(req, res, next) {
        LEFT JOIN public.room r ON r.id = br.room_id
        LEFT JOIN public.payment p ON p.booking_id = b.id
        WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled')
+         AND (b.payment_status = 'paid' OR b.status = 'confirmed')
          AND (b.receptionist_assigned IS NULL OR b.receptionist_assigned = false)
          AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1 OR b.hotel_id IS NULL)
        ORDER BY b.created_at DESC
@@ -560,20 +487,6 @@ async function getPendingOnlineBookings(req, res, next) {
     `;
 
     const result = await pool.query(querySql, [rawHotelId]);
-
-    console.log(`\n==================================================`);
-    console.log(
-      `📋 [LỄ TÂN API]: Tìm thấy ${result.rows.length} đơn đang chờ Lễ tân xếp phòng!`,
-    );
-    if (result.rows.length > 0) {
-      console.log(
-        `👉 Danh sách đơn:`,
-        result.rows
-          .map((r) => `${r.booking_code} (${r.customer_name})`)
-          .join(" | "),
-      );
-    }
-    console.log(`==================================================\n`);
 
     return res.json({
       success: true,
@@ -585,7 +498,7 @@ async function getPendingOnlineBookings(req, res, next) {
   }
 }
 
-// ─── 3.2. LỄ TÂN CHỌN PHÒNG & BẤM XÁC NHẬN (ĐƠN CHUYỂN SANG ĐÃ ĐẶT TRƯỚC) ───
+// ─── 3.2. LỄ TÂN CHỌN PHÒNG & BẤM XÁC NHẬN (CHUYỂN SANG ĐÃ ĐẶT TRƯỚC) ───
 async function confirmAndAssignRoom(req, res, next) {
   const client = await pool.connect();
   try {
@@ -611,7 +524,7 @@ async function confirmAndAssignRoom(req, res, next) {
         .json({ success: false, message: "Không tìm thấy đơn đặt phòng." });
     }
 
-    // 🌟 ĐÁNH DẤU receptionist_assigned = true ĐỂ CHUYỂN LÊN SƠ ĐỒ PHÒNG
+    // 🌟 GÁN PHÒNG, ĐỔI STATUS THÀNH 'confirmed' VÀ BẬT receptionist_assigned = true
     const updateRes = await client.query(
       `UPDATE public.booking 
        SET room_number = $1,
@@ -627,7 +540,7 @@ async function confirmAndAssignRoom(req, res, next) {
     await client.query("COMMIT");
 
     console.log(
-      `✅ [LỄ TÂN]: Đã xếp đơn ${booking.booking_code} vào phòng ${room_number}!`,
+      `✅ [LỄ TÂN]: Đã xác nhận đơn ${booking.booking_code} và xếp vào phòng ${room_number}!`,
     );
 
     return res.json({
@@ -674,7 +587,6 @@ async function createWalkInBooking(req, res, next) {
       [room_id],
     );
     const roomNumber = unitRes.rows[0]?.room_number || "P.101";
-    const roomName = unitRes.rows[0]?.room_name || "Phòng tiêu chuẩn";
 
     const insertBooking = await client.query(
       `INSERT INTO public.booking (
@@ -725,7 +637,7 @@ async function createWalkInBooking(req, res, next) {
   }
 }
 
-// ─── 5. TRẢ PHÒNG ───
+// ─── 5. TRẢ PHÒNG (CHECK-OUT) ───
 async function handleOwnerCheckOut(req, res, next) {
   try {
     const { id } = req.params;
@@ -805,10 +717,14 @@ async function markRoomDirty(req, res, next) {
 async function handleChangeRoom(req, res, next) {
   try {
     const { id } = req.params;
-    const { new_room_number } = req.body;
+    const { new_room_number, room_legs } = req.body;
     await pool.query(
-      `UPDATE public.booking SET room_number = $1, updated_at = NOW() WHERE id::text = $2 OR booking_code = $2`,
-      [new_room_number, id],
+      `UPDATE public.booking 
+       SET room_number = $1, 
+           room_legs = COALESCE($2::jsonb, room_legs), 
+           updated_at = NOW() 
+       WHERE id::text = $3 OR booking_code = $3`,
+      [new_room_number, room_legs ? JSON.stringify(room_legs) : null, id],
     );
     return res.json({
       success: true,
@@ -823,16 +739,33 @@ async function handleAddBookingService(req, res, next) {
   return res.json({ success: true });
 }
 
+// ─── 8. NHẬN PHÒNG (CHECK-IN) KHI KHÁCH ĐẾN KHÁCH SẠN ───
 async function handleOwnerCheckIn(req, res, next) {
   try {
     const { id } = req.params;
     const { room_number } = req.body;
     const updateBookingRes = await pool.query(
-      `UPDATE public.booking SET status = 'checked_in', room_number = COALESCE($1, room_number), updated_at = NOW()
+      `UPDATE public.booking 
+       SET status = 'checked_in'::public.booking_status_enum, 
+           room_number = COALESCE($1, room_number), 
+           confirmed_at = NOW(), 
+           updated_at = NOW()
        WHERE id::text = $2 OR booking_code = $2 RETURNING *`,
       [room_number || null, id],
     );
-    return res.json({ success: true, booking: updateBookingRes.rows[0] });
+
+    const b = updateBookingRes.rows[0];
+    if (b?.room_number && b?.hotel_id) {
+      await pool
+        .query(
+          `UPDATE public.room_unit SET status = 'occupied', updated_at = NOW()
+         WHERE hotel_id = $1 AND room_number = $2`,
+          [b.hotel_id, b.room_number],
+        )
+        .catch(() => {});
+    }
+
+    return res.json({ success: true, booking: b });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
