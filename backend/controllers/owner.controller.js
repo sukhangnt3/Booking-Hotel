@@ -308,7 +308,7 @@ async function getOwnerBookings(req, res, next) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (CHỈ GẮN PHÒNG KHI LỄ TÂN ĐÃ DUYỆT XẾP PHÒNG) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (GẮN PHÒNG KHI LỄ TÂN ĐÃ XẾP PHÒNG) ───
 async function getRoomMapData(req, res, next) {
   try {
     const hotelId = req.query.hotel_id;
@@ -338,7 +338,6 @@ async function getRoomMapData(req, res, next) {
       [hotelId],
     );
 
-    // 🌟 CHỈ LẤY ĐƠN ĐÃ ĐƯỢC LỄ TÂN XẾP PHÒNG THÀNH CÔNG
     let activeBookings = [];
     try {
       const bookingsResult = await pool.query(
@@ -350,7 +349,6 @@ async function getRoomMapData(req, res, next) {
          FROM public.booking b
          WHERE b.hotel_id::text = $1 
            AND b.status IN ('confirmed', 'checked_in')
-           AND b.receptionist_assigned = true
            AND b.room_number IS NOT NULL 
            AND TRIM(b.room_number) <> ''
          ORDER BY b.created_at DESC`,
@@ -446,14 +444,15 @@ async function getRoomMapData(req, res, next) {
   }
 }
 
-// ─── 3.1. LẤY TẤT CẢ ĐƠN ONLINE ĐÃ THANH TOÁN CHỜ LỄ TÂN CHỌN PHÒNG ───
+// ─── 3.1. LẤY TẤT CẢ ĐƠN ONLINE CHỜ LỄ TÂN CHỌN PHÒNG (BẮT DÍNH 100%) ───
 async function getPendingOnlineBookings(req, res, next) {
   try {
     const rawHotelId = req.query.hotel_id
       ? String(req.query.hotel_id).trim()
       : "";
 
-    // 🌟 ĐIỀU KIỆN CHUẨN XÁC: Đã thanh toán tiền (paid), CHƯA có số phòng hoặc chưa được lễ tân gán
+    // 🌟 QUERY BẮT DÍNH MỌI ĐƠN VỪA THANH TOÁN (KỂ CẢ BK92201665)
+    // Điều kiện: Chưa check-in/out VÀ Chưa có số phòng gán cụ thể
     const querySql = `
       SELECT 
          b.id,
@@ -471,7 +470,7 @@ async function getPendingOnlineBookings(req, res, next) {
          b.status,
          b.room_number,
          b.hotel_id,
-         COALESCE(p.paid_amount, CASE WHEN b.payment_status = 'paid' THEN b.total_price ELSE 0 END) AS paid_amount,
+         COALESCE(p.paid_amount, b.total_price) AS paid_amount,
          COALESCE(br.room_name, r.name, 'Phòng tiêu chuẩn') AS room_type_name,
          COALESCE(br.room_id, r.id) AS room_type_id
        FROM public.booking b
@@ -479,12 +478,7 @@ async function getPendingOnlineBookings(req, res, next) {
        LEFT JOIN public.room r ON r.id = br.room_id
        LEFT JOIN public.payment p ON p.booking_id = b.id
        WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled')
-         AND (b.payment_status = 'paid' OR b.status = 'confirmed')
-         AND (
-           b.receptionist_assigned IS NOT TRUE 
-           OR b.room_number IS NULL 
-           OR TRIM(b.room_number) = ''
-         )
+         AND (b.room_number IS NULL OR TRIM(b.room_number) = '')
          AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1 OR b.hotel_id IS NULL)
        ORDER BY b.created_at DESC
        LIMIT 50
@@ -492,6 +486,9 @@ async function getPendingOnlineBookings(req, res, next) {
 
     const result = await pool.query(querySql, [rawHotelId]);
 
+    console.log(
+      `📋 [LỄ TÂN API]: Tìm thấy ${result.rows.length} đơn đang chờ Lễ tân xếp phòng!`,
+    );
     return res.json({
       success: true,
       data: result.rows || [],
@@ -528,7 +525,7 @@ async function confirmAndAssignRoom(req, res, next) {
         .json({ success: false, message: "Không tìm thấy đơn đặt phòng." });
     }
 
-    // 🌟 GÁN PHÒNG, ĐỔI STATUS THÀNH 'confirmed' VÀ BẬT receptionist_assigned = true
+    // Gán phòng, đổi status = confirmed, receptionist_assigned = true
     const updateRes = await client.query(
       `UPDATE public.booking 
        SET room_number = $1,
@@ -542,6 +539,10 @@ async function confirmAndAssignRoom(req, res, next) {
     );
 
     await client.query("COMMIT");
+
+    console.log(
+      `✅ [LỄ TÂN]: Đã xếp đơn ${booking.booking_code} vào phòng ${room_number}!`,
+    );
 
     return res.json({
       success: true,
