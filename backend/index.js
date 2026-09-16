@@ -36,7 +36,6 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
   "https://booking-hotel-fawn.vercel.app", // 🌟 DOMAIN VERCEL MỚI CỦA BẠN
-  "https://booking-hotel-lkip.vercel.app",
 ];
 
 // Cho phép thêm FRONTEND_URL từ Render Environment nếu có
