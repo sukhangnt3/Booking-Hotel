@@ -647,6 +647,7 @@ export default function HomePage() {
                     )}
                   </div>
 
+                  {/* BỘ CHỌN: PHÒNG, NGƯỜI LỚN, TRẺ EM (ĐÃ THÊM NÚT TĂNG/GIẢM TRẺ EM ĐẦY ĐỦ) */}
                   <div
                     ref={guestRef}
                     className="relative md:col-span-3 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center gap-2.5 hover:border-blue-600 transition-all select-none"
@@ -665,56 +666,92 @@ export default function HomePage() {
                     {isGuestOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute left-0 right-0 md:left-auto md:w-64 top-full mt-2 z-50 bg-white border border-gray-200 rounded-xl shadow-2xl p-4 space-y-3 cursor-default"
+                        className="absolute left-0 right-0 md:left-auto md:w-72 top-full mt-2 z-50 bg-white border border-gray-200 rounded-xl shadow-2xl p-4 space-y-3.5 cursor-default"
                       >
+                        {/* 1. Chọn số phòng */}
                         <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gray-700">
-                            Phòng
-                          </span>
+                          <div>
+                            <span className="text-xs font-bold text-gray-800 block">
+                              Phòng
+                            </span>
+                          </div>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() =>
                                 setRooms((r) => Math.max(1, r - 1))
                               }
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
+                              className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
                             >
                               -
                             </button>
-                            <span className="text-xs font-bold w-4 text-center">
+                            <span className="text-xs font-black w-5 text-center">
                               {rooms}
                             </span>
                             <button
                               type="button"
                               onClick={() => setRooms((r) => r + 1)}
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
+                              className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
                             >
                               +
                             </button>
                           </div>
                         </div>
 
+                        {/* 2. Chọn số người lớn */}
                         <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gray-700">
-                            Người lớn
-                          </span>
+                          <div>
+                            <span className="text-xs font-bold text-gray-800 block">
+                              Người lớn
+                            </span>
+                          </div>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() =>
                                 setAdults((a) => Math.max(1, a - 1))
                               }
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
+                              className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
                             >
                               -
                             </button>
-                            <span className="text-xs font-bold w-4 text-center">
+                            <span className="text-xs font-black w-5 text-center">
                               {adults}
                             </span>
                             <button
                               type="button"
                               onClick={() => setAdults((a) => a + 1)}
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
+                              className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 3. Chọn số trẻ em */}
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-xs font-bold text-gray-800 block">
+                              Trẻ em
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setChildren((c) => Math.max(0, c - 1))
+                              }
+                              className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs font-black w-5 text-center">
+                              {children}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setChildren((c) => c + 1)}
+                              className="w-7 h-7 rounded-lg border border-gray-300 font-bold hover:bg-gray-100 flex items-center justify-center cursor-pointer"
                             >
                               +
                             </button>
@@ -724,7 +761,7 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => setIsGuestOpen(false)}
-                          className="w-full py-2 bg-[#003580] text-white text-xs font-bold rounded-lg mt-2 cursor-pointer"
+                          className="w-full py-2 bg-[#003580] hover:bg-blue-900 text-white text-xs font-bold rounded-lg mt-2 cursor-pointer shadow-sm transition"
                         >
                           Áp dụng
                         </button>

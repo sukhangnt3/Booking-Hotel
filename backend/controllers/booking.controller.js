@@ -198,6 +198,7 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = roomData.total_stock;
 
+      // Kiểm tra xung đột chuẩn từng đêm: tính cả confirmed, checked_in, paid và pending gần đây
       const conflictCheckSql = `
         WITH days AS (
           SELECT generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval)::date AS day
@@ -217,7 +218,11 @@ async function createBooking(req, res, next) {
           JOIN public.booking b 
             ON b.checkin_date <= days.day 
            AND b.checkout_date > days.day
-           AND b.status IN ('confirmed', 'checked_in')
+           AND (
+             b.status IN ('confirmed', 'checked_in')
+             OR b.payment_status = 'paid'
+             OR (b.status = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+           )
           JOIN public.booking_room br 
             ON br.booking_id = b.id 
            AND br.room_id = $1
@@ -246,7 +251,7 @@ async function createBooking(req, res, next) {
         client.release();
         return res.status(400).json({
           success: false,
-          message: `Rất tiếc! Hạng phòng "${roomData.name}" đã hết chỗ. Vui lòng chọn ngày khác!`,
+          message: `Rất tiếc! Hạng phòng "${roomData.name}" đã hết chỗ trong khoảng thời gian này. Vui lòng chọn ngày khác!`,
         });
       }
     }
@@ -281,7 +286,6 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
-    // 🌟 ĐƠN ONLINE: room_number = NULL và receptionist_assigned = false
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -431,7 +435,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. XÁC NHẬN THANH TOÁN XONG (KHÔNG GÁN SỐ PHÒNG, GIỮ STATUS = PENDING) ───
+// ─── 2. XÁC NHẬN THANH TOÁN XONG ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -472,7 +476,6 @@ async function confirmPayment(req, res, next) {
         ? paidAmountReq
         : Number(booking.expected_amount || booking.total_price);
 
-    // 🌟 THANH TOÁN XONG: payment_status = 'paid', status = 'pending', receptionist_assigned = false, room_number = NULL
     await client.query(
       `UPDATE public.booking
        SET payment_status = 'paid',

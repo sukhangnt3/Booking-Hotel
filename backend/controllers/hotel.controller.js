@@ -455,22 +455,29 @@ async function listHotels(req, res, next) {
                 INTERVAL '1 day'
               ) AS stay(night_date)
               WHERE (
-                ar.amount
+                COALESCE(ar.amount, 1)
                 - COALESCE((
                     SELECT SUM(br.quantity)::int
                     FROM public.booking_room br
                     JOIN public.booking b ON b.id = br.booking_id
                     WHERE br.room_id = ar.id
-                      AND b.status::text IN ('confirmed', 'checked_in')
                       AND b.checkin_date <= stay.night_date
                       AND b.checkout_date > stay.night_date
+                      AND (
+                        b.status::text IN ('confirmed', 'checked_in')
+                        OR b.payment_status::text = 'paid'
+                        OR (b.status::text = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+                      )
                   ), 0)
                 - COALESCE((
                     SELECT SUM(tl.quantity)::int
                     FROM public.temporary_locks tl
                     WHERE tl.room_id = ar.id
                       AND tl.lock_date = stay.night_date
-                      AND tl.lock_expires_at > NOW()
+                      AND (
+                        (tl.lock_expires_at IS NOT NULL AND tl.lock_expires_at > NOW())
+                        OR (tl.expires_at IS NOT NULL AND tl.expires_at > NOW())
+                      )
                   ), 0)
               ) < $${roomsParam}
             )
@@ -631,7 +638,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (ĐÃ SỬA LỖI OVERBOOKING) ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
@@ -666,21 +673,29 @@ async function listHotelRoomAvailability(req, res, next) {
           'active' AS day_status,
           GREATEST(
             0,
-            r.amount
+            COALESCE(r.amount, 1)
             - COALESCE((
                 SELECT SUM(br.quantity)::int
                 FROM public.booking_room br
                 JOIN public.booking b ON b.id = br.booking_id
                 WHERE br.room_id = r.id 
-                  AND br.book_date = sn.night_date
-                  AND b.status IN ('confirmed', 'checked_in')
+                  AND b.checkin_date <= sn.night_date
+                  AND b.checkout_date > sn.night_date
+                  AND (
+                    b.status IN ('confirmed', 'checked_in')
+                    OR b.payment_status = 'paid'
+                    OR (b.status = 'pending' AND b.created_at >= NOW() - INTERVAL '15 minutes')
+                  )
               ), 0)
             - COALESCE((
                 SELECT SUM(tl.quantity)::int
                 FROM public.temporary_locks tl
                 WHERE tl.room_id = r.id 
                   AND tl.lock_date = sn.night_date
-                  AND tl.lock_expires_at > NOW()
+                  AND (
+                    (tl.lock_expires_at IS NOT NULL AND tl.lock_expires_at > NOW())
+                    OR (tl.expires_at IS NOT NULL AND tl.expires_at > NOW())
+                  )
               ), 0)
           ) AS available_in_night
         FROM public.room r
@@ -787,7 +802,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TỰ ĐỘNG TẠO USER VÀ TRẢ VỀ TOKEN ĐĂNG NHẬP MỚI) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -806,7 +821,6 @@ async function registerHotel(req, res, next) {
     const ownerFullName = req.body?.ownerName || req.body?.name || "Chủ cơ sở";
     const userPhone = req.body?.phoneContact || req.body?.phone;
 
-    // 🌟 1. TỰ ĐỘNG HỎI POSTGRES BẢNG VÀ CỘT MÀ hotel_owner_id_fkey ĐANG TRỎ TỚI
     let refTable = "users";
     let refCol = "id";
 
@@ -827,7 +841,6 @@ async function registerHotel(req, res, next) {
       console.warn("Dùng bảng tham chiếu mặc định 'users':", fkErr.message);
     }
 
-    // 🌟 2. QUÉT CỘT THỰC TẾ TRONG BẢNG USERS
     const uColRes = await client.query(
       `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${refTable}'`,
     );
@@ -837,7 +850,6 @@ async function registerHotel(req, res, next) {
 
     let validOwnerId = null;
 
-    // 🌟 3. NẾU CÓ EMAIL: TÌM XEM ĐÃ CÓ TÀI KHOẢN CHƯA HOẶC TẠO TÀI KHOẢN MỚI
     if (userEmail) {
       const emailCheck = await client.query(
         `SELECT ${refCol} FROM public.${refTable} WHERE email ILIKE $1 LIMIT 1`,
@@ -904,7 +916,6 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // Nếu chưa có, tìm theo ID token
     if (!validOwnerId && rawOwnerId) {
       const checkId = await client.query(
         `SELECT ${refCol} FROM public.${refTable} WHERE ${refCol}::text = $1::text LIMIT 1`,
@@ -915,7 +926,6 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // Fallback: Lấy user hợp lệ đầu tiên trong database
     if (!validOwnerId) {
       const anyUser = await client.query(
         `SELECT ${refCol} FROM public.${refTable} ORDER BY 1 ASC LIMIT 1`,
@@ -997,7 +1007,6 @@ async function registerHotel(req, res, next) {
     const newHotelId = crypto.randomUUID();
     const finalPropType = property_type || propertyType || "hotel";
 
-    // Quét các cột thực tế trong bảng hotel
     const colRes = await client.query(
       `SELECT column_name 
        FROM information_schema.columns 
@@ -1066,7 +1075,6 @@ async function registerHotel(req, res, next) {
     const hotelResult = await client.query(hotelInsertSql, values);
     const newHotel = hotelResult.rows[0];
 
-    // Chèn ảnh đại diện
     if (image) {
       await client
         .query(
@@ -1077,7 +1085,6 @@ async function registerHotel(req, res, next) {
         .catch(() => {});
     }
 
-    // Chèn bộ sưu tập ảnh
     const extraHotelImages =
       Array.isArray(images) && images.length > 0
         ? images
@@ -1099,7 +1106,6 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // Chèn hạng phòng và phòng đơn vị
     if (Array.isArray(rooms) && rooms.length > 0) {
       let roomFloor = 1;
       for (const r of rooms) {
@@ -1164,7 +1170,6 @@ async function registerHotel(req, res, next) {
 
     await client.query("COMMIT");
 
-    // 🌟 TỰ ĐỘNG TẠO TOKEN ĐĂNG NHẬP MỚI ĐỂ FRONTEND KHÔNG BỊ LỖI 401
     let freshToken = null;
     if (jwt) {
       try {
@@ -1328,7 +1333,6 @@ async function updateHotel(req, res, next) {
       tax_code,
     } = req.body;
 
-    // 🌟 LẤY THÔNG TIN TÀI KHOẢN NGÂN HÀNG CẬP NHẬT
     const bank_code = req.body.bank_code || req.body.bankCode || null;
     const bank_name = req.body.bank_name || req.body.bankName || null;
     const bank_account = req.body.bank_account || req.body.bankAccount || null;
