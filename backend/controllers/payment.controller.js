@@ -89,6 +89,7 @@ async function checkPaymentStatus(req, res) {
 }
 
 // ─── 3. WEBHOOK SEPAY: XÓA SỐ PHÒNG CŨ ĐỂ ÉP VÀO HÀNG CHỜ LỄ TÂN DUYỆT ───
+// backend/controllers/payment.controller.js
 async function handleBankWebhook(req, res) {
   try {
     const body = req.body || {};
@@ -100,35 +101,39 @@ async function handleBankWebhook(req, res) {
         body.booking_code ||
         "",
     );
-
     const transferAmount = Number(body.transferAmount || body.amount || 0);
 
-    console.log("🔔 [SEPAY WEBHOOK]:", { content, transferAmount });
+    console.log("🔔 [SEPAY NHẬN TIỀN THẬT]:", { content, transferAmount });
 
     let matchedBooking = null;
 
-    // Tìm mẫu BK... hoặc DP...
+    // 🌟 ƯU TIÊN 1: CHỈ TÌM ĐÍCH DANH MÃ BẮT ĐẦU BẰNG BK HOẶC DP (KHÔNG BẮT SỐ NGÂN HÀNG)
     const matchSpecific = content.match(/(BK\s*\d+|DP\s*\d+)/i);
     if (matchSpecific) {
-      const extractedCode = matchSpecific[0].replace(/\s+/g, "").toUpperCase();
+      const cleanCode = matchSpecific[0].replace(/\s+/g, "").toUpperCase();
+      console.log(`🔎 Tìm thấy mã đơn chính xác: ${cleanCode}`);
+
       const bRes = await pool.query(
         `SELECT id, booking_code, hotel_id, total_price FROM public.booking 
          WHERE booking_code ILIKE $1 LIMIT 1`,
-        [extractedCode],
+        [cleanCode],
       );
       if (bRes.rows.length > 0) {
         matchedBooking = bRes.rows[0];
       }
     }
 
-    // Quét ngược dự phòng nếu ngân hàng thêm mã riêng
+    // 🌟 ƯU TIÊN 2 (DỰ PHÒNG): Quét ngược toàn bộ mã đơn đang chờ trong Database xem mã nào xuất hiện trong tin nhắn
     if (!matchedBooking) {
+      console.log(
+        "⚠️ Đang quét đối chiếu ngược với các đơn chưa thanh toán trong CSDL...",
+      );
       const pendingRes = await pool.query(
         `SELECT id, booking_code, hotel_id, total_price FROM public.booking 
          WHERE (payment_status IS NULL OR payment_status != 'paid')
            AND status NOT IN ('cancelled', 'checked_out')
          ORDER BY created_at DESC 
-         LIMIT 30`,
+         LIMIT 20`,
       );
 
       const normalizedContent = content
@@ -141,13 +146,16 @@ async function handleBankWebhook(req, res) {
           .toUpperCase();
         if (normalizedContent.includes(cleanBookingCode)) {
           matchedBooking = b;
+          console.log(
+            `🎯 Khớp thành công mã đơn [${b.booking_code}] từ nội dung chuyển tiền!`,
+          );
           break;
         }
       }
     }
 
+    // NẾU TÌM THẤY ĐƠN: ĐẨY NGAY VÀO "CHỜ LỄ TÂN XÁC NHẬN"
     if (matchedBooking) {
-      // 🌟 ĐẶT: payment_status = 'paid', status = 'pending', receptionist_assigned = false, room_number = NULL
       await pool.query(
         `UPDATE public.booking 
          SET payment_status = 'paid', 
@@ -172,11 +180,15 @@ async function handleBankWebhook(req, res) {
         .catch(() => {});
 
       console.log(
-        `✅ [SEPAY THÀNH CÔNG]: Đơn ${matchedBooking.booking_code} đã vào hàng chờ Lễ tân!`,
+        `✅ [THÀNH CÔNG]: Đơn ${matchedBooking.booking_code} đã xuất hiện ở nút "Chờ xác nhận" của Lễ tân!`,
+      );
+    } else {
+      console.warn(
+        `❌ [CẢNH BÁO]: Không tìm thấy đơn phòng nào khớp với nội dung: "${content}"`,
       );
     }
 
-    return res.json({ success: true });
+    return res.json({ success: true, matched: Boolean(matchedBooking) });
   } catch (error) {
     console.error("❌ Lỗi SePay Webhook:", error);
     return res.status(500).json({ success: false, message: error.message });
