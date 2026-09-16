@@ -5,13 +5,14 @@ import {
   Search,
   Plus,
   Building2,
-  Bell,
   CheckCircle2,
   X,
-  FileDown,
-  Check,
   ClipboardList,
   Sparkles,
+  CalendarDays,
+  Clock,
+  Check,
+  Globe,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 import { LoadingSpinner } from "@/components/common";
@@ -44,7 +45,7 @@ const formatDisplayDateTime = (dateStr) => {
 };
 
 const getCheckinCountdownText = (checkinDateStr) => {
-  if (!checkinDateStr) return "31 phút nữa nhận phòng";
+  if (!checkinDateStr) return "Sắp đến nhận phòng";
   const now = new Date();
   const checkin = new Date(checkinDateStr);
   const diffMs = checkin.getTime() - now.getTime();
@@ -81,7 +82,7 @@ export default function ReceptionMapPage() {
   const [activeRoomData, setActiveRoomData] = useState(null);
   const [changeRoomTarget, setChangeRoomTarget] = useState(null);
 
-  // STATE CHO ĐƠN CHỜ XÁC NHẬN
+  // 🌟 STATE CHO ĐƠN CHỜ XÁC NHẬN (THEO ẢNH 1 & ẢNH 2)
   const [pendingBookings, setPendingBookings] = useState([]);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [assigningBooking, setAssigningBooking] = useState(null);
@@ -129,7 +130,7 @@ export default function ReceptionMapPage() {
     customer_paid: 0,
   });
 
-  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN");
+  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
   const calculateDurationAndPrice = (
     checkinStr,
@@ -222,7 +223,7 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // 🌟 ĐÃ SỬA LỖI BÓC TÁCH DỮ LIỆU TẠI ĐÂY: HỖ TRỢ CẢ RES VÀ RES.DATA
+  // 🌟 LẤY TOÀN BỘ ĐƠN ONLINE CHỜ DUYỆT (BÓC TÁCH CHÍNH XÁC KHÔNG BỊ TRỐNG)
   const fetchPendingBookings = useCallback(async () => {
     try {
       const url = selectedHotelId
@@ -230,8 +231,6 @@ export default function ReceptionMapPage() {
         : `/owner/bookings/pending-online?_t=${Date.now()}`;
 
       const res = await apiClient.get(url);
-
-      // Bóc tách linh hoạt để không bao giờ bị undefined
       let list = [];
       if (Array.isArray(res)) {
         list = res;
@@ -243,21 +242,20 @@ export default function ReceptionMapPage() {
         list = res.bookings;
       }
 
-      console.log(`🎯 [FRONTEND]: Nhận được ${list.length} đơn từ API!`, list);
       setPendingBookings(list);
     } catch (err) {
       console.warn("Chưa lấy được đơn chờ xác nhận:", err.message);
     }
   }, [selectedHotelId]);
 
-  // Tự động load và refresh mỗi 4 giây
+  // Tự động làm mới mỗi 3 giây để bắt đơn thanh toán ngay lập tức
   useEffect(() => {
     fetchRoomMap();
     fetchPendingBookings();
 
     const interval = setInterval(() => {
       fetchPendingBookings();
-    }, 4000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [fetchRoomMap, fetchPendingBookings]);
@@ -313,7 +311,7 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // Danh sách phòng trống để gán cho đơn
+  // Danh sách các phòng trống khả dụng để chọn cho đơn
   const availableRoomsForAssign = useMemo(() => {
     if (!assigningBooking) return [];
 
@@ -334,7 +332,7 @@ export default function ReceptionMapPage() {
     return sameTypeRooms.length > 0 ? sameTypeRooms : vacantRooms;
   }, [rooms, assigningBooking]);
 
-  // Lễ tân bấm xác nhận gán số phòng
+  // 🌟 LỄ TÂN BẤM "XÁC NHẬN" VÀ GÁN PHÒNG (ẢNH 2 ➜ BIẾN THÀNH ẢNH 3)
   const handleConfirmAssignRoom = async () => {
     if (!selectedAssignRoom) {
       return alert("Vui lòng chọn số phòng trong danh sách!");
@@ -348,13 +346,13 @@ export default function ReceptionMapPage() {
       });
 
       alert(
-        `✓ Đã xác nhận đơn ${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công! Phòng đã chuyển sang trạng thái "Đã đặt trước" (Màu vàng).`,
+        `✓ Đã xác nhận đơn #${assigningBooking.booking_code} và gán vào phòng ${selectedAssignRoom} thành công! Phòng đã chuyển sang trạng thái "Đã đặt trước".`,
       );
       setAssigningBooking(null);
       setSelectedAssignRoom("");
       setIsPendingModalOpen(false);
 
-      // Cập nhật lại dữ liệu ngay lập tức
+      // Tải lại sơ đồ phòng và đơn chờ ngay lập tức
       await Promise.all([fetchRoomMap(), fetchPendingBookings()]);
     } catch (err) {
       alert(
@@ -621,7 +619,7 @@ export default function ReceptionMapPage() {
           (isDeposit
             ? ` (Đã thu nốt số tiền còn lại tại quầy: ${formatVND(
                 remainingToCollect,
-              )} ₫)`
+              )})`
             : ""),
       );
       setActiveModalType(null);
@@ -749,7 +747,7 @@ export default function ReceptionMapPage() {
           </div>
         </div>
 
-        {/* CỤM BÊN PHẢI: NÚT CHỜ XÁC NHẬN */}
+        {/* 🌟 NÚT CHỜ XÁC NHẬN RỰC RỠ SỐ LƯỢNG */}
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -867,7 +865,7 @@ export default function ReceptionMapPage() {
         </div>
       </div>
 
-      {/* BANNER THÔNG BÁO KHI CÓ ĐƠN CHỜ XÁC NHẬN */}
+      {/* BANNER THÔNG BÁO TỰ ĐỘNG */}
       {pendingBookings.length > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
           <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-5 py-3 rounded-2xl shadow-lg flex items-center justify-between flex-wrap gap-3 animate-bounce">
@@ -889,7 +887,7 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── SƠ ĐỒ PHÒNG ─── */}
+      {/* ─── SƠ ĐỒ PHÒNG (ẢNH 3 - THẺ PHÒNG MÀU VÀNG HỔ PHÁCH) ─── */}
       <main className="p-4 sm:p-6 space-y-6">
         {loading ? (
           <div className="py-24 flex justify-center">
@@ -952,27 +950,29 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* ─── MODAL "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" ─── */}
+      {/* ─── MODAL 1: "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (CHUẨN THEO ẢNH 1) ─── */}
       {isPendingModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-gray-900 text-sm">
+          <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Header Modal 1 */}
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+              <div className="flex items-center gap-2.5">
+                <span className="font-extrabold text-gray-900 text-base">
                   Khách đặt online
                 </span>
-                <span className="text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full font-bold text-[11px]">
+                <span className="text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full font-black text-xs">
                   Chờ xác nhận ({pendingBookings.length})
                 </span>
               </div>
               <button
                 onClick={() => setIsPendingModalOpen(false)}
-                className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-200/60 cursor-pointer transition"
+                className="text-gray-400 hover:text-gray-700 p-1.5 rounded-xl hover:bg-gray-200/60 cursor-pointer transition"
               >
                 <X size={18} />
               </button>
             </div>
 
+            {/* Bảng danh sách đơn (Ảnh 1) */}
             <div className="p-6 overflow-y-auto flex-1">
               {pendingBookings.length === 0 ? (
                 <div className="py-16 text-center space-y-2">
@@ -990,63 +990,70 @@ export default function ReceptionMapPage() {
               ) : (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-gray-200 text-gray-500 text-[11px] font-bold">
-                      <th className="pb-3">Mã đặt phòng</th>
-                      <th className="pb-3">Khách đặt</th>
-                      <th className="pb-3">Lưu trú</th>
-                      <th className="pb-3">Phòng đặt</th>
-                      <th className="pb-3 text-right">Tổng cộng</th>
-                      <th className="pb-3 text-right">Khách đã trả</th>
-                      <th className="pb-3 text-center">Hành động</th>
+                    <tr className="border-b border-gray-200 text-gray-400 text-[11px] font-bold uppercase tracking-wider">
+                      <th className="pb-3.5 px-3">Mã đặt phòng</th>
+                      <th className="pb-3.5 px-3">Mã kênh bán</th>
+                      <th className="pb-3.5 px-3">Khách đặt</th>
+                      <th className="pb-3.5 px-3">Lưu trú</th>
+                      <th className="pb-3.5 px-3">Phòng đặt</th>
+                      <th className="pb-3.5 px-3 text-right">Tổng cộng</th>
+                      <th className="pb-3.5 px-3 text-right">Khách đã trả</th>
+                      <th className="pb-3.5 px-3 text-center">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-xs font-semibold">
                     {pendingBookings.map((b) => (
                       <tr key={b.id} className="hover:bg-blue-50/40 transition">
-                        <td className="py-3.5 font-bold text-[#003580]">
-                          {b.booking_code}
+                        <td className="py-4 px-3 font-bold text-[#003580]">
+                          #{b.booking_code}
                           <div className="text-[10px] text-gray-400 font-normal">
                             {formatDisplayDateTime(b.created_at)}
                           </div>
                         </td>
-                        <td className="py-3.5">
-                          <div className="font-bold text-gray-900">
+                        <td className="py-4 px-3 text-gray-500">
+                          <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-[10px] font-bold">
+                            GoStay Web
+                          </span>
+                        </td>
+                        <td className="py-4 px-3">
+                          <div className="font-bold text-gray-900 text-sm">
                             {b.customer_name}
                           </div>
                           <div className="text-gray-500 text-[11px]">
                             {b.guest_phone || b.guest_email || "Chưa có SĐT"}
                           </div>
                         </td>
-                        <td className="py-3.5 text-gray-700">
+                        <td className="py-4 px-3 text-gray-700">
                           <div>
                             {formatDisplayDateTime(b.checkin_date)} -{" "}
                             {formatDisplayDateTime(b.checkout_date)}
                           </div>
-                          <div className="text-[10px] text-gray-400">
+                          <div className="text-[10px] text-gray-400 mt-0.5">
                             {b.adult_total} người lớn, {b.children_total} trẻ em
                           </div>
                         </td>
-                        <td className="py-3.5 text-gray-800">
-                          <span className="bg-gray-100 border border-gray-200 px-2 py-1 rounded-md text-[11px] font-bold">
-                            1 {b.room_type_name}
+                        <td className="py-4 px-3 text-gray-800">
+                          <span className="bg-blue-50 border border-blue-200 text-[#003580] px-2.5 py-1 rounded-md text-[11px] font-bold">
+                            1 {b.room_type_name || "DELUXE"}
                           </span>
                         </td>
-                        <td className="py-3.5 text-right font-bold text-gray-900">
+                        <td className="py-4 px-3 text-right font-black text-gray-900 text-sm tabular-nums">
                           {formatVND(b.total_price)}
                         </td>
-                        <td className="py-3.5 text-right font-bold text-emerald-600">
-                          {formatVND(b.paid_amount)}
+                        <td className="py-4 px-3 text-right font-black text-emerald-600 text-sm tabular-nums">
+                          {formatVND(b.paid_amount || b.total_price)}
                         </td>
-                        <td className="py-3.5 text-center">
+                        <td className="py-4 px-3 text-center">
                           <button
                             type="button"
                             onClick={() => {
                               setAssigningBooking(b);
                               setSelectedAssignRoom("");
                             }}
-                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer"
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 mx-auto"
                           >
-                            Xác nhận
+                            <Check size={14} />
+                            <span>Xác nhận</span>
                           </button>
                         </td>
                       </tr>
@@ -1055,16 +1062,31 @@ export default function ReceptionMapPage() {
                 </table>
               )}
             </div>
+
+            {/* Chân Modal 1 */}
+            <div className="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex justify-between items-center text-[11px] text-gray-500">
+              <span>
+                Khách sạn đang nhận đặt phòng online tự động qua cổng GoStay.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsPendingModalOpen(false)}
+                className="px-4 py-1.5 border border-gray-200 rounded-lg text-gray-700 font-bold hover:bg-gray-100 cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ─── MODAL "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" ─── */}
+      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN SỐ PHÒNG" (CHUẨN THEO ẢNH 2) ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header Modal 2 */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-black text-gray-900 text-sm">
+              <h3 className="font-black text-gray-900 text-base">
                 Xác nhận đặt phòng - {assigningBooking.booking_code}
               </h3>
               <button
@@ -1076,31 +1098,37 @@ export default function ReceptionMapPage() {
             </div>
 
             <div className="p-6 space-y-5">
-              <div className="text-gray-700 font-bold flex items-center gap-2 text-xs">
+              {/* Tên & SĐT khách */}
+              <div className="text-gray-800 font-bold flex items-center gap-2 text-sm">
                 <span>👤 {assigningBooking.customer_name}</span>
                 <span className="text-gray-400 font-normal">
-                  - {assigningBooking.guest_phone}
+                  -{" "}
+                  {assigningBooking.guest_phone ||
+                    assigningBooking.guest_email ||
+                    "Chưa có SĐT"}
                 </span>
               </div>
 
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+              {/* Hộp chi tiết xếp phòng (Ảnh 2) */}
+              <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4">
                 <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase">
+                  <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">
                     Hạng phòng
                   </div>
                   <div className="font-bold text-[#003580] text-sm">
-                    {assigningBooking.room_type_name}
+                    {assigningBooking.room_type_name || "DELUXE"}
                   </div>
                 </div>
 
-                <div className="min-w-[180px]">
-                  <div className="text-[10px] text-gray-500 font-bold uppercase mb-1">
-                    Phòng <span className="text-red-500">*</span>
+                {/* Ô CHỌN SỐ PHÒNG VIỀN XANH LÁ (ẢNH 2) */}
+                <div className="min-w-[190px]">
+                  <div className="text-[10px] text-gray-600 font-bold uppercase mb-1">
+                    Phòng <span className="text-rose-500">*</span>
                   </div>
                   <select
                     value={selectedAssignRoom}
                     onChange={(e) => setSelectedAssignRoom(e.target.value)}
-                    className="w-full bg-white border border-emerald-500 text-emerald-800 font-bold rounded-lg p-2 text-xs outline-none shadow-xs cursor-pointer"
+                    className="w-full bg-white border-2 border-emerald-500 text-emerald-900 font-bold rounded-xl p-2.5 text-xs outline-none shadow-xs cursor-pointer focus:ring-2 focus:ring-emerald-200"
                   >
                     <option value="">-- Chọn số phòng --</option>
                     {availableRoomsForAssign.map((r) => (
@@ -1113,35 +1141,48 @@ export default function ReceptionMapPage() {
                 </div>
 
                 <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase">
+                  <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">
                     Nhận
                   </div>
-                  <div className="font-bold text-gray-700 text-xs">
-                    {formatDisplayDateTime(assigningBooking.checkin_date)}
+                  <div className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                    <CalendarDays size={13} className="text-[#006ce4]" />
+                    <span>
+                      {formatDisplayDateTime(assigningBooking.checkin_date)}
+                    </span>
                   </div>
                 </div>
 
+                <div className="text-center">
+                  <span className="px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 font-black text-xs border border-emerald-200">
+                    1 đêm
+                  </span>
+                </div>
+
                 <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase">
+                  <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">
                     Trả
                   </div>
-                  <div className="font-bold text-gray-700 text-xs">
-                    {formatDisplayDateTime(assigningBooking.checkout_date)}
+                  <div className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                    <CalendarDays size={13} className="text-[#006ce4]" />
+                    <span>
+                      {formatDisplayDateTime(assigningBooking.checkout_date)}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              <p className="text-[11px] text-gray-500 italic">
-                Sau khi xác nhận, phòng sẽ chuyển sang trạng thái "Đã đặt trước"
-                (Màu vàng) trên sơ đồ phòng.
+              <p className="text-xs text-gray-500 italic">
+                Sau khi xác nhận, các phòng sẽ chuyển về trạng thái đặt trước
+                (Màu vàng trên sơ đồ phòng).
               </p>
             </div>
 
+            {/* Footer Modal 2 */}
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setAssigningBooking(null)}
-                className="px-4 py-2 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 cursor-pointer"
+                className="px-5 py-2.5 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 cursor-pointer"
               >
                 Hủy bỏ
               </button>
@@ -1149,16 +1190,17 @@ export default function ReceptionMapPage() {
                 type="button"
                 disabled={isSubmittingAssign}
                 onClick={handleConfirmAssignRoom}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-2 active:scale-95"
               >
-                {isSubmittingAssign ? "Đang xử lý..." : "Xác nhận"}
+                <Check size={16} />
+                <span>{isSubmittingAssign ? "Đang xử lý..." : "Xác nhận"}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── 1. MODAL PHÒNG ĐÃ ĐẶT TRƯỚC (INCOMING) ─── */}
+      {/* ─── MODAL 3: "CHI TIẾT PHÒNG ĐÃ ĐẶT TRƯỚC" (CHUẨN THEO ẢNH 3) ─── */}
       <IncomingRoomModal
         isOpen={activeModalType === "incoming"}
         room={activeRoomData}
@@ -1175,7 +1217,7 @@ export default function ReceptionMapPage() {
         formatVND={formatVND}
       />
 
-      {/* ─── 2. MODAL XÁC NHẬN NHẬN PHÒNG (CHECK-IN) ─── */}
+      {/* Các modal phụ trợ khác */}
       <ConfirmCheckInModal
         isOpen={activeModalType === "confirm_checkin"}
         onClose={() => {
@@ -1194,7 +1236,6 @@ export default function ReceptionMapPage() {
         toDatetimeLocal={toDatetimeLocal}
       />
 
-      {/* ─── 3. MODAL DANH SÁCH KHÁCH LƯU TRÚ ─── */}
       <CheckInGuestStayModal
         isOpen={activeModalType === "guest_stay"}
         onClose={() => {
@@ -1210,7 +1251,6 @@ export default function ReceptionMapPage() {
         onFinalExecuteCheckIn={handleFinalExecuteCheckIn}
       />
 
-      {/* ─── 4. MODAL NHẬP CCCD ĐỊNH DANH ─── */}
       <AddGuestDocModal
         isOpen={activeModalType === "add_guest_doc"}
         onClose={() => {
@@ -1222,7 +1262,6 @@ export default function ReceptionMapPage() {
         onSubmit={handleGuestDocSubmit}
       />
 
-      {/* ─── 5. MODAL PHÒNG ĐANG CÓ KHÁCH (TRẢ PHÒNG / QUYẾT TOÁN) ─── */}
       <OccupiedRoomModal
         room={activeModalType === "occupied" ? activeRoomData : null}
         onClose={() => {
@@ -1234,7 +1273,6 @@ export default function ReceptionMapPage() {
         formatVND={formatVND}
       />
 
-      {/* ─── 6. MODAL ĐỔI PHÒNG ─── */}
       <ChangeRoomModal
         isOpen={activeModalType === "change_room"}
         onClose={() => {
@@ -1246,7 +1284,6 @@ export default function ReceptionMapPage() {
         onConfirmChange={handleExecuteChangeRoom}
       />
 
-      {/* ─── 7. MODAL ĐẶT PHÒNG NHANH TẠI QUẦY (WALK-IN) ─── */}
       <QuickBookingModal
         isOpen={activeModalType === "quick_booking"}
         onClose={() => setActiveModalType(null)}
