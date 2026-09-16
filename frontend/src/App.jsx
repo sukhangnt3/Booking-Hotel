@@ -1,3 +1,4 @@
+// src/App.jsx
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GoogleOAuthProvider } from "@react-oauth/google";
@@ -9,6 +10,9 @@ import "./index.css";
 // Stores & Common Components
 import { useUIStore } from "@/stores/uiStore";
 import { LoadingSpinner, ErrorBoundary } from "@/components/common";
+
+// Hook tự động cập nhật giao diện thời gian thực khi Vercel deploy
+import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 
 // ─── 1. KHỞI TẠO QUERY CLIENT VỚI CẤU HÌNH TỐI ƯU CỰC XỊN ───
 const queryClient = new QueryClient({
@@ -23,6 +27,9 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  // 🌟 TỰ ĐỘNG CẬP NHẬT GIAO DIỆN KHI CÓ BẢN MỚI TRÊN VERCEL (KHÔNG CẦN F5)
+  useAutoUpdate();
+
   // Client ID của Google OAuth từ biến môi trường .env
   const clientId =
     import.meta.env.VITE_GOOGLE_CLIENT_ID ||
