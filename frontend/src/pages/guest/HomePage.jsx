@@ -1,5 +1,5 @@
 // src/pages/guest/HomePage.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   TrendingUp,
@@ -59,6 +59,8 @@ const CITY_LANDMARK_IMAGES = {
     "https://images.unsplash.com/photo-1517824806704-9040b037703b?w=800",
   "Vũng Tàu":
     "https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?w=800",
+  "Đồng Tháp":
+    "https://images.unsplash.com/photo-1528127269322-539801943592?w=800",
 };
 
 const DEFAULT_LANDMARK =
@@ -82,6 +84,7 @@ const getCityLandmarkImage = (cityName = "") => {
   ) {
     return CITY_LANDMARK_IMAGES["Hồ Chí Minh"];
   }
+  if (norm.includes("dong thap")) return CITY_LANDMARK_IMAGES["Đồng Tháp"];
   if (norm.includes("ha noi")) return CITY_LANDMARK_IMAGES["Hà Nội"];
   if (norm.includes("da nang")) return CITY_LANDMARK_IMAGES["Đà Nẵng"];
   if (norm.includes("phu quoc")) return CITY_LANDMARK_IMAGES["Phú Quốc"];
@@ -106,6 +109,17 @@ const parseImageUrl = (img) => {
     return raw;
   const cleanPath = raw.startsWith("/") ? raw : `/${raw}`;
   return `${BACKEND_BASE_URL}${cleanPath}`;
+};
+
+const safeFormatDisplayDate = (date) => {
+  if (!date) return "Chọn ngày";
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "Chọn ngày";
+    return format(d, "eee, dd 'Thg' M, yyyy", { locale: vi });
+  } catch {
+    return "Chọn ngày";
+  }
 };
 
 const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
@@ -157,18 +171,21 @@ export default function HomePage() {
 
   // 🌟 HÌNH THỨC THUÊ: "HOUR" (Giờ) | "DAY" (Ngày) | "OVERNIGHT" (Đêm) | "HALF_DAY" (Buổi)
   const [rentalType, setRentalType] = useState("DAY");
+
+  // Giờ nhận & Giờ trả (Cho chọn thoải mái từ 00:00 đến 23:00 ở CẢ 4 TAB)
   const [checkInTime, setCheckInTime] = useState("14:00");
-  const [stayDuration, setStayDuration] = useState(1);
-  const [sessionShift, setSessionShift] = useState("MORNING");
+  const [checkOutTime, setCheckOutTime] = useState("12:00");
 
   const [checkInDate, setCheckInDate] = useState(today);
   const [checkOutDate, setCheckOutDate] = useState(addDays(today, 1));
+
+  // Bộ chọn lịch: xác định đang click đổi ngày nhận hay ngày trả
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarTarget, setCalendarTarget] = useState("checkIn");
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
-  const [hoverDate, setHoverDate] = useState(null);
 
   const [rooms, setRooms] = useState(1);
-  const [adults, setAdults] = useState(2);
+  const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
   const [isGuestOpen, setIsGuestOpen] = useState(false);
 
@@ -195,6 +212,43 @@ export default function HomePage() {
     touchStartX.current = 0;
     touchEndX.current = 0;
   };
+
+  // Tự động nhảy giờ và ngày mặc định thông minh khi chuyển Tab giống hệt 3 ảnh bạn gửi
+  const handleTabChange = (type) => {
+    setRentalType(type);
+    if (type === "HOUR") {
+      setCheckInTime("00:00");
+      setCheckOutTime("01:00");
+      setCheckOutDate(checkInDate);
+    } else if (type === "DAY") {
+      setCheckInTime("14:00");
+      setCheckOutTime("12:00");
+      setCheckOutDate(addDays(checkInDate, 1));
+    } else if (type === "OVERNIGHT") {
+      setCheckInTime("22:00");
+      setCheckOutTime("12:00");
+      setCheckOutDate(addDays(checkInDate, 1));
+    } else if (type === "HALF_DAY") {
+      setCheckInTime("12:00");
+      setCheckOutTime("21:00");
+      setCheckOutDate(checkInDate);
+    }
+  };
+
+  // Tự động tính nhãn thời lượng hiển thị trên thanh badge ở giữa
+  const durationBadgeLabel = useMemo(() => {
+    if (rentalType === "HOUR") {
+      const inH = parseInt((checkInTime || "00:00").split(":")[0], 10);
+      const outH = parseInt((checkOutTime || "01:00").split(":")[0], 10);
+      const diffDays = Math.max(0, differenceInDays(checkOutDate, checkInDate));
+      const totalHours = diffDays * 24 + (outH - inH);
+      return `${Math.max(1, totalHours)} Giờ`;
+    }
+    if (rentalType === "OVERNIGHT") return "Qua đêm";
+    if (rentalType === "HALF_DAY") return "1 Buổi";
+    const nights = Math.max(1, differenceInDays(checkOutDate, checkInDate));
+    return `${nights} Ngày`;
+  }, [rentalType, checkInTime, checkOutTime, checkInDate, checkOutDate]);
 
   useEffect(() => {
     let isMounted = true;
@@ -313,32 +367,23 @@ export default function HomePage() {
     setIsCalendarOpen(true);
   };
 
-  const handleDateClick = (date) => {
+  const handleSelectDateFromCalendar = (date) => {
     if (isBefore(date, today)) return;
 
-    if (rentalType !== "DAY") {
+    if (calendarTarget === "checkIn") {
       setCheckInDate(date);
-      setIsCalendarOpen(false);
-      return;
-    }
-
-    if (!checkInDate || (checkInDate && checkOutDate)) {
-      setCheckInDate(date);
-      setCheckOutDate(null);
-    } else if (checkInDate && !checkOutDate) {
-      if (isBefore(date, checkInDate) || isSameDay(date, checkInDate)) {
+      if (isBefore(checkOutDate, date)) {
+        setCheckOutDate(rentalType === "DAY" ? addDays(date, 1) : date);
+      }
+    } else {
+      if (isBefore(date, checkInDate)) {
         setCheckInDate(date);
+        setCheckOutDate(rentalType === "DAY" ? addDays(date, 1) : date);
       } else {
         setCheckOutDate(date);
-        setIsCalendarOpen(false);
       }
     }
   };
-
-  const totalNights =
-    checkInDate && checkOutDate
-      ? Math.max(1, differenceInDays(checkOutDate, checkInDate))
-      : 1;
 
   const handlePrevNewest = () => {
     setNewestIndex((prev) => Math.max(0, prev - 1));
@@ -358,19 +403,9 @@ export default function HomePage() {
 
     query.append("rentalType", rentalType);
     query.append("checkInTime", checkInTime);
-    query.append("duration", stayDuration.toString());
-    if (rentalType === "HALF_DAY") {
-      query.append("sessionShift", sessionShift);
-    }
-
-    if (checkInDate) query.append("checkIn", format(checkInDate, "yyyy-MM-dd"));
-    if (rentalType === "DAY") {
-      if (checkOutDate)
-        query.append("checkOut", format(checkOutDate, "yyyy-MM-dd"));
-    } else {
-      query.append("checkOut", format(checkInDate, "yyyy-MM-dd"));
-    }
-
+    query.append("checkOutTime", checkOutTime);
+    query.append("checkIn", format(checkInDate, "yyyy-MM-dd"));
+    query.append("checkOut", format(checkOutDate, "yyyy-MM-dd"));
     query.append("adults", adults.toString());
     query.append("children", children.toString());
     query.append("rooms", rooms.toString());
@@ -395,6 +430,9 @@ export default function HomePage() {
       { label: "CN", isWeekend: true },
     ];
 
+    const targetDate =
+      calendarTarget === "checkIn" ? checkInDate : checkOutDate;
+
     return (
       <div className="flex-1 min-w-[260px]">
         <div className="text-center font-black text-sm text-gray-900 mb-4 tracking-tight">
@@ -416,49 +454,20 @@ export default function HomePage() {
           ))}
           {days.map((day) => {
             const isPast = isBefore(day, today);
-            const isStart = checkInDate && isSameDay(day, checkInDate);
-            const isEnd =
-              rentalType === "DAY" &&
-              checkOutDate &&
-              isSameDay(day, checkOutDate);
-            const isInRange =
-              rentalType === "DAY" &&
-              checkInDate &&
-              checkOutDate &&
-              isWithinInterval(day, { start: checkInDate, end: checkOutDate });
-
-            const isHoverRange =
-              rentalType === "DAY" &&
-              checkInDate &&
-              !checkOutDate &&
-              hoverDate &&
-              isAfter(hoverDate, checkInDate) &&
-              isWithinInterval(day, { start: checkInDate, end: hoverDate });
-
+            const isSelected = targetDate && isSameDay(day, targetDate);
             const isWeekend = getDay(day) === 0 || getDay(day) === 6;
 
             let btnClasses =
-              "h-9 w-full flex items-center justify-center text-xs transition-all relative ";
+              "h-9 w-full flex items-center justify-center text-xs transition-all rounded-lg ";
 
             if (isPast) {
               btnClasses += "text-gray-300 font-normal cursor-not-allowed";
-            } else if (isStart && (isEnd || rentalType !== "DAY")) {
-              btnClasses +=
-                "bg-[#006ce4] text-white rounded-lg z-10 font-black shadow-md";
-            } else if (isStart) {
-              btnClasses +=
-                "bg-[#006ce4] text-white rounded-l-lg z-10 font-black shadow-md " +
-                (checkOutDate ? "rounded-r-none" : "rounded-r-lg");
-            } else if (isEnd) {
-              btnClasses +=
-                "bg-[#006ce4] text-white rounded-r-lg rounded-l-none z-10 font-black shadow-md";
-            } else if (isInRange || isHoverRange) {
-              btnClasses +=
-                "bg-blue-50 text-blue-900 font-bold hover:bg-blue-100";
+            } else if (isSelected) {
+              btnClasses += "bg-[#006ce4] text-white font-black shadow-md";
             } else {
               btnClasses += isWeekend
-                ? "text-[#006ce4] font-bold hover:bg-gray-100 rounded-lg cursor-pointer"
-                : "text-gray-900 font-semibold hover:bg-gray-100 rounded-lg cursor-pointer";
+                ? "text-[#006ce4] font-bold hover:bg-gray-100 cursor-pointer"
+                : "text-gray-900 font-semibold hover:bg-gray-100 cursor-pointer";
             }
 
             return (
@@ -466,8 +475,7 @@ export default function HomePage() {
                 key={day.toISOString()}
                 type="button"
                 disabled={isPast}
-                onClick={() => handleDateClick(day)}
-                onMouseEnter={() => !checkOutDate && setHoverDate(day)}
+                onClick={() => handleSelectDateFromCalendar(day)}
                 className={btnClasses}
               >
                 {safeFormatDate(day, "d")}
@@ -564,23 +572,23 @@ export default function HomePage() {
 
                 {/* NGÀY & KHÁCH */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
-                  {/* Ô CHỌN NGÀY & HÌNH THỨC THUÊ: GIỜ / NGÀY / ĐÊM / BUỔI */}
+                  {/* Ô CHỌN THỜI GIAN VÀ HÌNH THỨC THUÊ */}
                   <div
                     ref={calendarRef}
                     className="relative md:col-span-7 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center justify-between hover:border-blue-600 transition-all select-none"
                     onClick={() => setIsCalendarOpen(!isCalendarOpen)}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <CalendarIcon size={20} className="text-gray-400" />
+                    <div className="flex items-center gap-2">
+                      <CalendarIcon size={18} className="text-gray-400" />
                       <div>
-                        <span className="text-[11px] font-black text-slate-500 block leading-tight">
+                        <span className="text-[10px] font-black text-slate-500 block leading-tight">
                           {rentalType === "HOUR"
-                            ? `Thuê theo giờ (${checkInTime})`
+                            ? `Giờ (${checkInTime})`
                             : rentalType === "OVERNIGHT"
-                              ? `Qua đêm (${checkInTime})`
+                              ? `Đêm (${checkInTime})`
                               : rentalType === "HALF_DAY"
-                                ? `Thuê theo buổi`
-                                : safeFormatDate(checkInDate, "EEEE")}
+                                ? `Buổi (${checkInTime})`
+                                : `Ngày (${checkInTime})`}
                         </span>
                         <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
                           {safeFormatDate(checkInDate, "dd-MM-yyyy")}
@@ -588,62 +596,34 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 text-[11px] font-black text-gray-600 bg-gray-100 px-2 py-1 rounded-full">
-                      <span>
-                        {rentalType === "HOUR"
-                          ? `${stayDuration} Giờ`
-                          : rentalType === "OVERNIGHT"
-                            ? "Qua đêm"
-                            : rentalType === "HALF_DAY"
-                              ? "1 Buổi"
-                              : `${totalNights} đêm`}
-                      </span>
-                      {rentalType === "HOUR" ? (
-                        <Clock size={12} className="text-blue-600" />
-                      ) : rentalType === "OVERNIGHT" ? (
-                        <Moon size={12} className="text-indigo-600" />
-                      ) : rentalType === "HALF_DAY" ? (
-                        <Hourglass size={12} className="text-amber-600" />
-                      ) : (
-                        <Moon size={12} className="text-blue-600" />
-                      )}
+                    <div className="flex items-center gap-1 text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                      <span>{durationBadgeLabel}</span>
                     </div>
 
-                    <div className="flex items-center gap-2.5">
-                      <CalendarIcon size={20} className="text-gray-400" />
+                    <div className="flex items-center gap-2">
+                      <CalendarIcon size={18} className="text-gray-400" />
                       <div>
-                        <span className="text-[11px] font-black text-gray-600 block leading-tight">
-                          {rentalType === "HOUR"
-                            ? "Trả phòng"
-                            : rentalType === "OVERNIGHT"
-                              ? "Trả 12:00 trưa"
-                              : rentalType === "HALF_DAY"
-                                ? "Trả trong ngày"
-                                : safeFormatDate(checkOutDate, "EEEE")}
+                        <span className="text-[10px] font-black text-gray-600 block leading-tight">
+                          Trả ({checkOutTime})
                         </span>
                         <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
-                          {rentalType === "DAY"
-                            ? safeFormatDate(checkOutDate, "dd-MM-yyyy")
-                            : safeFormatDate(checkInDate, "dd-MM-yyyy")}
+                          {safeFormatDate(checkOutDate, "dd-MM-yyyy")}
                         </span>
                       </div>
                     </div>
 
-                    {/* POPUP CHỌN HÌNH THỨC THUÊ: GIỜ / NGÀY / ĐÊM / BUỔI */}
+                    {/* POPUP 4 TABS CHỌN THUÊ THEO GIỜ, NGÀY, ĐÊM, BUỔI (CHUẨN THEO 3 ẢNH) */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute left-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-5 w-[320px] sm:w-[580px] md:w-[620px] animate-in fade-in cursor-default"
+                        className="absolute left-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-3xl shadow-2xl p-5 w-[330px] sm:w-[500px] animate-in fade-in cursor-default"
                       >
                         {/* 1. HÀNG 4 TABS: GIỜ, NGÀY, ĐÊM, BUỔI */}
-                        <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-xl mb-4">
+                        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl mb-4">
                           <button
                             type="button"
-                            onClick={() => {
-                              setRentalType("HOUR");
-                              setStayDuration(1);
-                            }}
-                            className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                            onClick={() => handleTabChange("HOUR")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
                               rentalType === "HOUR"
                                 ? "bg-[#006ce4] text-white shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
@@ -654,11 +634,8 @@ export default function HomePage() {
 
                           <button
                             type="button"
-                            onClick={() => {
-                              setRentalType("DAY");
-                              setStayDuration(1);
-                            }}
-                            className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                            onClick={() => handleTabChange("DAY")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
                               rentalType === "DAY"
                                 ? "bg-[#006ce4] text-white shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
@@ -669,12 +646,8 @@ export default function HomePage() {
 
                           <button
                             type="button"
-                            onClick={() => {
-                              setRentalType("OVERNIGHT");
-                              setCheckInTime("21:00");
-                              setStayDuration(1);
-                            }}
-                            className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                            onClick={() => handleTabChange("OVERNIGHT")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
                               rentalType === "OVERNIGHT"
                                 ? "bg-[#006ce4] text-white shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
@@ -685,11 +658,8 @@ export default function HomePage() {
 
                           <button
                             type="button"
-                            onClick={() => {
-                              setRentalType("HALF_DAY");
-                              setStayDuration(1);
-                            }}
-                            className={`py-2 px-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                            onClick={() => handleTabChange("HALF_DAY")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
                               rentalType === "HALF_DAY"
                                 ? "bg-[#006ce4] text-white shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
@@ -699,17 +669,17 @@ export default function HomePage() {
                           </button>
                         </div>
 
-                        {/* 2. ĐIỀU KHIỂN GIỜ / BUỔI TƯƠNG ỨNG */}
-                        {rentalType === "HOUR" && (
-                          <div className="grid grid-cols-2 gap-3 mb-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                                Giờ nhận phòng:
-                              </label>
+                        {/* 2. NHẬN PHÒNG: CHỌN GIỜ + CHỌN NGÀY */}
+                        <div className="space-y-1 mb-3">
+                          <label className="text-xs font-bold text-slate-700 block">
+                            Nhận phòng
+                          </label>
+                          <div className="grid grid-cols-12 gap-2">
+                            <div className="col-span-4">
                               <select
                                 value={checkInTime}
                                 onChange={(e) => setCheckInTime(e.target.value)}
-                                className="w-full p-2 bg-white border rounded-lg font-bold text-xs"
+                                className="w-full h-11 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4] cursor-pointer"
                               >
                                 {[...Array(24)].map((_, i) => {
                                   const t = `${String(i).padStart(2, "0")}:00`;
@@ -722,127 +692,121 @@ export default function HomePage() {
                               </select>
                             </div>
 
-                            <div>
-                              <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                                Số giờ lưu trú:
-                              </label>
-                              <div className="flex items-center justify-between border bg-white rounded-lg p-1">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setStayDuration((d) => Math.max(1, d - 1))
-                                  }
-                                  className="w-6 h-6 flex items-center justify-center font-bold text-slate-700"
-                                >
-                                  -
-                                </button>
-                                <span className="text-xs font-black">
-                                  {stayDuration} Giờ
+                            <div className="col-span-8">
+                              <button
+                                type="button"
+                                onClick={() => setCalendarTarget("checkIn")}
+                                className={`w-full h-11 px-3 bg-white border rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between cursor-pointer ${
+                                  calendarTarget === "checkIn"
+                                    ? "border-[#006ce4] ring-2 ring-blue-100"
+                                    : "border-gray-300"
+                                }`}
+                              >
+                                <span className="truncate">
+                                  {safeFormatDisplayDate(checkInDate)}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setStayDuration((d) => Math.min(12, d + 1))
-                                  }
-                                  className="w-6 h-6 flex items-center justify-center font-bold text-slate-700"
-                                >
-                                  +
-                                </button>
-                              </div>
+                                <ChevronDown
+                                  size={14}
+                                  className="text-gray-400"
+                                />
+                              </button>
                             </div>
                           </div>
-                        )}
+                        </div>
 
-                        {rentalType === "HALF_DAY" && (
-                          <div className="mb-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                            <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                              Chọn khung buổi:
-                            </label>
-                            <select
-                              value={sessionShift}
-                              onChange={(e) => setSessionShift(e.target.value)}
-                              className="w-full p-2 bg-white border rounded-lg font-bold text-xs"
-                            >
-                              <option value="MORNING">
-                                Buổi Sáng (07:00 – 12:00)
-                              </option>
-                              <option value="AFTERNOON">
-                                Buổi Chiều (12:00 – 18:00)
-                              </option>
-                              <option value="EVENING">
-                                Buổi Tối (18:00 – 23:00)
-                              </option>
-                            </select>
+                        {/* 3. TRẢ PHÒNG: CHỌN GIỜ + CHỌN NGÀY */}
+                        <div className="space-y-1 mb-3">
+                          <label className="text-xs font-bold text-slate-700 block">
+                            Trả phòng
+                          </label>
+                          <div className="grid grid-cols-12 gap-2">
+                            <div className="col-span-4">
+                              <select
+                                value={checkOutTime}
+                                onChange={(e) =>
+                                  setCheckOutTime(e.target.value)
+                                }
+                                className="w-full h-11 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4] cursor-pointer"
+                              >
+                                {[...Array(24)].map((_, i) => {
+                                  const t = `${String(i).padStart(2, "0")}:00`;
+                                  return (
+                                    <option key={t} value={t}>
+                                      {t}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            <div className="col-span-8">
+                              <button
+                                type="button"
+                                onClick={() => setCalendarTarget("checkOut")}
+                                className={`w-full h-11 px-3 bg-white border rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between cursor-pointer ${
+                                  calendarTarget === "checkOut"
+                                    ? "border-[#006ce4] ring-2 ring-blue-100"
+                                    : "border-gray-300"
+                                }`}
+                              >
+                                <span className="truncate">
+                                  {safeFormatDisplayDate(checkOutDate)}
+                                </span>
+                                <ChevronDown
+                                  size={14}
+                                  className="text-gray-400"
+                                />
+                              </button>
+                            </div>
                           </div>
-                        )}
+                        </div>
 
-                        {rentalType === "OVERNIGHT" && (
-                          <div className="mb-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100 flex items-center justify-between">
-                            <span className="text-xs font-bold text-slate-800">
-                              Giờ nhận đêm:
+                        {/* THANH NHÃN XANH HIỂN THỊ THỜI LƯỢNG Ở GIỮA */}
+                        <div className="w-full py-2 bg-blue-50 text-[#006ce4] border border-blue-100 rounded-xl font-black text-center text-xs mb-3">
+                          {durationBadgeLabel}
+                        </div>
+
+                        {/* LỊCH CHỌN NGÀY */}
+                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-xs font-bold text-[#006ce4]">
+                              {calendarTarget === "checkIn"
+                                ? "Chọn ngày nhận phòng:"
+                                : "Chọn ngày trả phòng:"}
                             </span>
-                            <select
-                              value={checkInTime}
-                              onChange={(e) => setCheckInTime(e.target.value)}
-                              className="p-1.5 bg-white border rounded-lg font-bold text-xs"
-                            >
-                              <option value="20:00">20:00 tối</option>
-                              <option value="21:00">21:00 tối</option>
-                              <option value="22:00">22:00 đêm</option>
-                              <option value="23:00">23:00 đêm</option>
-                            </select>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCurrentCalendarMonth((prev) =>
+                                    subMonths(prev, 1),
+                                  )
+                                }
+                                disabled={isBefore(
+                                  startOfMonth(currentCalendarMonth),
+                                  startOfMonth(today),
+                                )}
+                                className="p-1 hover:bg-white rounded"
+                              >
+                                <ChevronLeft size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCurrentCalendarMonth((prev) =>
+                                    addMonths(prev, 1),
+                                  )
+                                }
+                                className="p-1 hover:bg-white rounded"
+                              >
+                                <ChevronRight size={16} />
+                              </button>
+                            </div>
                           </div>
-                        )}
-
-                        {/* 3. LỊCH THÁNG CHỌN NGÀY */}
-                        <div className="flex justify-between items-center mb-3 px-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCurrentCalendarMonth((prev) =>
-                                subMonths(prev, 1),
-                              )
-                            }
-                            disabled={isBefore(
-                              startOfMonth(currentCalendarMonth),
-                              startOfMonth(today),
-                            )}
-                            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 disabled:opacity-20 transition-colors cursor-pointer"
-                          >
-                            <ChevronLeft size={20} />
-                          </button>
-
-                          <span className="text-xs font-bold text-gray-500">
-                            {rentalType === "DAY"
-                              ? !checkOutDate
-                                ? "👉 Chọn ngày trả phòng"
-                                : "✓ Đã chọn xong ngày"
-                              : "👉 Chọn ngày nhận phòng"}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCurrentCalendarMonth((prev) =>
-                                addMonths(prev, 1),
-                              )
-                            }
-                            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 transition-colors cursor-pointer"
-                          >
-                            <ChevronRight size={20} />
-                          </button>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row gap-6 sm:divide-x sm:divide-gray-100">
                           {renderMonthCalendar(currentCalendarMonth)}
-                          <div className="hidden sm:block sm:pl-6">
-                            {renderMonthCalendar(
-                              addMonths(currentCalendarMonth, 1),
-                            )}
-                          </div>
                         </div>
 
-                        <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-end text-xs">
+                        <div className="mt-3 pt-2 border-t flex items-center justify-end text-xs">
                           <button
                             type="button"
                             onClick={() => setIsCalendarOpen(false)}
