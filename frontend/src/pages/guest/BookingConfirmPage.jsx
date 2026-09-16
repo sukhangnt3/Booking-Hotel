@@ -44,6 +44,18 @@ import { hotelService } from "@/services";
 import { useAuthStore } from "@/stores/authStore";
 import apiClient from "@/services/apiClient";
 
+// Hàm format an toàn chống lỗi Unescaped character của date-fns
+const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
+  if (!date) return "";
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "";
+    return format(d, pattern, { locale: vi });
+  } catch {
+    return "";
+  }
+};
+
 export default function BookingConfirmPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -301,7 +313,7 @@ export default function BookingConfirmPage() {
     return (
       <div className="flex-1 min-w-[260px]">
         <div className="text-center font-bold text-sm text-gray-900 mb-4">
-          {format(monthDate, "'tháng' M, yyyy", { locale: vi })}
+          {safeFormatDate(monthDate, "'tháng' M, yyyy")}
         </div>
         <div className="grid grid-cols-7 gap-1 text-center mb-2">
           {weekHeaders.map((w, idx) => (
@@ -370,7 +382,7 @@ export default function BookingConfirmPage() {
                 onMouseEnter={() => !checkOutDate && setHoverDate(day)}
                 className={btnClasses}
               >
-                {format(day, "d")}
+                {safeFormatDate(day, "d")}
               </button>
             );
           })}
@@ -391,8 +403,8 @@ export default function BookingConfirmPage() {
       hotel_id: hotelId,
       room_id: room?.id || roomId,
       rental_type: rentalType,
-      checkin_date: format(checkInDate, "yyyy-MM-dd"),
-      checkout_date: format(calculatedCheckOutDate, "yyyy-MM-dd"),
+      checkin_date: safeFormatDate(checkInDate, "yyyy-MM-dd"),
+      checkout_date: safeFormatDate(calculatedCheckOutDate, "yyyy-MM-dd"),
       checkin_time: checkInTime,
       checkout_time: calculatedCheckOutTime,
       stay_duration: stayDuration,
@@ -708,7 +720,7 @@ export default function BookingConfirmPage() {
               </div>
             </div>
 
-            {/* 🌟 BỘ CHỌN HÌNH THỨC THUÊ: GIỜ / NGÀY / ĐÊM / BUỔI (CHUẨN THEO ẢNH) 🌟 */}
+            {/* 🌟 BỘ CHỌN HÌNH THỨC THUÊ: GIỜ / NGÀY / ĐÊM / BUỔI 🌟 */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
               {/* 1. HÀNG TABS: GIỜ, NGÀY, ĐÊM, BUỔI */}
               <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl">
@@ -776,7 +788,7 @@ export default function BookingConfirmPage() {
                   Nhận phòng
                 </label>
                 <div className="grid grid-cols-12 gap-2">
-                  {/* Dropdown chọn giờ nhận (chỉ áp dụng với Giờ hoặc hiển thị giờ) */}
+                  {/* Dropdown chọn giờ nhận */}
                   <div className="col-span-5">
                     <select
                       value={checkInTime}
@@ -802,9 +814,7 @@ export default function BookingConfirmPage() {
                       className="w-full h-11 px-3 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between hover:border-[#006ce4] cursor-pointer transition"
                     >
                       <span className="truncate">
-                        {format(checkInDate, "eee, dd Thg M, yyyy", {
-                          locale: vi,
-                        })}
+                        {safeFormatDate(checkInDate, "eee, dd 'Thg' M, yyyy")}
                       </span>
                       <ChevronDown
                         size={14}
@@ -976,7 +986,7 @@ export default function BookingConfirmPage() {
                 </div>
               </div>
 
-              {/* 🌟 HỘP HIỂN THỊ "BẠN ĐÃ CHỌN" CHUẨN XÁC NHƯ ẢNH 2 🌟 */}
+              {/* 🌟 HỘP HIỂN THỊ "BẠN ĐÃ CHỌN" 🌟 */}
               <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200 text-xs space-y-2">
                 <div className="text-slate-500 font-bold text-[11px] flex items-center gap-1.5">
                   <Building2 size={13} className="text-[#006ce4]" />
@@ -993,16 +1003,17 @@ export default function BookingConfirmPage() {
                     📅 Nhận phòng:{" "}
                     <strong>
                       {checkInTime}{" "}
-                      {format(checkInDate, "dd Thg MM, yyyy", { locale: vi })}
+                      {safeFormatDate(checkInDate, "dd 'Thg' MM, yyyy")}
                     </strong>
                   </p>
                   <p>
                     🚪 Trả phòng:{" "}
                     <strong>
                       {calculatedCheckOutTime}{" "}
-                      {format(calculatedCheckOutDate, "dd Thg MM, yyyy", {
-                        locale: vi,
-                      })}
+                      {safeFormatDate(
+                        calculatedCheckOutDate,
+                        "dd 'Thg' MM, yyyy",
+                      )}
                     </strong>
                   </p>
                   <p>
