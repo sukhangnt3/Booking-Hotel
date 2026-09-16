@@ -67,7 +67,7 @@ export default function ReceptionMapPage() {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 3 BỘ LỌC TRẠNG THÁI PHÒNG (ĐÃ BỎ NÚT CHỜ XÁC NHẬN BỊ THỪA TẠI ĐÂY)
+  // 3 BỘ LỌC TRẠNG THÁI PHÒNG
   const [statusFilters, setStatusFilters] = useState({
     incoming: true,
     occupied: true,
@@ -745,7 +745,7 @@ export default function ReceptionMapPage() {
           </div>
         </div>
 
-        {/* 🌟 NÚT DUY NHẤT "CHỜ XÁC NHẬN" THEO TONE GOSTAY PMS (ĐÃ BỎ CÁI THỨ 2 BỊ DƯ & BỎ HIỆU ỨNG LAG) */}
+        {/* NÚT CHỜ XÁC NHẬN DUY NHẤT */}
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -780,7 +780,7 @@ export default function ReceptionMapPage() {
         </div>
       </header>
 
-      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI (ĐÃ BỎ NÚT CHỜ XÁC NHẬN BỊ TRÙNG LẶP TẠI ĐÂY) ─── */}
+      {/* ─── DÒNG 2: THANH TAB TRẠNG THÁI ─── */}
       <div className="bg-white border-b border-slate-200 px-5 py-2.5 flex items-center justify-between gap-4 flex-wrap text-xs">
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -906,12 +906,12 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* ─── MODAL 1: "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (THEO TONE GOSTAY PMS) ─── */}
+      {/* ─── MODAL 1: "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (ĐÃ SỬA TOÀN BỘ LỖI RỚT DÒNG) ─── */}
       {isPendingModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl max-w-6xl w-full shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[88vh]">
             {/* Header Modal 1 - GoStay Navy */}
-            <div className="px-6 py-4 bg-[#003580] text-white flex items-center justify-between">
+            <div className="px-6 py-4 bg-[#003580] text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <span className="font-extrabold text-base">
                   Khách đặt online
@@ -928,8 +928,8 @@ export default function ReceptionMapPage() {
               </button>
             </div>
 
-            {/* Bảng danh sách đơn */}
-            <div className="p-6 overflow-y-auto flex-1">
+            {/* Bảng danh sách đơn - Đã tối ưu chống rớt dòng tuyệt đối */}
+            <div className="p-6 overflow-y-auto overflow-x-auto flex-1">
               {pendingBookings.length === 0 ? (
                 <div className="py-16 text-center space-y-2">
                   <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
@@ -944,71 +944,96 @@ export default function ReceptionMapPage() {
                   </div>
                 </div>
               ) : (
-                <table className="w-full text-left border-collapse">
+                <table className="w-full min-w-[980px] text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
-                      <th className="pb-3.5 px-3">Mã đặt phòng</th>
-                      <th className="pb-3.5 px-3">Kênh bán</th>
-                      <th className="pb-3.5 px-3">Khách đặt</th>
-                      <th className="pb-3.5 px-3">Lưu trú</th>
-                      <th className="pb-3.5 px-3">Hạng phòng</th>
-                      <th className="pb-3.5 px-3 text-right">Tổng cộng</th>
-                      <th className="pb-3.5 px-3 text-right">Khách đã trả</th>
-                      <th className="pb-3.5 px-3 text-center">Thao tác</th>
+                    <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
+                      <th className="pb-3.5 px-4 w-[150px]">Mã đặt phòng</th>
+                      <th className="pb-3.5 px-4 w-[120px]">Kênh bán</th>
+                      <th className="pb-3.5 px-4 w-[170px]">Khách đặt</th>
+                      <th className="pb-3.5 px-4 w-[230px]">
+                        Thời gian lưu trú
+                      </th>
+                      <th className="pb-3.5 px-4">Hạng phòng</th>
+                      <th className="pb-3.5 px-4 text-right w-[120px]">
+                        Tổng cộng
+                      </th>
+                      <th className="pb-3.5 px-4 text-right w-[120px]">
+                        Khách đã trả
+                      </th>
+                      <th className="pb-3.5 px-4 text-center w-[130px]">
+                        Thao tác
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs font-semibold">
                     {pendingBookings.map((b) => (
                       <tr key={b.id} className="hover:bg-blue-50/40 transition">
-                        <td className="py-4 px-3 font-bold text-[#003580]">
-                          #{b.booking_code}
-                          <div className="text-[10px] text-slate-400 font-normal">
+                        {/* 1. MÃ ĐẶT PHÒNG */}
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          <span className="font-bold text-[#003580] text-sm block">
+                            #{b.booking_code}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-normal block mt-0.5">
                             {formatDisplayDateTime(b.created_at)}
-                          </div>
+                          </span>
                         </td>
-                        <td className="py-4 px-3 text-slate-500">
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
+
+                        {/* 2. KÊNH BÁN */}
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-[11px] font-bold inline-block whitespace-nowrap">
                             GoStay Online
                           </span>
                         </td>
-                        <td className="py-4 px-3">
-                          <div className="font-bold text-slate-900 text-sm">
+
+                        {/* 3. KHÁCH ĐẶT */}
+                        <td className="py-4 px-4">
+                          <div className="font-bold text-slate-900 text-sm whitespace-nowrap">
                             {b.customer_name}
                           </div>
-                          <div className="text-slate-500 text-[11px]">
+                          <div className="text-slate-500 text-[11px] whitespace-nowrap mt-0.5">
                             {b.guest_phone || b.guest_email || "Chưa có SĐT"}
                           </div>
                         </td>
-                        <td className="py-4 px-3 text-slate-700">
-                          <div>
+
+                        {/* 4. THỜI GIAN LƯU TRÚ */}
+                        <td className="py-4 px-4 whitespace-nowrap">
+                          <div className="text-slate-800 font-bold">
                             {formatDisplayDateTime(b.checkin_date)} -{" "}
                             {formatDisplayDateTime(b.checkout_date)}
                           </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
+                          <div className="text-[11px] text-slate-400 mt-0.5">
                             {b.adult_total} người lớn, {b.children_total} trẻ em
                           </div>
                         </td>
-                        <td className="py-4 px-3 text-slate-800">
-                          <span className="bg-blue-50 border border-blue-200 text-[#003580] px-2.5 py-1 rounded-md text-[11px] font-bold">
+
+                        {/* 5. HẠNG PHÒNG - GIỮ NGUYÊN 1 DÒNG ĐẸP ĐẼ */}
+                        <td className="py-4 px-4">
+                          <span className="bg-blue-50 border border-blue-200 text-[#003580] px-3 py-1 rounded-lg text-xs font-bold inline-flex items-center whitespace-nowrap shadow-2xs">
                             1 {b.room_type_name || "Phòng tiêu chuẩn"}
                           </span>
                         </td>
-                        <td className="py-4 px-3 text-right font-black text-slate-900 text-sm tabular-nums">
+
+                        {/* 6. TỔNG CỘNG */}
+                        <td className="py-4 px-4 text-right font-black text-slate-900 text-sm tabular-nums whitespace-nowrap">
                           {formatVND(b.total_price)}
                         </td>
-                        <td className="py-4 px-3 text-right font-black text-emerald-700 text-sm tabular-nums">
+
+                        {/* 7. KHÁCH ĐÃ TRẢ */}
+                        <td className="py-4 px-4 text-right font-black text-emerald-700 text-sm tabular-nums whitespace-nowrap">
                           {formatVND(b.paid_amount || b.total_price)}
                         </td>
-                        <td className="py-4 px-3 text-center">
+
+                        {/* 8. THAO TÁC - NÚT XÁC NHẬN NẰM NGUYÊN 1 HÀNG */}
+                        <td className="py-4 px-4 text-center whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => {
                               setAssigningBooking(b);
                               setSelectedAssignRoom("");
                             }}
-                            className="px-4 py-2 bg-[#003580] hover:bg-[#00224f] text-white rounded-xl font-bold text-xs shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-1.5 mx-auto"
+                            className="px-4 py-2 bg-[#003580] hover:bg-[#00224f] text-white rounded-xl font-bold text-xs shadow-xs transition cursor-pointer active:scale-95 inline-flex items-center justify-center gap-1.5 min-w-[110px] whitespace-nowrap"
                           >
-                            <Check size={14} />
+                            <Check size={15} />
                             <span>Xác nhận</span>
                           </button>
                         </td>
@@ -1020,7 +1045,7 @@ export default function ReceptionMapPage() {
             </div>
 
             {/* Chân Modal 1 */}
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-[11px] text-slate-500">
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-[11px] text-slate-500 shrink-0">
               <span>Khách sạn đang nhận đặt phòng trực tuyến qua GoStay.</span>
               <button
                 type="button"
@@ -1034,11 +1059,11 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (TONE GOSTAY PMS) ─── */}
+      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200">
-            {/* Header Modal 2 - GoStay Navy */}
+            {/* Header Modal 2 */}
             <div className="px-6 py-4 bg-[#003580] text-white flex items-center justify-between">
               <h3 className="font-black text-base">
                 Xác nhận đặt phòng - #{assigningBooking.booking_code}
@@ -1074,7 +1099,7 @@ export default function ReceptionMapPage() {
                   </div>
                 </div>
 
-                {/* Ô CHỌN SỐ PHÒNG VIỀN GOSTAY BLUE */}
+                {/* Ô CHỌN SỐ PHÒNG */}
                 <div className="min-w-[190px]">
                   <div className="text-[10px] text-slate-600 font-bold uppercase mb-1">
                     Phòng <span className="text-rose-500">*</span>
@@ -1144,7 +1169,7 @@ export default function ReceptionMapPage() {
                 type="button"
                 disabled={isSubmittingAssign}
                 onClick={handleConfirmAssignRoom}
-                className="px-6 py-2.5 bg-[#003580] hover:bg-[#00224f] text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-2 active:scale-95"
+                className="px-6 py-2.5 bg-[#003580] hover:bg-[#00224f] text-white rounded-xl font-bold text-xs shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-2 active:scale-95 whitespace-nowrap"
               >
                 <Check size={16} />
                 <span>{isSubmittingAssign ? "Đang xử lý..." : "Xác nhận"}</span>
@@ -1171,7 +1196,7 @@ export default function ReceptionMapPage() {
         formatVND={formatVND}
       />
 
-      {/* Các modal phụ trợ khác */}
+      {/* Các modal phụ trợ */}
       <ConfirmCheckInModal
         isOpen={activeModalType === "confirm_checkin"}
         onClose={() => {
