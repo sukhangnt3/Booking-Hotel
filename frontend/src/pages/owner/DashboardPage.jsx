@@ -547,7 +547,7 @@ export default function OwnerDashboardPage() {
 
               <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
                 <div className="text-xs text-gray-600 font-bold">
-                  Kênh bán khác
+                  Khách đặt online
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
