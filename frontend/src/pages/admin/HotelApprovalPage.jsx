@@ -28,6 +28,29 @@ import {
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import apiClient from "@/services/apiClient";
 
+const BACKEND_BASE_URL = (
+  import.meta.env.VITE_API_URL || "http://localhost:5000"
+).replace(/\/api\/?$/, "");
+
+const parseRealImageUrl = (item) => {
+  if (!item) return "";
+  let raw =
+    typeof item === "string"
+      ? item
+      : item.url || item.path || item.image_url || item.thumbnail || "";
+  raw = String(raw).trim();
+  if (!raw || raw.startsWith("blob:")) return "";
+  if (
+    raw.startsWith("http://") ||
+    raw.startsWith("https://") ||
+    raw.startsWith("data:image/")
+  ) {
+    return raw;
+  }
+  const cleanPath = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${BACKEND_BASE_URL}${cleanPath}`;
+};
+
 const STATUS_TABS = [
   { id: "pending", label: "Chờ phê duyệt" },
   { id: "active", label: "Đang mở bán" },
@@ -64,7 +87,6 @@ export default function HotelApprovalPage() {
   const [statusFilter, setStatusFilter] = useState("pending");
   const [apiError, setApiError] = useState("");
 
-  // Modal chi tiết chuyên sâu
   const [selectedHotel, setSelectedHotel] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState("overview");
@@ -102,12 +124,32 @@ export default function HotelApprovalPage() {
     setDetailLoading(true);
 
     try {
-      const res = await apiClient.get(`/hotels/${hotel.id}`);
+      const [detailRes, roomsRes] = await Promise.all([
+        apiClient.get(`/hotels/${hotel.id}`),
+        apiClient.get(`/hotels/${hotel.id}/rooms`).catch(() => ({ data: [] })),
+      ]);
+
       const fullData =
-        res?.data?.hotel || res?.data?.data || res?.data || res?.hotel || hotel;
+        detailRes?.data?.hotel ||
+        detailRes?.data?.data ||
+        detailRes?.data ||
+        detailRes ||
+        hotel;
+
+      const directRooms = roomsRes?.data || roomsRes?.rooms || [];
+
+      // Đảm bảo rooms luôn được gán đầy đủ
+      if (
+        (!fullData.rooms || fullData.rooms.length === 0) &&
+        Array.isArray(directRooms) &&
+        directRooms.length > 0
+      ) {
+        fullData.rooms = directRooms;
+      }
+
       setSelectedHotel(fullData);
     } catch (err) {
-      console.warn("Không tải được chi tiết phụ, dùng dữ liệu hiện tại:", err);
+      console.warn("Lỗi tải chi tiết:", err);
     } finally {
       setDetailLoading(false);
     }
@@ -146,9 +188,14 @@ export default function HotelApprovalPage() {
     statusFilter === "all" ? true : h.status === statusFilter,
   );
 
+  // Chỉ lấy ảnh cơ sở (không có room_id)
+  const hotelPropertyImages = (selectedHotel?.images || []).filter(
+    (img) => !img.room_id && !img.roomId,
+  );
+
   return (
     <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* ─── HEADER QUẢN TRỊ THEO CHUẨN GHOSTAY ─── */}
+      {/* HEADER */}
       <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
@@ -179,7 +226,7 @@ export default function HotelApprovalPage() {
         </div>
       )}
 
-      {/* ─── TABS LỌC TRẠNG THÁI ─── */}
+      {/* TABS TRẠNG THÁI */}
       <div className="bg-white p-3 rounded-3xl border border-gray-200 shadow-xs flex items-center gap-2 overflow-x-auto no-scrollbar">
         {STATUS_TABS.map((tab) => {
           const count = hotels.filter((h) =>
@@ -211,7 +258,7 @@ export default function HotelApprovalPage() {
         })}
       </div>
 
-      {/* ─── LƯỚI KHÁCH SẠN ─── */}
+      {/* LƯỚI KHÁCH SẠN */}
       {loading ? (
         <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
           <LoadingSpinner
@@ -223,10 +270,9 @@ export default function HotelApprovalPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredHotels.map((h) => {
             const coverImage =
-              h.images?.find((img) => img.is_thumbnail)?.path ||
-              h.images?.[0]?.path ||
+              h.images?.find((img) => img.is_thumbnail && !img.room_id)?.path ||
+              h.images?.find((img) => !img.room_id)?.path ||
               h.image ||
-              h.thumbnail ||
               "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
 
             return (
@@ -237,7 +283,7 @@ export default function HotelApprovalPage() {
                 <div>
                   <div className="relative h-48 w-full bg-gray-100">
                     <img
-                      src={coverImage}
+                      src={parseRealImageUrl(coverImage)}
                       alt={h.name}
                       className="w-full h-full object-cover"
                     />
@@ -413,7 +459,7 @@ export default function HotelApprovalPage() {
                 },
                 {
                   id: "photos",
-                  label: `Hình ảnh (${selectedHotel.images?.length || (selectedHotel.image ? 1 : 0)})`,
+                  label: `Hình ảnh cơ sở (${hotelPropertyImages.length})`,
                   icon: ImageIcon,
                 },
                 { id: "policy", label: "Quy định & Tiện nghi", icon: Clock },
@@ -559,7 +605,7 @@ export default function HotelApprovalPage() {
                     </div>
                   )}
 
-                  {/* TAB 2: DANH MỤC HẠNG PHÒNG & GIÁ */}
+                  {/* TAB 2: DANH MỤC HẠNG PHÒNG & GIÁ (HIỂN THỊ ĐÚNG ẢNH XE) */}
                   {activeModalTab === "rooms" && (
                     <div className="space-y-4 animate-fadeIn">
                       {Array.isArray(selectedHotel.rooms) &&
@@ -569,6 +615,10 @@ export default function HotelApprovalPage() {
                             const roomAmenities = Array.isArray(room.amenities)
                               ? room.amenities
                               : [];
+                            const roomImg =
+                              room.image ||
+                              room.thumbnail ||
+                              (Array.isArray(room.images) && room.images[0]);
 
                             return (
                               <div
@@ -635,13 +685,17 @@ export default function HotelApprovalPage() {
                                     </span>
                                   </div>
 
-                                  {room.image || room.thumbnail ? (
+                                  {roomImg ? (
                                     <img
-                                      src={room.image || room.thumbnail}
-                                      alt=""
-                                      className="w-20 h-14 object-cover rounded-xl border border-gray-200"
+                                      src={parseRealImageUrl(roomImg)}
+                                      alt={room.name}
+                                      className="w-24 h-16 object-cover rounded-xl border border-gray-200 shadow-xs"
                                     />
-                                  ) : null}
+                                  ) : (
+                                    <span className="text-[11px] text-gray-400 italic">
+                                      Chưa có ảnh
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -655,20 +709,19 @@ export default function HotelApprovalPage() {
                     </div>
                   )}
 
-                  {/* TAB 3: HÌNH ẢNH */}
+                  {/* TAB 3: HÌNH ẢNH CƠ SỞ (ĐÚNG 3 ẢNH CƠ SỞ, KHÔNG CÓ ẢNH XE) */}
                   {activeModalTab === "photos" && (
                     <div className="space-y-4 animate-fadeIn">
-                      {Array.isArray(selectedHotel.images) &&
-                      selectedHotel.images.length > 0 ? (
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                          {selectedHotel.images.map((img, i) => (
+                      {hotelPropertyImages.length > 0 ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                          {hotelPropertyImages.map((img, i) => (
                             <div
                               key={img.id || i}
-                              className="group relative h-36 rounded-2xl overflow-hidden border border-gray-200 bg-gray-100"
+                              className="group relative h-40 rounded-2xl overflow-hidden border border-gray-200 bg-gray-100"
                             >
                               <img
-                                src={img.path || img.url}
-                                alt=""
+                                src={parseRealImageUrl(img.path || img.url)}
+                                alt="Ảnh cơ sở"
                                 className="w-full h-full object-cover"
                               />
                               {img.is_thumbnail && (
@@ -676,25 +729,12 @@ export default function HotelApprovalPage() {
                                   ★ Ảnh bìa
                                 </span>
                               )}
-                              {img.room_id && (
-                                <span className="absolute bottom-2 left-2 bg-black/60 text-white text-[9px] font-medium px-2 py-0.5 rounded">
-                                  Ảnh phòng
-                                </span>
-                              )}
                             </div>
                           ))}
                         </div>
-                      ) : selectedHotel.image ? (
-                        <div className="h-64 w-full rounded-2xl overflow-hidden border border-gray-200">
-                          <img
-                            src={selectedHotel.image}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
                       ) : (
                         <div className="p-8 text-center text-gray-400 bg-gray-50 rounded-2xl border border-gray-200">
-                          Chưa có hình ảnh nào được tải lên.
+                          Chưa có hình ảnh cơ sở nào được tải lên.
                         </div>
                       )}
                     </div>
