@@ -159,6 +159,7 @@ export const Step3RoomsAndPricing = ({
       description: "Phòng nghỉ hiện đại, tiện nghi.",
       image: "",
       images: [],
+      thumbnail: "",
       roomAmenities: ["air_conditioner", "wifi", "hot_water", "tv_smart"],
     };
     onChange({ rooms: [...rooms, newRoom] });
@@ -184,7 +185,6 @@ export const Step3RoomsAndPricing = ({
       return merged;
     });
 
-    // 🌟 CHỈ CẬP NHẬT RIÊNG CHO PHÒNG, TUYỆT ĐỐI KHÔNG NHÉT VÀO HOTELIMAGES 🌟
     onChange({ rooms: updatedRooms });
   };
 
@@ -248,6 +248,8 @@ export const Step3RoomsAndPricing = ({
           : [];
 
       const updated = [...currentImgs, ...compressedUrls];
+
+      // 🌟 LƯU CHẶT CHẼ VÀO CẢ 3 TRƯỜNG IMAGE, IMAGES, THUMBNAIL CỦA PHÒNG 🌟
       handleUpdateRoom(targetId, {
         images: updated,
         image: updated[0] || "",

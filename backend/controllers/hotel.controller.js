@@ -472,7 +472,7 @@ async function listHotels(req, res, next) {
       params.push(minPrice);
       where += ` AND EXISTS (
           SELECT 1 FROM public.room rp
-          WHERE rp.hotel_id = h.id AND rp.is_active = true AND rp.base_price >= $${params.length}
+          WHERE rp.hotel_id = h.id AND (rp.is_active = true OR rp.is_active IS NULL) AND rp.base_price >= $${params.length}
         )`;
     }
 
@@ -480,7 +480,7 @@ async function listHotels(req, res, next) {
       params.push(maxPrice);
       where += ` AND EXISTS (
           SELECT 1 FROM public.room rp
-          WHERE rp.hotel_id = h.id AND rp.is_active = true AND rp.base_price <= $${params.length}
+          WHERE rp.hotel_id = h.id AND (rp.is_active = true OR rp.is_active IS NULL) AND rp.base_price <= $${params.length}
         )`;
     }
 
@@ -582,7 +582,7 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // 🌟 2. LẤY TẤT CẢ HẠNG PHÒNG VÀ GẮN ĐÚNG ẢNH CỦA CHÍNH PHÒNG ĐÓ 🌟
+    // 🌟 2. LẤY TẤT CẢ HẠNG PHÒNG VÀ GẮN ĐÚNG ẢNH CỦA CHÍNH PHÒNG ĐÓ TỪ BẢNG IMAGE 🌟
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -633,7 +633,6 @@ async function getHotelById(req, res, next) {
         return { rows: [] };
       });
 
-    // Giữ nguyên vẹn mảng ảnh cơ sở, không đánh tráo sang cho phòng
     hotelData.images = imagesRes.rows;
     hotelData.image = imagesRes.rows[0]?.path || null;
     hotelData.rooms = roomsRes.rows;
@@ -1004,7 +1003,7 @@ async function registerHotel(req, res, next) {
 
     const newHotel = hotelResult.rows[0];
 
-    // ── 5.1. LẤY ĐÚNG 3 ẢNH CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 (KHÔNG LẤY ẢNH PHÒNG) ──
+    // ── 5.1. LẤY ĐÚNG ẢNH CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 (KHÔNG LẤY ẢNH PHÒNG) ──
     const propertyImagesFromHotelImages = Array.isArray(hotelImages)
       ? hotelImages
           .filter((img) => img && !img.roomId && !img.room_id)
@@ -1019,9 +1018,9 @@ async function registerHotel(req, res, next) {
       ...(Array.isArray(gallery) ? gallery : []),
     ];
 
-    // Khử trùng lặp và giữ nguyên vẹn các ảnh cơ sở của khách sạn
     const mainHotelImages = extractImageUrls(rawHotelImages);
 
+    // Lưu ảnh cơ sở (hotel_id = newHotel.id, room_id = NULL)
     for (let i = 0; i < mainHotelImages.length; i++) {
       await client.query("SAVEPOINT sp_hotel_img");
       try {
@@ -1056,7 +1055,7 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // ── 5.3. LƯU TỪNG HẠNG PHÒNG VÀ GẮN ĐÚNG ẢNH ĐÃ CHỌN Ở BƯỚC 3 ──
+    // ── 5.3. LƯU TỪNG HẠNG PHÒNG VÀ LƯU ĐÚNG ẢNH ĐÃ CHỌN Ở BƯỚC 3 ──
     if (rooms.length > 0) {
       let roomFloor = 1;
       for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
@@ -1064,7 +1063,7 @@ async function registerHotel(req, res, next) {
         const totalAmount = Number(r.totalRooms || r.amount || 4);
         const newRoomId = crypto.randomUUID();
 
-        // Thu thập ảnh riêng của hạng phòng này đã chọn ở Bước 3
+        // Thu thập ảnh riêng của phòng này từ r.images, r.image, r.thumbnail
         const thisRoomImages = extractImageUrls([
           ...(Array.isArray(r.images) ? r.images : []),
           r.image,
