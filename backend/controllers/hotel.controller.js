@@ -2,25 +2,16 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-let bcrypt;
-try {
-  bcrypt = require("bcryptjs");
-} catch {
+const safeRequire = (mod) => {
   try {
-    bcrypt = require("bcrypt");
+    return require(mod);
   } catch {
-    bcrypt = null;
+    return null;
   }
-}
+};
+const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
+const jwt = safeRequire("jsonwebtoken");
 
-let jwt;
-try {
-  jwt = require("jsonwebtoken");
-} catch {
-  jwt = null;
-}
-
-// 🌟 CHỈ HIỂN THỊ CÁC KHÁCH SẠN ĐÃ ĐƯỢC ADMIN DUYỆT (ACTIVE) TRÊN TRANG CHỦ & TÌM KIẾM 🌟
 const PUBLIC_HOTEL_STATUS = "h.status = 'active'";
 
 const AMENITY_LABEL_MAP = {
@@ -54,94 +45,64 @@ const parseAmenityArray = (raw) => {
   if (!raw) return [];
   if (Array.isArray(raw)) {
     return raw
-      .map((item) => {
-        if (typeof item === "string") return item.trim();
-        if (item && typeof item === "object") {
-          return (item.name || item.id || item.label || "").trim();
-        }
-        return "";
-      })
+      .map((i) =>
+        (typeof i === "string" ? i : i?.name || i?.id || i?.label || "").trim(),
+      )
       .filter(Boolean);
   }
-  if (typeof raw === "string") {
-    return raw
-      .split(",")
-      .map((s) => s.trim().replace(/^["'{}[\]]+|["'{}[\]]+$/g, ""))
-      .filter(Boolean);
-  }
-  return [];
+  return typeof raw === "string"
+    ? raw
+        .split(",")
+        .map((s) => s.trim().replace(/^["'{}[\]]+|["'{}[\]]+$/g, ""))
+        .filter(Boolean)
+    : [];
 };
 
-// Hàm trích xuất và làm phẳng mảng URL ảnh, khử trùng lặp
 const extractImageUrls = (raw) => {
-  if (!raw) return [];
   const list = [];
-
-  const processItem = (item) => {
+  const walk = (item) => {
     if (!item) return;
-    if (Array.isArray(item)) {
-      item.forEach(processItem);
-      return;
-    }
-    if (typeof item === "string") {
-      const clean = item.trim();
-      if (clean && !clean.startsWith("blob:")) list.push(clean);
-      return;
-    }
-    if (typeof item === "object") {
-      const u = item.url || item.path || item.image_url || item.thumbnail || "";
-      if (typeof u === "string") {
-        const clean = u.trim();
-        if (clean && !clean.startsWith("blob:")) list.push(clean);
-      }
-    }
+    if (Array.isArray(item)) return item.forEach(walk);
+    const u = (
+      typeof item === "string"
+        ? item
+        : item.url || item.path || item.image_url || item.thumbnail || ""
+    ).trim();
+    if (u && !u.startsWith("blob:")) list.push(u);
   };
-
-  processItem(raw);
+  walk(raw);
   return [...new Set(list)];
 };
 
 async function ensureAmenityRecord(client, rawItem) {
   if (!rawItem) return null;
-  const clean =
+  const clean = (
     typeof rawItem === "string"
-      ? rawItem.trim()
-      : String(rawItem.name || rawItem.id || rawItem.label || "").trim();
+      ? rawItem
+      : rawItem.name || rawItem.id || rawItem.label || ""
+  ).trim();
   if (!clean) return null;
   const label = AMENITY_LABEL_MAP[clean] || clean;
 
-  try {
-    const found = await client.query(
-      `SELECT id FROM public.amenity 
-       WHERE id::text = $1 
-          OR LOWER(name) = LOWER($1) 
-          OR LOWER(name) = LOWER($2) 
-       LIMIT 1`,
-      [clean, label],
-    );
-    if (found.rows.length > 0) {
-      return found.rows[0].id;
-    }
+  const found = await client.query(
+    `SELECT id FROM public.amenity WHERE id::text = $1 OR LOWER(name) IN (LOWER($1), LOWER($2)) LIMIT 1`,
+    [clean, label],
+  );
+  if (found.rows.length) return found.rows[0].id;
 
-    const nameToUse = AMENITY_LABEL_MAP[clean] ? clean : label;
-    const ins = await client.query(
-      `INSERT INTO public.amenity (id, name, created_at) 
-       VALUES (gen_random_uuid(), $1, NOW()) 
-       RETURNING id`,
-      [nameToUse],
-    );
-    return ins.rows[0]?.id;
-  } catch (err) {
-    try {
-      const ins2 = await client.query(
+  const res = await client
+    .query(
+      `INSERT INTO public.amenity (id, name, created_at) VALUES (gen_random_uuid(), $1, NOW()) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
+      [AMENITY_LABEL_MAP[clean] ? clean : label],
+    )
+    .catch(() =>
+      client.query(
         `INSERT INTO public.amenity (name) VALUES ($1) RETURNING id`,
         [clean],
-      );
-      return ins2.rows[0]?.id;
-    } catch {
-      return null;
-    }
-  }
+      ),
+    );
+
+  return res.rows?.[0]?.id || null;
 }
 
 const VIETNAM_TOURISM_HUBS = [
@@ -265,17 +226,15 @@ const VIETNAM_TOURISM_HUBS = [
 ];
 
 function calculateHaversine(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1),
+    dLon = toRad(lon2 - lon1);
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return (
+    Math.round(6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 10) / 10
+  );
 }
 
 function computeLocationMetrics(
@@ -286,114 +245,82 @@ function computeLocationMetrics(
   manualDistance = null,
 ) {
   const normCity = (cityName || "").toLowerCase().trim();
-  let targetHub = null;
+  let hub = normCity
+    ? VIETNAM_TOURISM_HUBS.find((h) =>
+        h.aliases.some((a) => normCity.includes(a)),
+      )
+    : null;
 
-  if (normCity) {
-    targetHub = VIETNAM_TOURISM_HUBS.find((h) =>
-      h.aliases.some((alias) => normCity.includes(alias)),
-    );
+  if (!hub && lat && lng) {
+    hub = VIETNAM_TOURISM_HUBS.reduce((closest, curr) => {
+      const d = calculateHaversine(lat, lng, curr.center.lat, curr.center.lng);
+      return !closest || d < closest.d ? { hub: curr, d } : closest;
+    }, null)?.hub;
   }
+  hub = hub || VIETNAM_TOURISM_HUBS[0];
 
-  if (!targetHub && lat && lng) {
-    let minDistance = Infinity;
-    VIETNAM_TOURISM_HUBS.forEach((hub) => {
-      const d = calculateHaversine(lat, lng, hub.center.lat, hub.center.lng);
-      if (d < minDistance) {
-        minDistance = d;
-        targetHub = hub;
-      }
-    });
-  }
+  let dist = Number(manualDistance) > 0 ? Number(manualDistance) : 1.2;
+  let beachfront = Boolean(manualBeachfront);
 
-  if (!targetHub) targetHub = VIETNAM_TOURISM_HUBS[0];
-
-  let distance_to_center =
-    manualDistance !== null &&
-    manualDistance !== undefined &&
-    Number(manualDistance) > 0
-      ? Number(manualDistance)
-      : 1.2;
-
-  let is_beachfront = Boolean(manualBeachfront);
-
-  if (lat && lng && targetHub) {
-    const distCenter = calculateHaversine(
-      lat,
-      lng,
-      targetHub.center.lat,
-      targetHub.center.lng,
-    );
-    if (distCenter >= 0) distance_to_center = distCenter;
-
-    if (targetHub.beaches && targetHub.beaches.length > 0) {
-      for (const beach of targetHub.beaches) {
-        const distBeach = calculateHaversine(lat, lng, beach.lat, beach.lng);
-        if (distBeach <= 1.2) {
-          is_beachfront = true;
-          break;
-        }
-      }
-    }
+  if (lat && lng && hub) {
+    dist = calculateHaversine(lat, lng, hub.center.lat, hub.center.lng);
+    beachfront =
+      beachfront ||
+      hub.beaches.some(
+        (b) => calculateHaversine(lat, lng, b.lat, b.lng) <= 1.2,
+      );
   }
 
   return {
-    distance_to_center: distance_to_center > 0 ? distance_to_center : 1.2,
-    is_beachfront: is_beachfront,
+    distance_to_center: dist > 0 ? dist : 1.2,
+    is_beachfront: beachfront,
   };
 }
 
 async function fallbackGeocode(address, city) {
   try {
-    const cleanCity = (city || "").trim();
-    const cleanAddress = (address || "").trim();
+    const query = [address, city, "Việt Nam"].filter(Boolean).join(", ");
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+      {
+        headers: { "User-Agent": "GoStayApp/1.0" },
+      },
+    ).then((r) => r.json());
 
-    let results = [];
-    if (cleanAddress && cleanCity) {
-      const query = encodeURIComponent(
-        `${cleanAddress}, ${cleanCity}, Việt Nam`,
-      );
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
-        { headers: { "User-Agent": "GoStayApp/1.0" } },
-      );
-      results = await res.json();
-    }
-
-    if ((!results || results.length === 0) && cleanCity) {
-      const query = encodeURIComponent(`${cleanCity}, Việt Nam`);
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
-        { headers: { "User-Agent": "GoStayApp/1.0" } },
-      );
-      results = await res.json();
-    }
-
-    if (results && results.length > 0) {
-      return {
-        lat: parseFloat(results[0].lat),
-        lng: parseFloat(results[0].lon),
-      };
-    }
-
-    const matchedHub = VIETNAM_TOURISM_HUBS.find((h) =>
-      h.aliases.some((alias) => cleanCity.toLowerCase().includes(alias)),
+    if (res?.[0])
+      return { lat: parseFloat(res[0].lat), lng: parseFloat(res[0].lon) };
+    const hub = VIETNAM_TOURISM_HUBS.find((h) =>
+      h.aliases.some((a) => (city || "").toLowerCase().includes(a)),
     );
-    if (matchedHub) {
-      return { lat: matchedHub.center.lat, lng: matchedHub.center.lng };
-    }
+    if (hub) return { lat: hub.center.lat, lng: hub.center.lng };
   } catch (err) {
-    console.warn("Geocoding dự phòng lỗi:", err.message);
+    console.warn("Geocoding fallback lỗi:", err.message);
   }
   return null;
 }
 
-function parseSearchDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
-}
+const parseSearchDate = (v) =>
+  v && !isNaN(new Date(v).getTime())
+    ? new Date(v).toISOString().slice(0, 10)
+    : null;
 
-// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (CHỈ STATUS = ACTIVE) ───
+// SQL tái sử dụng để query phòng cùng ảnh & tiện nghi
+const ROOM_BASE_SELECT = `
+  SELECT r.*,
+    COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS amount,
+    COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS remaining_rooms,
+    COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS total_rooms,
+    r.base_price::int AS total_price,
+    r.base_price::int AS avg_price_per_night,
+    true AS is_available,
+    COALESCE((SELECT img.path FROM public.image img WHERE img.room_id = r.id ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1), '') AS image,
+    COALESCE((SELECT img.path FROM public.image img WHERE img.room_id = r.id ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1), '') AS thumbnail,
+    COALESCE((SELECT json_agg(a.name) FROM public.room_amenity ra JOIN public.amenity a ON a.id = ra.amenity_id WHERE ra.room_id = r.id), '[]'::json) AS amenities,
+    COALESCE((SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) FROM public.image img WHERE img.room_id = r.id), '[]'::json) AS images
+  FROM public.room r
+`;
+
+// ─── 1. DANH SÁCH KHÁCH SẠN ───
 async function listHotels(req, res, next) {
   try {
     const destination = (
@@ -408,135 +335,79 @@ async function listHotels(req, res, next) {
     const checkOut = parseSearchDate(
       req.query.checkOut || req.query.checkout_date,
     );
-    const rentalType = req.query.rentalType || "DAY";
 
     if (
-      rentalType === "DAY" &&
+      req.query.rentalType === "DAY" &&
       (req.query.checkIn || req.query.checkOut) &&
       (!checkIn || !checkOut || checkOut <= checkIn)
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Ngày nhận phòng và trả phòng không hợp lệ.",
-      });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Ngày nhận phòng và trả phòng không hợp lệ.",
+        });
     }
 
-    const adults = Math.max(1, Number(req.query.adults || 1));
-    const rooms = Math.max(1, Number(req.query.rooms || 1));
     const minPrice = Number(req.query.minPrice || 0);
     const maxPrice = Number(req.query.maxPrice || 0);
     const stars = String(req.query.stars || "")
       .split(",")
       .map(Number)
-      .filter((star) => Number.isFinite(star) && star > 0);
+      .filter((s) => Number.isFinite(s) && s > 0);
+
     const params = [];
-    const normalizedDestination = destination
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/đ/g, "d")
-      .trim();
-
-    let destinationVariants = [];
-    if (
-      normalizedDestination.includes("khanh hoa") ||
-      normalizedDestination.includes("nha trang")
-    ) {
-      destinationVariants = ["%Khánh Hòa%", "%Nha Trang%", "%Khanh Hoa%"];
-    } else if (destination) {
-      destinationVariants = [`%${destination}%`];
-    }
-
     let where = `WHERE ${PUBLIC_HOTEL_STATUS}`;
 
-    if (destinationVariants.length > 0) {
-      params.push(...destinationVariants);
-      const destinationConditions = destinationVariants
-        .map(
-          (_, index) =>
-            `(h.name ILIKE $${index + 1} 
-              OR h.city ILIKE $${index + 1} 
-              OR h.address ILIKE $${index + 1}
-              OR unaccent(lower(h.name)) ILIKE unaccent(lower($${index + 1}))
-              OR unaccent(lower(h.city)) ILIKE unaccent(lower($${index + 1}))
-              OR unaccent(lower(h.address)) ILIKE unaccent(lower($${index + 1})))`,
-        )
-        .join(" OR ");
-      where += ` AND (${destinationConditions})`;
+    if (destination) {
+      const normDest = destination
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d");
+      const variants =
+        normDest.includes("khanh hoa") || normDest.includes("nha trang")
+          ? ["%Khánh Hòa%", "%Nha Trang%", "%Khanh Hoa%"]
+          : [`%${destination}%`];
+
+      const conds = variants.map((v) => {
+        params.push(v);
+        const idx = `$${params.length}`;
+        return `(h.name ILIKE ${idx} OR h.city ILIKE ${idx} OR h.address ILIKE ${idx} OR unaccent(lower(h.name)) ILIKE unaccent(lower(${idx})) OR unaccent(lower(h.city)) ILIKE unaccent(lower(${idx})))`;
+      });
+      where += ` AND (${conds.join(" OR ")})`;
     }
-    if (stars.length > 0) {
+
+    if (stars.length) {
       params.push(stars);
       where += ` AND h.star_rating = ANY($${params.length}::int[])`;
     }
-
     if (minPrice > 0) {
       params.push(minPrice);
-      where += ` AND EXISTS (
-          SELECT 1 FROM public.room rp
-          WHERE rp.hotel_id = h.id AND (rp.is_active = true OR rp.is_active IS NULL) AND rp.base_price >= $${params.length}
-        )`;
+      where += ` AND EXISTS (SELECT 1 FROM public.room rp WHERE rp.hotel_id = h.id AND COALESCE(rp.is_active, true) AND rp.base_price >= $${params.length})`;
     }
-
     if (maxPrice > 0) {
       params.push(maxPrice);
-      where += ` AND EXISTS (
-          SELECT 1 FROM public.room rp
-          WHERE rp.hotel_id = h.id AND (rp.is_active = true OR rp.is_active IS NULL) AND rp.base_price <= $${params.length}
-        )`;
+      where += ` AND EXISTS (SELECT 1 FROM public.room rp WHERE rp.hotel_id = h.id AND COALESCE(rp.is_active, true) AND rp.base_price <= $${params.length})`;
     }
 
-    const sortBy = String(req.query.sortBy || "popular");
+    const orderByMap = {
+      price_low: "min_price ASC, h.average_rating DESC NULLS LAST",
+      price_high: "min_price DESC, h.average_rating DESC NULLS LAST",
+      rating: "h.average_rating DESC NULLS LAST, min_price ASC",
+    };
     const orderBy =
-      sortBy === "price_low"
-        ? "min_price ASC, h.average_rating DESC NULLS LAST"
-        : sortBy === "price_high"
-          ? "min_price DESC, h.average_rating DESC NULLS LAST"
-          : sortBy === "rating"
-            ? "h.average_rating DESC NULLS LAST, min_price ASC"
-            : "h.created_at DESC, h.average_rating DESC NULLS LAST, min_price ASC";
+      orderByMap[req.query.sortBy] ||
+      "h.created_at DESC, h.average_rating DESC NULLS LAST, min_price ASC";
 
     const sql = `
-      SELECT
-         h.id,
-         h.name,
-         h.address,
-         h.city,
-         h.latitude,
-         h.longitude,
-         h.star_rating,
-         h.average_rating,
-         h.review_count,
-         h.phone,
-         h.email,
-         h.status,
-         h.description,
-         h.checkin_time,
-         h.checkout_time,
-         h.property_type,
-         h.created_at,
-         h.updated_at,
-         COALESCE(h.is_beachfront, false) AS is_beachfront,
-         COALESCE(h.distance_to_center, 1.2) AS distance_to_center,
-         COALESCE(
-           (
-             SELECT img.path 
-             FROM public.image img 
-             WHERE img.hotel_id = h.id AND img.room_id IS NULL
-             ORDER BY img.is_thumbnail DESC, img.display_order ASC, img.created_at ASC 
-             LIMIT 1
-           ),
-           'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600'
-         ) AS image,
-         COALESCE(
-           (
-             SELECT MIN(r.base_price) 
-             FROM public.room r 
-             WHERE r.hotel_id = h.id AND (r.is_active = true OR r.is_active IS NULL)
-           ),
-           500000
-         ) AS min_price
-       FROM public.hotel h
-       ${where}
+      SELECT h.*,
+        COALESCE(h.is_beachfront, false) AS is_beachfront,
+        COALESCE(h.distance_to_center, 1.2) AS distance_to_center,
+        COALESCE((SELECT img.path FROM public.image img WHERE img.hotel_id = h.id AND img.room_id IS NULL ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1), 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600') AS image,
+        COALESCE((SELECT MIN(r.base_price) FROM public.room r WHERE r.hotel_id = h.id AND COALESCE(r.is_active, true)), 500000) AS min_price
+      FROM public.hotel h
+      ${where}
       ORDER BY ${orderBy}
       LIMIT 100;
     `;
@@ -544,7 +415,6 @@ async function listHotels(req, res, next) {
     const result = await pool.query(sql, params);
     return res.json(result.rows);
   } catch (error) {
-    console.error("❌ LỖI LIST_HOTELS:", error);
     return next(error);
   }
 }
@@ -555,201 +425,61 @@ async function getHotelById(req, res, next) {
     const rawId = String(req.params.id || "").trim();
     if (!rawId) return res.status(400).json({ message: "Thiếu ID khách sạn." });
 
-    const hotelRes = await pool.query(
-      `SELECT h.*,
-         COALESCE(h.is_beachfront, false) AS is_beachfront,
-         COALESCE(h.distance_to_center, 1.2) AS distance_to_center
-       FROM public.hotel h 
-       WHERE h.id::text = $1 
-       LIMIT 1`,
-      [rawId],
-    );
+    const [hotelRes, imagesRes, roomsRes, amenitiesRes] = await Promise.all([
+      pool.query(
+        `SELECT h.*, COALESCE(h.is_beachfront, false) AS is_beachfront, COALESCE(h.distance_to_center, 1.2) AS distance_to_center FROM public.hotel h WHERE h.id::text = $1 LIMIT 1`,
+        [rawId],
+      ),
+      pool
+        .query(
+          `SELECT id, path, is_thumbnail, display_order FROM public.image WHERE hotel_id = $1 AND room_id IS NULL ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
+          [rawId],
+        )
+        .catch(() => ({ rows: [] })),
+      pool
+        .query(
+          `${ROOM_BASE_SELECT} WHERE r.hotel_id = $1 ORDER BY r.base_price ASC`,
+          [rawId],
+        )
+        .catch(() => ({ rows: [] })),
+      pool
+        .query(
+          `SELECT DISTINCT a.name, a.type FROM public.amenity a JOIN public.hotel_amenity ha ON ha.amenity_id = a.id WHERE ha.hotel_id = $1`,
+          [rawId],
+        )
+        .catch(() => ({ rows: [] })),
+    ]);
 
-    if (hotelRes.rows.length === 0) {
+    if (!hotelRes.rows.length)
       return res.status(404).json({ message: "Không tìm thấy khách sạn." });
-    }
 
-    const hotelData = hotelRes.rows[0];
-    const hotelId = hotelData.id;
+    const hotel = hotelRes.rows[0];
+    hotel.images = imagesRes.rows;
+    hotel.image = imagesRes.rows[0]?.path || null;
+    hotel.rooms = roomsRes.rows;
+    hotel.amenities = amenitiesRes.rows.map((r) => r.name);
 
-    // 🌟 CHỈ LẤY ẢNH CỦA CƠ SỞ (room_id IS NULL)
-    const imagesRes = await pool
-      .query(
-        `SELECT id, path, is_thumbnail, display_order 
-         FROM public.image 
-         WHERE hotel_id = $1 AND room_id IS NULL
-         ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
-        [hotelId],
-      )
-      .catch(() => ({ rows: [] }));
-
-    // 🌟 LẤY ĐẦY ĐỦ ẢNH RIÊNG CỦA TỪNG PHÒNG (img.room_id = r.id)
-    const roomsRes = await pool
-      .query(
-        `SELECT 
-         r.*,
-         COALESCE(
-           NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
-           r.amount,
-           1
-         ) AS amount,
-         COALESCE(
-           (
-             SELECT img.path 
-             FROM public.image img 
-             WHERE img.room_id = r.id 
-             ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-             LIMIT 1
-           ),
-           ''
-         ) AS image,
-         COALESCE(
-           (
-             SELECT img.path 
-             FROM public.image img 
-             WHERE img.room_id = r.id 
-             ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-             LIMIT 1
-           ),
-           ''
-         ) AS thumbnail,
-         COALESCE(
-           (
-             SELECT json_agg(a.name) 
-             FROM public.room_amenity ra 
-             JOIN public.amenity a ON a.id = ra.amenity_id 
-             WHERE ra.room_id = r.id
-           ), 
-           '[]'::json
-         ) AS amenities,
-         COALESCE(
-           (
-             SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
-             FROM public.image img 
-             WHERE img.room_id = r.id
-           ), 
-           '[]'::json
-         ) AS images
-       FROM public.room r
-       WHERE r.hotel_id = $1
-       ORDER BY r.base_price ASC`,
-        [hotelId],
-      )
-      .catch((err) => {
-        console.error("❌ Lỗi roomsRes:", err.message);
-        return { rows: [] };
-      });
-
-    hotelData.images = imagesRes.rows;
-    hotelData.image = imagesRes.rows[0]?.path || null;
-    hotelData.rooms = roomsRes.rows;
-
-    const amenitiesRes = await pool
-      .query(
-        `SELECT DISTINCT a.name, a.type 
-         FROM public.amenity a
-         JOIN public.hotel_amenity ha ON ha.amenity_id = a.id 
-         WHERE ha.hotel_id = $1`,
-        [hotelId],
-      )
-      .catch(() => ({ rows: [] }));
-
-    hotelData.amenities = amenitiesRes.rows.map((row) => row.name);
-
-    return res.json({
-      success: true,
-      data: hotelData,
-      hotel: hotelData,
-    });
+    return res.json({ success: true, data: hotel, hotel });
   } catch (error) {
-    console.error("❌ LỖI GET_HOTEL_BY_ID:", error.message);
     return res.status(500).json({ success: false, message: error.message });
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
-async function listHotelRoomAvailability(req, res, next) {
-  const hotelId = req.params.id;
+// ─── 3. CHECK PHÒNG TRỐNG ───
+async function listHotelRoomAvailability(req, res) {
+  const { id: hotelId } = req.params;
   const checkIn =
     req.query.checkIn ||
     req.query.checkin_date ||
     new Date().toISOString().split("T")[0];
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const checkOut =
-    req.query.checkOut ||
-    req.query.checkout_date ||
-    tomorrow.toISOString().split("T")[0];
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().split("T")[0];
+  const checkOut = req.query.checkOut || req.query.checkout_date || tomorrow;
 
   try {
-    const query = `
-      SELECT 
-        r.id,
-        r.hotel_id,
-        r.name,
-        r.capacity,
-        r.base_price,
-        COALESCE(
-          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
-          r.amount,
-          1
-        ) AS total_rooms,
-        r.bed_type,
-        r.room_area,
-        r.room_view,
-        r.type,
-        r.description,
-        COALESCE(
-          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
-          r.amount,
-          1
-        )::int AS remaining_rooms,
-        r.base_price::int AS total_price,
-        r.base_price::int AS avg_price_per_night,
-        true AS is_available,
-        COALESCE(
-          (
-            SELECT img.path 
-            FROM public.image img 
-            WHERE img.room_id = r.id 
-            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-            LIMIT 1
-          ),
-          ''
-        ) AS thumbnail,
-        COALESCE(
-          (
-            SELECT img.path 
-            FROM public.image img 
-            WHERE img.room_id = r.id 
-            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-            LIMIT 1
-          ),
-          ''
-        ) AS image,
-        COALESCE(
-          (
-            SELECT json_agg(a.name) 
-            FROM public.room_amenity ra 
-            JOIN public.amenity a ON a.id = ra.amenity_id 
-            WHERE ra.room_id = r.id
-          ), 
-          '[]'::json
-        ) AS amenities,
-        COALESCE(
-          (
-            SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
-            FROM public.image img 
-            WHERE img.room_id = r.id
-          ), 
-          '[]'::json
-        ) AS images
-      FROM public.room r
-      WHERE r.hotel_id = $1
-      ORDER BY r.base_price ASC;
-    `;
-
-    const result = await pool.query(query, [hotelId]);
+    const result = await pool.query(
+      `${ROOM_BASE_SELECT} WHERE r.hotel_id = $1 ORDER BY r.base_price ASC`,
+      [hotelId],
+    );
     return res.json({
       success: true,
       data: result.rows,
@@ -758,76 +488,48 @@ async function listHotelRoomAvailability(req, res, next) {
       checkOut,
     });
   } catch (error) {
-    console.error("❌ LỖI AVAILABILITY:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 }
 
 // ─── 4. GỢI Ý ĐIỂM ĐẾN ───
-async function listDestinationSuggestions(req, res, next) {
-  const keyword = (req.query.q || req.query.keyword || "").trim();
+async function listDestinationSuggestions(req, res) {
+  const kw = (req.query.q || req.query.keyword || "").trim();
   try {
-    let query = "";
-    let params = [];
-
-    if (keyword) {
-      params.push(`%${keyword}%`);
-      query = `
-        SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type
-        FROM public.hotel
-        WHERE status = 'active'
-          AND (unaccent(lower(city)) ILIKE unaccent(lower($1))
-            OR unaccent(lower(name)) ILIKE unaccent(lower($1)))
-        GROUP BY city
-        UNION
-        SELECT name, 1 AS hotel_count, 'hotel' AS type
-        FROM public.hotel
-        WHERE status = 'active'
-          AND unaccent(lower(name)) ILIKE unaccent(lower($1))
-        LIMIT 8;
-      `;
-    } else {
-      query = `
-        SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type
-        FROM public.hotel
-        WHERE status = 'active'
-          AND city IS NOT NULL
-        GROUP BY city
-        ORDER BY hotel_count DESC
-        LIMIT 6;
-      `;
-    }
-
-    const result = await pool.query(query, params);
+    const sql = kw
+      ? `
+      SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type FROM public.hotel
+      WHERE status = 'active' AND (unaccent(lower(city)) ILIKE unaccent(lower($1)) OR unaccent(lower(name)) ILIKE unaccent(lower($1)))
+      GROUP BY city
+      UNION
+      SELECT name, 1 AS hotel_count, 'hotel' AS type FROM public.hotel
+      WHERE status = 'active' AND unaccent(lower(name)) ILIKE unaccent(lower($1))
+      LIMIT 8;
+    `
+      : `
+      SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type FROM public.hotel
+      WHERE status = 'active' AND city IS NOT NULL GROUP BY city ORDER BY hotel_count DESC LIMIT 6;
+    `;
+    const result = await pool.query(sql, kw ? [`%${kw}%`] : []);
     return res.json({
       success: true,
       data: result.rows,
       destinations: result.rows,
     });
-  } catch (error) {
+  } catch {
     return res.json({ success: true, data: [], destinations: [] });
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ (BÓC TÁCH THÔNG MINH ẢNH PHÒNG & ẢNH CƠ SỞ) ───
-async function registerHotel(req, res, next) {
+// ─── 5. ĐĂNG KÝ KHÁCH SẠN (BATCH INSERT TỐI ƯU HIỆU NĂNG) ───
+async function registerHotel(req, res) {
   const client = await pool.connect();
   try {
+    const b = req.body || {};
     const rawOwnerId =
-      req.user?.id ||
-      req.user?.userId ||
-      req.auth?.sub ||
-      req.auth?.id ||
-      req.body?.owner_id;
+      req.user?.id || req.user?.userId || req.auth?.sub || b.owner_id;
     const userEmail =
-      req.body?.emailContact ||
-      req.body?.email ||
-      req.user?.email ||
-      req.auth?.email;
-    const userPassword = req.body?.password;
-    const ownerFullName = req.body?.ownerName || req.body?.name || "Chủ cơ sở";
-    const userPhone = req.body?.phoneContact || req.body?.phone;
-
+      b.emailContact || b.email || req.user?.email || req.auth?.email;
     let validOwnerId = null;
 
     if (userEmail) {
@@ -835,29 +537,22 @@ async function registerHotel(req, res, next) {
         `SELECT id FROM public.users WHERE email ILIKE $1 LIMIT 1`,
         [String(userEmail).trim()],
       );
-
-      if (emailCheck.rows.length > 0) {
+      if (emailCheck.rows.length) {
         validOwnerId = emailCheck.rows[0].id;
-      } else if (userPassword) {
-        const newUserId = crypto.randomUUID();
-        const hashedPassword = bcrypt
-          ? await bcrypt.hash(userPassword, 10)
-          : userPassword;
-
-        const insertUserSql = `
-          INSERT INTO public.users (id, full_name, email, password, phone, activate, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, $5, true, NOW(), NOW())
-          RETURNING id;
-        `;
-
-        const newUserRes = await client.query(insertUserSql, [
-          newUserId,
-          ownerFullName,
-          String(userEmail).trim().toLowerCase(),
-          hashedPassword,
-          userPhone || null,
-        ]);
-        validOwnerId = newUserRes.rows[0].id;
+      } else if (b.password) {
+        const hash = bcrypt ? await bcrypt.hash(b.password, 10) : b.password;
+        const newUser = await client.query(
+          `INSERT INTO public.users (id, full_name, email, password, phone, activate, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, true, NOW(), NOW()) RETURNING id`,
+          [
+            crypto.randomUUID(),
+            b.ownerName || b.name || "Chủ cơ sở",
+            String(userEmail).trim().toLowerCase(),
+            hash,
+            b.phoneContact || b.phone || null,
+          ],
+        );
+        validOwnerId = newUser.rows[0].id;
       }
     }
 
@@ -866,404 +561,269 @@ async function registerHotel(req, res, next) {
         `SELECT id FROM public.users WHERE id::text = $1::text LIMIT 1`,
         [rawOwnerId],
       );
-      if (checkId.rows.length > 0) {
-        validOwnerId = checkId.rows[0].id;
-      }
+      if (checkId.rows.length) validOwnerId = checkId.rows[0].id;
     }
 
-    if (!validOwnerId) {
-      return res.status(401).json({
-        message:
-          "Không tìm thấy hoặc không thể tạo tài khoản chủ cơ sở hợp lệ.",
-      });
-    }
+    if (!validOwnerId)
+      return res
+        .status(401)
+        .json({
+          message:
+            "Không tìm thấy hoặc không thể tạo tài khoản chủ cơ sở hợp lệ.",
+        });
 
-    await client.query("BEGIN");
-
-    try {
-      const roleRes = await client.query(
-        `INSERT INTO public.roles (id, name) 
-         VALUES (gen_random_uuid(), 'HOTEL_OWNER') 
-         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name 
-         RETURNING id`,
-      );
-      const ownerRoleId = roleRes.rows[0]?.id;
-
-      if (ownerRoleId && validOwnerId) {
-        await client.query(
-          `INSERT INTO public.user_roles (user_id, role_id) 
-           VALUES ($1::uuid, $2::uuid) 
-           ON CONFLICT DO NOTHING`,
-          [validOwnerId, ownerRoleId],
-        );
-      }
-    } catch (roleErr) {
-      console.warn("⚠️ Cảnh báo gán role HOTEL_OWNER:", roleErr.message);
-    }
-
-    const rawRooms =
-      req.body?.rooms || req.body?.roomList || req.body?.room_data || [];
-    const rooms = Array.isArray(rawRooms) ? rawRooms : [];
-
-    const {
-      name,
-      address,
-      city,
-      latitude,
-      longitude,
-      phone,
-      email,
-      star_rating,
-      property_type,
-      propertyType,
-      description,
-      checkin_time,
-      checkout_time,
-      tax_code,
-      taxCode,
-      business_license_url,
-      businessLicenseUrl,
-      image,
-      images = [],
-      gallery = [],
-      hotelImages = [],
-      hotelMainImage,
-      roomImages = {},
-      is_beachfront = false,
-      distance_to_center,
-      propertyAmenities,
-      property_amenities,
-      amenities,
-    } = req.body;
-
-    const bank_code = req.body.bank_code || req.body.bankCode || "VCB";
-    const bank_name = req.body.bank_name || req.body.bankName || "Vietcombank";
-    const bank_account = req.body.bank_account || req.body.bankAccount || null;
-    const bank_account_holder =
-      req.body.bank_account_holder || req.body.bankAccountHolder || null;
-
-    if (!name || !address || !city) {
-      await client.query("ROLLBACK");
+    if (!b.name || !b.address || !b.city) {
       return res
         .status(400)
         .json({ message: "Tên khách sạn, địa chỉ và thành phố là bắt buộc." });
     }
 
-    let finalLat = latitude ? Number(latitude) : null;
-    let finalLng = longitude ? Number(longitude) : null;
+    await client.query("BEGIN");
 
-    if (!finalLat || !finalLng) {
-      const geo = await fallbackGeocode(address.trim(), city.trim());
-      if (geo) {
-        finalLat = geo.lat;
-        finalLng = geo.lng;
-      } else {
-        finalLat = 10.7769;
-        finalLng = 106.7009;
-      }
+    // Gán role HOTEL_OWNER
+    const roleRes = await client.query(
+      `INSERT INTO public.roles (id, name) VALUES (gen_random_uuid(), 'HOTEL_OWNER') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+    );
+    if (roleRes.rows[0]?.id) {
+      await client.query(
+        `INSERT INTO public.user_roles (user_id, role_id) VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`,
+        [validOwnerId, roleRes.rows[0].id],
+      );
     }
 
-    const calculatedMetrics = computeLocationMetrics(
-      finalLat,
-      finalLng,
-      city.trim(),
-      is_beachfront,
-      distance_to_center,
+    let lat = Number(b.latitude),
+      lng = Number(b.longitude);
+    if (!lat || !lng) {
+      const geo = await fallbackGeocode(b.address.trim(), b.city.trim());
+      lat = geo ? geo.lat : 10.7769;
+      lng = geo ? geo.lng : 106.7009;
+    }
+
+    const metrics = computeLocationMetrics(
+      lat,
+      lng,
+      b.city.trim(),
+      b.is_beachfront,
+      b.distance_to_center,
     );
-
     const newHotelId = crypto.randomUUID();
-    const finalPropType = property_type || propertyType || "hotel";
 
-    // 🌟 KHỞI TẠO KHÁCH SẠN VỚI STATUS LÀ 'pending'
-    const hotelInsertSql = `
-      INSERT INTO public.hotel (
+    const hotelResult = await client.query(
+      `INSERT INTO public.hotel (
         id, owner_id, name, address, city, latitude, longitude, phone, email,
         star_rating, property_type, description, checkin_time, checkout_time,
         bank_code, bank_name, bank_account, bank_account_holder, tax_code,
         business_license_url, is_beachfront, distance_to_center, commission_rate,
         status, created_at, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9,
-        $10, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19,
-        $20, $21, $22, 18.00,
-        'pending', NOW(), NOW()
-      ) RETURNING *;
-    `;
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, 18.00, 'pending', NOW(), NOW()) RETURNING *`,
+      [
+        newHotelId,
+        validOwnerId,
+        b.name.trim(),
+        b.address.trim(),
+        b.city.trim(),
+        lat,
+        lng,
+        b.phone || b.phoneContact || null,
+        b.email || userEmail || null,
+        b.star_rating ? Number(b.star_rating) : 3,
+        b.property_type || b.propertyType || "hotel",
+        b.description || null,
+        b.checkin_time
+          ? String(b.checkin_time).slice(0, 5) + ":00"
+          : "14:00:00",
+        b.checkout_time
+          ? String(b.checkout_time).slice(0, 5) + ":00"
+          : "12:00:00",
+        b.bank_code || b.bankCode || "VCB",
+        b.bank_name || b.bankName || "Vietcombank",
+        b.bank_account || b.bankAccount || null,
+        b.bank_account_holder || b.bankAccountHolder || null,
+        b.tax_code || b.taxCode || null,
+        b.business_license_url || b.businessLicenseUrl || null,
+        metrics.is_beachfront,
+        metrics.distance_to_center,
+      ],
+    );
 
-    const hotelResult = await client.query(hotelInsertSql, [
-      newHotelId,
-      validOwnerId,
-      name.trim(),
-      address.trim(),
-      city.trim(),
-      finalLat,
-      finalLng,
-      phone || userPhone || null,
-      email || userEmail || null,
-      star_rating ? Number(star_rating) : 3,
-      finalPropType,
-      description || null,
-      checkin_time ? String(checkin_time).slice(0, 5) + ":00" : "14:00:00",
-      checkout_time ? String(checkout_time).slice(0, 5) + ":00" : "12:00:00",
-      bank_code,
-      bank_name,
-      bank_account,
-      bank_account_holder,
-      tax_code || taxCode || null,
-      business_license_url || businessLicenseUrl || null,
-      calculatedMetrics.is_beachfront,
-      calculatedMetrics.distance_to_center,
-    ]);
-
-    const newHotel = hotelResult.rows[0];
-
-    // ── 5.1. BÓC TÁCH RIÊNG TOÀN BỘ ẢNH THUỘC VỀ PHÒNG ──
+    // ── Xử lý ảnh: Bóc tách ảnh phòng và khách sạn ──
+    const rooms = Array.isArray(b.rooms || b.roomList || b.room_data)
+      ? b.rooms || b.roomList || b.room_data
+      : [];
     const roomPhotosMap = new Map();
     const allRoomImageSet = new Set();
 
     rooms.forEach((r, idx) => {
-      const roomUrls = [];
-
-      extractImageUrls([
-        ...(Array.isArray(r.images) ? r.images : []),
+      const roomUrls = extractImageUrls([
+        r.images,
         r.image,
         r.imageUrl,
         r.thumbnail,
         r.photos,
         r.room_images,
         r.roomImages,
-      ]).forEach((u) => {
-        roomUrls.push(u);
-        allRoomImageSet.add(u);
-      });
-
-      if (roomImages && typeof roomImages === "object") {
+      ]);
+      if (b.roomImages)
         extractImageUrls([
-          roomImages[r.id],
-          roomImages[idx],
-          roomImages[String(idx)],
-          roomImages[String(r.id)],
-        ]).forEach((u) => {
-          roomUrls.push(u);
-          allRoomImageSet.add(u);
-        });
-      }
+          b.roomImages[r.id],
+          b.roomImages[idx],
+          b.roomImages[String(idx)],
+          b.roomImages[String(r.id)],
+        ]).forEach((u) => roomUrls.push(u));
 
-      // Nếu ảnh phòng nằm lẫn trong hotelImages có gắn roomId
-      if (Array.isArray(hotelImages)) {
-        hotelImages.forEach((img) => {
-          if (img && typeof img === "object") {
-            const matches =
-              (r.id && (img.roomId === r.id || img.room_id === r.id)) ||
+      if (Array.isArray(b.hotelImages)) {
+        b.hotelImages.forEach((img) => {
+          if (
+            img &&
+            typeof img === "object" &&
+            (img.roomId === r.id ||
+              img.room_id === r.id ||
               String(img.roomId) === String(idx) ||
-              String(img.room_id) === String(idx);
-            if (matches) {
-              const u = img.url || img.path;
-              if (u && typeof u === "string" && !u.startsWith("blob:")) {
-                roomUrls.push(u.trim());
-                allRoomImageSet.add(u.trim());
-              }
-            }
+              String(img.room_id) === String(idx))
+          ) {
+            const u = img.url || img.path;
+            if (u && !u.startsWith("blob:")) roomUrls.push(u.trim());
           }
         });
       }
-
+      roomUrls.forEach((u) => allRoomImageSet.add(u));
       roomPhotosMap.set(idx, [...new Set(roomUrls)]);
     });
 
-    // 🌟 TRƯỜNG HỢP ĐẶC BIỆT: NẾU PHÒNG KHÔNG CÓ ẢNH MÀ HOTELIMAGES LẠI CHỨA ẢNH PHÒNG NGỦ
-    // Tự động phân chia ảnh phòng ngủ vào phòng và giữ lại ảnh khách sạn cho cơ sở
-    if (Array.isArray(hotelImages) && hotelImages.length > 1) {
-      let unassignedImgs = extractImageUrls(hotelImages).filter(
+    // Auto fallback nếu phòng chưa có ảnh
+    if (Array.isArray(b.hotelImages) && b.hotelImages.length > 1) {
+      let unassigned = extractImageUrls(b.hotelImages).filter(
         (url) => !allRoomImageSet.has(url),
       );
-
-      rooms.forEach((r, idx) => {
-        const existing = roomPhotosMap.get(idx) || [];
-        if (existing.length === 0 && unassignedImgs.length > 1) {
-          const picked = unassignedImgs.shift();
+      rooms.forEach((_, idx) => {
+        if (!roomPhotosMap.get(idx)?.length && unassigned.length > 1) {
+          const picked = unassigned.shift();
           roomPhotosMap.set(idx, [picked]);
           allRoomImageSet.add(picked);
         }
       });
     }
 
-    // ── 5.2. LẤY ĐÚNG ẢNH CƠ SỞ (LOẠI TRỪ 100% ẢNH THUỘC VỀ PHÒNG) ──
-    const propertyCandidates = [];
-    if (Array.isArray(hotelImages)) {
-      hotelImages.forEach((img) => {
-        if (!img.roomId && !img.room_id) {
-          const u = typeof img === "string" ? img : img.url || img.path;
-          if (u && typeof u === "string") propertyCandidates.push(u.trim());
-        }
-      });
+    // Lưu ảnh khách sạn (hotel_id NOT NULL, room_id IS NULL)
+    const hotelImgCandidates = extractImageUrls([
+      b.hotelMainImage,
+      b.image,
+      b.hotelImages,
+      b.images,
+      b.gallery,
+    ]).filter((url) => !allRoomImageSet.has(url));
+    if (hotelImgCandidates.length) {
+      const imgValues = hotelImgCandidates
+        .map(
+          (url, i) =>
+            `(gen_random_uuid(), '${newHotelId}', NULL, '${url.replace(/'/g, "''")}', ${i === 0}, ${i}, NOW())`,
+        )
+        .join(",");
+      await client
+        .query(
+          `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at) VALUES ${imgValues}`,
+        )
+        .catch((e) => console.error("Lỗi lưu ảnh KS:", e.message));
     }
 
-    if (typeof hotelMainImage === "string" && hotelMainImage.trim()) {
-      propertyCandidates.unshift(hotelMainImage.trim());
-    }
-    if (typeof image === "string" && image.trim()) {
-      propertyCandidates.push(image.trim());
-    }
-    if (Array.isArray(images)) {
-      images.forEach((img) => {
-        const u = typeof img === "string" ? img : img?.url || img?.path;
-        if (u && typeof u === "string") propertyCandidates.push(u.trim());
-      });
-    }
-
-    const cleanHotelImages = extractImageUrls(propertyCandidates).filter(
-      (url) => !allRoomImageSet.has(url),
+    // Lưu tiện nghi khách sạn
+    const hotelAms = parseAmenityArray(
+      b.propertyAmenities || b.property_amenities || b.amenities,
     );
-
-    // 🌟 LƯU ẢNH CƠ SỞ: hotel_id = newHotel.id VÀ room_id = NULL (CHỈ HIỂN THỊ Ở HÀNG ĐẦU BENTO) 🌟
-    for (let i = 0; i < cleanHotelImages.length; i++) {
-      await client.query("SAVEPOINT sp_hotel_img");
-      try {
-        await client.query(
-          `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
-           VALUES (gen_random_uuid(), $1::uuid, NULL, $2, $3, $4, NOW())`,
-          [newHotel.id, cleanHotelImages[i], i === 0, i],
-        );
-        await client.query("RELEASE SAVEPOINT sp_hotel_img");
-      } catch (e) {
-        console.error("❌ Lỗi lưu ảnh cơ sở:", e.message);
-        await client.query("ROLLBACK TO SAVEPOINT sp_hotel_img");
-      }
-    }
-
-    // ── 5.3. TIỆN NGHI KHÁCH SẠN ──
-    const hotelAmenitiesList = parseAmenityArray(
-      propertyAmenities || property_amenities || amenities,
-    );
-    for (const am of hotelAmenitiesList) {
+    for (const am of hotelAms) {
       const amenId = await ensureAmenityRecord(client, am);
-      if (amenId) {
-        await client.query("SAVEPOINT sp_hotel_amen");
-        try {
-          await client.query(
+      if (amenId)
+        await client
+          .query(
             `INSERT INTO public.hotel_amenity (hotel_id, amenity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-            [newHotel.id, amenId],
-          );
-          await client.query("RELEASE SAVEPOINT sp_hotel_amen");
-        } catch {
-          await client.query("ROLLBACK TO SAVEPOINT sp_hotel_amen");
-        }
-      }
+            [newHotelId, amenId],
+          )
+          .catch(() => {});
     }
 
-    // ── 5.4. LƯU TỪNG HẠNG PHÒNG VÀ GẮN ẢNH RIÊNG VỚI $1::UUID ──
-    if (rooms.length > 0) {
-      let roomFloor = 1;
-      for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
-        const r = rooms[rIdx];
-        const totalAmount = Number(r.totalRooms || r.amount || 4);
-        const newRoomId = crypto.randomUUID();
+    // ── Lưu danh sách phòng ──
+    for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
+      const r = rooms[rIdx];
+      const newRoomId = crypto.randomUUID();
+      const totalAmount = Number(r.totalRooms || r.amount || 4);
+      const basePrice = Number(r.weekdayPrice || r.base_price || 500000);
 
-        const uniqueRoomImages = roomPhotosMap.get(rIdx) || [];
-        const basePrice = Number(r.weekdayPrice || r.base_price || 500000);
+      await client.query(
+        `INSERT INTO public.room (
+          id, hotel_id, name, capacity, base_price, amount, type, bed_type,
+          room_area, room_view, description, code, hourly_price, overnight_price,
+          is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true, NOW(), NOW())`,
+        [
+          newRoomId,
+          newHotelId,
+          r.roomName || r.name || "Phòng Tiêu Chuẩn",
+          Number(r.maxAdults || r.capacity || 2),
+          basePrice,
+          totalAmount,
+          r.type || "Deluxe",
+          r.bedType || r.bed_type || "1 Giường đôi lớn (King Size)",
+          Number(r.roomSize || r.room_area || 28),
+          r.room_view || r.roomView || r.view || "city_view",
+          r.description || null,
+          r.code || `P${String(rIdx + 1).padStart(3, "0")}`,
+          Number(r.hourly_price || Math.round(basePrice * 0.25)),
+          Number(r.overnight_price || basePrice),
+        ],
+      );
 
-        await client.query(
-          `INSERT INTO public.room (
-            id, hotel_id, name, capacity, base_price, amount, type, bed_type,
-            room_area, room_view, description, code, hourly_price, overnight_price,
-            is_active, created_at, updated_at
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12, $13, $14,
-            true, NOW(), NOW()
-          )`,
-          [
-            newRoomId,
-            newHotel.id,
-            r.roomName || r.name || "Phòng Tiêu Chuẩn",
-            Number(r.maxAdults || r.capacity || 2),
-            basePrice,
-            totalAmount,
-            r.type || "Deluxe",
-            r.bedType || r.bed_type || "1 Giường đôi lớn (King Size)",
-            Number(r.roomSize || r.room_area || 28),
-            r.room_view || r.roomView || r.view || "city_view",
-            r.description || null,
-            r.code || `P${String(rIdx + 1).padStart(3, "0")}`,
-            Number(r.hourly_price || Math.round(basePrice * 0.25)),
-            Number(r.overnight_price || basePrice),
-          ],
-        );
-
-        // 🌟 LƯU ẢNH RIÊNG CỦA PHÒNG VỚI $1::UUID (ĐÚNG RÀNG BUỘC CHK_IMAGE_TARGET: hotel_id = NULL)
-        for (let imgIdx = 0; imgIdx < uniqueRoomImages.length; imgIdx++) {
-          await client.query("SAVEPOINT sp_room_img");
-          try {
-            await client.query(
-              `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
-               VALUES (gen_random_uuid(), NULL, $1::uuid, $2, $3, $4, NOW())`,
-              [newRoomId, uniqueRoomImages[imgIdx], imgIdx === 0, imgIdx],
-            );
-            await client.query("RELEASE SAVEPOINT sp_room_img");
-            console.log(
-              `✅ [REGISTER] Đã lưu thành công ảnh cho phòng ${newRoomId}`,
-            );
-          } catch (e) {
-            console.error("❌ Lỗi lưu ảnh phòng:", e.message);
-            await client.query("ROLLBACK TO SAVEPOINT sp_room_img");
-          }
-        }
-
-        const roomAmenitiesList = parseAmenityArray(
-          r.roomAmenities || r.amenities || r.room_amenities,
-        );
-        for (const am of roomAmenitiesList) {
-          const amenId = await ensureAmenityRecord(client, am);
-          if (amenId) {
-            await client.query("SAVEPOINT sp_rm_amen");
-            try {
-              await client.query(
-                `INSERT INTO public.room_amenity (room_id, amenity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-                [newRoomId, amenId],
-              );
-              await client.query("RELEASE SAVEPOINT sp_rm_amen");
-            } catch {
-              await client.query("ROLLBACK TO SAVEPOINT sp_rm_amen");
-            }
-          }
-        }
-
-        const roomNumbers =
-          Array.isArray(r.room_numbers) && r.room_numbers.length > 0
-            ? r.room_numbers
-            : Array.from(
-                { length: totalAmount },
-                (_, i) => `P.${roomFloor}0${i + 1}`,
-              );
-
-        for (const num of roomNumbers) {
-          if (!num || !String(num).trim()) continue;
-          await client.query("SAVEPOINT sp_room_unit");
-          try {
-            await client.query(
-              `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, status, created_at, updated_at)
-               VALUES (gen_random_uuid(), $1, $2, $3, 'available', NOW(), NOW())
-               ON CONFLICT DO NOTHING`,
-              [newHotel.id, newRoomId, String(num).trim()],
-            );
-            await client.query("RELEASE SAVEPOINT sp_room_unit");
-          } catch (unitErr) {
-            await client.query("ROLLBACK TO SAVEPOINT sp_room_unit");
-          }
-        }
-        roomFloor++;
+      // Batch Insert ảnh phòng (hotel_id IS NULL, room_id NOT NULL)
+      const rImages = roomPhotosMap.get(rIdx) || [];
+      if (rImages.length) {
+        const rImgValues = rImages
+          .map(
+            (u, i) =>
+              `(gen_random_uuid(), NULL, '${newRoomId}', '${u.replace(/'/g, "''")}', ${i === 0}, ${i}, NOW())`,
+          )
+          .join(",");
+        await client
+          .query(
+            `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at) VALUES ${rImgValues}`,
+          )
+          .catch((e) => console.error("Lỗi lưu ảnh phòng:", e.message));
       }
+
+      // Tiện nghi phòng
+      for (const am of parseAmenityArray(
+        r.roomAmenities || r.amenities || r.room_amenities,
+      )) {
+        const amenId = await ensureAmenityRecord(client, am);
+        if (amenId)
+          await client
+            .query(
+              `INSERT INTO public.room_amenity (room_id, amenity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+              [newRoomId, amenId],
+            )
+            .catch(() => {});
+      }
+
+      // Batch Insert Room Units
+      const roomNumbers =
+        Array.isArray(r.room_numbers) && r.room_numbers.length
+          ? r.room_numbers
+          : Array.from(
+              { length: totalAmount },
+              (_, i) => `P.${rIdx + 1}0${i + 1}`,
+            );
+
+      await client
+        .query(
+          `INSERT INTO public.room_unit (id, hotel_id, room_id, room_number, status, created_at, updated_at)
+         SELECT gen_random_uuid(), $1, $2, num, 'available', NOW(), NOW() FROM unnest($3::text[]) AS num ON CONFLICT DO NOTHING`,
+          [newHotelId, newRoomId, roomNumbers],
+        )
+        .catch(() => {});
     }
 
     await client.query("COMMIT");
 
-    let freshToken = null;
-    if (jwt) {
-      try {
-        const JWT_SECRET = process.env.JWT_SECRET || "jwt_secret_key_gostay";
-        freshToken = jwt.sign(
+    const freshToken = jwt
+      ? jwt.sign(
           {
             id: validOwnerId,
             userId: validOwnerId,
@@ -1271,109 +831,70 @@ async function registerHotel(req, res, next) {
             role: "HOTEL_OWNER",
             roles: ["HOTEL_OWNER", "CUSTOMER"],
           },
-          JWT_SECRET,
+          process.env.JWT_SECRET || "jwt_secret_key_gostay",
           { expiresIn: "7d" },
-        );
-      } catch (jwtErr) {}
-    }
+        )
+      : null;
 
     return res.status(201).json({
       success: true,
       message: "Hồ sơ đăng ký đã được gửi thành công và đang chờ Admin duyệt.",
-      hotel: newHotel,
+      hotel: hotelResult.rows[0],
       token: freshToken,
       accessToken: freshToken,
       user: {
         id: validOwnerId,
         email: userEmail,
-        name: ownerFullName,
+        name: b.ownerName || b.name || "Chủ cơ sở",
         role: "HOTEL_OWNER",
         roles: ["HOTEL_OWNER", "CUSTOMER"],
       },
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("❌ LỖI REGISTER_HOTEL:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Máy chủ gặp lỗi khi tạo hồ sơ.",
-    });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: error.message || "Máy chủ gặp lỗi khi tạo hồ sơ.",
+      });
   } finally {
     client.release();
   }
 }
 
+// ─── 6. KHÁCH SẠN CỦA TÔI ───
 async function getMyHotels(req, res, next) {
   try {
     const userId = req.user?.id || req.auth?.sub || req.auth?.id;
     if (!userId)
       return res.status(401).json({ message: "Chưa xác thực danh tính." });
 
-    const activeOnly = req.query.active_only === "true";
-
     let sql = `
-      SELECT 
-         h.*,
-         COALESCE(
-           (
-             SELECT img.path 
-             FROM public.image img 
-             WHERE img.hotel_id = h.id AND img.room_id IS NULL
-             ORDER BY img.is_thumbnail DESC, img.created_at ASC 
-             LIMIT 1
-           ),
-           'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600'
-         ) AS image,
-         (
-           SELECT COUNT(*)::int 
-           FROM public.room r 
-           WHERE r.hotel_id = h.id
-         ) AS room_count
-       FROM public.hotel h
-       WHERE (
-         h.owner_id = $1 
-         OR h.id IN (SELECT hs.hotel_id FROM public.hotel_staff hs WHERE hs.user_id = $1)
-       )
+      SELECT h.*,
+        COALESCE((SELECT img.path FROM public.image img WHERE img.hotel_id = h.id AND img.room_id IS NULL ORDER BY img.is_thumbnail DESC, img.created_at ASC LIMIT 1), 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600') AS image,
+        (SELECT COUNT(*)::int FROM public.room r WHERE r.hotel_id = h.id) AS room_count
+      FROM public.hotel h
+      WHERE (h.owner_id = $1 OR h.id IN (SELECT hs.hotel_id FROM public.hotel_staff hs WHERE hs.user_id = $1))
+      ${req.query.active_only === "true" ? " AND h.status = 'active'" : ""}
+      ORDER BY h.created_at DESC
     `;
-
-    const params = [userId];
-    if (activeOnly) sql += ` AND h.status = 'active'`;
-    sql += ` ORDER BY h.created_at DESC`;
-
-    const result = await pool.query(sql, params);
-    return res.json({
-      success: true,
-      data: result.rows,
-      hotels: result.rows,
-    });
+    const result = await pool.query(sql, [userId]);
+    return res.json({ success: true, data: result.rows, hotels: result.rows });
   } catch (error) {
     return next(error);
   }
 }
 
+// ─── 7. ĐIỂM ĐẾN PHỔ BIẾN ───
 async function listTrendingDestinations(req, res, next) {
   try {
-    const result = await pool.query(
-      `SELECT
-         h.city AS title,
-         h.city AS name,
-         COUNT(*)::int AS hotelCount,
-         COALESCE(
-           (
-             SELECT img.path 
-             FROM public.image img 
-             JOIN public.hotel h2 ON h2.id = img.hotel_id 
-             WHERE h2.city = h.city AND img.room_id IS NULL
-             LIMIT 1
-           ),
-           'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800'
-         ) AS image
-       FROM public.hotel h
-       WHERE h.status = 'active' AND h.city IS NOT NULL
-       GROUP BY h.city
-       ORDER BY hotelCount DESC
-       LIMIT 8`,
-    );
+    const result = await pool.query(`
+      SELECT h.city AS title, h.city AS name, COUNT(*)::int AS hotelCount,
+        COALESCE((SELECT img.path FROM public.image img JOIN public.hotel h2 ON h2.id = img.hotel_id WHERE h2.city = h.city AND img.room_id IS NULL LIMIT 1), 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800') AS image
+      FROM public.hotel h WHERE h.status = 'active' AND h.city IS NOT NULL
+      GROUP BY h.city ORDER BY hotelCount DESC LIMIT 8
+    `);
     return res.json({
       success: true,
       data: result.rows,
@@ -1384,131 +905,90 @@ async function listTrendingDestinations(req, res, next) {
   }
 }
 
+// ─── 8. CẬP NHẬT KHÁCH SẠN ───
 async function updateHotel(req, res, next) {
   const client = await pool.connect();
   try {
     const hotelId = String(req.params.id || "").trim();
-    const ownerId = req.user?.id || req.auth?.sub || req.auth?.id;
-
-    if (!hotelId || !ownerId)
+    if (!hotelId)
       return res.status(400).json({ message: "Thiếu thông tin cập nhật." });
 
-    const {
-      name,
-      address,
-      city,
-      latitude,
-      longitude,
-      phone,
-      email,
-      star_rating,
-      property_type,
-      description,
-      checkin_time,
-      checkout_time,
-      is_beachfront,
-      distance_to_center,
-      tax_code,
-      amenities,
-      propertyAmenities,
-    } = req.body;
-
-    const bank_code = req.body.bank_code || req.body.bankCode || null;
-    const bank_name = req.body.bank_name || req.body.bankName || null;
-    const bank_account = req.body.bank_account || req.body.bankAccount || null;
-    const bank_account_holder =
-      req.body.bank_account_holder || req.body.bankAccountHolder || null;
-
+    const b = req.body || {};
     await client.query("BEGIN");
 
-    let finalLat = latitude ? Number(latitude) : null;
-    let finalLng = longitude ? Number(longitude) : null;
-    let computedMetrics = null;
-
-    if (finalLat && finalLng) {
-      computedMetrics = computeLocationMetrics(
-        finalLat,
-        finalLng,
-        city || "",
-        is_beachfront,
-        distance_to_center,
-      );
-    }
+    let lat = b.latitude ? Number(b.latitude) : null;
+    let lng = b.longitude ? Number(b.longitude) : null;
+    const metrics =
+      lat && lng
+        ? computeLocationMetrics(
+            lat,
+            lng,
+            b.city || "",
+            b.is_beachfront,
+            b.distance_to_center,
+          )
+        : null;
 
     const updateSql = `
-      UPDATE public.hotel
-      SET 
-        name = COALESCE($1, name),
-        address = COALESCE($2, address),
-        city = COALESCE($3, city),
-        phone = COALESCE($4, phone),
-        email = COALESCE($5, email),
-        star_rating = COALESCE($6, star_rating),
-        property_type = COALESCE($7, property_type),
-        description = COALESCE($8, description),
-        checkin_time = COALESCE($9::time, checkin_time),
-        checkout_time = COALESCE($10::time, checkout_time),
-        latitude = COALESCE($11, latitude),
-        longitude = COALESCE($12, longitude),
-        is_beachfront = COALESCE($13, is_beachfront),
-        distance_to_center = COALESCE($14, distance_to_center),
-        bank_code = COALESCE($15, bank_code),
-        bank_name = COALESCE($16, bank_name),
-        bank_account = COALESCE($17, bank_account),
-        bank_account_holder = COALESCE($18, bank_account_holder),
-        tax_code = COALESCE($19, tax_code),
-        updated_at = NOW()
-      WHERE id::text = $20
-      RETURNING *;
+      UPDATE public.hotel SET 
+        name = COALESCE($1, name), address = COALESCE($2, address), city = COALESCE($3, city),
+        phone = COALESCE($4, phone), email = COALESCE($5, email), star_rating = COALESCE($6, star_rating),
+        property_type = COALESCE($7, property_type), description = COALESCE($8, description),
+        checkin_time = COALESCE($9::time, checkin_time), checkout_time = COALESCE($10::time, checkout_time),
+        latitude = COALESCE($11, latitude), longitude = COALESCE($12, longitude),
+        is_beachfront = COALESCE($13, is_beachfront), distance_to_center = COALESCE($14, distance_to_center),
+        bank_code = COALESCE($15, bank_code), bank_name = COALESCE($16, bank_name),
+        bank_account = COALESCE($17, bank_account), bank_account_holder = COALESCE($18, bank_account_holder),
+        tax_code = COALESCE($19, tax_code), updated_at = NOW()
+      WHERE id::text = $20 RETURNING *;
     `;
 
-    const updatedHotelRes = await client.query(updateSql, [
-      name ? name.trim() : null,
-      address ? address.trim() : null,
-      city ? city.trim() : null,
-      phone ? phone.trim() : null,
-      email ? email.trim() : null,
-      star_rating ? Number(star_rating) : null,
-      property_type || "hotel",
-      description !== undefined ? description : null,
-      checkin_time ? String(checkin_time).slice(0, 5) + ":00" : null,
-      checkout_time ? String(checkout_time).slice(0, 5) + ":00" : null,
-      finalLat,
-      finalLng,
-      computedMetrics
-        ? computedMetrics.is_beachfront
-        : is_beachfront !== undefined
-          ? Boolean(is_beachfront)
+    const updated = await client.query(updateSql, [
+      b.name?.trim() || null,
+      b.address?.trim() || null,
+      b.city?.trim() || null,
+      b.phone?.trim() || null,
+      b.email?.trim() || null,
+      b.star_rating ? Number(b.star_rating) : null,
+      b.property_type || "hotel",
+      b.description !== undefined ? b.description : null,
+      b.checkin_time ? String(b.checkin_time).slice(0, 5) + ":00" : null,
+      b.checkout_time ? String(b.checkout_time).slice(0, 5) + ":00" : null,
+      lat,
+      lng,
+      metrics
+        ? metrics.is_beachfront
+        : b.is_beachfront !== undefined
+          ? Boolean(b.is_beachfront)
           : null,
-      computedMetrics
-        ? computedMetrics.distance_to_center
-        : distance_to_center !== undefined
-          ? Number(distance_to_center)
+      metrics
+        ? metrics.distance_to_center
+        : b.distance_to_center !== undefined
+          ? Number(b.distance_to_center)
           : null,
-      bank_code,
-      bank_name,
-      bank_account,
-      bank_account_holder,
-      tax_code || null,
+      b.bank_code || b.bankCode || null,
+      b.bank_name || b.bankName || null,
+      b.bank_account || b.bankAccount || null,
+      b.bank_account_holder || b.bankAccountHolder || null,
+      b.tax_code || null,
       hotelId,
     ]);
 
-    const newAmenities = parseAmenityArray(propertyAmenities || amenities);
-    if (newAmenities.length > 0) {
+    const newAmenities = parseAmenityArray(b.propertyAmenities || b.amenities);
+    if (newAmenities.length) {
       await client.query(
         `DELETE FROM public.hotel_amenity WHERE hotel_id::text = $1`,
         [hotelId],
       );
       for (const am of newAmenities) {
         const amenId = await ensureAmenityRecord(client, am);
-        if (amenId) {
+        if (amenId)
           await client
             .query(
               `INSERT INTO public.hotel_amenity (hotel_id, amenity_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
               [hotelId, amenId],
             )
             .catch(() => {});
-        }
       }
     }
 
@@ -1516,7 +996,7 @@ async function updateHotel(req, res, next) {
     return res.json({
       success: true,
       message: "Cập nhật thành công.",
-      hotel: updatedHotelRes.rows[0],
+      hotel: updated.rows[0],
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1526,70 +1006,24 @@ async function updateHotel(req, res, next) {
   }
 }
 
-async function searchHotels(req, res, next) {
-  return listHotels(req, res, next);
-}
-
-// ─── 6. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID (img.room_id = r.id) ───
+// ─── 9. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID ───
 async function listHotelRooms(req, res, next) {
   try {
     const r = await pool.query(
-      `SELECT 
-         r.*,
-         (
-           SELECT img.path 
-           FROM public.image img 
-           WHERE img.room_id = r.id 
-           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-           LIMIT 1
-         ) AS thumbnail,
-         (
-           SELECT img.path 
-           FROM public.image img 
-           WHERE img.room_id = r.id 
-           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-           LIMIT 1
-         ) AS image,
-         COALESCE(
-           (
-             SELECT json_agg(a.name) 
-             FROM public.room_amenity ra 
-             JOIN public.amenity a ON a.id = ra.amenity_id 
-             WHERE ra.room_id = r.id
-           ), 
-           '[]'::json
-         ) AS amenities,
-         COALESCE(
-           (
-             SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
-             FROM public.image img 
-             WHERE img.room_id = r.id
-           ), 
-           '[]'::json
-         ) AS images
-       FROM public.room r 
-       WHERE r.hotel_id = $1
-       ORDER BY r.base_price ASC`,
+      `${ROOM_BASE_SELECT} WHERE r.hotel_id = $1 ORDER BY r.base_price ASC`,
       [req.params.id],
     );
     return res.json({ success: true, data: r.rows, rooms: r.rows });
   } catch (e) {
-    console.error("❌ Lỗi listHotelRooms:", e.message);
     return next(e);
   }
 }
 
-async function listPropertyTypes(req, res) {
-  return res.json({ success: true, data: [] });
-}
-
-async function listDiscoverVietnam(req, res) {
-  return res.json({ success: true, data: [] });
-}
-
-async function listUniqueStays(req, res) {
-  return res.json({ success: true, data: [] });
-}
+// ─── 10. PLACEHOLDERS ───
+const searchHotels = listHotels;
+const listPropertyTypes = (req, res) => res.json({ success: true, data: [] });
+const listDiscoverVietnam = (req, res) => res.json({ success: true, data: [] });
+const listUniqueStays = (req, res) => res.json({ success: true, data: [] });
 
 module.exports = {
   listHotels,
