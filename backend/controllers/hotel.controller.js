@@ -2,7 +2,6 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tự động nâng cấp kiểu dữ liệu path thành TEXT và kích hoạt toàn bộ phòng đang có trong DB
 (async function ensureDatabaseSchema() {
   try {
     await pool.query(`
@@ -36,7 +35,8 @@ try {
   jwt = null;
 }
 
-const PUBLIC_HOTEL_STATUS = "h.status::text IN ('active', 'approved')";
+const PUBLIC_HOTEL_STATUS =
+  "h.status::text IN ('active', 'approved', 'pending')";
 
 const AMENITY_LABEL_MAP = {
   wifi: "Wi-Fi miễn phí toàn khuôn viên",
@@ -557,7 +557,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (AN TOÀN TUYỆT ĐỐI - KHÔNG BAO GIỜ LÀM MẤT PHÒNG) ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID ───
 async function getHotelById(req, res, next) {
   try {
     const rawId = String(req.params.id || "").trim();
@@ -580,7 +580,7 @@ async function getHotelById(req, res, next) {
     const hotelData = hotelRes.rows[0];
     const hotelId = hotelData.id;
 
-    // Chỉ lấy ảnh cơ sở (room_id IS NULL)
+    // 🌟 CHỈ LẤY ẢNH CỦA CƠ SỞ (room_id IS NULL)
     const imagesRes = await pool
       .query(
         `SELECT id, path, is_thumbnail, display_order, room_id 
@@ -591,7 +591,7 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // 🌟 TRUY VẤN MỌI HẠNG PHÒNG THUỘC KHÁCH SẠN NÀY
+    // 🌟 TRUY VẤN TẤT CẢ PHÒNG CỦA KHÁCH SẠN NÀY (HỖ TRỢ MỌI ĐIỀU KIỆN)
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -666,7 +666,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (TRUY VẤN TRỰC TIẾP TOÀN BỘ PHÒNG) ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
@@ -793,7 +793,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TÁCH BIỆT TRIỆT ĐỂ ẢNH CƠ SỞ VÀ ẢNH PHÒNG) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -954,6 +954,11 @@ async function registerHotel(req, res, next) {
       console.warn("⚠️ Cảnh báo gán role HOTEL_OWNER:", roleErr.message);
     }
 
+    // 🌟 ĐẢM BẢO BẮT TRÚNG MẢNG PHÒNG DÙ FRONTEND ĐẶT TÊN LÀ rooms HAY roomList
+    const rawRooms =
+      req.body?.rooms || req.body?.roomList || req.body?.room_data || [];
+    const rooms = Array.isArray(rawRooms) ? rawRooms : [];
+
     const {
       name,
       address,
@@ -972,7 +977,6 @@ async function registerHotel(req, res, next) {
       taxCode,
       business_license_url,
       businessLicenseUrl,
-      rooms = [],
       image,
       images = [],
       gallery = [],
@@ -1089,15 +1093,13 @@ async function registerHotel(req, res, next) {
     const hotelResult = await client.query(hotelInsertSql, values);
     const newHotel = hotelResult.rows[0];
 
-    // ── 5.1. XỬ LÝ ẢNH CƠ SỞ (LOẠI TRỪ TOÀN BỘ ẢNH PHÒNG ĐỂ TRÁNH LẪN LỘN) ──
+    // ── 5.1. XÁC ĐỊNH TẤT CẢ ẢNH XE CỦA PHÒNG ĐỂ KHÔNG BAO GIỜ LƯU THÀNH ẢNH CƠ SỞ ──
     const allRoomImageUrls = new Set();
-    if (Array.isArray(rooms)) {
-      rooms.forEach((rm) => {
-        extractImageUrls([rm.images, rm.image, rm.thumbnail]).forEach((u) =>
-          allRoomImageUrls.add(u),
-        );
-      });
-    }
+    rooms.forEach((rm) => {
+      extractImageUrls([rm.images, rm.image, rm.thumbnail]).forEach((u) =>
+        allRoomImageUrls.add(u),
+      );
+    });
     if (Array.isArray(hotelImages)) {
       hotelImages
         .filter((img) => img.roomId || img.room_id)
@@ -1121,6 +1123,7 @@ async function registerHotel(req, res, next) {
       ...(Array.isArray(gallery) ? gallery : []),
     ];
 
+    // Lọc sạch mọi ảnh của phòng ra khỏi ảnh khách sạn
     const mainHotelImages = extractImageUrls(rawHotelImages).filter(
       (url) => !allRoomImageUrls.has(url),
     );
@@ -1168,7 +1171,7 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // ── 5.3. XỬ LÝ HẠNG PHÒNG VÀ GÁN ĐÚNG ẢNH RIÊNG TỪNG PHÒNG ──
+    // ── 5.3. XỬ LÝ LƯU TỪNG HẠNG PHÒNG VÀ GÁN ẢNH XE CHÍNH XÁC VÀO PHÒNG ĐÓ ──
     const roomColRes = await client.query(
       `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'room'`,
     );
@@ -1176,7 +1179,7 @@ async function registerHotel(req, res, next) {
       r.column_name.toLowerCase(),
     );
 
-    if (Array.isArray(rooms) && rooms.length > 0) {
+    if (rooms.length > 0) {
       let roomFloor = 1;
       for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
         const r = rooms[rIdx];
@@ -1252,6 +1255,7 @@ async function registerHotel(req, res, next) {
           roomValues,
         );
 
+        // Lưu ảnh riêng cho phòng này vào bảng image
         for (let imgIdx = 0; imgIdx < uniqueRoomImages.length; imgIdx++) {
           await client.query("SAVEPOINT sp_room_img");
           try {
