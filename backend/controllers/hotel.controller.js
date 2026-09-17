@@ -2,46 +2,40 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// 🌟 AUTO-FIX CSDL: TỰ ĐỘNG CHUYỂN ẢNH XE BỊ LƯU NHẦM Ở KHÁCH SẠN VỀ ĐÚNG 2 HẠNG PHÒNG 🌟
+// 🌟 TỰ ĐỘNG CỨU CSDL: BỐC ẢNH XE BỊ LƯU NHẦM Ở CƠ SỞ TRẢ VỀ ĐÚNG TỪNG HẠNG PHÒNG 🌟
 (async function autoFixDatabaseImages() {
   try {
-    const hotelsWithRooms = await pool.query(`
-      SELECT DISTINCT r.hotel_id, h.name 
+    const roomsWithoutImages = await pool.query(`
+      SELECT r.id AS room_id, r.hotel_id, r.name, r.created_at
       FROM public.room r
-      JOIN public.hotel h ON h.id = r.hotel_id
       WHERE NOT EXISTS (
         SELECT 1 FROM public.image img WHERE img.room_id = r.id
       )
+      ORDER BY r.hotel_id, r.created_at ASC
     `);
 
-    for (const row of hotelsWithRooms.rows) {
-      const hId = row.hotel_id;
-
-      const roomsRes = await pool.query(
-        `SELECT id FROM public.room WHERE hotel_id = $1 ORDER BY created_at ASC`,
-        [hId],
-      );
-
-      const extraImgs = await pool.query(
-        `SELECT id, path FROM public.image 
-         WHERE hotel_id = $1 AND room_id IS NULL AND is_thumbnail = false
-         ORDER BY display_order ASC, created_at ASC`,
-        [hId],
-      );
-
-      const count = Math.min(roomsRes.rows.length, extraImgs.rows.length);
-      for (let i = 0; i < count; i++) {
-        const imgId = extraImgs.rows[i].id;
-        const rId = roomsRes.rows[i].id;
-        await pool.query(
-          `UPDATE public.image 
-           SET room_id = $1, hotel_id = NULL, is_thumbnail = true, display_order = 0 
-           WHERE id = $2`,
-          [rId, imgId],
+    if (roomsWithoutImages.rows.length > 0) {
+      for (const rm of roomsWithoutImages.rows) {
+        const candidateImg = await pool.query(
+          `SELECT id FROM public.image 
+           WHERE hotel_id = $1 AND room_id IS NULL AND is_thumbnail = false
+           ORDER BY display_order ASC, created_at ASC
+           LIMIT 1`,
+          [rm.hotel_id],
         );
-        console.log(
-          `✅ [AUTO-FIX] Đã trả ảnh xe ${imgId} về đúng phòng ${rId} của cơ sở ${row.name}!`,
-        );
+
+        if (candidateImg.rows.length > 0) {
+          const imgId = candidateImg.rows[0].id;
+          await pool.query(
+            `UPDATE public.image 
+             SET room_id = $1, hotel_id = NULL, is_thumbnail = true, display_order = 0 
+             WHERE id = $2`,
+            [rm.room_id, imgId],
+          );
+          console.log(
+            `✅ [AUTO-FIX] Đã trả ảnh xe về đúng phòng ${rm.name} (${rm.room_id})!`,
+          );
+        }
       }
     }
   } catch (err) {
@@ -67,7 +61,7 @@ try {
   jwt = null;
 }
 
-// 🌟 CHỈ CHO PHÉP KHÁCH SẠN ĐÃ DUYỆT (ACTIVE) HIỆN TRÊN TRANG CHỦ & TÌM KIẾM (KHÔNG CÓ PENDING) 🌟
+// 🌟 CHỈ CHO PHÉP KHÁCH SẠN ĐÃ ĐƯỢC ADMIN DUYỆT (ACTIVE) HIỆN LÊN TRANG CHỦ & TÌM KIẾM 🌟
 const PUBLIC_HOTEL_STATUS = "h.status::text = 'active'";
 
 const AMENITY_LABEL_MAP = {
@@ -119,7 +113,6 @@ const parseAmenityArray = (raw) => {
   return [];
 };
 
-// Hàm làm phẳng mảng và khử sạch ảnh trùng lặp
 const extractImageUrls = (raw) => {
   if (!raw) return [];
   const list = [];
@@ -440,7 +433,7 @@ function parseSearchDate(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
-// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (CHỈ HIỂN THỊ CÁC KHÁCH SẠN ĐÃ ĐƯỢC ADMIN DUYỆT) ───
+// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI ───
 async function listHotels(req, res, next) {
   try {
     const destination = (
@@ -542,7 +535,6 @@ async function listHotels(req, res, next) {
             ? "h.average_rating DESC NULLS LAST, min_price ASC"
             : "h.created_at DESC, h.average_rating DESC NULLS LAST, min_price ASC";
 
-    // Truy vấn ảnh đại diện của khách sạn (chỉ lấy ảnh có room_id IS NULL)
     const sql = `
       SELECT
          h.id,
@@ -597,7 +589,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TÁCH BIỆT 100% ẢNH CƠ SỞ VÀ ẢNH XE CỦA PHÒNG) ───
 async function getHotelById(req, res, next) {
   try {
     const rawId = String(req.params.id || "").trim();
@@ -620,7 +612,7 @@ async function getHotelById(req, res, next) {
     const hotelData = hotelRes.rows[0];
     const hotelId = hotelData.id;
 
-    // Chỉ lấy ảnh cơ sở (room_id IS NULL)
+    // 🌟 CHỈ LẤY ĐÚNG ẢNH CỦA CƠ SỞ (room_id IS NULL) 🌟
     const imagesRes = await pool
       .query(
         `SELECT id, path, is_thumbnail, display_order, room_id 
@@ -631,7 +623,7 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // Truy vấn phòng kèm đúng ảnh xe từ bảng image theo room_id
+    // 🌟 TRUY VẤN MỌI HẠNG PHÒNG VÀ GÁN ĐÚNG ẢNH XE CỦA PHÒNG TỪ BẢNG IMAGE 🌟
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -862,24 +854,6 @@ async function registerHotel(req, res, next) {
     const ownerFullName = req.body?.ownerName || req.body?.name || "Chủ cơ sở";
     const userPhone = req.body?.phoneContact || req.body?.phone;
 
-    let refTable = "users";
-    let refCol = "id";
-
-    try {
-      const fkRes = await client.query(`
-        SELECT ccu.table_name, ccu.column_name
-        FROM information_schema.table_constraints AS tc
-        JOIN information_schema.constraint_column_usage AS ccu
-          ON ccu.constraint_name = tc.constraint_name
-        WHERE tc.constraint_name = 'hotel_owner_id_fkey'
-        LIMIT 1
-      `);
-      if (fkRes.rows.length > 0) {
-        refTable = fkRes.rows[0].table_name;
-        refCol = fkRes.rows[0].column_name;
-      }
-    } catch (fkErr) {}
-
     let validOwnerId = null;
 
     if (userEmail) {
@@ -1108,7 +1082,7 @@ async function registerHotel(req, res, next) {
       roomImageMap.set(rIdx, Array.from(rmUrls));
     });
 
-    // ── 5.2. CHỈ LẤY ĐÚNG ẢNH CƠ SỞ (KHÔNG BAO GIỜ CHỨA ẢNH XE CỦA PHÒNG) ──
+    // ── 5.2. CHỈ LẤY ĐÚNG ẢNH CƠ SỞ (TUYỆT ĐỐI KHÔNG CHỨA ẢNH XE CỦA PHÒNG) ──
     const propertyImagesFromHotelImages = Array.isArray(hotelImages)
       ? hotelImages
           .filter((img) => img && !img.roomId && !img.room_id)
@@ -1123,12 +1097,10 @@ async function registerHotel(req, res, next) {
       ...(Array.isArray(gallery) ? gallery : []),
     ];
 
-    // Lọc sạch toàn bộ ảnh xe của phòng ra khỏi ảnh khách sạn & khử trùng lặp
     const mainHotelImages = extractImageUrls(rawHotelImages).filter(
       (url) => !allRoomImageUrls.has(url),
     );
 
-    // Lưu ảnh cơ sở (hotel_id = newHotel.id, room_id = NULL)
     for (let i = 0; i < mainHotelImages.length; i++) {
       await client.query("SAVEPOINT sp_hotel_img");
       try {

@@ -213,14 +213,12 @@ export default function HotelDetailPage() {
 
   const today = startOfToday();
 
-  // Đọc các giá trị tìm kiếm từ URL
   const initialCheckInStr = searchParams.get("checkIn") || "";
   const initialCheckOutStr = searchParams.get("checkOut") || "";
   const initialRentalType = searchParams.get("rentalType") || "DAY";
   const initialCheckInTime = searchParams.get("checkInTime") || "14:00";
   const initialCheckOutTime = searchParams.get("checkOutTime") || "12:00";
 
-  // State thanh tìm kiếm đồng bộ với HomePage & HotelListPage
   const [rentalType, setRentalType] = useState(initialRentalType);
   const [checkInTime, setCheckInTime] = useState(initialCheckInTime);
   const [checkOutTime, setCheckOutTime] = useState(initialCheckOutTime);
@@ -267,7 +265,6 @@ export default function HotelDetailPage() {
     differenceInDays(appliedCheckOut, appliedCheckIn),
   );
 
-  // Nhãn thời lượng cho badge ở giữa
   const durationBadgeLabel = useMemo(() => {
     if (rentalType === "HOUR") {
       const inH = parseInt((checkInTime || "00:00").split(":")[0], 10);
@@ -321,7 +318,6 @@ export default function HotelDetailPage() {
     }
   };
 
-  // Tải danh sách phòng trống thực tế
   const fetchRoomAvailability = useCallback(
     async (cIn, cOut, adCount) => {
       if (!id) return;
@@ -361,7 +357,6 @@ export default function HotelDetailPage() {
     [id],
   );
 
-  // Tải trực tiếp danh sách hạng phòng của khách sạn qua endpoint dự phòng /hotels/:id/rooms
   const fetchDirectRooms = useCallback(async () => {
     if (!id) return;
     try {
@@ -408,7 +403,6 @@ export default function HotelDetailPage() {
         setSearchQuery(hotelData.name || "");
         setIsFavorite(Boolean(hotelData.is_favorite));
 
-        // Tải đồng thời cả availability và danh sách phòng trực tiếp
         await Promise.all([
           fetchRoomAvailability(appliedCheckIn, appliedCheckOut, adults),
           fetchDirectRooms(),
@@ -486,7 +480,7 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ── 1. BENTO GALLERY TRÊN CÙNG: CHỈ HIỂN THỊ ẢNH CỦA KHÁCH SẠN (KHÔNG LẤY ẢNH PHÒNG) ──
+  // ── 1. BENTO GALLERY TRÊN CÙNG: TUYỆT ĐỐI CHỈ HIỂN THỊ ĐÚNG 3 ẢNH CỦA CƠ SỞ (KHÔNG CÓ ẢNH XE) ──
   const hotelGalleryImages = [];
   if (hotel?.image) {
     const u = parseRealImageUrl(hotel.image);
@@ -516,27 +510,30 @@ export default function HotelDetailPage() {
     );
   }
 
-  // ── 2. LẤY ĐÚNG ẢNH RIÊNG BIỆT CHO TỪNG HẠNG PHÒNG ──
+  // ── 2. HẠNG PHÒNG: HIỂN THỊ CHÍNH XÁC ẢNH XE ĐÃ LƯU Ở BƯỚC 3 ──
   const getRoomImage = (room, roomIdx) => {
     if (!room)
       return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
 
+    // Ưu tiên 1: Lấy từ room.image trực tiếp (chính là ảnh xe)
+    if (room.image && !room.image.startsWith("blob:")) {
+      const u = parseRealImageUrl(room.image);
+      if (u) return u;
+    }
+
+    // Ưu tiên 2: Lấy từ room.thumbnail
+    if (room.thumbnail && !room.thumbnail.startsWith("blob:")) {
+      const u = parseRealImageUrl(room.thumbnail);
+      if (u) return u;
+    }
+
+    // Ưu tiên 3: Lấy từ mảng room.images
     const rImgs = parseImagesList(room.images);
     if (rImgs.length > 0) {
       for (const item of rImgs) {
         const u = parseRealImageUrl(item);
         if (u) return u;
       }
-    }
-
-    if (room.image && !room.image.startsWith("blob:")) {
-      const u = parseRealImageUrl(room.image);
-      if (u) return u;
-    }
-
-    if (room.thumbnail && !room.thumbnail.startsWith("blob:")) {
-      const u = parseRealImageUrl(room.thumbnail);
-      if (u) return u;
     }
 
     return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
@@ -687,7 +684,6 @@ export default function HotelDetailPage() {
     { label: hotel.name },
   ];
 
-  // 🌟 KHÔNG BAO GIỜ MẤT PHÒNG: Lấy theo thứ tự ưu tiên: Available -> Hotel.rooms -> FallbackRooms
   const displayRooms =
     Array.isArray(availableRooms) && availableRooms.length > 0
       ? availableRooms
@@ -781,7 +777,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BENTO GALLERY KHÁCH SẠN */}
+        {/* ── BENTO GALLERY: CHỈ HIỂN THỊ ĐÚNG 3 ẢNH CỦA CƠ SỞ (ĐÃ BỎ ẢNH XE) ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[340px] md:h-[400px]">
             <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
@@ -795,14 +791,14 @@ export default function HotelDetailPage() {
               <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
                 <img
                   src={hotelGalleryImages[1]}
-                  alt="Ảnh 2"
+                  alt="Ảnh cơ sở 2"
                   className="absolute inset-0 w-full h-full object-cover select-none"
                 />
               </div>
               <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
                 <img
                   src={hotelGalleryImages[2]}
-                  alt="Ảnh 3"
+                  alt="Ảnh cơ sở 3"
                   className="absolute inset-0 w-full h-full object-cover select-none"
                 />
               </div>
@@ -903,7 +899,7 @@ export default function HotelDetailPage() {
               />
             </div>
 
-            {/* Ô 2: Bộ chọn Ngày / Giờ kèm 4 Tabs (Giờ, Ngày, Đêm, Buổi) */}
+            {/* Ô 2: Bộ chọn Ngày / Giờ kèm 4 Tabs */}
             <div
               ref={calendarRef}
               onClick={() => setIsCalendarOpen(!isCalendarOpen)}
@@ -943,7 +939,6 @@ export default function HotelDetailPage() {
                 </div>
               </div>
 
-              {/* POPUP 4 TABS CHỌN GIỜ & LỊCH NGÀY CHUẨN XÁC */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
@@ -999,7 +994,6 @@ export default function HotelDetailPage() {
                     </button>
                   </div>
 
-                  {/* KHUNG NHẬN PHÒNG */}
                   <div className="space-y-1 mb-3">
                     <label className="text-xs font-bold text-slate-700 block">
                       Nhận phòng
@@ -1041,7 +1035,6 @@ export default function HotelDetailPage() {
                     </div>
                   </div>
 
-                  {/* KHUNG TRẢ PHÒNG */}
                   <div className="space-y-1 mb-3">
                     <label className="text-xs font-bold text-slate-700 block">
                       Trả phòng
@@ -1083,12 +1076,10 @@ export default function HotelDetailPage() {
                     </div>
                   </div>
 
-                  {/* THANH BADGE THỜI LƯỢNG */}
                   <div className="w-full py-2 bg-blue-50 text-[#006ce4] border border-blue-100 rounded-xl font-black text-center text-xs mb-3">
                     {durationBadgeLabel}
                   </div>
 
-                  {/* LỊCH CHỌN NGÀY */}
                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs font-bold text-[#006ce4]">
@@ -1194,7 +1185,11 @@ export default function HotelDetailPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setAdults((a) => Math.max(1, a - 1))}
+                        onClick={() =>
+                          setTempAdults
+                            ? setTempAdults((a) => a)
+                            : setAdults((a) => Math.max(1, a - 1))
+                        }
                         className="w-7 h-7 rounded-lg border border-slate-300 font-bold hover:bg-slate-100 flex items-center justify-center cursor-pointer"
                       >
                         -
@@ -1262,7 +1257,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG ─── */}
+        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG (HIỂN THỊ ĐÚNG ẢNH XE) ─── */}
         <section ref={roomsRef} className="space-y-4 mb-10">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <div>
@@ -1310,7 +1305,6 @@ export default function HotelDetailPage() {
                     650000,
                 );
 
-                // Tính giá tổng cộng theo hình thức thuê
                 let totalRoomPrice = dailyPrice * appliedNights;
                 if (rentalType === "HOUR") {
                   totalRoomPrice = Number(
