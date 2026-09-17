@@ -1,17 +1,14 @@
 // src/components/auth/RegisterForm/Step3RoomsAndPricing.jsx
-import React from "react";
+import React, { useState } from "react";
 import {
   Plus,
   Trash2,
-  Minus,
-  Key,
-  Wand2,
   ChevronDown,
   Sparkles,
-  Eye,
   Check,
-  CigaretteOff,
-  Bed,
+  Image as ImageIcon,
+  Upload,
+  X,
 } from "lucide-react";
 
 // DANH MỤC PHÂN LOẠI THEO CHUẨN BOOKING.COM
@@ -103,12 +100,22 @@ export const ROOM_AMENITIES_OPTIONS = [
   { id: "toiletries", label: "Đồ vệ sinh cá nhân" },
 ];
 
+// Danh sách ảnh mẫu nhanh tiện lợi khi đăng ký
+const SAMPLE_ROOM_IMAGES = [
+  "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
+  "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800",
+  "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
+  "https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800",
+  "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=800",
+];
+
 export const Step3RoomsAndPricing = ({
   data = {},
   onChange = () => {},
   errors = {},
 }) => {
   const rooms = data?.rooms || [];
+  const [urlInputs, setUrlInputs] = useState({});
 
   const handleAddRoom = () => {
     const nextIdx = rooms.length + 1;
@@ -117,6 +124,9 @@ export const Step3RoomsAndPricing = ({
       { length: Math.min(initialAmount, 8) },
       (_, i) => `P.${nextIdx}0${i + 1}`,
     ).join(", ");
+
+    const defaultImg =
+      SAMPLE_ROOM_IMAGES[(nextIdx - 1) % SAMPLE_ROOM_IMAGES.length];
 
     const newRoom = {
       id: `room-${Date.now()}`,
@@ -131,9 +141,11 @@ export const Step3RoomsAndPricing = ({
       bed_type: "1 Giường đôi lớn (King/Queen Size)",
       room_area: 28,
       capacity: 2,
-      base_price: 0,
+      base_price: 650000,
       description: "Phòng nghỉ hiện đại, tiện nghi.",
-      roomAmenities: [],
+      image: defaultImg,
+      images: [defaultImg],
+      roomAmenities: ["air_conditioner", "wifi", "hot_water", "tv_smart"],
     };
     onChange({ rooms: [...rooms, newRoom] });
   };
@@ -143,7 +155,6 @@ export const Step3RoomsAndPricing = ({
       if (r.id !== roomId) return r;
       const merged = { ...r, ...updates };
 
-      // Khi người dùng thay đổi Số phòng (loại này) -> tự sinh danh sách số phòng thực tế
       if (updates.amount !== undefined) {
         const count = Math.max(1, Number(updates.amount) || 1);
         merged.amount = count;
@@ -161,7 +172,6 @@ export const Step3RoomsAndPricing = ({
     onChange({ rooms: updated });
   };
 
-  // Đổi loại phòng -> tự động cập nhật gợi ý tên phòng & số giường mặc định
   const handleCategoryChange = (roomId, newCategory) => {
     const matchedCategory = ROOM_CATEGORIES.find((c) => c.id === newCategory);
     const suggestedNames = SUGGESTED_NAMES_MAP[newCategory] || [
@@ -182,7 +192,7 @@ export const Step3RoomsAndPricing = ({
     const updated = exists
       ? currentList.filter((a) => a !== amenityId)
       : [...currentList, amenityId];
-    handleUpdateRoom(roomId, { roomAmenities: updated });
+    handleUpdateRoom(roomId, { roomAmenities: updated, amenities: updated });
   };
 
   const handleDeleteRoom = (roomId) => {
@@ -193,6 +203,53 @@ export const Step3RoomsAndPricing = ({
     onChange({ rooms: rooms.filter((r) => r.id !== roomId) });
   };
 
+  // Thêm ảnh vào hạng phòng
+  const handleAddImageUrl = (roomId) => {
+    const url = (urlInputs[roomId] || "").trim();
+    if (!url) return;
+    const targetRoom = rooms.find((r) => r.id === roomId);
+    const currentImgs = Array.isArray(targetRoom?.images)
+      ? targetRoom.images
+      : targetRoom?.image
+        ? [targetRoom.image]
+        : [];
+    const updated = [...currentImgs, url];
+    handleUpdateRoom(roomId, {
+      images: updated,
+      image: updated[0],
+      thumbnail: updated[0],
+    });
+    setUrlInputs((prev) => ({ ...prev, [roomId]: "" }));
+  };
+
+  const handleRemoveImage = (roomId, indexToRemove) => {
+    const targetRoom = rooms.find((r) => r.id === roomId);
+    const currentImgs = Array.isArray(targetRoom?.images)
+      ? targetRoom.images
+      : [];
+    const updated = currentImgs.filter((_, idx) => idx !== indexToRemove);
+    handleUpdateRoom(roomId, {
+      images: updated,
+      image: updated[0] || "",
+      thumbnail: updated[0] || "",
+    });
+  };
+
+  const handlePickSampleImage = (roomId, sampleUrl) => {
+    const targetRoom = rooms.find((r) => r.id === roomId);
+    const currentImgs = Array.isArray(targetRoom?.images)
+      ? targetRoom.images
+      : [];
+    if (!currentImgs.includes(sampleUrl)) {
+      const updated = [...currentImgs, sampleUrl];
+      handleUpdateRoom(roomId, {
+        images: updated,
+        image: updated[0],
+        thumbnail: updated[0],
+      });
+    }
+  };
+
   return (
     <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
       <div>
@@ -201,10 +258,11 @@ export const Step3RoomsAndPricing = ({
           lập phòng & Giá
         </div>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-          Chi tiết hạng phòng của bạn
+          Chi tiết hạng phòng & Hình ảnh
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Thiết lập cấu hình phòng chuẩn
+          Thiết lập cấu hình phòng chuẩn, tiện nghi và hình ảnh thực tế cho từng
+          loại phòng.
         </p>
       </div>
 
@@ -212,6 +270,11 @@ export const Step3RoomsAndPricing = ({
         {rooms.map((room, idx) => {
           const currentCat = room.category || "double";
           const nameOptions = SUGGESTED_NAMES_MAP[currentCat] || [room.name];
+          const roomImages = Array.isArray(room.images)
+            ? room.images
+            : room.image
+              ? [room.image]
+              : [];
 
           return (
             <div
@@ -236,7 +299,7 @@ export const Step3RoomsAndPricing = ({
                 )}
               </div>
 
-              {/* ── 1. LOẠI PHÒNG (ROOM CATEGORY) ── */}
+              {/* ── 1. LOẠI PHÒNG ── */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Loại phòng
@@ -262,7 +325,7 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* ── 2. TÊN PHÒNG & TÊN TÙY CHỌN (KHỚP 100% ẢNH CHỤP) ── */}
+              {/* ── 2. TÊN PHÒNG & TÊN TÙY CHỌN ── */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -293,8 +356,7 @@ export const Step3RoomsAndPricing = ({
                     />
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1 leading-tight">
-                    Đây là tên mà khách sẽ thấy trên trang web GoStay /
-                    Booking.com.
+                    Tên hiển thị công khai trên website cho khách đặt phòng.
                   </p>
                 </div>
 
@@ -312,13 +374,107 @@ export const Step3RoomsAndPricing = ({
                     className="w-full h-11 px-3.5 text-xs sm:text-sm font-medium bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
                   />
                   <p className="text-[11px] text-slate-400 mt-1 leading-tight">
-                    Tạo tên tùy chọn cho riêng Quý vị tham khảo (không bắt
-                    buộc).
+                    Tên nội bộ dùng riêng cho cơ sở lưu trú.
                   </p>
                 </div>
               </div>
 
-              {/* ── 4. SỐ PHÒNG (LOẠI NÀY) (KHỚP 100% ẢNH CHỤP) ── */}
+              {/* ── 3. HÌNH ẢNH HẠNG PHÒNG (MỚI ĐẦY ĐỦ) ── */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <ImageIcon size={16} className="text-[#006ce4]" /> Hình ảnh
+                    hạng phòng ({roomImages.length} ảnh)
+                  </label>
+                  <span className="text-[11px] text-blue-600 font-semibold">
+                    * Ảnh đầu tiên làm ảnh đại diện
+                  </span>
+                </div>
+
+                {/* Danh sách ảnh đã chọn */}
+                {roomImages.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {roomImages.map((imgUrl, imgIdx) => (
+                      <div
+                        key={imgIdx}
+                        className="relative group h-24 rounded-xl overflow-hidden border border-slate-200 bg-white"
+                      >
+                        <img
+                          src={imgUrl}
+                          alt="Ảnh phòng"
+                          className="w-full h-full object-cover"
+                        />
+                        {imgIdx === 0 && (
+                          <span className="absolute bottom-1 left-1 bg-[#003580] text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow">
+                            Ảnh chính
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImage(room.id, imgIdx)}
+                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer shadow"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Nhập link ảnh */}
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="Dán đường dẫn link ảnh phòng (https://...)..."
+                    value={urlInputs[room.id] || ""}
+                    onChange={(e) =>
+                      setUrlInputs({ ...urlInputs, [room.id]: e.target.value })
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddImageUrl(room.id);
+                      }
+                    }}
+                    className="flex-1 h-10 px-3 text-xs bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddImageUrl(room.id)}
+                    className="px-4 h-10 bg-[#003580] hover:bg-blue-900 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+                  >
+                    <Plus size={15} /> Thêm ảnh
+                  </button>
+                </div>
+
+                {/* Gợi ý ảnh phòng đẹp có sẵn */}
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    Hoặc chọn nhanh ảnh mẫu có sẵn:
+                  </span>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {SAMPLE_ROOM_IMAGES.map((sampleUrl, sIdx) => (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        onClick={() =>
+                          handlePickSampleImage(room.id, sampleUrl)
+                        }
+                        className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 hover:border-blue-500 transition cursor-pointer group"
+                      >
+                        <img
+                          src={sampleUrl}
+                          alt="sample"
+                          className="w-full h-full object-cover group-hover:scale-110 transition"
+                        />
+                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── 4. SỐ PHÒNG (LOẠI NÀY) ── */}
               <div className="w-full sm:w-1/3">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Số phòng (loại này)
@@ -339,7 +495,7 @@ export const Step3RoomsAndPricing = ({
 
               <hr className="border-slate-100 my-2" />
 
-              {/* ── 5. CÁC TRƯỜNG THIẾT YẾU CHO HOTEL DETAIL CỦA GOSTAY (GIÁ, DIỆN TÍCH, VIEW) ── */}
+              {/* ── 5. GIÁ, DIỆN TÍCH, HƯỚNG VIEW ── */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {/* Giá tiền */}
                 <div className="bg-[#e8f2ff]/40 rounded-xl border border-blue-200 p-3">
@@ -349,7 +505,6 @@ export const Step3RoomsAndPricing = ({
                   <div className="flex items-center justify-between">
                     <input
                       type="text"
-                      step=""
                       value={Number(room.base_price || 0).toLocaleString(
                         "vi-VN",
                       )}
@@ -410,7 +565,7 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* Tiện nghi phòng */}
+              {/* ── 6. TIỆN NGHI HẠNG PHÒNG ── */}
               <div>
                 <label className="block text-[11px] font-black text-slate-600 uppercase tracking-wider mb-2">
                   Tiện nghi có trong hạng phòng:

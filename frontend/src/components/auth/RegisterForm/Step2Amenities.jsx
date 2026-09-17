@@ -40,17 +40,24 @@ export const AMENITIES = [
 ];
 
 export const Step2Amenities = ({ data = {}, onChange = () => {} }) => {
-  // 🌟 ĐỂ MẶC ĐỊNH LÀ MẢNG RỖNG: Không tự tích bất kỳ tiện nghi nào từ trước
   const selectedAmenities = Array.isArray(data?.propertyAmenities)
     ? data.propertyAmenities
-    : [];
+    : Array.isArray(data?.amenities)
+      ? data.amenities
+      : [];
 
   const toggleAmenity = (id) => {
     const exists = selectedAmenities.includes(id);
     const updated = exists
       ? selectedAmenities.filter((item) => item !== id)
       : [...selectedAmenities, id];
-    onChange({ propertyAmenities: updated });
+
+    // Cập nhật cả 2 trường propertyAmenities và amenities để tương thích tuyệt đối
+    onChange({
+      propertyAmenities: updated,
+      amenities: updated,
+      property_amenities: updated,
+    });
   };
 
   return (

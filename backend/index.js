@@ -29,13 +29,13 @@ const app = express();
 const PORT = Number(process.env.PORT || 5000);
 
 // ============================================================
-// CORS (ĐÃ BỔ SUNG ĐÚNG DOMAIN VERCEL CỦA BẠN)
+// CORS
 // ============================================================
 
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://booking-hotel-fawn.vercel.app", // 🌟 DOMAIN VERCEL MỚI CỦA BẠN
+  "https://booking-hotel-fawn.vercel.app",
 ];
 
 // Cho phép thêm FRONTEND_URL từ Render Environment nếu có
@@ -55,7 +55,8 @@ console.log("CORS allowed origins:", allowedOrigins);
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Request không có Origin (Postman, SePay server-to-server webhook)
+      // Request không có Origin
+      // Postman / server-to-server / SePay webhook
       if (!origin) {
         return callback(null, true);
       }
@@ -73,8 +74,11 @@ app.use(
       console.warn("CORS blocked:", origin);
       return callback(null, false);
     },
+
     credentials: true,
+
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+
     allowedHeaders: [
       "Origin",
       "X-Requested-With",
@@ -107,8 +111,11 @@ app.use(
 // ============================================================
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
 app.use("/uploads", express.static(path.resolve("uploads")));
+
 app.use("/uploads", express.static(path.resolve("backend/uploads")));
 
 // ============================================================
@@ -132,7 +139,23 @@ app.use((req, res, next) => {
         `,
         [req.method, url.split("?")[0]],
       )
-      .catch(() => {});
+      .catch((error) => {
+        // Không nuốt lỗi nữa.
+        // In lỗi ra để biết chính xác database đang bị gì.
+        console.error("❌ REQUEST_LOGS ERROR:", error.message);
+
+        console.error(
+          "❌ REQUEST_LOGS DETAIL:",
+          error.detail || "Không có detail",
+        );
+
+        console.error("❌ REQUEST_LOGS HINT:", error.hint || "Không có hint");
+
+        console.error(
+          "❌ REQUEST_LOGS CODE:",
+          error.code || "Không có error code",
+        );
+      });
   }
 
   next();
@@ -145,10 +168,10 @@ app.use((req, res, next) => {
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ============================================================
-// PAYMENT (SEPAY WEBHOOK & VIETQR ROUTES)
+// PAYMENT
 // ============================================================
 
-// 🌟 GẮN TRỰC TIẾP TOÀN BỘ ROUTE THANH TOÁN VÀO ĐÂY
+// SePay / VietQR
 app.use("/api/payments", paymentRoutes);
 
 // Endpoint xác nhận đơn cũ
@@ -159,19 +182,25 @@ app.post("/api/bookings/confirm-payment", bookingController.confirmPayment);
 // ============================================================
 
 app.get("/api/hotels/:id/reviews", reviewController.listHotelReviews);
+
 app.get("/api/hotels/:hotelId/reviews", reviewController.listHotelReviews);
+
 app.get("/api/reviews/hotel/:hotelId", reviewController.listHotelReviews);
+
 app.get("/api/reviews/:hotelId", reviewController.listHotelReviews);
 
 app.post("/api/hotels/:id/reviews", requireAuth, reviewController.createReview);
+
 app.post(
   "/api/hotels/:hotelId/reviews",
   requireAuth,
   reviewController.createReview,
 );
+
 app.post("/api/reviews", requireAuth, reviewController.createReview);
 
 app.patch("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
+
 app.post("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
 
 // ============================================================
@@ -185,6 +214,7 @@ app.use("/api", apiRoutes);
 // ============================================================
 
 app.use(notFoundHandler);
+
 app.use(errorHandler);
 
 // ============================================================
@@ -193,12 +223,29 @@ app.use(errorHandler);
 
 async function initDatabaseTables() {
   try {
+    // ========================================================
+    // PGCRYPTO
+    // ========================================================
+
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`)
-      .catch(() => {});
+      .catch((error) => {
+        console.warn("⚠️ Không thể tạo pgcrypto:", error.message);
+      });
+
+    // ========================================================
+    // UNACCENT
+    // ========================================================
+
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "unaccent";`)
-      .catch(() => {});
+      .catch((error) => {
+        console.warn("⚠️ Không thể tạo unaccent:", error.message);
+      });
+
+    // ========================================================
+    // HOTEL PROPERTY TYPE
+    // ========================================================
 
     await pool
       .query(
@@ -209,7 +256,13 @@ async function initDatabaseTables() {
         DEFAULT 'hotel';
         `,
       )
-      .catch(() => {});
+      .catch((error) => {
+        console.warn("⚠️ Không thể thêm hotel.property_type:", error.message);
+      });
+
+    // ========================================================
+    // REVIEW POINT CONSTRAINT
+    // ========================================================
 
     await pool
       .query(
@@ -222,7 +275,21 @@ async function initDatabaseTables() {
         CHECK (point >= 1 AND point <= 10);
         `,
       )
-      .catch(() => {});
+      .catch((error) => {
+        console.warn("⚠️ Không thể cập nhật review constraint:", error.message);
+      });
+
+    // ========================================================
+    // REQUEST LOGS
+    // ========================================================
+    //
+    // id = SERIAL
+    // → INTEGER
+    //
+    // Không truyền id khi INSERT.
+    // PostgreSQL tự tăng id bằng sequence.
+    //
+    // ========================================================
 
     await pool
       .query(
@@ -233,13 +300,36 @@ async function initDatabaseTables() {
           endpoint VARCHAR(255),
           created_at TIMESTAMPTZ DEFAULT NOW()
         );
+        `,
+      )
+      .catch((error) => {
+        console.warn("⚠️ Không thể tạo request_logs:", error.message);
+      });
 
+    // ========================================================
+    // REQUEST LOGS INDEX
+    // ========================================================
+
+    await pool
+      .query(
+        `
         CREATE INDEX IF NOT EXISTS
         idx_request_logs_created_at
         ON public.request_logs(created_at);
         `,
       )
-      .catch(() => {});
+      .catch((error) => {
+        console.warn("⚠️ Không thể tạo request_logs index:", error.message);
+      });
+
+    // ========================================================
+    // CHATBOT LOG
+    // ========================================================
+    //
+    // id = UUID
+    // → dùng gen_random_uuid()
+    //
+    // ========================================================
 
     await pool
       .query(
@@ -255,7 +345,9 @@ async function initDatabaseTables() {
         );
         `,
       )
-      .catch(() => {});
+      .catch((error) => {
+        console.warn("⚠️ Không thể tạo chatbot_log:", error.message);
+      });
 
     console.log("✓ Đồng bộ và bảo vệ cấu trúc Database hoàn tất.");
   } catch (err) {
@@ -270,16 +362,23 @@ async function initDatabaseTables() {
 async function startServer() {
   try {
     await pool.query("SELECT 1");
+
     await initDatabaseTables();
 
     app.listen(PORT, () => {
       console.log(`Server chạy tại http://localhost:${PORT}`);
+
       console.log(
         `Đã kết nối PostgreSQL: ${process.env.DB_NAME || "hotel_booking"}`,
       );
     });
   } catch (error) {
     console.error("Không thể kết nối PostgreSQL:", error.message);
+
+    console.error("Database error detail:", error.detail || "Không có detail");
+
+    console.error("Database error code:", error.code || "Không có error code");
+
     process.exit(1);
   }
 }
