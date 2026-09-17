@@ -236,18 +236,67 @@ export default function Header() {
     <header className="bg-[#0a2540] text-white sticky top-0 z-[60] shadow-xl backdrop-blur-xl border-b border-white/10 font-sans select-none transition-all">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 sm:h-20 flex justify-between items-center">
         {/* =====================================================
-            1. LOGO
+            1. LOGO (ĐƯỢC CHUYỂN TỪ CODE CANVAS 512x512 CỦA BẠN SANG SVG CHUẨN)
         ===================================================== */}
         <div
           onClick={() => navigate("/")}
           className="flex items-center gap-2 sm:gap-3 cursor-pointer group"
         >
-          <div className="bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-[#0a2540] p-1.5 sm:p-2 rounded-xl shadow-md group-hover:scale-105 transition-all duration-300">
-            <Building
-              size={20}
-              className="sm:w-[22px] sm:h-[22px]"
-              strokeWidth={2.5}
-            />
+          <div className="group-hover:scale-105 transition-all duration-300 drop-shadow-md">
+            <svg
+              viewBox="0 0 512 512"
+              className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* 1. NỀN XANH ROYAL BLUE ĐẬM */}
+              <rect width="512" height="512" rx="110" fill="#1D4ED8" />
+
+              {/* 2. ĐƯỜNG CONG LỚN CHỮ G */}
+              <path
+                d="M 362 362 A 150 150 0 1 1 344 140"
+                stroke="#FFFFFF"
+                strokeWidth="60"
+                strokeLinecap="round"
+                fill="none"
+              />
+
+              {/* CHÂN GIƯỜNG / TRỤ PHẢI CHỮ G */}
+              <rect
+                x="330"
+                y="230"
+                width="40"
+                height="120"
+                rx="12"
+                fill="#FFFFFF"
+              />
+
+              {/* THANH NGANG NỆM GIƯỜNG (NÉT NGANG CHỮ G) */}
+              <rect
+                x="230"
+                y="230"
+                width="140"
+                height="52"
+                rx="12"
+                fill="#FFFFFF"
+              />
+
+              {/* GỐI NGỦ (XANH NHẠT TINH TẾ) */}
+              <rect
+                x="245"
+                y="195"
+                width="55"
+                height="26"
+                rx="8"
+                fill="#93C5FD"
+              />
+
+              {/* 3. CHẤM ĐỊNH VỊ GPS VÀNG CAM */}
+              <circle cx="365" cy="135" r="42" fill="#F59E0B" />
+
+              {/* LÕI ĐỊNH VỊ TRẮNG BÊN TRONG */}
+              <circle cx="365" cy="135" r="16" fill="#FFFFFF" />
+            </svg>
           </div>
 
           <span className="text-xl sm:text-3xl font-serif tracking-wide font-black bg-gradient-to-r from-white via-slate-100 to-amber-200 bg-clip-text text-transparent">
