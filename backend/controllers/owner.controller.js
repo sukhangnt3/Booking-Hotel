@@ -14,24 +14,15 @@ try {
   }
 }
 
-// Tự động đảm bảo các cột và bảng phân quyền lễ tân tồn tại
+// Tự động đảm bảo các cột cần thiết tồn tại
 (async function ensureRequiredColumnsAndTables() {
   try {
     await pool.query(`
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS room_legs jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS receptionist_assigned boolean DEFAULT false;
-      
-      CREATE TABLE IF NOT EXISTS public.hotel_staff (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        hotel_id uuid NOT NULL REFERENCES public.hotel(id) ON DELETE CASCADE,
-        user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-        created_at timestamp with time zone DEFAULT NOW(),
-        updated_at timestamp with time zone DEFAULT NOW(),
-        CONSTRAINT hotel_staff_unique UNIQUE (hotel_id, user_id)
-      );
     `);
   } catch (err) {
-    console.warn("⚠️ Cảnh báo migration owner/staff columns:", err.message);
+    console.warn("⚠️ Cảnh báo migration owner columns:", err.message);
   }
 })();
 
@@ -1104,7 +1095,7 @@ async function updateOwnerBookingStatus(req, res, next) {
   return res.json({ success: true });
 }
 
-// ─── 9. LẤY DANH SÁCH NHÂN VIÊN LỄ TÂN CỦA OWNER (ĐẦY ĐỦ LOGIC SQL) ───
+// ─── 9. LẤY DANH SÁCH NHÂN VIÊN LỄ TÂN CỦA OWNER ───
 async function getOwnerStaff(req, res, next) {
   try {
     const ownerId = req.user?.id || req.auth?.sub;
@@ -1141,7 +1132,7 @@ async function getOwnerStaff(req, res, next) {
   }
 }
 
-// ─── 10. TẠO TÀI KHOẢN LỄ TÂN MỚI (LƯU VÀO USERS, ROLES, HOTEL_STAFF) ───
+// ─── 10. TẠO TÀI KHOẢN LỄ TÂN (KHÔNG CHÈN CỘT UPDATED_AT KHÔNG TỒN TẠI) ───
 async function createOwnerStaff(req, res, next) {
   const client = await pool.connect();
   try {
@@ -1158,7 +1149,7 @@ async function createOwnerStaff(req, res, next) {
 
     await client.query("BEGIN");
 
-    // Kiểm tra xem khách sạn này có đúng là của Owner không
+    // Kiểm tra khách sạn thuộc quyền sở hữu của Owner
     const hotelCheck = await client.query(
       `SELECT id, name FROM public.hotel WHERE id::text = $1 AND owner_id::text = $2 LIMIT 1`,
       [hotel_id, ownerId],
@@ -1171,7 +1162,7 @@ async function createOwnerStaff(req, res, next) {
       });
     }
 
-    // Kiểm tra xem email đã tồn tại trong bảng users chưa
+    // Kiểm tra email tồn tại
     const existingUser = await client.query(
       `SELECT id FROM public.users WHERE email = $1 LIMIT 1`,
       [targetEmail],
@@ -1182,7 +1173,6 @@ async function createOwnerStaff(req, res, next) {
     if (existingUser.rows.length > 0) {
       staffUserId = existingUser.rows[0].id;
     } else {
-      // Tạo user mới trong bảng users
       const newUserId = crypto.randomUUID();
       const hashedPassword = await hashPassword(password);
 
@@ -1204,7 +1194,7 @@ async function createOwnerStaff(req, res, next) {
       staffUserId = userRes.rows[0].id;
     }
 
-    // Đảm bảo Role RECEPTIONIST tồn tại
+    // Gán quyền RECEPTIONIST
     const roleRes = await client.query(
       `INSERT INTO public.roles (id, name)
        VALUES (gen_random_uuid(), 'RECEPTIONIST')
@@ -1213,7 +1203,6 @@ async function createOwnerStaff(req, res, next) {
     );
     const receptionistRoleId = roleRes.rows[0].id;
 
-    // Gán role vào bảng user_roles
     await client.query(
       `INSERT INTO public.user_roles (user_id, role_id)
        VALUES ($1::uuid, $2::uuid)
@@ -1221,10 +1210,10 @@ async function createOwnerStaff(req, res, next) {
       [staffUserId, receptionistRoleId],
     );
 
-    // Gán nhân viên vào khách sạn trong bảng hotel_staff
+    // 🌟 CHÈN VÀO HOTEL_STAFF CHUẨN XÁC THEO SCHEMA (KHÔNG CÓ CỘT UPDATED_AT) 🌟
     await client.query(
-      `INSERT INTO public.hotel_staff (id, hotel_id, user_id, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1::uuid, $2::uuid, NOW(), NOW())
+      `INSERT INTO public.hotel_staff (id, hotel_id, user_id, created_at)
+       VALUES (gen_random_uuid(), $1::uuid, $2::uuid, NOW())
        ON CONFLICT (hotel_id, user_id) DO NOTHING`,
       [hotel_id, staffUserId],
     );
@@ -1264,7 +1253,6 @@ async function deleteOwnerStaff(req, res, next) {
 
     await client.query("BEGIN");
 
-    // Xóa liên kết của nhân viên trong khách sạn thuộc quyền sở hữu của Owner
     const deleteRes = await client.query(
       `DELETE FROM public.hotel_staff 
        WHERE user_id::text = $1 
