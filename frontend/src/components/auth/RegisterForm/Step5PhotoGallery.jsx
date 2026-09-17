@@ -29,7 +29,7 @@ export const Step5PhotoGallery = ({
   const hotelImages = data?.hotelImages || [];
   const rooms = data?.rooms || [];
 
-  // Chỉ lấy các ảnh của cơ sở (không có roomId)
+  // Chỉ lấy các ảnh của cơ sở (không có roomId và không có room_id)
   const propertyPhotos = hotelImages.filter(
     (img) => !img.roomId && !img.room_id,
   );
@@ -88,10 +88,25 @@ export const Step5PhotoGallery = ({
           }
           return r;
         });
-        onChange({ rooms: updatedRooms });
+
+        // Giữ lại các ảnh phòng khác trong hotelImages
+        const otherImages = hotelImages.filter(
+          (img) => img.roomId !== targetRoomId,
+        );
+        onChange({
+          rooms: updatedRooms,
+          hotelImages: [...otherImages, ...newImages],
+        });
       } else {
-        // Nếu tải ảnh cơ sở: Cập nhật vào hotelImages
-        const updatedImages = [...propertyPhotos, ...newImages];
+        // Nếu tải ảnh cơ sở: Giữ nguyên tất cả ảnh phòng trong hotelImages
+        const roomImagesInState = hotelImages.filter(
+          (img) => img.roomId || img.room_id,
+        );
+        const updatedImages = [
+          ...roomImagesInState,
+          ...propertyPhotos,
+          ...newImages,
+        ];
         const updates = { hotelImages: updatedImages };
         if (!data?.hotelMainImage && newImages.length > 0) {
           updates.hotelMainImage = newImages[0].url;
@@ -131,10 +146,15 @@ export const Step5PhotoGallery = ({
   };
 
   const handleDeletePropertyPhoto = (id, imgUrl) => {
-    const updatedImages = propertyPhotos.filter((img) => img.id !== id);
-    const updates = { hotelImages: updatedImages };
+    const roomImagesInState = hotelImages.filter(
+      (img) => img.roomId || img.room_id,
+    );
+    const updatedPropertyPhotos = propertyPhotos.filter((img) => img.id !== id);
+    const updates = {
+      hotelImages: [...roomImagesInState, ...updatedPropertyPhotos],
+    };
     if (data?.hotelMainImage === imgUrl) {
-      updates.hotelMainImage = updatedImages[0]?.url || "";
+      updates.hotelMainImage = updatedPropertyPhotos[0]?.url || "";
     }
     onChange(updates);
   };
@@ -153,7 +173,13 @@ export const Step5PhotoGallery = ({
       }
       return r;
     });
-    onChange({ rooms: updatedRooms });
+
+    const updatedHotelImages = hotelImages.filter(
+      (img) =>
+        !(img.roomId === roomId && (img.url === imgUrl || img.path === imgUrl)),
+    );
+
+    onChange({ rooms: updatedRooms, hotelImages: updatedHotelImages });
   };
 
   const hasEnoughPropertyPhotos = propertyPhotos.length >= 3;
