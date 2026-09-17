@@ -472,7 +472,7 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ── 1. BENTO GALLERY ĐẦU TRANG: LẤY ĐẦY ĐỦ TOÀN BỘ ẢNH CỦA CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 ──
+  // ── 1. BENTO GALLERY: LẤY ĐỦ 3 ẢNH CỦA CƠ SỞ TỪ BƯỚC 5 ──
   const hotelGalleryImages = [];
   if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
     hotel.images.forEach((img) => {
@@ -485,7 +485,7 @@ export default function HotelDetailPage() {
     if (u && !hotelGalleryImages.includes(u)) hotelGalleryImages.unshift(u);
   }
 
-  // ── 2. HẠNG PHÒNG: LẤY ĐÚNG ẢNH CỦA HẠNG PHÒNG ĐÃ CHỌN Ở BƯỚC 3 ──
+  // ── 2. HẠNG PHÒNG: LẤY ĐÚNG ẢNH CỦA CHÍNH HẠNG PHÒNG ĐÓ ──
   const getRoomImage = (room) => {
     if (!room) return "";
 
@@ -748,7 +748,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* ── BENTO GALLERY: HIỂN THỊ ĐÚNG CÁC ẢNH CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 ── */}
+        {/* ── BENTO GALLERY: HIỂN THỊ ĐỦ 3 ẢNH CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[340px] md:h-[400px]">
             <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
@@ -1242,7 +1242,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG ─── */}
+        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG (HIỂN THỊ ĐÚNG ẢNH XE) ─── */}
         <section ref={roomsRef} className="space-y-4 mb-10">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <div>

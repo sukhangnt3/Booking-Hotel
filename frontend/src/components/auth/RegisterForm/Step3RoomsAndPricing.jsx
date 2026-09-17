@@ -105,6 +105,7 @@ export const Step3RoomsAndPricing = ({
   errors = {},
 }) => {
   const rooms = data?.rooms || [];
+  const hotelImages = data?.hotelImages || [];
 
   const fileInputRef = useRef(null);
   const activeRoomIdRef = useRef(null);
@@ -185,7 +186,28 @@ export const Step3RoomsAndPricing = ({
       return merged;
     });
 
-    onChange({ rooms: updatedRooms });
+    // 🌟 ĐỒNG BỘ ĐA TẦNG: Lưu cả vào rooms, roomImages map và hotelImages có gắn roomId 🌟
+    const payload = { rooms: updatedRooms };
+
+    if (updates.images !== undefined) {
+      // Giữ nguyên ảnh cơ sở (không có roomId) và ảnh của phòng khác
+      const otherImgs = hotelImages.filter((img) => img.roomId !== roomId);
+      const newRoomImgs = updates.images.map((url, i) => ({
+        id: `img-${roomId}-${i}-${Date.now()}`,
+        url,
+        roomId: roomId,
+        title: `Ảnh phòng ${roomId}`,
+      }));
+      payload.hotelImages = [...otherImgs, ...newRoomImgs];
+
+      // Lưu map roomImages để backend đọc trực tiếp
+      payload.roomImages = {
+        ...(data?.roomImages || {}),
+        [roomId]: updates.images,
+      };
+    }
+
+    onChange(payload);
   };
 
   const handleCategoryChange = (roomId, newCategory) => {
@@ -217,7 +239,10 @@ export const Step3RoomsAndPricing = ({
       return;
     }
     const updatedRooms = rooms.filter((r) => r.id !== roomId);
-    onChange({ rooms: updatedRooms });
+    const updatedHotelImages = hotelImages.filter(
+      (img) => img.roomId !== roomId,
+    );
+    onChange({ rooms: updatedRooms, hotelImages: updatedHotelImages });
   };
 
   const triggerComputerUpload = (roomId) => {
@@ -249,7 +274,7 @@ export const Step3RoomsAndPricing = ({
 
       const updated = [...currentImgs, ...compressedUrls];
 
-      // 🌟 LƯU CHẶT CHẼ VÀO CẢ 3 TRƯỜNG IMAGE, IMAGES, THUMBNAIL CỦA PHÒNG 🌟
+      // Gán chặt chẽ vào cả 3 trường
       handleUpdateRoom(targetId, {
         images: updated,
         image: updated[0] || "",
