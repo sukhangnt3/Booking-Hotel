@@ -98,14 +98,6 @@ const ROOM_VIEW_MAP = {
   internal_view: "Hướng nội khu",
 };
 
-const ROOM_FALLBACK_IMAGES = [
-  "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
-  "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800",
-  "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
-  "https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800",
-  "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=800",
-];
-
 export const parseAmenities = (amenities) => {
   if (!amenities) return [];
   if (Array.isArray(amenities)) {
@@ -480,54 +472,33 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ── 1. BENTO GALLERY TRÊN CÙNG: TUYỆT ĐỐI CHỈ HIỂN THỊ ĐÚNG 3 ẢNH CỦA CƠ SỞ (KHÔNG CÓ ẢNH XE) ──
+  // ── 1. BENTO GALLERY ĐẦU TRANG: LẤY ĐẦY ĐỦ TOÀN BỘ ẢNH CỦA CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 ──
   const hotelGalleryImages = [];
-  if (hotel?.image) {
-    const u = parseRealImageUrl(hotel.image);
-    if (u && !hotelGalleryImages.includes(u)) hotelGalleryImages.push(u);
-  }
   if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
     hotel.images.forEach((img) => {
-      const rId = typeof img === "object" ? img.room_id || img.roomId : null;
-      if (!rId) {
-        const u = parseRealImageUrl(img);
-        if (u && !hotelGalleryImages.includes(u)) hotelGalleryImages.push(u);
-      }
+      const u = parseRealImageUrl(img);
+      if (u && !hotelGalleryImages.includes(u)) hotelGalleryImages.push(u);
     });
   }
-
-  const DEFAULT_HOTEL_COVERS = [
-    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800",
-    "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
-    "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
-  ];
-
-  while (hotelGalleryImages.length < 3) {
-    hotelGalleryImages.push(
-      DEFAULT_HOTEL_COVERS[
-        hotelGalleryImages.length % DEFAULT_HOTEL_COVERS.length
-      ],
-    );
+  if (hotel?.image) {
+    const u = parseRealImageUrl(hotel.image);
+    if (u && !hotelGalleryImages.includes(u)) hotelGalleryImages.unshift(u);
   }
 
-  // ── 2. HẠNG PHÒNG: HIỂN THỊ CHÍNH XÁC ẢNH XE ĐÃ LƯU Ở BƯỚC 3 ──
-  const getRoomImage = (room, roomIdx) => {
-    if (!room)
-      return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
+  // ── 2. HẠNG PHÒNG: LẤY ĐÚNG ẢNH CỦA HẠNG PHÒNG ĐÃ CHỌN Ở BƯỚC 3 ──
+  const getRoomImage = (room) => {
+    if (!room) return "";
 
-    // Ưu tiên 1: Lấy từ room.image trực tiếp (chính là ảnh xe)
     if (room.image && !room.image.startsWith("blob:")) {
       const u = parseRealImageUrl(room.image);
       if (u) return u;
     }
 
-    // Ưu tiên 2: Lấy từ room.thumbnail
     if (room.thumbnail && !room.thumbnail.startsWith("blob:")) {
       const u = parseRealImageUrl(room.thumbnail);
       if (u) return u;
     }
 
-    // Ưu tiên 3: Lấy từ mảng room.images
     const rImgs = parseImagesList(room.images);
     if (rImgs.length > 0) {
       for (const item of rImgs) {
@@ -536,7 +507,7 @@ export default function HotelDetailPage() {
       }
     }
 
-    return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
+    return "";
   };
 
   const totalReviewsCount =
@@ -777,30 +748,48 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* ── BENTO GALLERY: CHỈ HIỂN THỊ ĐÚNG 3 ẢNH CỦA CƠ SỞ (ĐÃ BỎ ẢNH XE) ── */}
+        {/* ── BENTO GALLERY: HIỂN THỊ ĐÚNG CÁC ẢNH CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[340px] md:h-[400px]">
             <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
-              <img
-                src={hotelGalleryImages[0]}
-                alt={hotel.name}
-                className="absolute inset-0 w-full h-full object-cover select-none"
-              />
+              {hotelGalleryImages[0] ? (
+                <img
+                  src={hotelGalleryImages[0]}
+                  alt={hotel.name}
+                  className="absolute inset-0 w-full h-full object-cover select-none"
+                />
+              ) : (
+                <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-400">
+                  <ImageIcon size={32} />
+                </div>
+              )}
             </div>
             <div className="md:col-span-5 grid grid-rows-2 gap-3.5 h-full w-full">
               <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
-                <img
-                  src={hotelGalleryImages[1]}
-                  alt="Ảnh cơ sở 2"
-                  className="absolute inset-0 w-full h-full object-cover select-none"
-                />
+                {hotelGalleryImages[1] ? (
+                  <img
+                    src={hotelGalleryImages[1]}
+                    alt="Ảnh cơ sở 2"
+                    className="absolute inset-0 w-full h-full object-cover select-none"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-400">
+                    <ImageIcon size={24} />
+                  </div>
+                )}
               </div>
               <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
-                <img
-                  src={hotelGalleryImages[2]}
-                  alt="Ảnh cơ sở 3"
-                  className="absolute inset-0 w-full h-full object-cover select-none"
-                />
+                {hotelGalleryImages[2] ? (
+                  <img
+                    src={hotelGalleryImages[2]}
+                    alt="Ảnh cơ sở 3"
+                    className="absolute inset-0 w-full h-full object-cover select-none"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-400">
+                    <ImageIcon size={24} />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1185,11 +1174,7 @@ export default function HotelDetailPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() =>
-                          setTempAdults
-                            ? setTempAdults((a) => a)
-                            : setAdults((a) => Math.max(1, a - 1))
-                        }
+                        onClick={() => setAdults((a) => Math.max(1, a - 1))}
                         className="w-7 h-7 rounded-lg border border-slate-300 font-bold hover:bg-slate-100 flex items-center justify-center cursor-pointer"
                       >
                         -
@@ -1257,7 +1242,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG (HIỂN THỊ ĐÚNG ẢNH XE) ─── */}
+        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG ─── */}
         <section ref={roomsRef} className="space-y-4 mb-10">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <div>
@@ -1286,7 +1271,7 @@ export default function HotelDetailPage() {
           {displayRooms && displayRooms.length > 0 ? (
             <div className="space-y-4">
               {displayRooms.map((room, idx) => {
-                const roomImg = getRoomImage(room, idx);
+                const roomImg = getRoomImage(room);
 
                 const stock =
                   room.remaining_rooms !== undefined
@@ -1339,11 +1324,17 @@ export default function HotelDetailPage() {
                     <div className="lg:col-span-4 p-5 bg-slate-50/50 border-r border-slate-100 flex flex-col justify-between space-y-4">
                       <div className="space-y-3">
                         <div className="w-full h-44 rounded-xl overflow-hidden bg-slate-200 relative shadow-xs">
-                          <img
-                            src={roomImg}
-                            alt={room.name}
-                            className="absolute inset-0 w-full h-full object-cover select-none hover:scale-105 transition duration-300"
-                          />
+                          {roomImg ? (
+                            <img
+                              src={roomImg}
+                              alt={room.name}
+                              className="absolute inset-0 w-full h-full object-cover select-none hover:scale-105 transition duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-400">
+                              <ImageIcon size={32} />
+                            </div>
+                          )}
                           {isSoldOut && (
                             <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex items-center justify-center">
                               <span className="bg-rose-600 text-white font-black text-xs px-3 py-1.5 rounded-lg uppercase tracking-wider shadow">

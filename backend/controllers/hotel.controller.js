@@ -2,54 +2,6 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// 🌟 AUTO-FIX CSDL: TỰ ĐỘNG QUÉT VÀ TRẢ ẢNH XE VỀ ĐÚNG HẠNG PHÒNG CHO MỌI CƠ SỞ ĐÃ ĐĂNG KÝ 🌟
-(async function autoFixDatabaseImages() {
-  try {
-    const hotelsWithRooms = await pool.query(`
-      SELECT DISTINCT r.hotel_id, h.name 
-      FROM public.room r
-      JOIN public.hotel h ON h.id = r.hotel_id
-      WHERE NOT EXISTS (
-        SELECT 1 FROM public.image img WHERE img.room_id = r.id
-      )
-    `);
-
-    for (const row of hotelsWithRooms.rows) {
-      const hId = row.hotel_id;
-
-      const roomsRes = await pool.query(
-        `SELECT id, name FROM public.room WHERE hotel_id = $1 ORDER BY created_at ASC`,
-        [hId],
-      );
-
-      // Lấy các ảnh bị lưu nhầm ở cơ sở (không phải ảnh thumbnail đầu tiên)
-      const extraImgs = await pool.query(
-        `SELECT id, path FROM public.image 
-         WHERE hotel_id = $1 AND room_id IS NULL AND is_thumbnail = false
-         ORDER BY display_order ASC, created_at ASC`,
-        [hId],
-      );
-
-      const count = Math.min(roomsRes.rows.length, extraImgs.rows.length);
-      for (let i = 0; i < count; i++) {
-        const imgId = extraImgs.rows[i].id;
-        const rId = roomsRes.rows[i].id;
-        await pool.query(
-          `UPDATE public.image 
-           SET room_id = $1, hotel_id = NULL, is_thumbnail = true, display_order = 0 
-           WHERE id = $2`,
-          [rId, imgId],
-        );
-        console.log(
-          `✅ [AUTO-FIX] Đã trả ảnh xe về đúng phòng [${roomsRes.rows[i].name}] của cơ sở [${row.name}]!`,
-        );
-      }
-    }
-  } catch (err) {
-    console.warn("⚠️ Cảnh báo autoFixDatabaseImages:", err.message);
-  }
-})();
-
 let bcrypt;
 try {
   bcrypt = require("bcryptjs");
@@ -520,7 +472,7 @@ async function listHotels(req, res, next) {
       params.push(minPrice);
       where += ` AND EXISTS (
           SELECT 1 FROM public.room rp
-          WHERE rp.hotel_id = h.id AND (rp.is_active = true OR rp.is_active IS NULL) AND rp.base_price >= $${params.length}
+          WHERE rp.hotel_id = h.id AND rp.is_active = true AND rp.base_price >= $${params.length}
         )`;
     }
 
@@ -528,7 +480,7 @@ async function listHotels(req, res, next) {
       params.push(maxPrice);
       where += ` AND EXISTS (
           SELECT 1 FROM public.room rp
-          WHERE rp.hotel_id = h.id AND (rp.is_active = true OR rp.is_active IS NULL) AND rp.base_price <= $${params.length}
+          WHERE rp.hotel_id = h.id AND rp.is_active = true AND rp.base_price <= $${params.length}
         )`;
     }
 
@@ -596,7 +548,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TỰ ĐỘNG GẮN ĐÚNG ẢNH XE CHO PHÒNG) ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TRẢ VỀ ĐỦ 3 ẢNH CƠ SỞ & ẢNH RIÊNG TỪNG PHÒNG) ───
 async function getHotelById(req, res, next) {
   try {
     const rawId = String(req.params.id || "").trim();
@@ -619,21 +571,18 @@ async function getHotelById(req, res, next) {
     const hotelData = hotelRes.rows[0];
     const hotelId = hotelData.id;
 
-    // Lấy tất cả ảnh đang có của khách sạn này (cả ảnh cơ sở và ảnh phòng)
-    const allImagesRes = await pool
+    // 🌟 1. LẤY TOÀN BỘ ẢNH CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 (room_id IS NULL) 🌟
+    const imagesRes = await pool
       .query(
-        `SELECT id, path, is_thumbnail, display_order, room_id, hotel_id 
+        `SELECT id, path, is_thumbnail, display_order, room_id 
          FROM public.image 
-         WHERE hotel_id = $1 OR room_id IN (SELECT id FROM public.room WHERE hotel_id = $1)
+         WHERE hotel_id = $1 AND room_id IS NULL
          ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
         [hotelId],
       )
       .catch(() => ({ rows: [] }));
 
-    // Tách riêng ảnh cơ sở (không có room_id)
-    let propertyImages = allImagesRes.rows.filter((img) => !img.room_id);
-
-    // Truy vấn tất cả các hạng phòng
+    // 🌟 2. LẤY TẤT CẢ HẠNG PHÒNG VÀ GẮN ĐÚNG ẢNH CỦA CHÍNH PHÒNG ĐÓ 🌟
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -643,6 +592,20 @@ async function getHotelById(req, res, next) {
            r.amount,
            1
          ) AS amount,
+         (
+           SELECT img.path 
+           FROM public.image img 
+           WHERE img.room_id = r.id 
+           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
+           LIMIT 1
+         ) AS image,
+         (
+           SELECT img.path 
+           FROM public.image img 
+           WHERE img.room_id = r.id 
+           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
+           LIMIT 1
+         ) AS thumbnail,
          COALESCE(
            (
              SELECT json_agg(a.name) 
@@ -651,7 +614,15 @@ async function getHotelById(req, res, next) {
              WHERE ra.room_id = r.id
            ), 
            '[]'::json
-         ) AS amenities
+         ) AS amenities,
+         COALESCE(
+           (
+             SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
+             FROM public.image img 
+             WHERE img.room_id = r.id
+           ),
+           '[]'::json
+         ) AS images
        FROM public.room r
        WHERE r.hotel_id = $1
        ORDER BY r.base_price ASC`,
@@ -662,43 +633,10 @@ async function getHotelById(req, res, next) {
         return { rows: [] };
       });
 
-    const rooms = roomsRes.rows;
-
-    // 🌟 PHÂN PHỐI CHUẨN XÁC: Gán ảnh xe cho từng phòng & lọc sạch ảnh xe khỏi cơ sở 🌟
-    rooms.forEach((room, rIdx) => {
-      // 1. Kiểm tra xem phòng đã có ảnh gắn room_id trực tiếp chưa
-      const directImgs = allImagesRes.rows.filter(
-        (img) => String(img.room_id) === String(room.id),
-      );
-      if (directImgs.length > 0) {
-        room.image = directImgs[0].path;
-        room.thumbnail = directImgs[0].path;
-        room.images = directImgs.map((i) => i.path);
-      } else if (propertyImages.length > 1) {
-        // 2. Nếu phòng chưa có ảnh nhưng cơ sở có nhiều hơn 1 ảnh (ảnh xe bị lưu nhầm)
-        // Lấy ảnh không phải ảnh thumbnail (is_thumbnail = false) để làm ảnh cho phòng
-        const extraIdx = rIdx + 1;
-        if (propertyImages[extraIdx]) {
-          const roomPath = propertyImages[extraIdx].path;
-          room.image = roomPath;
-          room.thumbnail = roomPath;
-          room.images = [roomPath];
-        }
-      }
-    });
-
-    // 🌟 ĐẦU TRANG BENTO GALLERY: Lấy đúng các ảnh cơ sở (loại bỏ các ảnh đã gán cho phòng) 🌟
-    const roomImagePaths = new Set(rooms.map((r) => r.image).filter(Boolean));
-    const cleanHotelImages = propertyImages.filter(
-      (img) => !roomImagePaths.has(img.path),
-    );
-
-    hotelData.images =
-      cleanHotelImages.length > 0
-        ? cleanHotelImages
-        : propertyImages.slice(0, 3);
-    hotelData.image = hotelData.images[0]?.path || hotelData.image || null;
-    hotelData.rooms = rooms;
+    // Giữ nguyên vẹn mảng ảnh cơ sở, không đánh tráo sang cho phòng
+    hotelData.images = imagesRes.rows;
+    hotelData.image = imagesRes.rows[0]?.path || null;
+    hotelData.rooms = roomsRes.rows;
 
     const amenitiesRes = await pool
       .query(
@@ -859,7 +797,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TÁCH BIỆT 100% ẢNH CƠ SỞ VÀ ẢNH PHÒNG) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -1066,47 +1004,7 @@ async function registerHotel(req, res, next) {
 
     const newHotel = hotelResult.rows[0];
 
-    // ── 5.1. BÓC TÁCH RIÊNG ẢNH CỦA CÁC HẠNG PHÒNG ĐỂ LOẠI BỎ KHỎI ẢNH CƠ SỞ ──
-    const roomImageMap = new Map();
-    const allRoomImageUrls = new Set();
-
-    rooms.forEach((rm, rIdx) => {
-      const rmUrls = new Set();
-
-      extractImageUrls([
-        rm.images,
-        rm.image,
-        rm.imageUrl,
-        rm.image_url,
-        rm.thumbnail,
-        rm.photos,
-      ]).forEach((u) => {
-        rmUrls.add(u);
-        allRoomImageUrls.add(u);
-      });
-
-      if (Array.isArray(hotelImages)) {
-        hotelImages
-          .filter(
-            (img) =>
-              img &&
-              (img.roomId === rm.id ||
-                img.room_id === rm.id ||
-                String(img.roomId) === String(rIdx)),
-          )
-          .forEach((img) => {
-            const u = typeof img === "string" ? img : img.url || img.path;
-            if (u && typeof u === "string") {
-              rmUrls.add(u.trim());
-              allRoomImageUrls.add(u.trim());
-            }
-          });
-      }
-
-      roomImageMap.set(rIdx, Array.from(rmUrls));
-    });
-
-    // ── 5.2. CHỈ LẤY ĐÚNG ẢNH CƠ SỞ (LOẠI TRỪ 100% ẢNH XE CỦA PHÒNG) ──
+    // ── 5.1. LẤY ĐÚNG 3 ẢNH CƠ SỞ ĐÃ CHỌN Ở BƯỚC 5 (KHÔNG LẤY ẢNH PHÒNG) ──
     const propertyImagesFromHotelImages = Array.isArray(hotelImages)
       ? hotelImages
           .filter((img) => img && !img.roomId && !img.room_id)
@@ -1121,9 +1019,8 @@ async function registerHotel(req, res, next) {
       ...(Array.isArray(gallery) ? gallery : []),
     ];
 
-    const mainHotelImages = extractImageUrls(rawHotelImages).filter(
-      (url) => !allRoomImageUrls.has(url),
-    );
+    // Khử trùng lặp và giữ nguyên vẹn các ảnh cơ sở của khách sạn
+    const mainHotelImages = extractImageUrls(rawHotelImages);
 
     for (let i = 0; i < mainHotelImages.length; i++) {
       await client.query("SAVEPOINT sp_hotel_img");
@@ -1139,7 +1036,7 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // ── 5.3. TIỆN NGHI KHÁCH SẠN ──
+    // ── 5.2. TIỆN NGHI KHÁCH SẠN ──
     const hotelAmenitiesList = parseAmenityArray(
       propertyAmenities || property_amenities || amenities,
     );
@@ -1159,7 +1056,7 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // ── 5.4. LƯU TỪNG HẠNG PHÒNG VÀ GÁN ĐÚNG ẢNH XE CHO PHÒNG ĐÓ ──
+    // ── 5.3. LƯU TỪNG HẠNG PHÒNG VÀ GẮN ĐÚNG ẢNH ĐÃ CHỌN Ở BƯỚC 3 ──
     if (rooms.length > 0) {
       let roomFloor = 1;
       for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
@@ -1167,7 +1064,13 @@ async function registerHotel(req, res, next) {
         const totalAmount = Number(r.totalRooms || r.amount || 4);
         const newRoomId = crypto.randomUUID();
 
-        const uniqueRoomImages = roomImageMap.get(rIdx) || [];
+        // Thu thập ảnh riêng của hạng phòng này đã chọn ở Bước 3
+        const thisRoomImages = extractImageUrls([
+          ...(Array.isArray(r.images) ? r.images : []),
+          r.image,
+          r.thumbnail,
+        ]);
+
         const basePrice = Number(r.weekdayPrice || r.base_price || 500000);
 
         await client.query(
@@ -1198,14 +1101,14 @@ async function registerHotel(req, res, next) {
           ],
         );
 
-        // Lưu ảnh xe cho phòng (hotel_id = NULL, room_id = newRoomId)
-        for (let imgIdx = 0; imgIdx < uniqueRoomImages.length; imgIdx++) {
+        // Lưu ảnh riêng cho phòng này vào bảng image với hotel_id = NULL
+        for (let imgIdx = 0; imgIdx < thisRoomImages.length; imgIdx++) {
           await client.query("SAVEPOINT sp_room_img");
           try {
             await client.query(
               `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
                VALUES (gen_random_uuid(), NULL, $1, $2, $3, $4, NOW())`,
-              [newRoomId, uniqueRoomImages[imgIdx], imgIdx === 0, imgIdx],
+              [newRoomId, thisRoomImages[imgIdx], imgIdx === 0, imgIdx],
             );
             await client.query("RELEASE SAVEPOINT sp_room_img");
           } catch (e) {
@@ -1533,24 +1436,9 @@ async function searchHotels(req, res, next) {
   return listHotels(req, res, next);
 }
 
-// ─── 6. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID (GẮN ĐÚNG ẢNH XE CHO PHÒNG) ───
+// ─── 6. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID (CHUẨN THEO BẢNG IMAGE) ───
 async function listHotelRooms(req, res, next) {
   try {
-    const hotelId = req.params.id;
-
-    // Lấy ảnh của cơ sở để nếu phòng chưa có ảnh thì phân phối ảnh xe sang phòng
-    const allImagesRes = await pool
-      .query(
-        `SELECT id, path, is_thumbnail, display_order, room_id 
-       FROM public.image 
-       WHERE hotel_id = $1 OR room_id IN (SELECT id FROM public.room WHERE hotel_id = $1)
-       ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
-        [hotelId],
-      )
-      .catch(() => ({ rows: [] }));
-
-    const propertyImages = allImagesRes.rows.filter((img) => !img.room_id);
-
     const r = await pool.query(
       `SELECT 
          r.*,
@@ -1588,24 +1476,9 @@ async function listHotelRooms(req, res, next) {
        FROM public.room r 
        WHERE r.hotel_id = $1
        ORDER BY r.base_price ASC`,
-      [hotelId],
+      [req.params.id],
     );
-
-    const rooms = r.rows;
-
-    // Phân phối ảnh xe sang phòng nếu phòng chưa có ảnh
-    rooms.forEach((room, rIdx) => {
-      if (!room.image && propertyImages.length > 1) {
-        const extraIdx = rIdx + 1;
-        if (propertyImages[extraIdx]) {
-          room.image = propertyImages[extraIdx].path;
-          room.thumbnail = propertyImages[extraIdx].path;
-          room.images = [propertyImages[extraIdx].path];
-        }
-      }
-    });
-
-    return res.json({ success: true, data: rooms, rooms: rooms });
+    return res.json({ success: true, data: r.rows, rooms: r.rows });
   } catch (e) {
     console.error("❌ Lỗi listHotelRooms:", e.message);
     return next(e);
