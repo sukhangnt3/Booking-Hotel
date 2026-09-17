@@ -2,6 +2,7 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
+// Tự động nâng cấp cột path và kích hoạt toàn bộ phòng đang có trong DB
 (async function ensureDatabaseSchema() {
   try {
     await pool.query(`
@@ -10,6 +11,7 @@ const pool = require("../config/database");
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS thumbnail text;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS room_view text DEFAULT 'city_view';
       ALTER TABLE public.hotel ALTER COLUMN image TYPE text;
+      UPDATE public.room SET is_active = true WHERE is_active IS NULL OR is_active = false;
     `);
   } catch (err) {
     console.warn("⚠️ Cảnh báo migration image/room columns:", err.message);
@@ -555,12 +557,11 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (AN TOÀN TUYỆT ĐỐI - KHÔNG BAO GIỜ LÀM MẤT PHÒNG) ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TRUY VẤN TẤT CẢ PHÒNG, KHÔNG ĐỂ MẤT PHÒNG) ───
 async function getHotelById(req, res, next) {
   try {
-    const hotelId = String(req.params.id || "").trim();
-    if (!hotelId)
-      return res.status(400).json({ message: "Thiếu ID khách sạn." });
+    const rawId = String(req.params.id || "").trim();
+    if (!rawId) return res.status(400).json({ message: "Thiếu ID khách sạn." });
 
     const hotelRes = await pool.query(
       `SELECT h.*,
@@ -569,7 +570,7 @@ async function getHotelById(req, res, next) {
        FROM public.hotel h 
        WHERE h.id::text = $1 
        LIMIT 1`,
-      [hotelId],
+      [rawId],
     );
 
     if (hotelRes.rows.length === 0) {
@@ -577,25 +578,26 @@ async function getHotelById(req, res, next) {
     }
 
     const hotelData = hotelRes.rows[0];
+    const hotelId = hotelData.id;
 
     // Chỉ lấy ảnh cơ sở (room_id IS NULL)
     const imagesRes = await pool
       .query(
         `SELECT id, path, is_thumbnail, display_order, room_id 
          FROM public.image 
-         WHERE hotel_id::text = $1 AND (room_id IS NULL OR room_id::text = '')
+         WHERE hotel_id::text = $1::text AND (room_id IS NULL OR room_id::text = '')
          ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
-        [hotelData.id],
+        [hotelId],
       )
       .catch(() => ({ rows: [] }));
 
-    // 🌟 TRUY VẤN TOÀN BỘ PHÒNG THUỘC KHÁCH SẠN NÀY, BỎ HẾT CÁC TOÁN TỬ GÂY LỖI
+    // 🌟 TRUY VẤN MỌI HẠNG PHÒNG THUỘC KHÁCH SẠN NÀY (HỖ TRỢ MỌI KIỂU DỮ LIỆU) 🌟
     const roomsRes = await pool
       .query(
         `SELECT 
          r.*,
          COALESCE(
-           NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+           NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id::text = r.id::text), 0),
            r.amount,
            1
          ) AS amount,
@@ -623,9 +625,9 @@ async function getHotelById(req, res, next) {
            '[]'::json
          ) AS images
        FROM public.room r
-       WHERE r.hotel_id::text = $1
+       WHERE r.hotel_id::text = $1::text
        ORDER BY r.base_price ASC`,
-        [hotelData.id],
+        [hotelId],
       )
       .catch((err) => {
         console.error("❌ Lỗi roomsRes:", err.message);
@@ -637,8 +639,8 @@ async function getHotelById(req, res, next) {
         `SELECT DISTINCT a.name, a.type 
          FROM public.amenity a
          JOIN public.hotel_amenity ha ON ha.amenity_id = a.id 
-         WHERE ha.hotel_id::text = $1`,
-        [hotelData.id],
+         WHERE ha.hotel_id::text = $1::text`,
+        [hotelId],
       )
       .catch(() => ({ rows: [] }));
 
@@ -664,7 +666,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (ĐẢM BẢO KHÔNG BỊ TRẢ VỀ RỖNG) ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (LUÔN TRẢ VỀ TOÀN BỘ PHÒNG ĐÃ TẠO) ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
@@ -687,7 +689,7 @@ async function listHotelRoomAvailability(req, res, next) {
         r.capacity,
         r.base_price,
         COALESCE(
-          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id::text = r.id::text), 0),
           r.amount,
           1
         ) AS total_rooms,
@@ -697,7 +699,7 @@ async function listHotelRoomAvailability(req, res, next) {
         r.type,
         r.description,
         COALESCE(
-          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id::text = r.id::text), 0),
           r.amount,
           1
         )::int AS remaining_rooms,
@@ -728,7 +730,7 @@ async function listHotelRoomAvailability(req, res, next) {
           '[]'::json
         ) AS images
       FROM public.room r
-      WHERE r.hotel_id::text = $1
+      WHERE r.hotel_id::text = $1::text
       ORDER BY r.base_price ASC;
     `;
 
@@ -1087,7 +1089,7 @@ async function registerHotel(req, res, next) {
     const hotelResult = await client.query(hotelInsertSql, values);
     const newHotel = hotelResult.rows[0];
 
-    // ── 5.1. XỬ LÝ ẢNH CƠ SỞ (TÁCH BẠCH KHỎI ẢNH PHÒNG) ──
+    // ── 5.1. XỬ LÝ ẢNH CƠ SỞ (LOẠI TRỪ TOÀN BỘ ẢNH PHÒNG ĐỂ TRÁNH LẪN LỘN) ──
     const allRoomImageUrls = new Set();
     if (Array.isArray(rooms)) {
       rooms.forEach((rm) => {
@@ -1166,7 +1168,7 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // ── 5.3. XỬ LÝ HẠNG PHÒNG VÀ GÁN ĐÚNG ẢNH TỪNG PHÒNG ──
+    // ── 5.3. XỬ LÝ HẠNG PHÒNG VÀ GÁN ĐÚNG ẢNH RIÊNG TỪNG PHÒNG ──
     const roomColRes = await client.query(
       `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'room'`,
     );
@@ -1609,7 +1611,7 @@ async function listHotelRooms(req, res, next) {
            '[]'::json
          ) AS amenities
        FROM public.room r 
-       WHERE r.hotel_id::text = $1 AND (r.is_active = true OR r.is_active IS NULL)
+       WHERE r.hotel_id::text = $1::text
        ORDER BY r.base_price ASC`,
       [req.params.id],
     );
