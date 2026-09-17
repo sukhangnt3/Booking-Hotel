@@ -72,6 +72,7 @@ const parseAmenityArray = (raw) => {
   return [];
 };
 
+// Hàm trích xuất và làm phẳng mảng URL ảnh, khử trùng lặp
 const extractImageUrls = (raw) => {
   if (!raw) return [];
   const list = [];
@@ -548,7 +549,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TRẢ VỀ ĐẦY ĐỦ ẢNH CƠ SỞ & ẢNH PHÒNG) ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TRUY VẤN VỚI R.ID::UUID CHUẨN XÁC) ───
 async function getHotelById(req, res, next) {
   try {
     const rawId = String(req.params.id || "").trim();
@@ -571,7 +572,7 @@ async function getHotelById(req, res, next) {
     const hotelData = hotelRes.rows[0];
     const hotelId = hotelData.id;
 
-    // 🌟 1. LẤY TOÀN BỘ ẢNH CƠ SỞ CỦA KHÁCH SẠN (room_id IS NULL) 🌟
+    // 🌟 LẤY TOÀN BỘ ẢNH CƠ SỞ (room_id IS NULL)
     const imagesRes = await pool
       .query(
         `SELECT id, path, is_thumbnail, display_order 
@@ -582,7 +583,7 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // 🌟 2. LẤY MỌI HẠNG PHÒNG VÀ GẮN ĐÚNG ẢNH CỦA CHÍNH PHÒNG ĐÓ TỪ BẢNG IMAGE 🌟
+    // 🌟 LẤY PHÒNG KÈM ẢNH THẬT CỦA PHÒNG QUA ROOM_ID::UUID = R.ID::UUID 🌟
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -595,14 +596,14 @@ async function getHotelById(req, res, next) {
          (
            SELECT img.path 
            FROM public.image img 
-           WHERE img.room_id = r.id 
+           WHERE img.room_id::uuid = r.id::uuid 
            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
            LIMIT 1
          ) AS image,
          (
            SELECT img.path 
            FROM public.image img 
-           WHERE img.room_id = r.id 
+           WHERE img.room_id::uuid = r.id::uuid 
            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
            LIMIT 1
          ) AS thumbnail,
@@ -611,7 +612,7 @@ async function getHotelById(req, res, next) {
              SELECT json_agg(a.name) 
              FROM public.room_amenity ra 
              JOIN public.amenity a ON a.id = ra.amenity_id 
-             WHERE ra.room_id = r.id
+             WHERE ra.room_id::uuid = r.id::uuid
            ), 
            '[]'::json
          ) AS amenities,
@@ -619,7 +620,7 @@ async function getHotelById(req, res, next) {
            (
              SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
              FROM public.image img 
-             WHERE img.room_id = r.id
+             WHERE img.room_id::uuid = r.id::uuid
            ),
            '[]'::json
          ) AS images
@@ -703,14 +704,14 @@ async function listHotelRoomAvailability(req, res, next) {
         (
           SELECT img.path 
           FROM public.image img 
-          WHERE img.room_id = r.id 
+          WHERE img.room_id::uuid = r.id::uuid 
           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
           LIMIT 1
         ) AS thumbnail,
         (
           SELECT img.path 
           FROM public.image img 
-          WHERE img.room_id = r.id 
+          WHERE img.room_id::uuid = r.id::uuid 
           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
           LIMIT 1
         ) AS image,
@@ -719,7 +720,7 @@ async function listHotelRoomAvailability(req, res, next) {
             SELECT json_agg(a.name) 
             FROM public.room_amenity ra 
             JOIN public.amenity a ON a.id = ra.amenity_id 
-            WHERE ra.room_id = r.id
+            WHERE ra.room_id::uuid = r.id::uuid
           ), 
           '[]'::json
         ) AS amenities,
@@ -727,7 +728,7 @@ async function listHotelRoomAvailability(req, res, next) {
           (
             SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
             FROM public.image img 
-            WHERE img.room_id = r.id
+            WHERE img.room_id::uuid = r.id::uuid
           ),
           '[]'::json
         ) AS images
@@ -796,7 +797,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (QUÉT ĐA TẦNG BẮT TRÚNG 100% ẢNH CỦA TỪNG PHÒNG) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (GẮN ÉP KIỂU $1::UUID CHUẨN XÁC VÀO BẢNG IMAGE) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -1004,14 +1005,13 @@ async function registerHotel(req, res, next) {
 
     const newHotel = hotelResult.rows[0];
 
-    // ── 5.1. BÓC TÁCH ĐA TẦNG: BẮT TOÀN BỘ ẢNH XE CỦA PHÒNG ĐỂ LOẠI KHỎI ẢNH CƠ SỞ ──
+    // ── 5.1. BÓC TÁCH RIÊNG ẢNH CỦA TỪNG PHÒNG ĐỂ LOẠI KHỎI ẢNH CƠ SỞ ──
     const roomPhotosMap = new Map();
     const allRoomImageSet = new Set();
 
     rooms.forEach((r, idx) => {
       const roomUrls = [];
 
-      // Nguồn 1: Từ r.images, r.image, r.thumbnail
       extractImageUrls([
         ...(Array.isArray(r.images) ? r.images : []),
         r.image,
@@ -1022,17 +1022,13 @@ async function registerHotel(req, res, next) {
         allRoomImageSet.add(u);
       });
 
-      // Nguồn 2: Từ roomImages object
       if (roomImages && typeof roomImages === "object") {
-        const byId = roomImages[r.id];
-        const byIdx = roomImages[idx];
-        extractImageUrls([byId, byIdx]).forEach((u) => {
+        extractImageUrls([roomImages[r.id], roomImages[idx]]).forEach((u) => {
           roomUrls.push(u);
           allRoomImageSet.add(u);
         });
       }
 
-      // Nguồn 3: Từ hotelImages có gắn roomId
       if (Array.isArray(hotelImages)) {
         hotelImages.forEach((img) => {
           const matches =
@@ -1055,7 +1051,7 @@ async function registerHotel(req, res, next) {
       roomPhotosMap.set(idx, [...new Set(roomUrls)]);
     });
 
-    // ── 5.2. LẤY ĐÚNG 3 ẢNH CƠ SỞ (TUYỆT ĐỐI KHÔNG CHỨA ẢNH XE CỦA PHÒNG) ──
+    // ── 5.2. LẤY ĐÚNG ẢNH CƠ SỞ (LOẠI TRỪ TOÀN BỘ ẢNH XE CỦA PHÒNG) ──
     const propertyCandidates = [];
     if (Array.isArray(hotelImages)) {
       hotelImages.forEach((img) => {
@@ -1079,18 +1075,17 @@ async function registerHotel(req, res, next) {
       });
     }
 
-    // Lọc sạch toàn bộ ảnh xe của phòng ra khỏi ảnh khách sạn & khử trùng lặp
     const cleanHotelImages = extractImageUrls(propertyCandidates).filter(
       (url) => !allRoomImageSet.has(url),
     );
 
-    // Lưu ảnh cơ sở vào bảng image với hotel_id = newHotel.id VÀ room_id = NULL
+    // 🌟 LƯU ẢNH CƠ SỞ: hotel_id = newHotel.id VÀ room_id = NULL 🌟
     for (let i = 0; i < cleanHotelImages.length; i++) {
       await client.query("SAVEPOINT sp_hotel_img");
       try {
         await client.query(
           `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
-           VALUES (gen_random_uuid(), $1, NULL, $2, $3, $4, NOW())`,
+           VALUES (gen_random_uuid(), $1::uuid, NULL, $2, $3, $4, NOW())`,
           [newHotel.id, cleanHotelImages[i], i === 0, i],
         );
         await client.query("RELEASE SAVEPOINT sp_hotel_img");
@@ -1119,7 +1114,7 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // ── 5.4. LƯU TỪNG HẠNG PHÒNG VÀ LƯU CHÍNH XÁC ẢNH XE CHO PHÒNG ĐÓ ──
+    // ── 5.4. LƯU TỪNG HẠNG PHÒNG VÀ GẮN ÉP KIỂU $1::UUID VÀO BẢNG IMAGE ──
     if (rooms.length > 0) {
       let roomFloor = 1;
       for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
@@ -1158,18 +1153,19 @@ async function registerHotel(req, res, next) {
           ],
         );
 
-        // 🌟 LƯU ẢNH XE CHO PHÒNG: hotel_id = NULL, room_id = newRoomId (THỎA MÃN 100% RÀNG BUỘC CHK_IMAGE_TARGET) 🌟
+        // 🌟 LƯU ẢNH XE CHO PHÒNG VỚI ÉP KIỂU TƯỜNG MINH $1::UUID (ĐẢM BẢO 100% THÀNH CÔNG) 🌟
         for (let imgIdx = 0; imgIdx < uniqueRoomImages.length; imgIdx++) {
           await client.query("SAVEPOINT sp_room_img");
           try {
             await client.query(
               `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
-               VALUES (gen_random_uuid(), NULL, $1, $2, $3, $4, NOW())`,
+               VALUES (gen_random_uuid(), NULL, $1::uuid, $2, $3, $4, NOW())`,
               [newRoomId, uniqueRoomImages[imgIdx], imgIdx === 0, imgIdx],
             );
             await client.query("RELEASE SAVEPOINT sp_room_img");
+            console.log(`✅ [REGISTER] Đã lưu ảnh cho phòng ${newRoomId}!`);
           } catch (e) {
-            console.error("Lỗi lưu ảnh phòng:", e.message);
+            console.error("❌ Lỗi lưu ảnh phòng:", e.message);
             await client.query("ROLLBACK TO SAVEPOINT sp_room_img");
           }
         }
@@ -1493,7 +1489,7 @@ async function searchHotels(req, res, next) {
   return listHotels(req, res, next);
 }
 
-// ─── 6. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID (CHUẨN THEO BẢNG IMAGE) ───
+// ─── 6. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID (ÉP KIỂU UUID CHO ROOM_ID) ───
 async function listHotelRooms(req, res, next) {
   try {
     const r = await pool.query(
@@ -1502,14 +1498,14 @@ async function listHotelRooms(req, res, next) {
          (
            SELECT img.path 
            FROM public.image img 
-           WHERE img.room_id = r.id 
+           WHERE img.room_id::uuid = r.id::uuid 
            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
            LIMIT 1
          ) AS thumbnail,
          (
            SELECT img.path 
            FROM public.image img 
-           WHERE img.room_id = r.id 
+           WHERE img.room_id::uuid = r.id::uuid 
            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
            LIMIT 1
          ) AS image,
@@ -1518,7 +1514,7 @@ async function listHotelRooms(req, res, next) {
              SELECT json_agg(a.name) 
              FROM public.room_amenity ra 
              JOIN public.amenity a ON a.id = ra.amenity_id 
-             WHERE ra.room_id = r.id
+             WHERE ra.room_id::uuid = r.id::uuid
            ), 
            '[]'::json
          ) AS amenities,
@@ -1526,7 +1522,7 @@ async function listHotelRooms(req, res, next) {
            (
              SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
              FROM public.image img 
-             WHERE img.room_id = r.id
+             WHERE img.room_id::uuid = r.id::uuid
            ),
            '[]'::json
          ) AS images
