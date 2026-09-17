@@ -14,7 +14,7 @@ function getBearerToken(req) {
   return token.trim();
 }
 
-// ─── 1. BẮT BUỘC ĐĂNG NHẬP (REQUIRE AUTH) ───
+// ─── 1. BẮT BUỘC ĐĂNG NHẬP ───
 function requireAuth(req, res, next) {
   const token = getBearerToken(req);
   const payload = verifyToken(token);
@@ -26,7 +26,6 @@ function requireAuth(req, res, next) {
     });
   }
 
-  // Đồng bộ sang cả req.auth, req.user và req.userId để tương thích 100% mọi controller
   req.auth = payload;
   req.user = {
     id: payload.sub || payload.id,
@@ -40,7 +39,7 @@ function requireAuth(req, res, next) {
   return next();
 }
 
-// ─── 2. ĐĂNG NHẬP TÙY CHỌN (OPTIONAL AUTH) ───
+// ─── 2. ĐĂNG NHẬP TÙY CHỌN ───
 function optionalAuth(req, res, next) {
   const token = getBearerToken(req);
   const payload = verifyToken(token);
@@ -64,7 +63,7 @@ function optionalAuth(req, res, next) {
   return next();
 }
 
-// ─── 3. PHÂN QUYỀN TRUY VẤN THEO BẢNG ROLES CỦA POSTGRESQL ───
+// ─── 3. PHÂN QUYỀN TRUY VẤN THEO POSTGRESQL + TỰ ĐỘNG CẤP QUYỀN OWNER NẾU CÓ KHÁCH SẠN ───
 function requireRole(...allowedRoles) {
   return async (req, res, next) => {
     const userId = req.user?.id || req.auth?.sub;
@@ -79,28 +78,34 @@ function requireRole(...allowedRoles) {
         `SELECT r.name
          FROM public.user_roles ur
          JOIN public.roles r ON r.id = ur.role_id
-         WHERE ur.user_id = $1`,
+         WHERE ur.user_id = $1::uuid`,
         [userId],
       );
       dbRoles = roleResult.rows.map((row) =>
         String(row.name).trim().toUpperCase(),
       );
+
+      // 🌟 TỰ ĐỘNG CẤP QUYỀN OWNER NẾU USER SỞ HỮU KHÁCH SẠN
+      const ownsHotel = await pool.query(
+        `SELECT 1 FROM public.hotel WHERE owner_id::text = $1::text LIMIT 1`,
+        [userId],
+      );
+      if (ownsHotel.rows.length > 0) {
+        if (!dbRoles.includes("HOTEL_OWNER")) dbRoles.push("HOTEL_OWNER");
+        if (!dbRoles.includes("OWNER")) dbRoles.push("OWNER");
+      }
     } catch (dbError) {
       console.error("❌ Lỗi query roles trong requireRole:", dbError.message);
       return res.status(500).json({ message: "Lỗi hệ thống phân quyền." });
     }
 
-    // Cập nhật lại roles mới nhất từ CSDL vào req
     if (req.auth) req.auth.roles = dbRoles;
     if (req.user) req.user.roles = dbRoles;
 
-    // Chuẩn hóa danh sách quyền được phép
     const normalizedAllowed = allowedRoles.map((r) =>
       String(r).trim().toUpperCase(),
     );
 
-    // Kiểm tra tương thích linh hoạt:
-    // Ví dụ: route yêu cầu 'OWNER', trong CSDL là 'HOTEL_OWNER' vẫn chấp nhận hợp lệ
     const hasRole = dbRoles.some((roleName) => {
       if (normalizedAllowed.includes(roleName)) return true;
       if (

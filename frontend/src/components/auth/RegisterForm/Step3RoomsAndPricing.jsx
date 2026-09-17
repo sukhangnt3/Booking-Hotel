@@ -12,7 +12,6 @@ import {
   Loader2,
 } from "lucide-react";
 
-// DANH MỤC PHÂN LOẠI THEO CHUẨN BOOKING.COM
 export const ROOM_CATEGORIES = [
   {
     id: "double",
@@ -52,7 +51,6 @@ export const ROOM_CATEGORIES = [
   },
 ];
 
-// GỢI Ý TÊN PHÒNG CHUẨN THEO LOẠI
 export const SUGGESTED_NAMES_MAP = {
   double: [
     "Phòng Deluxe Giường Đôi",
@@ -110,11 +108,11 @@ export const Step3RoomsAndPricing = ({
   const hotelImages = data?.hotelImages || [];
 
   const fileInputRef = useRef(null);
+  const activeRoomIdRef = useRef(null);
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [urlInputs, setUrlInputs] = useState({});
 
-  // Nén ảnh trực tiếp trên trình duyệt thành chuẩn base64 chất lượng cao
   const compressImageFile = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -146,7 +144,7 @@ export const Step3RoomsAndPricing = ({
     ).join(", ");
 
     const newRoom = {
-      id: `room-${Date.now()}`,
+      id: `room-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       category: "double",
       name: "Phòng Deluxe Giường Đôi",
       custom_name: "Deluxe Double Room",
@@ -189,7 +187,7 @@ export const Step3RoomsAndPricing = ({
 
     const payload = { rooms: updatedRooms };
 
-    // 🌟 ĐỒNG BỘ SANG BƯỚC 5 (hotelImages): Khi ảnh phòng thay đổi, cập nhật luôn hotelImages
+    // 🌟 ĐỒNG BỘ RIÊNG CHO PHÒNG NÀY: Giữ nguyên ảnh của các phòng khác
     if (updates.images !== undefined) {
       const otherPhotos = hotelImages.filter((img) => img.roomId !== roomId);
       const newRoomPhotos = updates.images.map((url, i) => ({
@@ -239,8 +237,8 @@ export const Step3RoomsAndPricing = ({
     onChange({ rooms: updatedRooms, hotelImages: updatedHotelImages });
   };
 
-  // Kích hoạt cửa sổ chọn ảnh từ máy tính
   const triggerComputerUpload = (roomId) => {
+    activeRoomIdRef.current = roomId;
     setActiveRoomId(roomId);
     if (fileInputRef.current) {
       fileInputRef.current.value = null;
@@ -248,10 +246,10 @@ export const Step3RoomsAndPricing = ({
     }
   };
 
-  // Xử lý khi người dùng chọn ảnh từ máy tính
   const handleFilesSelected = async (e) => {
     const files = e.target.files;
-    if (!files || files.length === 0 || !activeRoomId) return;
+    const targetId = activeRoomIdRef.current || activeRoomId;
+    if (!files || files.length === 0 || !targetId) return;
 
     setIsProcessing(true);
     try {
@@ -259,7 +257,7 @@ export const Step3RoomsAndPricing = ({
         Array.from(files).map((f) => compressImageFile(f)),
       );
 
-      const targetRoom = rooms.find((r) => r.id === activeRoomId);
+      const targetRoom = rooms.find((r) => r.id === targetId);
       const currentImgs = Array.isArray(targetRoom?.images)
         ? targetRoom.images
         : targetRoom?.image
@@ -267,7 +265,7 @@ export const Step3RoomsAndPricing = ({
           : [];
 
       const updated = [...currentImgs, ...compressedUrls];
-      handleUpdateRoom(activeRoomId, {
+      handleUpdateRoom(targetId, {
         images: updated,
         image: updated[0] || "",
         thumbnail: updated[0] || "",
@@ -277,10 +275,10 @@ export const Step3RoomsAndPricing = ({
     } finally {
       setIsProcessing(false);
       setActiveRoomId(null);
+      activeRoomIdRef.current = null;
     }
   };
 
-  // Thêm ảnh bằng URL (tùy chọn)
   const handleAddImageUrl = (roomId) => {
     const url = (urlInputs[roomId] || "").trim();
     if (!url) return;
@@ -314,7 +312,6 @@ export const Step3RoomsAndPricing = ({
 
   return (
     <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
-      {/* Input file ẩn dùng chung để tải ảnh từ máy tính */}
       <input
         type="file"
         multiple
@@ -343,7 +340,6 @@ export const Step3RoomsAndPricing = ({
           const currentCat = room.category || "double";
           const nameOptions = SUGGESTED_NAMES_MAP[currentCat] || [room.name];
 
-          // Lấy danh sách ảnh: Ưu tiên room.images, fallback qua hotelImages có roomId khớp
           let roomImages =
             Array.isArray(room.images) && room.images.length > 0
               ? room.images
@@ -458,7 +454,7 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* ── 3. HÌNH ẢNH HẠNG PHÒNG (TẢI TỪ MÁY TÍNH & ĐỒNG BỘ SANG BƯỚC 5) ── */}
+              {/* ── 3. HÌNH ẢNH RIÊNG CỦA HẠNG PHÒNG NÀY ── */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
@@ -467,12 +463,11 @@ export const Step3RoomsAndPricing = ({
                       ảnh hạng phòng ({roomImages.length} ảnh)
                     </label>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Ảnh này sẽ hiển thị trực tiếp tại danh sách phòng của
-                      khách sạn và đồng bộ với Bước 5.
+                      Ảnh này sẽ chỉ hiển thị riêng cho hạng phòng này, không bị
+                      lẫn vào phòng khác.
                     </p>
                   </div>
 
-                  {/* NÚT TẢI ẢNH TỪ MÁY TÍNH */}
                   <button
                     type="button"
                     disabled={isProcessing}
@@ -492,7 +487,6 @@ export const Step3RoomsAndPricing = ({
                   </button>
                 </div>
 
-                {/* Danh sách ảnh đã chọn */}
                 {roomImages.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
                     {roomImages.map((imgUrl, imgIdx) => (
@@ -507,7 +501,7 @@ export const Step3RoomsAndPricing = ({
                         />
                         {imgIdx === 0 && (
                           <span className="absolute bottom-1.5 left-1.5 bg-[#003580] text-white text-[9px] font-black px-2 py-0.5 rounded shadow">
-                            Ảnh đại diện phòng
+                            Ảnh chính phòng
                           </span>
                         )}
                         <button
@@ -527,15 +521,14 @@ export const Step3RoomsAndPricing = ({
                   >
                     <Upload size={22} />
                     <span className="text-xs font-bold">
-                      Bấm vào đây để chọn ảnh phòng từ máy tính
+                      Bấm vào đây để chọn ảnh riêng cho hạng phòng này
                     </span>
                     <span className="text-[10px] text-slate-400">
-                      Hỗ trợ định dạng JPG, PNG, WEBP (tải nhiều ảnh cùng lúc)
+                      Hỗ trợ định dạng JPG, PNG, WEBP
                     </span>
                   </div>
                 )}
 
-                {/* Hoặc nhập link ảnh trực tiếp */}
                 <div className="flex gap-2 pt-1">
                   <input
                     type="url"
@@ -585,7 +578,6 @@ export const Step3RoomsAndPricing = ({
 
               {/* ── 5. GIÁ, DIỆN TÍCH, HƯỚNG VIEW ── */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Giá tiền */}
                 <div className="bg-[#e8f2ff]/40 rounded-xl border border-blue-200 p-3">
                   <label className="block text-[11px] font-black text-[#003580] uppercase tracking-wider mb-1">
                     Giá niêm yết / đêm *
@@ -609,7 +601,6 @@ export const Step3RoomsAndPricing = ({
                   </div>
                 </div>
 
-                {/* Hướng nhìn (View) */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
                     Hướng phòng (View)
@@ -635,7 +626,6 @@ export const Step3RoomsAndPricing = ({
                   </div>
                 </div>
 
-                {/* Diện tích */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
                     Diện tích phòng (m²)

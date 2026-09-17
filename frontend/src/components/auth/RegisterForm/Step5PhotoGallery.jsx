@@ -3,7 +3,6 @@ import React, { useRef, useState, useEffect } from "react";
 import {
   Plus,
   Trash2,
-  Info,
   ChevronDown,
   ChevronUp,
   Camera,
@@ -21,6 +20,7 @@ export const Step5PhotoGallery = ({
 }) => {
   const propertyPhotoInputRef = useRef(null);
   const roomPhotoInputRef = useRef(null);
+  const selectedRoomIdRef = useRef(null);
 
   const [isCompressing, setIsCompressing] = useState(false);
   const [openRoomPhotos, setOpenRoomPhotos] = useState(true);
@@ -29,7 +29,7 @@ export const Step5PhotoGallery = ({
   const hotelImages = data?.hotelImages || [];
   const rooms = data?.rooms || [];
 
-  // 🌟 TỰ ĐỘNG ĐỒNG BỘ: Đảm bảo ảnh từ Bước 3 (room.images) luôn có mặt trong hotelImages
+  // Tự động đồng bộ ảnh phòng từ Bước 3 (room.images) sang hotelImages có gắn roomId
   useEffect(() => {
     let hasChanges = false;
     let syncedImages = [...hotelImages];
@@ -61,8 +61,10 @@ export const Step5PhotoGallery = ({
     }
   }, [rooms]);
 
-  // Lọc ra các ảnh cơ sở (không gắn roomId)
-  const propertyPhotos = hotelImages.filter((img) => !img.roomId);
+  // Lọc chỉ ảnh của cơ sở (không gắn roomId)
+  const propertyPhotos = hotelImages.filter(
+    (img) => !img.roomId && !img.room_id,
+  );
 
   const processAndUploadFiles = async (files, targetRoomId = null) => {
     if (!files || files.length === 0) return;
@@ -105,12 +107,11 @@ export const Step5PhotoGallery = ({
       const updatedImages = [...hotelImages, ...newImages];
       const updates = { hotelImages: updatedImages };
 
-      // Đặt ảnh bìa chính nếu chưa có
       if (!data?.hotelMainImage && !targetRoomId && newImages.length > 0) {
         updates.hotelMainImage = newImages[0].url;
       }
 
-      // 🌟 ĐỒNG BỘ NGƯỢC LẠI BƯỚC 3: Cập nhật luôn mảng rooms nếu tải ảnh cho phòng
+      // Nếu tải ảnh phòng thì cập nhật ngay mảng rooms để đồng bộ với Bước 3
       if (targetRoomId) {
         const updatedRooms = rooms.map((r) => {
           if (r.id === targetRoomId) {
@@ -134,6 +135,8 @@ export const Step5PhotoGallery = ({
       console.error("Lỗi tải ảnh:", err);
     } finally {
       setIsCompressing(false);
+      selectedRoomIdRef.current = null;
+      setSelectedRoomIdForUpload(null);
     }
   };
 
@@ -143,13 +146,15 @@ export const Step5PhotoGallery = ({
   };
 
   const handleRoomUpload = (e) => {
-    if (selectedRoomIdForUpload) {
-      processAndUploadFiles(e.target.files, selectedRoomIdForUpload);
+    const targetRoomId = selectedRoomIdRef.current || selectedRoomIdForUpload;
+    if (targetRoomId) {
+      processAndUploadFiles(e.target.files, targetRoomId);
     }
     e.target.value = null;
   };
 
   const triggerRoomUpload = (roomId) => {
+    selectedRoomIdRef.current = roomId;
     setSelectedRoomIdForUpload(roomId);
     setTimeout(() => roomPhotoInputRef.current?.click(), 50);
   };
@@ -162,12 +167,13 @@ export const Step5PhotoGallery = ({
     const updatedImages = hotelImages.filter((img) => img.id !== id);
     const updates = { hotelImages: updatedImages };
 
-    if (data?.hotelMainImage === imgUrl) {
-      const remainingProperty = updatedImages.filter((img) => !img.roomId);
+    if (!targetRoomId && data?.hotelMainImage === imgUrl) {
+      const remainingProperty = updatedImages.filter(
+        (img) => !img.roomId && !img.room_id,
+      );
       updates.hotelMainImage = remainingProperty[0]?.url || "";
     }
 
-    // Đồng bộ ngược lại rooms nếu xóa ảnh phòng
     if (targetRoomId) {
       const updatedRooms = rooms.map((r) => {
         if (r.id === targetRoomId) {
@@ -206,7 +212,6 @@ export const Step5PhotoGallery = ({
         </p>
       </div>
 
-      {/* ── THÔNG BÁO QUY ĐỊNH TỐI THIỂU 3 ẢNH CƠ SỞ ── */}
       <div
         className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs transition-all ${
           hasEnoughPropertyPhotos
@@ -242,7 +247,6 @@ export const Step5PhotoGallery = ({
         <p className="text-xs text-rose-500 font-black">{errors.hotelImages}</p>
       )}
 
-      {/* Input file ẩn cho ảnh cơ sở */}
       <input
         type="file"
         multiple
@@ -252,7 +256,6 @@ export const Step5PhotoGallery = ({
         className="hidden"
       />
 
-      {/* Input file ẩn cho ảnh từng phòng */}
       <input
         type="file"
         multiple
@@ -320,7 +323,6 @@ export const Step5PhotoGallery = ({
             );
           })}
 
-          {/* Nút bấm tải thêm ảnh cơ sở từ máy tính */}
           <div
             onClick={() =>
               !isCompressing && propertyPhotoInputRef.current?.click()
@@ -342,7 +344,7 @@ export const Step5PhotoGallery = ({
         </div>
       </div>
 
-      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG (ĐỒNG BỘ 100% VỚI BƯỚC 3) ── */}
+      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG ── */}
       <div className="pt-6 border-t border-slate-200 space-y-4">
         <button
           type="button"
@@ -377,7 +379,7 @@ export const Step5PhotoGallery = ({
                         {room.name || `Hạng phòng #${rIdx + 1}`}
                       </h4>
                       <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        {roomImages.length} ảnh thực tế (đã đồng bộ với Bước 3)
+                        {roomImages.length} ảnh thực tế (đồng bộ với Bước 3)
                       </p>
                     </div>
 

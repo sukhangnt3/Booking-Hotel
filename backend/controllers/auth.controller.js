@@ -1,3 +1,4 @@
+// backend/controllers/auth.controller.js
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const pool = require("../config/database");
@@ -5,10 +6,57 @@ const { createToken } = require("../utils/token");
 const { formatUser } = require("../utils/formatters");
 
 // ======================================================
-// LOAD USER + ROLE
+// LOAD USER + ROLE (TỰ ĐỘNG NÂNG CẤP LÊN HOTEL_OWNER NẾU CÓ KHÁCH SẠN)
 // ======================================================
 
 async function loadUserWithRoles(userId) {
+  if (!userId) return null;
+
+  // 🌟 TỰ ĐỘNG KIỂM TRA & NÂNG CẤP VAI TRÒ: Nếu user này có cơ sở trong bảng hotel thì tự động cấp role HOTEL_OWNER
+  try {
+    const hotelCheck = await pool.query(
+      `SELECT id FROM public.hotel WHERE owner_id::text = $1::text LIMIT 1`,
+      [userId],
+    );
+
+    if (hotelCheck.rows.length > 0) {
+      // Đảm bảo role HOTEL_OWNER tồn tại trong bảng roles
+      const roleRes = await pool.query(
+        `INSERT INTO public.roles (id, name) 
+         VALUES (gen_random_uuid(), 'HOTEL_OWNER') 
+         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name 
+         RETURNING id`,
+      );
+      const ownerRoleId = roleRes.rows[0]?.id;
+
+      if (ownerRoleId) {
+        // Gán role HOTEL_OWNER vào user_roles
+        await pool.query(
+          `INSERT INTO public.user_roles (user_id, role_id) 
+           VALUES ($1::uuid, $2::uuid) 
+           ON CONFLICT DO NOTHING`,
+          [userId, ownerRoleId],
+        );
+      }
+
+      // Đồng bộ vào cột role trong bảng users nếu có cột này
+      await pool
+        .query(
+          `UPDATE public.users 
+         SET role = 'hotel_owner', updated_at = NOW() 
+         WHERE id::text = $1::text AND (role IS NULL OR role = 'customer' OR role = 'CUSTOMER')`,
+          [userId],
+        )
+        .catch(() => {});
+    }
+  } catch (syncErr) {
+    console.warn(
+      "⚠️ Cảnh báo tự động đồng bộ vai trò chủ cơ sở:",
+      syncErr.message,
+    );
+  }
+
+  // 🌟 TRUY VẤN VỚI THỨ TỰ ƯU TIÊN: ADMIN (1) -> HOTEL_OWNER / OWNER (2) -> CUSTOMER (3)
   const result = await pool.query(
     `
       SELECT
@@ -31,9 +79,18 @@ async function loadUserWithRoles(userId) {
             FROM public.user_roles ur2 
             JOIN public.roles r2 ON r2.id = ur2.role_id 
             WHERE ur2.user_id = u.id 
+            ORDER BY 
+              CASE 
+                WHEN UPPER(r2.name) = 'ADMIN' THEN 1 
+                WHEN UPPER(r2.name) IN ('HOTEL_OWNER', 'OWNER') THEN 2 
+                ELSE 3 
+              END ASC
             LIMIT 1
           ),
-          'CUSTOMER'
+          CASE 
+            WHEN EXISTS (SELECT 1 FROM public.hotel h WHERE h.owner_id = u.id) THEN 'HOTEL_OWNER'
+            ELSE 'CUSTOMER'
+          END
         ) AS role,
 
         COALESCE(
@@ -41,7 +98,10 @@ async function loadUserWithRoles(userId) {
           FILTER (
             WHERE r.name IS NOT NULL
           ),
-          ARRAY['CUSTOMER']
+          CASE 
+            WHEN EXISTS (SELECT 1 FROM public.hotel h WHERE h.owner_id = u.id) THEN ARRAY['HOTEL_OWNER', 'CUSTOMER']
+            ELSE ARRAY['CUSTOMER']
+          END
         ) AS roles
 
       FROM users u
@@ -92,6 +152,7 @@ function buildAuthResponse(user) {
     message: "Thành công.",
     token,
     systemToken: token,
+    accessToken: token,
     user: formatUser ? formatUser(user) : user,
   };
 }
@@ -237,7 +298,7 @@ async function register(req, res, next) {
   const { full_name, fullName, email, password, phone, role } = req.body || {};
   const name = (fullName || full_name || "").trim();
   const targetEmail = (email || "").trim().toLowerCase();
-  const targetRole = (role || "HOTEL_OWNER").toUpperCase();
+  const targetRole = (role || "CUSTOMER").toUpperCase();
 
   if (!name || !targetEmail || !password)
     return res
@@ -340,7 +401,7 @@ async function login(req, res, next) {
 }
 
 // ======================================================
-// GET PROFILE (F5 TRANG WEB)
+// GET PROFILE (F5 TRANG WEB SẼ LUÔN TẢI ĐÚNG ROLE MỚI NHẤT)
 // ======================================================
 
 async function profile(req, res, next) {
@@ -354,7 +415,6 @@ async function profile(req, res, next) {
       return res.status(404).json({ message: "Không tìm thấy người dùng." });
 
     const formatted = formatUser ? formatUser(user) : user;
-
     formatted.avatar = user.avatar;
 
     return res.json({
@@ -422,7 +482,6 @@ async function updateProfile(req, res, next) {
 
     const freshUser = await loadUserWithRoles(userId);
     const formatted = formatUser ? formatUser(freshUser) : freshUser;
-
     formatted.avatar = freshUser.avatar;
 
     return res.json({
@@ -440,7 +499,7 @@ async function updateProfile(req, res, next) {
 }
 
 // ======================================================
-// UPLOAD AVATAR (LÊN CLOUDINARY)
+// UPLOAD AVATAR
 // ======================================================
 
 async function uploadAvatar(req, res, next) {
@@ -464,12 +523,11 @@ async function uploadAvatar(req, res, next) {
 
     const freshUser = await loadUserWithRoles(userId);
     const formatted = formatUser ? formatUser(freshUser) : freshUser;
-
     formatted.avatar = avatarUrl;
 
     return res.json({
       success: true,
-      message: "Cập nhật ảnh đại diện lên Cloudinary thành công!",
+      message: "Cập nhật ảnh đại diện thành công!",
       user: formatted,
       data: { user: formatted },
       avatar: avatarUrl,
@@ -533,4 +591,5 @@ module.exports = {
   updateProfile,
   uploadAvatar,
   changePassword,
+  loadUserWithRoles,
 };

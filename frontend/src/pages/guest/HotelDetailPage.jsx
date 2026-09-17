@@ -88,8 +88,8 @@ const ROOM_VIEW_MAP = {
   internal_view: "Hướng nội khu",
 };
 
-// Danh sách ảnh phòng mẫu đẹp dự phòng nếu phòng chưa tải ảnh
-const ROOM_DEFAULT_FALLBACKS = [
+// Danh sách ảnh mẫu dự phòng khác nhau cho từng phòng nếu chưa có ảnh
+const ROOM_FALLBACK_IMAGES = [
   "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
   "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800",
   "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
@@ -97,7 +97,6 @@ const ROOM_DEFAULT_FALLBACKS = [
   "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=800",
 ];
 
-// Hàm chuẩn hóa mảng tiện ích từ Database
 export const parseAmenities = (amenities) => {
   if (!amenities) return [];
   if (Array.isArray(amenities)) {
@@ -116,26 +115,14 @@ export const parseAmenities = (amenities) => {
       !cleanStr ||
       cleanStr === "{}" ||
       cleanStr === "[]" ||
-      cleanStr === "null" ||
-      cleanStr === "undefined"
+      cleanStr === "null"
     ) {
       return [];
     }
     try {
       const parsed = JSON.parse(cleanStr);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (item) =>
-            item &&
-            item !== "null" &&
-            item !== "undefined" &&
-            item !== "{}" &&
-            item !== "[]",
-        );
-      }
-    } catch {
-      // Bỏ qua lỗi parse JSON
-    }
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch {}
     return cleanStr
       .replace(/^\{|\}$/g, "")
       .replace(/["']/g, "")
@@ -165,7 +152,6 @@ const safeFormat = (date, pattern = "yyyy-MM-dd") => {
   }
 };
 
-// Hàm phân tích và chuyển đổi URL ảnh thật (hỗ trợ cả Base64, Cloudinary, Static uploads)
 const parseRealImageUrl = (item) => {
   if (!item) return "";
   let raw =
@@ -185,7 +171,6 @@ const parseRealImageUrl = (item) => {
   return `${BACKEND_BASE_URL}${cleanPath}`;
 };
 
-// Hàm phân tích mảng ảnh (hỗ trợ cả JSON string và mảng đối tượng)
 const parseImagesList = (raw) => {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
@@ -208,7 +193,6 @@ export default function HotelDetailPage() {
 
   const today = startOfToday();
 
-  // Ngày áp dụng chính thức
   const initialCheckIn = searchParams.get("checkIn")
     ? new Date(searchParams.get("checkIn"))
     : today;
@@ -219,12 +203,10 @@ export default function HotelDetailPage() {
   const [appliedCheckIn, setAppliedCheckIn] = useState(initialCheckIn);
   const [appliedCheckOut, setAppliedCheckOut] = useState(initialCheckOut);
 
-  // Ngày tạm thời trong bộ chọn lịch
   const [tempCheckIn, setTempCheckIn] = useState(initialCheckIn);
   const [tempCheckOut, setTempCheckOut] = useState(initialCheckOut);
   const [hoverDate, setHoverDate] = useState(null);
 
-  // Khách & Phòng: Đầy đủ Phòng, Người lớn, Trẻ em
   const [rooms, setRooms] = useState(Number(searchParams.get("rooms")) || 1);
   const [adults, setAdults] = useState(Number(searchParams.get("adults")) || 2);
   const [children, setChildren] = useState(
@@ -264,7 +246,6 @@ export default function HotelDetailPage() {
       ? Math.max(1, differenceInDays(tempCheckOut, tempCheckIn))
       : 1;
 
-  // Lấy danh sách phòng trống thực tế theo thời gian thực từ Database
   const fetchRoomAvailability = useCallback(
     async (cIn, cOut, adCount) => {
       if (!id) return;
@@ -280,7 +261,6 @@ export default function HotelDetailPage() {
           },
         });
 
-        // 🌟 Bóc tách chính xác mảng phòng kể cả khi axios bọc response
         const rawData = res?.data;
         let list = [];
         if (Array.isArray(rawData)) {
@@ -321,7 +301,7 @@ export default function HotelDetailPage() {
         setReviews(list);
       }
     } catch (err) {
-      console.warn("Chưa tải được đánh giá qua endpoint phụ:", err);
+      console.warn("Chưa tải được đánh giá:", err);
     }
   }, [id]);
 
@@ -338,7 +318,6 @@ export default function HotelDetailPage() {
         setSearchQuery(hotelData.name || "");
         setIsFavorite(Boolean(hotelData.is_favorite));
 
-        // Kiểm tra số lượng phòng trống theo thời gian thực
         await fetchRoomAvailability(appliedCheckIn, appliedCheckOut, adults);
 
         if (Array.isArray(hotelData.reviews) && hotelData.reviews.length > 0) {
@@ -365,7 +344,6 @@ export default function HotelDetailPage() {
     fetchAllData();
   }, [fetchAllData]);
 
-  // Đóng dropdown khi click ra bên ngoài
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (calendarRef.current && !calendarRef.current.contains(e.target)) {
@@ -463,7 +441,7 @@ export default function HotelDetailPage() {
   }
   if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
     hotel.images.forEach((img) => {
-      // Chỉ lấy ảnh của cơ sở (không gắn room_id)
+      // Chỉ lấy ảnh không gán room_id
       const rId = typeof img === "object" ? img.room_id || img.roomId : null;
       if (!rId) {
         const u = parseRealImageUrl(img);
@@ -488,16 +466,17 @@ export default function HotelDetailPage() {
 
   const hotelCoverImage = hotelGalleryImages[0];
 
-  // ── 2. LẤY CHÍNH XÁC ẢNH CỦA HẠNG PHÒNG (KHÔNG LẤY NHẦM ẢNH KHÁCH SẠN) ──
+  // ── 2. LẤY CHÍNH XÁC ẢNH RIÊNG TỪNG HẠNG PHÒNG (KHÔNG LẤY ẢNH KHÁCH SẠN) ──
   const getRoomImage = (room, roomIdx) => {
-    if (!room) return hotelCoverImage;
+    if (!room)
+      return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
 
     // 1. Kiểm tra trong mảng images riêng của phòng
     const roomImgs = parseImagesList(room.images);
     if (roomImgs.length > 0) {
       for (const item of roomImgs) {
         const u = parseRealImageUrl(item);
-        if (u && u !== hotelCoverImage) return u;
+        if (u && !hotelGalleryImages.includes(u)) return u;
       }
       const firstValid = parseRealImageUrl(roomImgs[0]);
       if (firstValid) return firstValid;
@@ -506,26 +485,20 @@ export default function HotelDetailPage() {
     // 2. Kiểm tra room.image
     if (room.image && !room.image.startsWith("blob:")) {
       const u = parseRealImageUrl(room.image);
-      if (u && u !== hotelCoverImage) return u;
+      if (u && !hotelGalleryImages.includes(u)) return u;
+      if (u) return u;
     }
 
     // 3. Kiểm tra room.thumbnail
     if (room.thumbnail && !room.thumbnail.startsWith("blob:")) {
       const u = parseRealImageUrl(room.thumbnail);
-      if (u && u !== hotelCoverImage) return u;
-    }
-
-    // 4. Nếu có room.image nhưng bằng hotelCoverImage thì vẫn ưu tiên hiển thị
-    if (room.image) {
-      const u = parseRealImageUrl(room.image);
+      if (u && !hotelGalleryImages.includes(u)) return u;
       if (u) return u;
     }
 
-    // 5. Fallback ảnh phòng mặc định đẹp (không lấy ảnh mặt tiền khách sạn)
-    return (
-      ROOM_DEFAULT_FALLBACKS[roomIdx % ROOM_DEFAULT_FALLBACKS.length] ||
-      hotelCoverImage
-    );
+    // 4. Nếu phòng không có ảnh, dùng ảnh fallback theo số thứ tự roomIdx
+    // KHÔNG BAO GIỜ lấy hotelCoverImage để tránh nhầm với mặt tiền khách sạn
+    return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
   };
 
   const totalReviewsCount =
@@ -691,7 +664,6 @@ export default function HotelDetailPage() {
     { label: hotel.name },
   ];
 
-  // 🌟 ƯU TIÊN DANH SÁCH PHÒNG TỪ API THỰC TẾ
   const displayRooms =
     availableRooms.length > 0 ? availableRooms : hotel.rooms || [];
 
@@ -886,10 +858,9 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* THANH TÌM KIẾM ĐẦY ĐỦ: PHÒNG, NGƯỜI LỚN, TRẺ EM */}
+        {/* THANH TÌM KIẾM ĐẦY ĐỦ */}
         <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-md mb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-            {/* Địa điểm */}
             <div className="md:col-span-3 relative flex items-center gap-2.5 px-3.5 h-12 bg-slate-50 rounded-xl border border-slate-200">
               <MapPin size={18} className="text-[#006ce4] shrink-0" />
               <input
@@ -901,7 +872,6 @@ export default function HotelDetailPage() {
               />
             </div>
 
-            {/* Ngày nhận / trả */}
             <div
               ref={calendarRef}
               onClick={() => setIsCalendarOpen(!isCalendarOpen)}
@@ -965,7 +935,6 @@ export default function HotelDetailPage() {
               )}
             </div>
 
-            {/* BỘ CHỌN KHÁCH: PHÒNG, NGƯỜI LỚN, TRẺ EM */}
             <div
               ref={guestRef}
               onClick={() => setIsGuestOpen(!isGuestOpen)}
@@ -986,13 +955,10 @@ export default function HotelDetailPage() {
                   onClick={(e) => e.stopPropagation()}
                   className="absolute left-0 right-0 md:left-auto md:w-72 top-full mt-2 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl p-4 space-y-3.5 cursor-default"
                 >
-                  {/* Số phòng */}
                   <div className="flex justify-between items-center">
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 block">
-                        Phòng
-                      </span>
-                    </div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Phòng
+                    </span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1014,13 +980,10 @@ export default function HotelDetailPage() {
                     </div>
                   </div>
 
-                  {/* Người lớn */}
                   <div className="flex justify-between items-center">
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 block">
-                        Người lớn
-                      </span>
-                    </div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Người lớn
+                    </span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1042,13 +1005,10 @@ export default function HotelDetailPage() {
                     </div>
                   </div>
 
-                  {/* Trẻ em */}
                   <div className="flex justify-between items-center">
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 block">
-                        Trẻ em
-                      </span>
-                    </div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Trẻ em
+                    </span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1092,7 +1052,6 @@ export default function HotelDetailPage() {
               )}
             </div>
 
-            {/* Nút cập nhật */}
             <div className="md:col-span-2">
               <button
                 type="button"
@@ -1135,7 +1094,7 @@ export default function HotelDetailPage() {
           {displayRooms && displayRooms.length > 0 ? (
             <div className="space-y-4">
               {displayRooms.map((room, idx) => {
-                // 🌟 LẤY ĐÚNG ẢNH CỦA HẠNG PHÒNG
+                // 🌟 LẤY ĐÚNG ẢNH RIÊNG TỪNG PHÒNG, KHÔNG BỊ TRÙNG LẶP
                 const roomImg = getRoomImage(room, idx);
 
                 const stock =
@@ -1293,7 +1252,6 @@ export default function HotelDetailPage() {
                           </div>
                         </div>
 
-                        {/* NÚT ĐẶT: VÔ HIỆU HÓA HOÀN TOÀN NẾU HẾT PHÒNG */}
                         {isSoldOut ? (
                           <button
                             disabled
