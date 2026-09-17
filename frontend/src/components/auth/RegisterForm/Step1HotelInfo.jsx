@@ -11,7 +11,6 @@ import {
   Phone,
   User,
   CheckCircle2,
-  ShieldCheck,
   Waves,
   Navigation,
   Compass,
@@ -22,7 +21,7 @@ import {
 import { useAuthStore } from "@/stores/authStore";
 import apiClient from "@/services/apiClient";
 
-// ─── DANH MỤC TRUNG TÂM DU LỊCH & BÃI TẮM ĐẦY ĐỦ CÁC TỈNH THÀNH VIỆT NAM ───
+// ─── DANH MỤC TRUNG TÂM DU LỊCH & BÃI TẮM CÁC TỈNH THÀNH ───
 const VIETNAM_TOURISM_HUBS = [
   {
     name: "Ninh Thuận (Phan Rang)",
@@ -113,11 +112,10 @@ function calculateHaversine(lat1, lon1, lat2, lon2) {
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) *
       Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+      Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c * 10) / 10;
 }
@@ -148,14 +146,13 @@ export const Step1HotelInfo = ({
   const currentLat = Number(data?.latitude) || 10.7769;
   const currentLng = Number(data?.longitude) || 106.7009;
 
-  // 🌟 HÀM KIỂM TRA EMAIL TỨC THÌ KHI GÕ XONG (ONBLUR)
+  // Kiểm tra email tồn tại khi blur ô nhập
   const handleCheckEmailBlur = async () => {
     const email = (data?.emailContact || "").trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
 
     setCheckingEmail(true);
     setEmailCheckError("");
-
     try {
       const res = await apiClient.get(
         `/auth/check-email?email=${encodeURIComponent(email)}`,
@@ -166,13 +163,13 @@ export const Step1HotelInfo = ({
         );
       }
     } catch (err) {
-      console.warn("Lỗi kiểm tra email:", err);
+      console.warn("Lỗi kiểm tra email:", err.message);
     } finally {
       setCheckingEmail(false);
     }
   };
 
-  // 🌟 HÀM ĐỔI TÀI KHOẢN KHÁC (ĐĂNG XUẤT ĐỂ ĐĂNG KÝ TỪ ĐẦU)
+  // Đổi tài khoản khác
   const handleSwitchAccount = () => {
     if (logout) logout();
     localStorage.removeItem("token");
@@ -187,14 +184,15 @@ export const Step1HotelInfo = ({
     });
   };
 
+  // Tính toán khoảng cách & vị trí biển
   const calculateMetrics = useCallback(
     (lat, lng, explicitCity, extraContext = "") => {
       const normCity = (explicitCity || data?.city || "").toLowerCase().trim();
-
       let targetHub = null;
+
       if (normCity) {
         targetHub = VIETNAM_TOURISM_HUBS.find((h) =>
-          h.aliases.some((alias) => normCity.includes(alias)),
+          h.aliases.some((a) => normCity.includes(a)),
         );
       }
 
@@ -214,7 +212,7 @@ export const Step1HotelInfo = ({
         });
       }
 
-      if (!targetHub) targetHub = VIETNAM_TOURISM_HUBS[0];
+      targetHub = targetHub || VIETNAM_TOURISM_HUBS[0];
       setNearestHubName(targetHub.name);
 
       const distCenter = calculateHaversine(
@@ -223,7 +221,6 @@ export const Step1HotelInfo = ({
         targetHub.center.lat,
         targetHub.center.lng,
       );
-
       let minBeachDist = Infinity;
       let closestBeachName = "";
 
@@ -245,19 +242,16 @@ export const Step1HotelInfo = ({
       const isContextSeaside = coastalKeywords.some((kw) =>
         (extraContext || "").toLowerCase().includes(kw),
       );
-
       const isBeach =
         minBeachDist <= 2.5 || (isContextSeaside && minBeachDist <= 4.5);
+
       if (isBeach && closestBeachName) {
         setNearestBeachInfo(`Cách ${closestBeachName} ~${minBeachDist}km`);
       } else {
         setNearestBeachInfo("");
       }
 
-      return {
-        distance_to_center: distCenter,
-        is_beachfront: isBeach,
-      };
+      return { distance_to_center: distCenter, is_beachfront: isBeach };
     },
     [data?.city],
   );
@@ -267,6 +261,7 @@ export const Step1HotelInfo = ({
     calculateMetricsRef.current = calculateMetrics;
   }, [calculateMetrics]);
 
+  // Reverse Geocoding từ toạ độ sang địa chỉ
   const handleReverseGeocode = async (lat, lng) => {
     setIsGeocoding(true);
     try {
@@ -278,9 +273,9 @@ export const Step1HotelInfo = ({
 
       let detectedCity = "";
       let detectedAddress = "";
-      let rawDisplayName = resData?.display_name || "";
+      const rawDisplayName = resData?.display_name || "";
 
-      if (resData && resData.address) {
+      if (resData?.address) {
         const addr = resData.address;
         detectedCity = addr.city || addr.province || addr.state || "";
         const roadName = addr.road || addr.suburb || addr.neighbourhood || "";
@@ -310,7 +305,6 @@ export const Step1HotelInfo = ({
         distance_to_center: metrics.distance_to_center,
         is_beachfront: metrics.is_beachfront,
       });
-      return;
     } catch (err) {
       console.warn("Lỗi toạ độ:", err.message);
     } finally {
@@ -323,6 +317,7 @@ export const Step1HotelInfo = ({
     handleReverseGeocodeRef.current = handleReverseGeocode;
   });
 
+  // Geocoding từ chữ sang toạ độ trên bản đồ
   const geocodeAddressToMap = useCallback(
     async (cityText, addressText) => {
       const cleanCity = (cityText || "").trim();
@@ -341,8 +336,8 @@ export const Step1HotelInfo = ({
           results = await res.json();
         }
 
-        let lat = results[0]?.lat ? parseFloat(results[0].lat) : null;
-        let lng = results[0]?.lon ? parseFloat(results[0].lon) : null;
+        const lat = results[0]?.lat ? parseFloat(results[0].lat) : null;
+        const lng = results[0]?.lon ? parseFloat(results[0].lon) : null;
 
         if (lat && lng && mapInstanceRef.current && markerRef.current) {
           mapInstanceRef.current.flyTo([lat, lng], 14, {
@@ -380,10 +375,11 @@ export const Step1HotelInfo = ({
         geocodeAddressToMap(data?.city, data?.address);
       }
       isTypingRef.current = false;
-    }, 800);
+    }, 1000);
     return () => clearTimeout(timer);
   }, [data?.city, data?.address, geocodeAddressToMap]);
 
+  // 🌟 KHỞI TẠO BẢN ĐỒ LEAFLET AN TOÀN (CHỐNG LỖI INITIALIZED KHI REMOUNT)
   useEffect(() => {
     const linkId = "leaflet-css-bundle";
     if (!document.getElementById(linkId)) {
@@ -408,6 +404,7 @@ export const Step1HotelInfo = ({
 
     function initMap() {
       if (!mapContainerRef.current || mapInstanceRef.current) return;
+      if (mapContainerRef.current._leaflet_id) return; // Bảo vệ chống lỗi init 2 lần
 
       const L = window.L;
       const initialCoords = [currentLat, currentLng];
@@ -432,8 +429,8 @@ export const Step1HotelInfo = ({
       marker.on("dragend", (e) => {
         const pos = e.target.getLatLng();
         handleReverseGeocodeRef.current(
-          Math.round(pos.lat * 100000) / 100000,
-          Math.round(pos.lng * 100000) / 100000,
+          Math.round(pos.lat * 1e5) / 1e5,
+          Math.round(pos.lng * 1e5) / 1e5,
         );
       });
 
@@ -441,8 +438,8 @@ export const Step1HotelInfo = ({
         const { lat, lng } = e.latlng;
         marker.setLatLng([lat, lng]);
         handleReverseGeocodeRef.current(
-          Math.round(lat * 100000) / 100000,
-          Math.round(lng * 100000) / 100000,
+          Math.round(lat * 1e5) / 1e5,
+          Math.round(lng * 1e5) / 1e5,
         );
       });
 
@@ -454,12 +451,13 @@ export const Step1HotelInfo = ({
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
+        markerRef.current = null;
       }
     };
   }, []);
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
+    <div className="space-y-6 font-sans text-slate-800 animate-in fade-in">
       <div>
         <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
           <Sparkles size={14} className="text-[#006ce4]" /> Bước 1 / 8: Tạo tài
@@ -474,9 +472,9 @@ export const Step1HotelInfo = ({
         </p>
       </div>
 
-      {/* ── KHỐI 1: TÀI KHOẢN ĐỐI TÁC ── */}
+      {/* KHỐI 1: TÀI KHOẢN ĐỐI TÁC */}
       {isAccountReady ? (
-        <div className="p-4 sm:p-5 bg-emerald-50/80 border border-emerald-300 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+        <div className="p-4 sm:p-5 bg-emerald-50/80 border border-emerald-300 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
               <CheckCircle2 size={24} />
@@ -503,7 +501,7 @@ export const Step1HotelInfo = ({
           </button>
         </div>
       ) : (
-        <div className="p-5 sm:p-7 bg-[#e8f2ff]/50 border border-blue-200 rounded-3xl space-y-4 shadow-xs">
+        <div className="p-5 sm:p-7 bg-[#e8f2ff]/50 border border-blue-200 rounded-3xl space-y-4 shadow-2xs">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-black text-[#003580] uppercase tracking-wider flex items-center gap-2">
               <UserPlus size={16} className="text-[#006ce4]" /> 1. Tạo tài khoản
@@ -640,8 +638,8 @@ export const Step1HotelInfo = ({
         </div>
       )}
 
-      {/* ── KHỐI 2: TÊN CHỖ NGHỈ & LOẠI HÌNH ── */}
-      <div className="p-5 sm:p-7 bg-slate-50/80 border border-slate-200 rounded-3xl space-y-4 shadow-xs">
+      {/* KHỐI 2: TÊN CHỖ NGHỈ & LOẠI HÌNH */}
+      <div className="p-5 sm:p-7 bg-slate-50/80 border border-slate-200 rounded-3xl space-y-4 shadow-2xs">
         <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
           <Building2 size={16} className="text-[#006ce4]" /> 2. Thông tin cơ sở
           lưu trú
@@ -695,8 +693,8 @@ export const Step1HotelInfo = ({
         </div>
       </div>
 
-      {/* ── KHỐI 3: ĐỊA CHỈ & BẢN ĐỒ ĐỒNG BỘ 2 CHIỀU ── */}
-      <div className="p-5 sm:p-7 bg-slate-50/80 border border-slate-200 rounded-3xl space-y-4 shadow-xs">
+      {/* KHỐI 3: ĐỊA CHỈ & BẢN ĐỒ ĐỒNG BỘ 2 CHIỀU */}
+      <div className="p-5 sm:p-7 bg-slate-50/80 border border-slate-200 rounded-3xl space-y-4 shadow-2xs">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
             <MapPin size={16} className="text-[#006ce4]" /> 3. Chỗ nghỉ tọa lạc
@@ -766,7 +764,7 @@ export const Step1HotelInfo = ({
                 type="button"
                 onClick={() => geocodeAddressToMap(data?.city, data?.address)}
                 disabled={isGeocoding || (!data?.address && !data?.city)}
-                className="h-11 sm:h-12 px-4 bg-[#006ce4] hover:bg-[#0057b8] text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 transition disabled:opacity-50"
+                className="h-11 sm:h-12 px-4 bg-[#006ce4] hover:bg-[#0057b8] text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 transition disabled:opacity-50 cursor-pointer"
               >
                 <Search size={14} /> Tìm ngay
               </button>
@@ -779,6 +777,7 @@ export const Step1HotelInfo = ({
           </div>
         </div>
 
+        {/* Khung bản đồ */}
         <div className="space-y-2 pt-2">
           <div className="flex items-center justify-between text-xs font-bold text-slate-600">
             <span>Bản đồ tự động nhảy khi bạn gõ địa chỉ hoặc kéo ghim:</span>
@@ -794,9 +793,10 @@ export const Step1HotelInfo = ({
           />
         </div>
 
-        <div className="p-4 bg-white border border-blue-200 rounded-2xl grid grid-cols-1 sm:grid-cols-2 gap-4 items-center shadow-xs">
+        {/* Thống kê khoảng cách */}
+        <div className="p-4 bg-white border border-blue-200 rounded-2xl grid grid-cols-1 sm:grid-cols-2 gap-4 items-center shadow-2xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
               <Navigation size={18} />
             </div>
             <div>
@@ -815,7 +815,7 @@ export const Step1HotelInfo = ({
 
           <div className="flex items-center gap-3">
             <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white shadow-xs ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white shadow-2xs ${
                 data?.is_beachfront
                   ? "bg-cyan-600 shadow-cyan-100"
                   : "bg-slate-300"

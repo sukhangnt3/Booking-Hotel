@@ -1,5 +1,5 @@
 // src/pages/guest/CheckoutPage.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   Building2,
   Sparkles,
   RefreshCw,
+  Copy,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 
@@ -33,62 +34,22 @@ export default function CheckoutPage() {
   const remainingAmount = totalAmount - depositAmount;
   const expectedAmount = isDeposit ? depositAmount : totalAmount;
 
-  // 🌟 CỐ ĐỊNH TÀI KHOẢN ADMIN (SEPAY) - KHÔNG BAO GIỜ BỊ ĐỔI THEO OWNER
+  // 🌟 THÔNG TIN TÀI KHOẢN CỔNG THANH TOÁN ADMIN (SEPAY)
   const ADMIN_BANK = {
     bankId: "MB",
     bankBin: "970422",
     bankName: "MB Bank",
-    accountNumber: "0833404928", // STK của Admin
-    accountName: "SU TRACH KHANG", // Tên chủ tài khoản Admin
+    accountNumber: "0833404928",
+    accountName: "SU TRACH KHANG",
   };
 
   const [loadingPayment, setLoadingPayment] = useState(true);
   const [isPaidSuccess, setIsPaidSuccess] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(15 * 60);
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
-
-  const getInitialTimeLeft = () => {
-    if (!bookingCode) return 15 * 60;
-    const storageKey = `lock_expires_${bookingCode}`;
-    let expireTimestamp = localStorage.getItem(storageKey);
-
-    if (!expireTimestamp) {
-      expireTimestamp = (Date.now() + 15 * 60 * 1000).toString();
-      localStorage.setItem(storageKey, expireTimestamp);
-    }
-
-    const expireTimeNum = parseInt(expireTimestamp, 10);
-    const remainingSeconds = Math.floor((expireTimeNum - Date.now()) / 1000);
-    return remainingSeconds > 0 ? remainingSeconds : 0;
-  };
-
-  const [timeLeft, setTimeLeft] = useState(getInitialTimeLeft);
-
-  useEffect(() => {
-    if (timeLeft <= 0) {
-      localStorage.removeItem(`lock_expires_${bookingCode}`);
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          localStorage.removeItem(`lock_expires_${bookingCode}`);
-          alert(
-            "⚠️ Thời gian giữ phòng 15 phút đã hết hạn! Phòng đã được tự động mở lại cho khách khác.",
-          );
-          navigate("/hotels");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [timeLeft, bookingCode, navigate]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -96,98 +57,119 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // 🌟 1. ĐẾM NGƯỢC THỜI GIAN THEO ĐỒNG HỒ THỰC TẾ (KHÔNG BỊ LỖI KHI ĐỔI TAB / KHÓA MÀN HÌNH)
   useEffect(() => {
-    async function initPayment() {
-      if (!bookingCode) return;
-      try {
-        setLoadingPayment(true);
-        // Gọi API tạo QR hoặc lấy dữ liệu đơn
-        await apiClient.get(`/bookings/code/${bookingCode}`);
-      } catch (err) {
-        console.error("Lỗi khởi tạo đơn thanh toán:", err);
-      } finally {
-        setLoadingPayment(false);
-      }
+    if (!bookingCode) return;
+    const storageKey = `lock_expires_${bookingCode}`;
+    let expireTimestamp = Number(localStorage.getItem(storageKey));
+
+    if (!expireTimestamp || isNaN(expireTimestamp)) {
+      expireTimestamp = Date.now() + 15 * 60 * 1000;
+      localStorage.setItem(storageKey, expireTimestamp.toString());
     }
 
-    initPayment();
+    const updateTimer = () => {
+      const remainingSeconds = Math.max(
+        0,
+        Math.floor((expireTimestamp - Date.now()) / 1000),
+      );
+      setTimeLeft(remainingSeconds);
+
+      if (remainingSeconds <= 0) {
+        localStorage.removeItem(storageKey);
+        apiClient.patch(`/bookings/${bookingCode}/cancel`).catch(() => {});
+        alert(
+          "⚠️ Thời gian giữ phòng 15 phút đã hết hạn! Phòng đã được tự động mở lại cho khách khác.",
+        );
+        navigate("/hotels");
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [bookingCode, navigate]);
+
+  // Khởi tạo đơn
+  useEffect(() => {
+    if (!bookingCode) return;
+    apiClient
+      .get(`/bookings/code/${bookingCode}`)
+      .catch((err) => console.error("Lỗi lấy thông tin đơn:", err))
+      .finally(() => setLoadingPayment(false));
   }, [bookingCode]);
 
-  // 🌟 MÃ QR CỐ ĐỊNH 100% VỀ TÀI KHOẢN ADMIN/SEPAY
+  // URL tạo ảnh QR
   const cleanBankCode = encodeURIComponent(ADMIN_BANK.bankId);
   const cleanAccNumber = encodeURIComponent(ADMIN_BANK.accountNumber);
   const cleanBookingCode = encodeURIComponent(bookingCode);
   const cleanAccName = encodeURIComponent(ADMIN_BANK.accountName);
-
-  // QR Của SePay luôn luôn trỏ về STK Admin 0833404928
   const qrImageSrc = `https://qr.sepay.vn/img?acc=${cleanAccNumber}&bank=${cleanBankCode}&amount=${expectedAmount}&des=${cleanBookingCode}`;
 
   const pollingRef = useRef(null);
 
-  // TỰ ĐỘNG BẮT TRẠNG THÁI THANH TOÁN TỪ SEPAY
-  const checkPaymentStatus = async () => {
+  // 🌟 2. TỰ ĐỘNG BẮT TRẠNG THÁI THANH TOÁN (SEPAY WEBHOOK)
+  const checkPaymentStatus = useCallback(async () => {
     if (!bookingCode || isPaidSuccess) return;
 
     try {
-      const rawRes = await apiClient.get(`/payments/status/${bookingCode}`);
-      const resData = rawRes?.data || rawRes;
+      const res = await apiClient.get(`/payments/status/${bookingCode}`);
+      const data = res?.data || res;
 
       const pStatus = String(
-        resData?.status ||
-          resData?.pay_status ||
-          resData?.payment?.status ||
-          "",
+        data?.status || data?.pay_status || data?.payment?.status || "",
       )
         .trim()
         .toLowerCase();
-      const bStatus = String(
-        resData?.booking_status || resData?.payment_status || "",
-      )
+      const bStatus = String(data?.booking_status || data?.payment_status || "")
         .trim()
         .toLowerCase();
 
       const isPaid =
-        resData?.paid === true ||
-        pStatus === "paid" ||
-        pStatus === "success" ||
-        bStatus === "confirmed" ||
-        bStatus === "paid";
+        data?.paid === true ||
+        ["paid", "success"].includes(pStatus) ||
+        ["confirmed", "paid"].includes(bStatus);
 
       if (isPaid) {
         setIsPaidSuccess(true);
         if (pollingRef.current) clearInterval(pollingRef.current);
-
         localStorage.removeItem(`lock_expires_${bookingCode}`);
 
         setTimeout(() => {
           navigate(
             `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
           );
-        }, 600);
+        }, 500);
       }
     } catch (err) {
-      console.error("Lỗi tự động kiểm tra trạng thái thanh toán:", err);
+      console.warn("Đang lắng nghe thanh toán...", err.message);
     }
-  };
+  }, [
+    bookingCode,
+    isPaidSuccess,
+    expectedAmount,
+    totalAmount,
+    rawPaymentType,
+    remainingAmount,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (!bookingCode || isPaidSuccess) return;
 
     checkPaymentStatus();
-    pollingRef.current = setInterval(() => {
-      checkPaymentStatus();
-    }, 2000);
+    pollingRef.current = setInterval(checkPaymentStatus, 2000);
 
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [bookingCode, isPaidSuccess]);
+  }, [bookingCode, isPaidSuccess, checkPaymentStatus]);
 
+  // Hủy đơn khi bấm quay lại
   const handleGoBack = async () => {
     const confirmCancel = window.confirm(
       "⚠️ Nếu bạn quay lại bây giờ, phiên giữ phòng sẽ bị HỦY và phòng sẽ được mở lại cho khách khác đặt.\n\nBạn có chắc chắn muốn hủy đơn và quay lại không?",
     );
-
     if (!confirmCancel) return;
 
     try {
@@ -234,8 +216,8 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24">
-      {/* THANH ĐIỀU HƯỚNG */}
-      <div className="bg-white border-b border-slate-200 py-4 shadow-xs">
+      {/* THANH TOPBAR */}
+      <div className="bg-white border-b border-slate-200 py-4 shadow-2xs">
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <button
             type="button"
@@ -268,8 +250,9 @@ export default function CheckoutPage() {
       </div>
 
       <main className="max-w-4xl mx-auto px-4 pt-8 space-y-6">
+        {/* BANNER KHI THANH TOÁN THÀNH CÔNG */}
         {isPaidSuccess && (
-          <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl flex items-center justify-between animate-bounce">
+          <div className="bg-emerald-600 text-white p-6 rounded-3xl shadow-xl flex items-center justify-between animate-in zoom-in-95">
             <div className="flex items-center gap-3">
               <Check className="w-8 h-8 rounded-full bg-white text-emerald-600 p-1" />
               <div>
@@ -286,27 +269,33 @@ export default function CheckoutPage() {
         )}
 
         <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-xl space-y-6">
+          {/* Header Thông tin */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 gap-3">
             <div>
-              <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+              <h2 className="text-2xl font-black text-slate-900">
                 {isDeposit
                   ? "Thanh Toán Đặt Cọc 30% Giữ Chỗ"
                   : "Thanh Toán Chuyển Khoản Toàn Bộ"}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Quét mã VietQR bằng App Ngân hàng bất kỳ. Cổng thanh toán bảo
-                mật của hệ thống.
+                Quét mã VietQR bằng App Ngân hàng bất kỳ. Cổng thanh toán tự
+                động xác nhận 24/7.
               </p>
             </div>
 
-            <div className="bg-amber-50 px-3.5 py-1.5 rounded-2xl border border-amber-200 text-xs font-bold text-amber-800 flex items-center gap-1.5">
-              <Clock size={14} className="animate-pulse" />
+            {/* Đồng hồ đếm ngược */}
+            <div className="bg-amber-50 px-3.5 py-1.5 rounded-2xl border border-amber-200 text-xs font-bold text-amber-800 flex items-center gap-1.5 shrink-0">
+              <Clock size={14} className="animate-pulse text-amber-600" />
               <span>
-                Thời gian giữ phòng: <strong>{formatTime(timeLeft)}</strong>
+                Thời gian giữ phòng:{" "}
+                <strong className="text-amber-900 font-mono text-sm">
+                  {formatTime(timeLeft)}
+                </strong>
               </span>
             </div>
           </div>
 
+          {/* Banner Cọc 30% */}
           {isDeposit && (
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3 text-xs text-emerald-900">
               <Building2
@@ -328,8 +317,9 @@ export default function CheckoutPage() {
             </div>
           )}
 
+          {/* KHUNG QUÉT QR & THÔNG TIN CHUYỂN KHOẢN */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center pt-2">
-            {/* CỘT TRÁI: MÃ QR CỐ ĐỊNH TÀI KHOẢN ADMIN */}
+            {/* Cột Trái: Mã QR */}
             <div className="md:col-span-5 bg-slate-50 p-6 rounded-3xl border border-slate-200 text-center space-y-3">
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#003580]">
                 <Sparkles size={14} /> Quét mã để thanh toán tự động
@@ -354,8 +344,7 @@ export default function CheckoutPage() {
                       className="w-52 h-52 mx-auto object-contain rounded-xl"
                       onError={(e) => {
                         e.currentTarget.onerror = null;
-                        const fallbackUrl = `https://img.vietqr.io/image/${ADMIN_BANK.bankBin}-${cleanAccNumber}-compact2.png?amount=${expectedAmount}&addInfo=${cleanBookingCode}&accountName=${cleanAccName}`;
-                        e.currentTarget.src = fallbackUrl;
+                        e.currentTarget.src = `https://img.vietqr.io/image/${ADMIN_BANK.bankBin}-${cleanAccNumber}-compact2.png?amount=${expectedAmount}&addInfo=${cleanBookingCode}&accountName=${cleanAccName}`;
                       }}
                     />
                     <div className="pt-2 flex items-center justify-center gap-1.5 text-[10px] text-emerald-700 font-black">
@@ -367,7 +356,7 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* CỘT PHẢI: CỐ ĐỊNH THÔNG TIN SÀN/ADMIN */}
+            {/* Cột Phải: Thông tin chuyển khoản */}
             <div className="md:col-span-7 space-y-3 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center">
                 <div>
@@ -386,7 +375,7 @@ export default function CheckoutPage() {
               <div className="p-3 bg-slate-50 rounded-xl border flex justify-between items-center">
                 <div>
                   <span className="text-slate-400 block font-medium">
-                    Số tài khoản Sàn nhận thanh toán
+                    Số tài khoản nhận thanh toán
                   </span>
                   <span className="font-mono font-black text-slate-900 text-base">
                     {ADMIN_BANK.accountNumber}
@@ -395,9 +384,14 @@ export default function CheckoutPage() {
                 <button
                   type="button"
                   onClick={() => handleCopy(ADMIN_BANK.accountNumber, "acc")}
-                  className="px-3 py-1 bg-white border rounded-lg font-bold text-blue-600 hover:bg-blue-50 cursor-pointer shadow-2xs"
+                  className="px-3 py-1 bg-white border rounded-lg font-bold text-blue-600 hover:bg-blue-50 cursor-pointer shadow-2xs flex items-center gap-1"
                 >
-                  {copiedField === "acc" ? "✓ Đã chép" : "Sao chép"}
+                  {copiedField === "acc" ? (
+                    <Check size={13} className="text-emerald-600" />
+                  ) : (
+                    <Copy size={13} />
+                  )}
+                  <span>{copiedField === "acc" ? "Đã chép" : "Sao chép"}</span>
                 </button>
               </div>
 
@@ -424,9 +418,14 @@ export default function CheckoutPage() {
                 <button
                   type="button"
                   onClick={() => handleCopy(expectedAmount.toString(), "amt")}
-                  className="px-3 py-1 bg-white border border-blue-200 rounded-lg font-bold text-blue-700 cursor-pointer shadow-2xs"
+                  className="px-3 py-1 bg-white border border-blue-200 rounded-lg font-bold text-blue-700 cursor-pointer shadow-2xs flex items-center gap-1"
                 >
-                  {copiedField === "amt" ? "✓ Đã chép" : "Sao chép"}
+                  {copiedField === "amt" ? (
+                    <Check size={13} className="text-emerald-600" />
+                  ) : (
+                    <Copy size={13} />
+                  )}
+                  <span>{copiedField === "amt" ? "Đã chép" : "Sao chép"}</span>
                 </button>
               </div>
 
@@ -442,9 +441,14 @@ export default function CheckoutPage() {
                 <button
                   type="button"
                   onClick={() => handleCopy(bookingCode, "memo")}
-                  className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold cursor-pointer shadow-2xs"
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold cursor-pointer shadow-2xs flex items-center gap-1"
                 >
-                  {copiedField === "memo" ? "✓ Đã chép" : "Sao chép"}
+                  {copiedField === "memo" ? (
+                    <Check size={13} />
+                  ) : (
+                    <Copy size={13} />
+                  )}
+                  <span>{copiedField === "memo" ? "Đã chép" : "Sao chép"}</span>
                 </button>
               </div>
             </div>
@@ -459,7 +463,7 @@ export default function CheckoutPage() {
           </div>
 
           <div className="pt-2 max-w-md mx-auto">
-            <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl text-center space-y-1.5 shadow-xs">
+            <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-2xl text-center space-y-1.5 shadow-2xs">
               <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#003580]">
                 <RefreshCw size={14} className="animate-spin text-[#003580]" />
                 <span>Hệ thống đang tự động kiểm tra giao dịch...</span>

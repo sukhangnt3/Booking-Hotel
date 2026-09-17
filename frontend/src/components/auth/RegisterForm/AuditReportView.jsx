@@ -1,78 +1,91 @@
 // src/components/auth/RegisterForm/AuditReportView.jsx
-import React from "react";
+import React, { useMemo } from "react";
 import { CheckCircle2, XCircle, Sparkles, ShieldCheck, X } from "lucide-react";
 
-const checkAuditLogic = (data) => {
+// 🌟 HỖ TRỢ LINH HOẠT CẢ CAMELCASE VÀ SNAKE_CASE TỪ FORM ĐĂNG KÝ
+const checkAuditLogic = (data = {}) => {
+  const hotelName = data.hotelName || data.name || "";
+  const address = data.address || "";
+  const city = data.city || "";
+  const lat = data.latitude || data.lat;
+  const lng = data.longitude || data.lng;
+
+  const rooms = Array.isArray(data.rooms || data.roomList)
+    ? data.rooms || data.roomList
+    : [];
+  const firstRoom = rooms[0] || {};
+  const roomPrice = Number(
+    firstRoom.base_price || firstRoom.weekdayPrice || firstRoom.price || 0,
+  );
+  const roomName = firstRoom.name || firstRoom.roomName || "";
+
+  const hotelImages = data.hotelImages || data.images || [];
+  const mainImage = data.hotelMainImage || data.image || hotelImages[0];
+
+  const bankAcc = data.bankAccount || data.bank_account || "";
+  const bankHolder = data.bankAccountHolder || data.bank_account_holder || "";
+
+  const amenities =
+    data.propertyAmenities || data.property_amenities || data.amenities || [];
+
   const checks = [
     {
       id: "name",
       title: "Định dạng tên chỗ nghỉ chuẩn SEO",
       category: "Định danh",
-      tip: "Tên cơ sở lưu trú rõ ràng, viết hoa chữ cái đầu và đúng chính tả.",
-      passed: Boolean(data?.hotelName?.trim() && data.hotelName.length >= 3),
+      tip: "Tên cơ sở lưu trú rõ ràng, tối thiểu 3 ký tự và đúng chính tả.",
+      passed: Boolean(hotelName.trim().length >= 3),
     },
     {
       id: "location",
       title: "Tọa độ GPS & Địa chỉ hành chính",
       category: "Vị trí",
-      tip: "Có đầy đủ số nhà, tên đường, thuộc 1 trong 63 tỉnh thành và có tọa độ GPS.",
-      passed: Boolean(
-        data?.address?.trim() &&
-        data?.city &&
-        data?.latitude &&
-        data?.longitude,
-      ),
+      tip: "Có đầy đủ số nhà, tên đường, thuộc tỉnh/thành phố và có tọa độ GPS.",
+      passed: Boolean(address.trim() && city.trim() && lat && lng),
     },
     {
       id: "rooms",
       title: "Thiết lập tối thiểu 1 loại phòng & giá bán",
       category: "Phòng ốc",
-      tip: "Cần ít nhất 1 loại phòng có giá bán, sức chứa và danh sách số phòng.",
-      passed: Boolean(
-        data?.rooms?.length > 0 &&
-        data.rooms[0]?.name &&
-        Number(data.rooms[0]?.base_price) > 0,
-      ),
+      tip: "Cần ít nhất 1 loại phòng có tên và giá bán lớn hơn 0đ.",
+      passed: Boolean(rooms.length > 0 && roomName.trim() && roomPrice > 0),
     },
     {
       id: "photos",
       title: "Hình ảnh mặt tiền & phòng ngủ",
       category: "Hình ảnh",
       tip: "Yêu cầu tối thiểu 3 ảnh chất lượng cao (có chỉ định ảnh bìa chính).",
-      passed: Boolean(
-        (data?.hotelImages?.length >= 3 || data?.images?.length >= 3) &&
-        data?.hotelMainImage,
-      ),
+      passed: Boolean(hotelImages.length >= 3 && mainImage),
     },
     {
       id: "bank",
       title: "Liên kết tài khoản ngân hàng thụ hưởng (Napas)",
       category: "Thanh toán",
       tip: "Số tài khoản ngân hàng và tên chủ tài khoản khớp với người thụ hưởng.",
-      passed: Boolean(
-        data?.bankAccount?.trim() && data?.bankAccountHolder?.trim(),
-      ),
+      passed: Boolean(bankAcc.trim() && bankHolder.trim()),
     },
     {
       id: "cancellation",
       title: "Chính sách hủy phòng minh bạch",
       category: "Chính sách",
       tip: "Thiết lập rõ ràng thời hạn hủy phòng miễn phí.",
-      passed: data?.cancellation_deadline_hours !== undefined,
+      passed:
+        data.cancellation_deadline_hours !== undefined ||
+        data.cancellationDeadline !== undefined,
     },
     {
       id: "amenities",
       title: "Tiện ích chung của chỗ nghỉ",
       category: "Dịch vụ",
       tip: "Chọn tối thiểu 3 tiện ích thiết yếu (Wi-Fi, Bãi đỗ xe, Lễ tân...).",
-      passed: Boolean(data?.propertyAmenities?.length >= 3),
+      passed: Boolean(amenities.length >= 3),
     },
     {
       id: "legal",
       title: "Cam kết điều khoản hoạt động GoStay",
       category: "Pháp lý",
       tip: "Xác nhận đồng ý với Quy chế hoạt động và tính chính xác của hồ sơ.",
-      passed: Boolean(data?.acceptedTerms),
+      passed: Boolean(data.acceptedTerms || data.terms),
     },
   ];
 
@@ -83,14 +96,15 @@ const checkAuditLogic = (data) => {
 };
 
 export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
-  const audit = checkAuditLogic(data);
+  const audit = useMemo(() => checkAuditLogic(data), [data]);
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-fadeIn font-sans text-slate-800 max-w-2xl w-full mx-auto">
-      {/* HEADER ĐỒNG BỘ */}
+    <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in font-sans text-slate-800 max-w-2xl w-full mx-auto">
+      {/* HEADER BÁO CÁO */}
       <div className="bg-[#003580] text-white p-6 relative">
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
             className="absolute top-4 right-4 text-white/80 hover:text-white p-1.5 rounded-xl transition cursor-pointer"
           >
@@ -104,8 +118,8 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
           Báo Cáo Đánh Giá Tính Hoàn Thiện Hồ Sơ
         </h2>
 
-        {/* TIẾN ĐỘ ĐIỂM */}
-        <div className="mt-4 flex items-center gap-4 bg-white/10 backdrop-blur-xs p-4 rounded-2xl border border-white/20">
+        {/* THANH TIẾN ĐỘ ĐIỂM */}
+        <div className="mt-4 flex items-center gap-4 bg-white/10 backdrop-blur-2xs p-4 rounded-2xl border border-white/20">
           <div className="text-center shrink-0">
             <span
               className={`text-3xl font-black ${
@@ -137,7 +151,7 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
               ) : (
                 <span>
                   Còn {audit.checks.filter((c) => !c.passed).length} tiêu chí
-                  cần bổ sung để tối ưu lượng khách đặt phòng.
+                  cần hoàn thiện để kích hoạt chỗ nghỉ.
                 </span>
               )}
             </p>
@@ -145,7 +159,7 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
         </div>
       </div>
 
-      {/* CHECKLIST TIÊU CHÍ */}
+      {/* CHECKLIST CHI TIẾT */}
       <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
@@ -153,6 +167,7 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
           </h3>
           {onAutoFillDemo && (
             <button
+              type="button"
               onClick={onAutoFillDemo}
               className="text-xs font-bold text-[#006ce4] bg-[#e8f2ff] hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-200 flex items-center gap-1.5 transition cursor-pointer"
             >
@@ -182,9 +197,7 @@ export const AuditReportView = ({ data = {}, onClose, onAutoFillDemo }) => {
               <div className="flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <span
-                    className={`text-xs font-bold ${
-                      check.passed ? "text-emerald-950" : "text-slate-800"
-                    }`}
+                    className={`text-xs font-bold ${check.passed ? "text-emerald-950" : "text-slate-800"}`}
                   >
                     {idx + 1}. {check.title}
                   </span>

@@ -7,21 +7,32 @@ import {
   Printer,
   Building2,
   ArrowRight,
+  PlusCircle,
 } from "lucide-react";
 
-export const SubmittedSuccessView = ({
-  application = {},
-  onReset = () => {},
-}) => {
+export const SubmittedSuccessView = ({ application = {}, onReset }) => {
   const navigate = useNavigate();
   const applicationId =
-    application?.applicationId || `GST-${Date.now().toString().slice(-6)}`;
-  const submittedAt = application?.submittedAt || new Date().toISOString();
+    application?.applicationId ||
+    application?.hotelId ||
+    `GST-${Date.now().toString().slice(-6)}`;
+
+  const formatSubmitTime = (dateStr) => {
+    try {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime())
+        ? new Date().toLocaleString("vi-VN")
+        : d.toLocaleString("vi-VN");
+    } catch {
+      return new Date().toLocaleString("vi-VN");
+    }
+  };
 
   return (
-    <div className="max-w-3xl mx-auto py-12 px-4 space-y-6 animate-fadeIn font-sans text-slate-800">
+    <div className="max-w-3xl mx-auto py-10 px-4 space-y-6 animate-in zoom-in-95 font-sans text-slate-800">
+      {/* KHỐI THÔNG BÁO CHÍNH */}
       <div className="bg-white rounded-3xl border border-slate-200 p-8 sm:p-10 shadow-sm text-center relative overflow-hidden space-y-4">
-        <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+        <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-2xs">
           <CheckCircle2 size={36} />
         </div>
 
@@ -37,6 +48,7 @@ export const SubmittedSuccessView = ({
           GoStay và đang được kích hoạt lên hệ thống tìm kiếm trực tuyến.
         </p>
 
+        {/* THẺ HOTEL ID */}
         <div className="mt-4 inline-flex flex-col items-center bg-[#003580] text-white px-8 py-3.5 rounded-2xl shadow-md">
           <span className="text-[10px] text-blue-200 font-black uppercase tracking-widest">
             Mã định danh chỗ nghỉ (Hotel ID)
@@ -45,11 +57,12 @@ export const SubmittedSuccessView = ({
             {applicationId}
           </span>
           <span className="text-[10px] text-blue-100 font-medium">
-            Thời gian tạo: {new Date(submittedAt).toLocaleString("vi-VN")}
+            Thời gian tạo: {formatSubmitTime(application?.submittedAt)}
           </span>
         </div>
       </div>
 
+      {/* LỘ TRÌNH VẬN HÀNH TRÊN SÀN */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
         <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
           <Clock size={16} className="text-[#006ce4]" /> Lộ trình xử lý mở bán
@@ -97,7 +110,8 @@ export const SubmittedSuccessView = ({
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+      {/* NÚT ĐIỀU HƯỚNG */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 print:hidden">
         <button
           type="button"
           onClick={() => navigate("/owner/hotels")}
@@ -107,13 +121,25 @@ export const SubmittedSuccessView = ({
           <ArrowRight size={14} />
         </button>
 
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="w-full sm:w-auto px-6 h-12 border border-slate-300 hover:bg-slate-50 rounded-xl font-bold text-xs text-slate-700 flex items-center justify-center gap-2 cursor-pointer transition"
-        >
-          <Printer size={15} /> In giấy xác nhận
-        </button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="flex-1 sm:flex-initial px-5 h-12 border border-blue-200 bg-[#e8f2ff] hover:bg-blue-100 text-[#003580] rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
+            >
+              <PlusCircle size={15} /> Đăng ký thêm cơ sở
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex-1 sm:flex-initial px-6 h-12 border border-slate-300 hover:bg-slate-50 rounded-xl font-bold text-xs text-slate-700 flex items-center justify-center gap-2 cursor-pointer transition"
+          >
+            <Printer size={15} /> In giấy xác nhận
+          </button>
+        </div>
       </div>
     </div>
   );

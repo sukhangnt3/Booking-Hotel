@@ -10,6 +10,7 @@ import {
   Upload,
   X,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
 
 export const ROOM_CATEGORIES = [
@@ -105,13 +106,13 @@ export const Step3RoomsAndPricing = ({
   errors = {},
 }) => {
   const rooms = data?.rooms || [];
-
   const fileInputRef = useRef(null);
   const activeRoomIdRef = useRef(null);
   const [activeRoomId, setActiveRoomId] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [urlInputs, setUrlInputs] = useState({});
 
+  // Nén ảnh Canvas an toàn trước khi lưu
   const compressImageFile = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -125,8 +126,7 @@ export const Step3RoomsAndPricing = ({
           canvas.height = img.height * scale;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const compressed = canvas.toDataURL("image/jpeg", 0.8);
-          resolve(compressed);
+          resolve(canvas.toDataURL("image/jpeg", 0.8));
         };
         img.src = event.target.result;
       };
@@ -181,11 +181,8 @@ export const Step3RoomsAndPricing = ({
             ).join(", ") + (count > 8 ? `... (+${count - 8} phòng)` : "");
         }
       }
-
       return merged;
     });
-
-    // 🌟 CHỈ LƯU VÀO ROOMS, TUYỆT ĐỐI KHÔNG GÁN VÀO HOTELIMAGES
     onChange({ rooms: updatedRooms });
   };
 
@@ -214,11 +211,10 @@ export const Step3RoomsAndPricing = ({
 
   const handleDeleteRoom = (roomId) => {
     if (rooms.length <= 1) {
-      alert("Cơ sở cần tối thiểu 1 loại phòng để sẵn sàng mở bán.");
+      alert("Cơ sở lưu trú cần tối thiểu 1 loại phòng để sẵn sàng mở bán.");
       return;
     }
-    const updatedRooms = rooms.filter((r) => r.id !== roomId);
-    onChange({ rooms: updatedRooms });
+    onChange({ rooms: rooms.filter((r) => r.id !== roomId) });
   };
 
   const triggerComputerUpload = (roomId) => {
@@ -240,14 +236,12 @@ export const Step3RoomsAndPricing = ({
       const compressedUrls = await Promise.all(
         Array.from(files).map((f) => compressImageFile(f)),
       );
-
       const targetRoom = rooms.find((r) => r.id === targetId);
       const currentImgs = Array.isArray(targetRoom?.images)
         ? targetRoom.images
         : targetRoom?.image
           ? [targetRoom.image]
           : [];
-
       const updated = [...currentImgs, ...compressedUrls];
 
       handleUpdateRoom(targetId, {
@@ -256,7 +250,7 @@ export const Step3RoomsAndPricing = ({
         thumbnail: updated[0] || "",
       });
     } catch (err) {
-      console.error("Lỗi tải ảnh từ máy tính:", err);
+      console.error("Lỗi tải ảnh phòng:", err);
     } finally {
       setIsProcessing(false);
       setActiveRoomId(null);
@@ -296,7 +290,7 @@ export const Step3RoomsAndPricing = ({
   };
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
+    <div className="space-y-6 font-sans text-slate-800 animate-in fade-in">
       <input
         type="file"
         multiple
@@ -315,16 +309,22 @@ export const Step3RoomsAndPricing = ({
           Chi tiết hạng phòng & Hình ảnh
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Tải ảnh xe/ảnh phòng thực tế từ máy tính, thiết lập cấu hình giường và
-          giá niêm yết.
+          Tải ảnh thực tế của từng loại phòng, thiết lập cấu hình giường và giá
+          niêm yết mỗi đêm.
         </p>
       </div>
+
+      {errors?.rooms && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-xs text-rose-700 font-bold">
+          <AlertCircle size={16} className="shrink-0" />
+          <span>{errors.rooms}</span>
+        </div>
+      )}
 
       <div className="space-y-6">
         {rooms.map((room, idx) => {
           const currentCat = room.category || "double";
           const nameOptions = SUGGESTED_NAMES_MAP[currentCat] || [room.name];
-
           const roomImages =
             Array.isArray(room.images) && room.images.length > 0
               ? room.images
@@ -335,7 +335,7 @@ export const Step3RoomsAndPricing = ({
           return (
             <div
               key={room.id}
-              className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 space-y-5 shadow-xs"
+              className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 space-y-5 shadow-2xs"
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <h3 className="text-base font-black text-[#003580] flex items-center gap-2">
@@ -355,7 +355,7 @@ export const Step3RoomsAndPricing = ({
                 )}
               </div>
 
-              {/* ── 1. LOẠI PHÒNG ── */}
+              {/* LOẠI PHÒNG */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Loại phòng
@@ -381,11 +381,11 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* ── 2. TÊN PHÒNG & TÊN TÙY CHỌN ── */}
+              {/* TÊN PHÒNG & TÊN TÙY CHỌN */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Tên phòng
+                    Tên phòng *
                   </label>
                   <div className="relative">
                     <select
@@ -398,7 +398,11 @@ export const Step3RoomsAndPricing = ({
                             : "Standard",
                         })
                       }
-                      className="w-full h-11 px-3.5 text-xs sm:text-sm font-bold bg-white rounded-xl border border-slate-300 appearance-none cursor-pointer outline-none focus:border-[#006ce4]"
+                      className={`w-full h-11 px-3.5 text-xs sm:text-sm font-bold bg-white rounded-xl border ${
+                        errors[`room_${idx}_name`]
+                          ? "border-rose-500 bg-rose-50/20"
+                          : "border-slate-300 focus:border-[#006ce4]"
+                      } appearance-none cursor-pointer outline-none`}
                     >
                       {nameOptions.map((opt) => (
                         <option key={opt} value={opt}>
@@ -411,6 +415,11 @@ export const Step3RoomsAndPricing = ({
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
                     />
                   </div>
+                  {errors[`room_${idx}_name`] && (
+                    <p className="text-xs text-rose-500 font-bold mt-1">
+                      {errors[`room_${idx}_name`]}
+                    </p>
+                  )}
                   <p className="text-[11px] text-slate-400 mt-1 leading-tight">
                     Tên hiển thị công khai trên website cho khách đặt phòng.
                   </p>
@@ -418,7 +427,7 @@ export const Step3RoomsAndPricing = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Tên tùy chọn (không bắt buộc)
+                    Tên tùy chọn (nội bộ)
                   </label>
                   <input
                     type="text"
@@ -430,12 +439,12 @@ export const Step3RoomsAndPricing = ({
                     className="w-full h-11 px-3.5 text-xs sm:text-sm font-medium bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
                   />
                   <p className="text-[11px] text-slate-400 mt-1 leading-tight">
-                    Tên nội bộ dùng riêng cho cơ sở lưu trú.
+                    Tên nội bộ dùng riêng cho quản trị cơ sở lưu trú.
                   </p>
                 </div>
               </div>
 
-              {/* ── 3. HÌNH ẢNH RIÊNG CỦA HẠNG PHÒNG NÀY ── */}
+              {/* HÌNH ẢNH RIÊNG CỦA PHÒNG */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
@@ -444,8 +453,7 @@ export const Step3RoomsAndPricing = ({
                       ảnh hạng phòng ({roomImages.length} ảnh)
                     </label>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Ảnh này chỉ hiển thị riêng cho hạng phòng này, không bị
-                      lẫn vào ảnh cơ sở.
+                      Ảnh này chỉ hiển thị riêng cho hạng phòng này.
                     </p>
                   </div>
 
@@ -453,7 +461,7 @@ export const Step3RoomsAndPricing = ({
                     type="button"
                     disabled={isProcessing}
                     onClick={() => triggerComputerUpload(room.id)}
-                    className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm transition active:scale-95 disabled:opacity-50"
+                    className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-2xs transition active:scale-95 disabled:opacity-50"
                   >
                     {isProcessing && activeRoomId === room.id ? (
                       <>
@@ -473,7 +481,7 @@ export const Step3RoomsAndPricing = ({
                     {roomImages.map((imgUrl, imgIdx) => (
                       <div
                         key={imgIdx}
-                        className="relative group h-28 rounded-xl overflow-hidden border border-slate-200 bg-white shadow-xs"
+                        className="relative group h-28 rounded-xl overflow-hidden border border-slate-200 bg-white shadow-2xs"
                       >
                         <img
                           src={imgUrl}
@@ -502,10 +510,10 @@ export const Step3RoomsAndPricing = ({
                   >
                     <Upload size={22} />
                     <span className="text-xs font-bold">
-                      Bấm vào đây để chọn ảnh xe/ảnh phòng từ máy tính
+                      Bấm vào đây để chọn ảnh phòng từ máy tính
                     </span>
                     <span className="text-[10px] text-slate-400">
-                      Hỗ trợ định dạng JPG, PNG, WEBP
+                      Hỗ trợ JPG, PNG, WEBP
                     </span>
                   </div>
                 )}
@@ -536,10 +544,10 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* ── 4. SỐ PHÒNG (LOẠI NÀY) ── */}
+              {/* SỐ LƯỢNG PHÒNG VẬT LÝ */}
               <div className="w-full sm:w-1/3">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Số phòng (loại này)
+                  Số phòng thực tế (loại này)
                 </label>
                 <input
                   type="number"
@@ -557,9 +565,11 @@ export const Step3RoomsAndPricing = ({
 
               <hr className="border-slate-100 my-2" />
 
-              {/* ── 5. GIÁ, DIỆN TÍCH, HƯỚNG VIEW ── */}
+              {/* GIÁ, HƯỚNG VIEW, DIỆN TÍCH */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-[#e8f2ff]/40 rounded-xl border border-blue-200 p-3">
+                <div
+                  className={`rounded-xl border p-3 ${errors[`room_${idx}_price`] ? "bg-rose-50 border-rose-300" : "bg-[#e8f2ff]/40 border-blue-200"}`}
+                >
                   <label className="block text-[11px] font-black text-[#003580] uppercase tracking-wider mb-1">
                     Giá niêm yết / đêm *
                   </label>
@@ -569,17 +579,23 @@ export const Step3RoomsAndPricing = ({
                       value={Number(room.base_price || 0).toLocaleString(
                         "vi-VN",
                       )}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const cleanDigits = e.target.value.replace(/\D/g, "");
                         handleUpdateRoom(room.id, {
-                          base_price: Number(e.target.value.replace(/\./g, "")),
-                        })
-                      }
+                          base_price: Number(cleanDigits) || 0,
+                        });
+                      }}
                       className="w-full text-base font-black text-[#ff6a00] bg-transparent outline-none"
                     />
                     <span className="text-xs font-black text-slate-500 shrink-0 ml-1">
                       ₫
                     </span>
                   </div>
+                  {errors[`room_${idx}_price`] && (
+                    <p className="text-[10px] text-rose-600 font-bold mt-1">
+                      {errors[`room_${idx}_price`]}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -624,7 +640,7 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* ── 6. TIỆN NGHI HẠNG PHÒNG ── */}
+              {/* TIỆN NGHI PHÒNG */}
               <div>
                 <label className="block text-[11px] font-black text-slate-600 uppercase tracking-wider mb-2">
                   Tiện nghi có trong hạng phòng:
@@ -635,7 +651,8 @@ export const Step3RoomsAndPricing = ({
                       am.id,
                     );
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={am.id}
                         onClick={() =>
                           toggleRoomAmenity(
@@ -644,7 +661,7 @@ export const Step3RoomsAndPricing = ({
                             am.id,
                           )
                         }
-                        className={`p-2 rounded-lg border text-xs flex items-center gap-2 cursor-pointer transition select-none ${
+                        className={`p-2 rounded-lg border text-xs flex items-center gap-2 cursor-pointer transition select-none text-left ${
                           isChecked
                             ? "bg-[#e8f2ff] border-[#006ce4] text-[#003580] font-bold"
                             : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -660,7 +677,7 @@ export const Step3RoomsAndPricing = ({
                           {isChecked && <Check size={11} strokeWidth={3} />}
                         </div>
                         <span className="truncate">{am.label}</span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -674,7 +691,7 @@ export const Step3RoomsAndPricing = ({
         <button
           type="button"
           onClick={handleAddRoom}
-          className="px-6 h-11 border-2 border-[#003580] text-[#003580] hover:bg-blue-50 font-black text-xs rounded-xl flex items-center gap-2 cursor-pointer transition active:scale-95 shadow-xs"
+          className="px-6 h-11 border-2 border-[#003580] text-[#003580] hover:bg-blue-50 font-black text-xs rounded-xl flex items-center gap-2 cursor-pointer transition active:scale-95 shadow-2xs"
         >
           <Plus size={16} /> Thêm hạng phòng
         </button>

@@ -1,11 +1,15 @@
 // src/pages/guest/BookingConfirmPage.jsx
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
-  CalendarDays,
   ShieldCheck,
   ChevronDown,
-  ChevronUp,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -15,8 +19,6 @@ import {
   Sun,
   Moon,
   Hourglass,
-  Users,
-  Calendar as CalendarIcon,
 } from "lucide-react";
 import {
   format,
@@ -28,29 +30,27 @@ import {
   getDay,
   isSameDay,
   isBefore,
-  isAfter,
   startOfToday,
   differenceInDays,
   addDays,
-  isWithinInterval,
 } from "date-fns";
 import { vi } from "date-fns/locale";
 
 import { Button, Input, Badge, StarRating } from "@/components/ui";
 import { LoadingSpinner, Breadcrumb } from "@/components/common";
 import { BookingStepper } from "@/components/booking";
-
 import { hotelService } from "@/services";
 import { useAuthStore } from "@/stores/authStore";
 import apiClient from "@/services/apiClient";
 
-// Hàm định dạng ngày an toàn chuẩn tiếng Việt như ảnh: "T5, 17 Thg 9, 2026"
+// Helpers định dạng ngày
 const safeFormatDisplayDate = (date) => {
   if (!date) return "Chọn ngày";
   try {
     const d = new Date(date);
-    if (isNaN(d.getTime())) return "Chọn ngày";
-    return format(d, "eee, dd 'Thg' M, yyyy", { locale: vi });
+    return isNaN(d.getTime())
+      ? "Chọn ngày"
+      : format(d, "eee, dd 'Thg' M, yyyy", { locale: vi });
   } catch {
     return "Chọn ngày";
   }
@@ -60,12 +60,39 @@ const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
   if (!date) return "";
   try {
     const d = new Date(date);
-    if (isNaN(d.getTime())) return "";
-    return format(d, pattern, { locale: vi });
+    return isNaN(d.getTime()) ? "" : format(d, pattern, { locale: vi });
   } catch {
     return "";
   }
 };
+
+const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
+
+// Sub-component Bộ đếm số lượng (+ / -) tái sử dụng
+const NumberCounter = ({ label, value, min = 0, max = 99, onChange }) => (
+  <div className="flex justify-between items-center">
+    <span className="text-xs font-bold text-slate-700">{label}</span>
+    <div className="flex items-center gap-2 border border-gray-300 rounded-xl p-1 bg-white">
+      <button
+        type="button"
+        disabled={value <= min}
+        onClick={() => onChange(Math.max(min, value - 1))}
+        className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+      >
+        -
+      </button>
+      <span className="font-bold text-xs w-6 text-center">{value}</span>
+      <button
+        type="button"
+        disabled={value >= max}
+        onClick={() => onChange(Math.min(max, value + 1))}
+        className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+      >
+        +
+      </button>
+    </div>
+  </div>
+);
 
 export default function BookingConfirmPage() {
   const [searchParams] = useSearchParams();
@@ -74,15 +101,12 @@ export default function BookingConfirmPage() {
 
   const hotelId = searchParams.get("hotelId");
   const roomId = searchParams.get("roomId");
+  const today = useMemo(() => startOfToday(), []);
 
-  const today = startOfToday();
-
-  // ─── 1. BỘ 4 TABS HÌNH THỨC THUÊ (GIỜ / NGÀY / ĐÊM / BUỔI) ───
+  // 1. STATE THUÊ PHÒNG
   const [rentalType, setRentalType] = useState(
     searchParams.get("rentalType") || "DAY",
   );
-
-  // Giờ nhận & Giờ trả phòng (Khách được tự do chọn thoải mái từ 00:00 - 23:00)
   const [checkInTime, setCheckInTime] = useState(
     searchParams.get("checkInTime") || "14:00",
   );
@@ -90,22 +114,21 @@ export default function BookingConfirmPage() {
     searchParams.get("checkOutTime") || "12:00",
   );
 
-  // Ngày nhận & Ngày trả phòng
-  const [checkInDate, setCheckInDate] = useState(
+  const [checkInDate, setCheckInDate] = useState(() =>
     searchParams.get("checkIn") ? new Date(searchParams.get("checkIn")) : today,
   );
-  const [checkOutDate, setCheckOutDate] = useState(
+  const [checkOutDate, setCheckOutDate] = useState(() =>
     searchParams.get("checkOut")
       ? new Date(searchParams.get("checkOut"))
       : addDays(today, 1),
   );
 
-  // Bộ chọn lịch: xác định đang chọn cho ngày nhận hay ngày trả
+  // Lịch popup
   const [calendarTarget, setCalendarTarget] = useState(null); // 'checkIn' | 'checkOut' | null
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
   const calendarRef = useRef(null);
 
-  // Số lượng người lớn, trẻ em, số phòng
+  // Số lượng khách
   const [adults, setAdults] = useState(Number(searchParams.get("adults")) || 1);
   const [children, setChildren] = useState(
     Number(searchParams.get("children")) || 0,
@@ -114,12 +137,11 @@ export default function BookingConfirmPage() {
     Number(searchParams.get("rooms")) || 1,
   );
 
+  // Dữ liệu khách sạn & phòng
   const [hotel, setHotel] = useState(null);
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
-  // Phương thức thanh toán: 'FULL' hoặc 'DEPOSIT_30'
   const [paymentOption, setPaymentOption] = useState("FULL");
 
   const [formData, setFormData] = useState({
@@ -141,8 +163,8 @@ export default function BookingConfirmPage() {
   }, [user]);
 
   useEffect(() => {
+    if (!hotelId) return;
     const fetchData = async () => {
-      if (!hotelId) return;
       setLoading(true);
       try {
         const res = await hotelService.getById(hotelId);
@@ -153,7 +175,7 @@ export default function BookingConfirmPage() {
           data.rooms?.[0];
         setRoom(selectedRoom);
       } catch (err) {
-        console.error("Lỗi tải thông tin:", err);
+        console.error("Lỗi tải thông tin khách sạn:", err);
       } finally {
         setLoading(false);
       }
@@ -171,14 +193,13 @@ export default function BookingConfirmPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Khi bấm chuyển Tab: Tự động điền giá trị mẫu thông minh như 3 ảnh
+  // Đổi hình thức thuê
   const handleTabChange = (type) => {
     setRentalType(type);
     setCalendarTarget(null);
-
     if (type === "HOUR") {
       setCheckInTime("00:00");
-      setCheckOutTime("01:00");
+      setCheckOutTime("02:00");
       setCheckOutDate(checkInDate);
     } else if (type === "DAY") {
       setCheckInTime("14:00");
@@ -195,13 +216,12 @@ export default function BookingConfirmPage() {
     }
   };
 
-  // Xử lý chọn ngày từ popup lịch
+  // Chọn ngày từ lịch
   const handleSelectDateFromCalendar = (date) => {
     if (isBefore(date, today)) return;
 
     if (calendarTarget === "checkIn") {
       setCheckInDate(date);
-      // Nếu ngày trả nhỏ hơn ngày nhận thì đẩy ngày trả bằng ngày nhận
       if (isBefore(checkOutDate, date)) {
         setCheckOutDate(rentalType === "DAY" ? addDays(date, 1) : date);
       }
@@ -216,29 +236,26 @@ export default function BookingConfirmPage() {
     setCalendarTarget(null);
   };
 
-  // ─── TÍNH TOÁN THỜI LƯỢNG HIỂN THỊ TRÊN THANH BADGE XANH ───
-  const durationLabel = useMemo(() => {
-    if (rentalType === "HOUR") {
-      const inH = parseInt((checkInTime || "00:00").split(":")[0], 10);
-      const outH = parseInt((checkOutTime || "01:00").split(":")[0], 10);
-      const diffDays = Math.max(0, differenceInDays(checkOutDate, checkInDate));
-      const totalHours = diffDays * 24 + (outH - inH);
-      return `${Math.max(1, totalHours)} Giờ`;
-    }
-
-    if (rentalType === "OVERNIGHT") {
-      return "Qua đêm";
-    }
-
-    if (rentalType === "HALF_DAY") {
-      return "1 Buổi";
-    }
-
-    const nights = Math.max(1, differenceInDays(checkOutDate, checkInDate));
-    return `${nights} Ngày`;
+  // Tính số giờ chuẩn xác cho thuê giờ
+  const calculatedHours = useMemo(() => {
+    if (rentalType !== "HOUR") return 1;
+    const inH = parseInt(checkInTime.split(":")[0], 10);
+    const outH = parseInt(checkOutTime.split(":")[0], 10);
+    const diffDays = Math.max(0, differenceInDays(checkOutDate, checkInDate));
+    let total = diffDays * 24 + (outH - inH);
+    return Math.max(1, total <= 0 ? total + 24 : total);
   }, [rentalType, checkInTime, checkOutTime, checkInDate, checkOutDate]);
 
-  // ─── TÍNH TOÁN GIÁ TIỀN CHUẨN THEO ĐƠN GIÁ CỦA PHÒNG ───
+  // Label thời lượng lưu trú
+  const durationLabel = useMemo(() => {
+    if (rentalType === "HOUR") return `${calculatedHours} Giờ`;
+    if (rentalType === "OVERNIGHT") return "Qua đêm";
+    if (rentalType === "HALF_DAY") return "1 Buổi";
+    const nights = Math.max(1, differenceInDays(checkOutDate, checkInDate));
+    return `${nights} Ngày`;
+  }, [rentalType, calculatedHours, checkInDate, checkOutDate]);
+
+  // Đơn giá theo cấu hình phòng
   const baseDayPrice = Number(room?.sell_price || room?.base_price || 500000);
   const hourlyUnitPrice =
     Number(room?.hourly_price) > 0
@@ -255,25 +272,17 @@ export default function BookingConfirmPage() {
 
   const totalPrice = useMemo(() => {
     let unit = baseDayPrice;
-    if (rentalType === "HOUR") {
-      const inH = parseInt((checkInTime || "00:00").split(":")[0], 10);
-      const outH = parseInt((checkOutTime || "01:00").split(":")[0], 10);
-      const diffDays = Math.max(0, differenceInDays(checkOutDate, checkInDate));
-      const hours = Math.max(1, diffDays * 24 + (outH - inH));
-      unit = hourlyUnitPrice * hours;
-    } else if (rentalType === "OVERNIGHT") {
-      unit = overnightUnitPrice;
-    } else if (rentalType === "HALF_DAY") {
-      unit = halfDayUnitPrice;
-    } else {
+    if (rentalType === "HOUR") unit = hourlyUnitPrice * calculatedHours;
+    else if (rentalType === "OVERNIGHT") unit = overnightUnitPrice;
+    else if (rentalType === "HALF_DAY") unit = halfDayUnitPrice;
+    else {
       const nights = Math.max(1, differenceInDays(checkOutDate, checkInDate));
       unit = baseDayPrice * nights;
     }
     return Math.max(0, unit * quantity);
   }, [
     rentalType,
-    checkInTime,
-    checkOutTime,
+    calculatedHours,
     checkInDate,
     checkOutDate,
     baseDayPrice,
@@ -288,41 +297,28 @@ export default function BookingConfirmPage() {
   const amountToPayNow =
     paymentOption === "DEPOSIT_30" ? depositAmount : totalPrice;
 
-  const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
-
-  // Lịch tháng popup
-  const renderMonthCalendar = (monthDate) => {
-    const start = startOfMonth(monthDate);
-    const end = endOfMonth(monthDate);
+  // Render lịch
+  const renderCalendar = () => {
+    const start = startOfMonth(currentCalendarMonth);
+    const end = endOfMonth(currentCalendarMonth);
     const days = eachDayOfInterval({ start, end });
-    const startDayIndex = (getDay(start) + 6) % 7;
-    const blanks = Array.from({ length: startDayIndex });
-
-    const weekHeaders = [
-      { label: "T2", isWeekend: false },
-      { label: "T3", isWeekend: false },
-      { label: "T4", isWeekend: false },
-      { label: "T5", isWeekend: false },
-      { label: "T6", isWeekend: false },
-      { label: "T7", isWeekend: true },
-      { label: "CN", isWeekend: true },
-    ];
-
+    const blanks = Array.from({ length: (getDay(start) + 6) % 7 });
     const activeDate =
       calendarTarget === "checkIn" ? checkInDate : checkOutDate;
+    const weekHeaders = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
     return (
       <div className="flex-1 min-w-[260px]">
         <div className="text-center font-bold text-sm text-gray-900 mb-4">
-          {safeFormatDate(monthDate, "'tháng' M, yyyy")}
+          {safeFormatDate(currentCalendarMonth, "'tháng' M, yyyy")}
         </div>
         <div className="grid grid-cols-7 gap-1 text-center mb-2">
           {weekHeaders.map((w, idx) => (
             <span
-              key={idx}
-              className={`text-xs font-bold ${w.isWeekend ? "text-[#006ce4]" : "text-gray-900"}`}
+              key={w}
+              className={`text-xs font-bold ${idx >= 5 ? "text-[#006ce4]" : "text-gray-900"}`}
             >
-              {w.label}
+              {w}
             </span>
           ))}
         </div>
@@ -335,25 +331,21 @@ export default function BookingConfirmPage() {
             const isSelected = activeDate && isSameDay(day, activeDate);
             const isWeekend = getDay(day) === 0 || getDay(day) === 6;
 
-            let btnClasses =
-              "h-9 w-full flex items-center justify-center font-bold text-xs transition-all rounded-lg ";
-            if (isPast) {
-              btnClasses += "text-gray-300 cursor-not-allowed font-normal";
-            } else if (isSelected) {
-              btnClasses += "bg-[#006ce4] text-white shadow-xs";
-            } else {
-              btnClasses += isWeekend
-                ? "text-[#006ce4] hover:bg-gray-100 cursor-pointer"
-                : "text-gray-900 hover:bg-gray-100 cursor-pointer";
-            }
-
             return (
               <button
                 key={day.toISOString()}
                 type="button"
                 disabled={isPast}
                 onClick={() => handleSelectDateFromCalendar(day)}
-                className={btnClasses}
+                className={`h-9 w-full flex items-center justify-center font-bold text-xs transition rounded-lg ${
+                  isPast
+                    ? "text-gray-300 cursor-not-allowed font-normal"
+                    : isSelected
+                      ? "bg-[#006ce4] text-white shadow-xs"
+                      : isWeekend
+                        ? "text-[#006ce4] hover:bg-gray-100 cursor-pointer"
+                        : "text-gray-900 hover:bg-gray-100 cursor-pointer"
+                }`}
               >
                 {safeFormatDate(day, "d")}
               </button>
@@ -366,10 +358,7 @@ export default function BookingConfirmPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!checkInDate) {
-      alert("Vui lòng chọn ngày nhận phòng hợp lệ!");
-      return;
-    }
+    if (!checkInDate) return alert("Vui lòng chọn ngày nhận phòng hợp lệ!");
     setSubmitting(true);
 
     const payload = {
@@ -381,11 +370,9 @@ export default function BookingConfirmPage() {
       checkin_time: checkInTime,
       checkout_time: checkOutTime,
       duration_label: durationLabel,
-      quantity: quantity,
+      quantity,
       adult_total: adults,
       children_total: children,
-      adults: adults,
-      children: children,
       customer_name: formData.fullName.trim(),
       guest_email: formData.email.trim(),
       guest_phone: formData.phone.trim(),
@@ -399,13 +386,16 @@ export default function BookingConfirmPage() {
 
     try {
       const res = await apiClient.post("/bookings", payload);
-      const data = res?.data || res;
-      const code = data?.booking_code || data?.code || data?.id;
-
+      const code =
+        res?.data?.booking_code ||
+        res?.booking_code ||
+        res?.data?.code ||
+        res?.id;
       if (code) {
-        const expireTime = Date.now() + 15 * 60 * 1000;
-        localStorage.setItem(`lock_expires_${code}`, expireTime.toString());
-
+        localStorage.setItem(
+          `lock_expires_${code}`,
+          (Date.now() + 15 * 60 * 1000).toString(),
+        );
         navigate(
           `/checkout?code=${code}&amount=${amountToPayNow}&totalAmount=${totalPrice}&paymentType=${paymentOption}&remainingAmount=${remainingAmount}&hotelId=${hotelId}`,
         );
@@ -423,9 +413,8 @@ export default function BookingConfirmPage() {
     }
   };
 
-  if (loading) {
+  if (loading)
     return <LoadingSpinner fullPage label="Đang chuẩn bị đơn đặt phòng..." />;
-  }
 
   const breadcrumbs = [
     { label: "Khách sạn", link: "/hotels" },
@@ -448,16 +437,13 @@ export default function BookingConfirmPage() {
           onSubmit={handleSubmit}
           className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-6"
         >
-          {/* CỘT TRÁI: THÔNG TIN KHÁCH VÀ PHƯƠNG THỨC THANH TOÁN */}
+          {/* CỘT TRÁI: THÔNG TIN LIÊN HỆ & PHƯƠNG THỨC THANH TOÁN */}
           <div className="lg:col-span-7 space-y-6">
-            {/* Thông tin khách hàng */}
             <div className="bg-white p-6 md:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6">
               <div className="flex justify-between items-center pb-4 border-b border-gray-100">
-                <div>
-                  <h2 className="text-xl font-black text-gray-900 tracking-tight">
-                    Thông tin liên hệ
-                  </h2>
-                </div>
+                <h2 className="text-xl font-black text-gray-900 tracking-tight">
+                  Thông tin liên hệ
+                </h2>
                 {user && (
                   <Badge variant="success" size="sm" showDot>
                     Đã điền tự động
@@ -487,7 +473,6 @@ export default function BookingConfirmPage() {
                       setFormData({ ...formData, email: e.target.value })
                     }
                   />
-
                   <Input
                     label="Số điện thoại liên hệ *"
                     type="tel"
@@ -514,7 +499,7 @@ export default function BookingConfirmPage() {
                         specialRequest: e.target.value,
                       })
                     }
-                    className="w-full p-3.5 border border-gray-300 rounded-xl text-sm font-medium outline-none focus:border-[#006ce4] transition-all"
+                    className="w-full p-3.5 border border-gray-300 rounded-xl text-sm font-medium outline-none focus:border-[#006ce4] transition"
                   />
                 </div>
               </div>
@@ -546,7 +531,7 @@ export default function BookingConfirmPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                 <div
                   onClick={() => setPaymentOption("FULL")}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition flex flex-col justify-between ${
                     paymentOption === "FULL"
                       ? "border-[#003580] bg-blue-50/40 shadow-xs"
                       : "border-gray-200 hover:border-gray-300 bg-white"
@@ -558,16 +543,12 @@ export default function BookingConfirmPage() {
                         Thanh toán toàn bộ (100%)
                       </span>
                       <p className="text-xs text-gray-500">
-                        Thanh toán trực tuyến trọn gói, làm thủ tục nhận phòng
-                        nhanh chóng không cần thanh toán thêm tại quầy.
+                        Thanh toán trọn gói, nhận phòng nhanh chóng không cần
+                        trả thêm tại quầy.
                       </p>
                     </div>
                     <div
-                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
-                        paymentOption === "FULL"
-                          ? "border-[#003580] bg-[#003580] text-white"
-                          : "border-gray-300 bg-white"
-                      }`}
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${paymentOption === "FULL" ? "border-[#003580] bg-[#003580] text-white" : "border-gray-300 bg-white"}`}
                     >
                       {paymentOption === "FULL" && (
                         <Check size={12} strokeWidth={3} />
@@ -581,7 +562,7 @@ export default function BookingConfirmPage() {
 
                 <div
                   onClick={() => setPaymentOption("DEPOSIT_30")}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition flex flex-col justify-between ${
                     paymentOption === "DEPOSIT_30"
                       ? "border-emerald-600 bg-emerald-50/40 shadow-xs"
                       : "border-gray-200 hover:border-gray-300 bg-white"
@@ -598,16 +579,12 @@ export default function BookingConfirmPage() {
                         </span>
                       </div>
                       <p className="text-xs text-gray-500">
-                        Chuyển khoản cọc 30% để chắc chắn giữ phòng (chống đơn
-                        ảo). 70% còn lại thanh toán tại quầy khi nhận phòng.
+                        Chuyển khoản cọc 30% giữ phòng. 70% còn lại thanh toán
+                        tại quầy khi nhận phòng.
                       </p>
                     </div>
                     <div
-                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
-                        paymentOption === "DEPOSIT_30"
-                          ? "border-emerald-600 bg-emerald-600 text-white"
-                          : "border-gray-300 bg-white"
-                      }`}
+                      className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${paymentOption === "DEPOSIT_30" ? "border-emerald-600 bg-emerald-600 text-white" : "border-gray-300 bg-white"}`}
                     >
                       {paymentOption === "DEPOSIT_30" && (
                         <Check size={12} strokeWidth={3} />
@@ -633,17 +610,16 @@ export default function BookingConfirmPage() {
                 <p className="leading-relaxed">
                   {paymentOption === "DEPOSIT_30" ? (
                     <>
-                      Chính sách cọc 30% (
-                      <strong>{formatVND(depositAmount)}</strong>) giúp hệ thống
-                      khóa phòng thực tế cho Quý khách. Số tiền còn lại{" "}
+                      Cọc 30% (<strong>{formatVND(depositAmount)}</strong>) giúp
+                      hệ thống khóa phòng thực tế. Số tiền{" "}
                       <strong>{formatVND(remainingAmount)}</strong> sẽ được thu
-                      trực tiếp khi nhận phòng tại quầy lễ tân.
+                      tại quầy khi nhận phòng.
                     </>
                   ) : (
                     <>
-                      Quý khách thanh toán 100% trọn gói (
+                      Thanh toán trọn gói 100% (
                       <strong>{formatVND(totalPrice)}</strong>). Khi đến khách
-                      sạn chỉ cần cung cấp mã đơn là có thể nhận chìa khóa phòng
+                      sạn, Quý khách chỉ cần đọc mã đặt phòng để nhận chìa khóa
                       ngay.
                     </>
                   )}
@@ -652,9 +628,9 @@ export default function BookingConfirmPage() {
             </div>
           </div>
 
-          {/* CỘT PHẢI: BỘ CHỌN HÌNH THỨC THUÊ (Y HỆT NHƯ ẢNH) VÀ TÍNH GIÁ */}
+          {/* CỘT PHẢI: BỘ CHỌN HÌNH THỨC THUÊ & CHI TIẾT GIÁ */}
           <div className="lg:col-span-5 space-y-6">
-            {/* THẺ TÓM TẮT PHÒNG VÀ KHÁCH SẠN */}
+            {/* THẺ TÓM TẮT KHÁCH SẠN */}
             <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <div className="flex gap-4 pb-4 border-b border-gray-100">
                 <img
@@ -663,6 +639,11 @@ export default function BookingConfirmPage() {
                     "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=300"
                   }
                   alt={hotel?.name}
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.src =
+                      "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=300";
+                  }}
                   className="w-20 h-20 object-cover rounded-xl shrink-0"
                 />
                 <div className="space-y-1">
@@ -692,66 +673,41 @@ export default function BookingConfirmPage() {
               </div>
             </div>
 
-            {/* 🌟 BỘ CHỌN THUÊ PHÒNG THIẾT KẾ Y HỆT 3 ẢNH BẠN GỬI 🌟 */}
+            {/* BỘ CHỌN HÌNH THỨC THUÊ */}
             <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-4 relative">
-              {/* 1. HÀNG 4 TABS: GIỜ, NGÀY, ĐÊM, BUỔI */}
+              {/* Tabs Giờ / Ngày / Đêm / Buổi */}
               <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl">
-                <button
-                  type="button"
-                  onClick={() => handleTabChange("HOUR")}
-                  className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                    rentalType === "HOUR"
-                      ? "bg-[#006ce4] text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Clock size={14} /> <span>Giờ</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleTabChange("DAY")}
-                  className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                    rentalType === "DAY"
-                      ? "bg-[#006ce4] text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Sun size={14} /> <span>Ngày</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleTabChange("OVERNIGHT")}
-                  className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                    rentalType === "OVERNIGHT"
-                      ? "bg-[#006ce4] text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Moon size={14} /> <span>Đêm</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleTabChange("HALF_DAY")}
-                  className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                    rentalType === "HALF_DAY"
-                      ? "bg-[#006ce4] text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Hourglass size={14} /> <span>Buổi</span>
-                </button>
+                {[
+                  { id: "HOUR", label: "Giờ", icon: Clock },
+                  { id: "DAY", label: "Ngày", icon: Sun },
+                  { id: "OVERNIGHT", label: "Đêm", icon: Moon },
+                  { id: "HALF_DAY", label: "Buổi", icon: Hourglass },
+                ].map((t) => {
+                  const Icon = t.icon;
+                  const active = rentalType === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleTabChange(t.id)}
+                      className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                        active
+                          ? "bg-[#006ce4] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon size={14} /> <span>{t.label}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* 2. KHUNG NHẬN PHÒNG: CHỌN GIỜ THOẢI MÁI + CHỌN NGÀY */}
+              {/* Khung Nhận phòng */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 block">
                   Nhận phòng
                 </label>
                 <div className="grid grid-cols-12 gap-2.5">
-                  {/* Dropdown giờ nhận: chọn thoải mái 00:00 - 23:00 */}
                   <div className="col-span-4">
                     <select
                       value={checkInTime}
@@ -768,8 +724,6 @@ export default function BookingConfirmPage() {
                       })}
                     </select>
                   </div>
-
-                  {/* Nút bấm mở lịch chọn ngày nhận */}
                   <div className="col-span-8 relative">
                     <button
                       type="button"
@@ -792,13 +746,12 @@ export default function BookingConfirmPage() {
                 </div>
               </div>
 
-              {/* 3. KHUNG TRẢ PHÒNG: CHỌN GIỜ THOẢI MÁI + CHỌN NGÀY */}
+              {/* Khung Trả phòng */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 block">
                   Trả phòng
                 </label>
                 <div className="grid grid-cols-12 gap-2.5">
-                  {/* Dropdown giờ trả: chọn thoải mái 00:00 - 23:00 */}
                   <div className="col-span-4">
                     <select
                       value={checkOutTime}
@@ -815,8 +768,6 @@ export default function BookingConfirmPage() {
                       })}
                     </select>
                   </div>
-
-                  {/* Nút bấm mở lịch chọn ngày trả */}
                   <div className="col-span-8 relative">
                     <button
                       type="button"
@@ -839,95 +790,35 @@ export default function BookingConfirmPage() {
                 </div>
               </div>
 
-              {/* 🌟 THANH BADGE XANH TỔNG THỜI LƯỢNG LƯU TRÚ Ở GIỮA Y HỆT ẢNH 🌟 */}
+              {/* Thanh hiển thị thời lượng */}
               <div className="w-full py-2.5 bg-blue-50/90 text-[#006ce4] border border-blue-100 rounded-xl font-black text-center text-sm shadow-2xs">
                 {durationLabel}
               </div>
 
-              {/* 4. NGƯỜI LỚN & TRẺ EM & SỐ PHÒNG */}
+              {/* Bộ đếm người lớn, trẻ em, phòng */}
               <div className="space-y-2 pt-2 border-t border-gray-100">
-                {/* Người lớn */}
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-700">
-                    Người lớn
-                  </span>
-                  <div className="flex items-center gap-2 border border-gray-300 rounded-xl p-1 bg-white">
-                    <button
-                      type="button"
-                      onClick={() => setAdults((a) => Math.max(1, a - 1))}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                    >
-                      -
-                    </button>
-                    <span className="font-bold text-xs w-6 text-center">
-                      {adults}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setAdults((a) => a + 1)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                {/* Trẻ em */}
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-700">
-                    Trẻ em
-                  </span>
-                  <div className="flex items-center gap-2 border border-gray-300 rounded-xl p-1 bg-white">
-                    <button
-                      type="button"
-                      onClick={() => setChildren((c) => Math.max(0, c - 1))}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                    >
-                      -
-                    </button>
-                    <span className="font-bold text-xs w-6 text-center">
-                      {children}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setChildren((c) => c + 1)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                {/* Số lượng phòng */}
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-slate-700">
-                    Số phòng
-                  </span>
-                  <div className="flex items-center gap-2 border border-gray-300 rounded-xl p-1 bg-white">
-                    <button
-                      type="button"
-                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                    >
-                      -
-                    </button>
-                    <span className="font-bold text-xs w-6 text-center">
-                      {quantity}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setQuantity((q) => Math.min(room?.amount || 5, q + 1))
-                      }
-                      className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                <NumberCounter
+                  label="Người lớn"
+                  value={adults}
+                  min={1}
+                  onChange={setAdults}
+                />
+                <NumberCounter
+                  label="Trẻ em"
+                  value={children}
+                  min={0}
+                  onChange={setChildren}
+                />
+                <NumberCounter
+                  label="Số phòng"
+                  value={quantity}
+                  min={1}
+                  max={room?.amount || 5}
+                  onChange={setQuantity}
+                />
               </div>
 
-              {/* POPUP LỊCH DÙNG CHUNG */}
+              {/* Popup Lịch */}
               {calendarTarget && (
                 <div
                   ref={calendarRef}
@@ -943,7 +834,7 @@ export default function BookingConfirmPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          setCurrentCalendarMonth((prev) => subMonths(prev, 1))
+                          setCurrentCalendarMonth((p) => subMonths(p, 1))
                         }
                         disabled={isBefore(
                           startOfMonth(currentCalendarMonth),
@@ -956,7 +847,7 @@ export default function BookingConfirmPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          setCurrentCalendarMonth((prev) => addMonths(prev, 1))
+                          setCurrentCalendarMonth((p) => addMonths(p, 1))
                         }
                         className="p-1 rounded-full hover:bg-gray-100 text-gray-600 cursor-pointer"
                       >
@@ -965,7 +856,7 @@ export default function BookingConfirmPage() {
                     </div>
                   </div>
 
-                  {renderMonthCalendar(currentCalendarMonth)}
+                  {renderCalendar()}
 
                   <div className="mt-3 pt-2 border-t flex justify-end">
                     <button
@@ -979,7 +870,7 @@ export default function BookingConfirmPage() {
                 </div>
               )}
 
-              {/* 🌟 HỘP HIỂN THỊ "BẠN ĐÃ CHỌN" CHUẨN XÁC THEO ẢNH 2 🌟 */}
+              {/* Hộp tóm tắt lựa chọn */}
               <div className="p-3.5 bg-blue-50/70 rounded-2xl border border-blue-200 text-xs space-y-2">
                 <div className="text-slate-500 font-bold text-[11px] flex items-center gap-1.5">
                   <Building2 size={13} className="text-[#006ce4]" />
@@ -1014,7 +905,7 @@ export default function BookingConfirmPage() {
               </div>
             </div>
 
-            {/* BẢNG TÍNH GIÁ CHI TIẾT */}
+            {/* BẢNG CHI TIẾT GIÁ */}
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <h3 className="font-black text-gray-900 text-base border-b border-gray-100 pb-3">
                 Chi tiết giá phòng

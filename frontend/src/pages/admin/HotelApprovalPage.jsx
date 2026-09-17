@@ -15,13 +15,9 @@ import {
   Star,
   Clock,
   Bed,
-  Users,
   Image as ImageIcon,
-  Phone,
-  Mail,
   User,
   CreditCard,
-  Sparkles,
   Check,
   ExternalLink,
 } from "lucide-react";
@@ -32,23 +28,24 @@ const BACKEND_BASE_URL = (
   import.meta.env.VITE_API_URL || "http://localhost:5000"
 ).replace(/\/api\/?$/, "");
 
+const DEFAULT_COVER =
+  "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
+
 const parseRealImageUrl = (item) => {
-  if (!item) return "";
-  let raw =
+  if (!item) return DEFAULT_COVER;
+  let raw = String(
     typeof item === "string"
       ? item
-      : item.url || item.path || item.image_url || item.thumbnail || "";
-  raw = String(raw).trim();
-  if (!raw || raw.startsWith("blob:")) return "";
+      : item.url || item.path || item.image_url || item.thumbnail || "",
+  ).trim();
+  if (!raw || raw.startsWith("blob:")) return DEFAULT_COVER;
   if (
     raw.startsWith("http://") ||
     raw.startsWith("https://") ||
     raw.startsWith("data:image/")
-  ) {
+  )
     return raw;
-  }
-  const cleanPath = raw.startsWith("/") ? raw : `/${raw}`;
-  return `${BACKEND_BASE_URL}${cleanPath}`;
+  return `${BACKEND_BASE_URL}${raw.startsWith("/") ? raw : `/${raw}`}`;
 };
 
 const STATUS_TABS = [
@@ -94,6 +91,15 @@ export default function HotelApprovalPage() {
   const formatVND = (price) =>
     Number(price || 0).toLocaleString("vi-VN") + " ₫";
 
+  // Đóng modal khi bấm Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && selectedHotel) setSelectedHotel(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedHotel]);
+
   const fetchHotelsFromDB = useCallback(async () => {
     setLoading(true);
     setApiError("");
@@ -135,8 +141,6 @@ export default function HotelApprovalPage() {
         detailRes?.data ||
         detailRes ||
         hotel;
-
-      // 🌟 XỬ LÝ CHUẨN XÁC MỌI DẠNG PHÒNG TRẢ VỀ TỪ API
       const directRooms =
         roomsRes?.data?.rooms ||
         roomsRes?.data?.data ||
@@ -147,7 +151,6 @@ export default function HotelApprovalPage() {
       if (Array.isArray(directRooms) && directRooms.length > 0) {
         fullData.rooms = directRooms;
       }
-
       setSelectedHotel(fullData);
     } catch (err) {
       console.warn("Lỗi tải chi tiết:", err);
@@ -189,7 +192,6 @@ export default function HotelApprovalPage() {
     statusFilter === "all" ? true : h.status === statusFilter,
   );
 
-  // Chỉ lấy ảnh cơ sở (không có room_id)
   const hotelPropertyImages = (selectedHotel?.images || []).filter(
     (img) => !img.room_id && !img.roomId,
   );
@@ -197,7 +199,7 @@ export default function HotelApprovalPage() {
   return (
     <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
       {/* HEADER */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
             <ShieldCheck size={16} /> Phân Hệ Quản Trị Hệ Thống GoStay
@@ -214,21 +216,21 @@ export default function HotelApprovalPage() {
         <button
           type="button"
           onClick={fetchHotelsFromDB}
-          className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-[#003580] font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+          className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-[#003580] font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
         >
           <RefreshCw size={14} /> Làm mới dữ liệu
         </button>
       </div>
 
       {apiError && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2 font-bold">
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
           <AlertCircle size={16} />
           <span>{apiError}</span>
         </div>
       )}
 
       {/* TABS TRẠNG THÁI */}
-      <div className="bg-white p-3 rounded-3xl border border-gray-200 shadow-xs flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <div className="bg-white p-3 rounded-3xl border border-gray-200 shadow-2xs flex items-center gap-2 overflow-x-auto no-scrollbar">
         {STATUS_TABS.map((tab) => {
           const count = hotels.filter((h) =>
             tab.id === "all" ? true : h.status === tab.id,
@@ -240,7 +242,7 @@ export default function HotelApprovalPage() {
               onClick={() => setStatusFilter(tab.id)}
               className={`px-5 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-2 ${
                 statusFilter === tab.id
-                  ? "bg-[#003580] text-white shadow-sm"
+                  ? "bg-[#003580] text-white shadow-2xs"
                   : "bg-gray-50 text-gray-600 hover:bg-gray-100"
               }`}
             >
@@ -261,7 +263,7 @@ export default function HotelApprovalPage() {
 
       {/* LƯỚI KHÁCH SẠN */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-2xs">
           <LoadingSpinner
             size="lg"
             label="Đang truy vấn dữ liệu hồ sơ đối tác..."
@@ -274,18 +276,22 @@ export default function HotelApprovalPage() {
               h.images?.find((img) => img.is_thumbnail && !img.room_id)?.path ||
               h.images?.find((img) => !img.room_id)?.path ||
               h.image ||
-              "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
+              DEFAULT_COVER;
 
             return (
               <div
                 key={h.id}
-                className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between"
+                className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between"
               >
                 <div>
                   <div className="relative h-48 w-full bg-gray-100">
                     <img
                       src={parseRealImageUrl(coverImage)}
                       alt={h.name}
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.src = DEFAULT_COVER;
+                      }}
                       className="w-full h-full object-cover"
                     />
                     <span
@@ -308,7 +314,7 @@ export default function HotelApprovalPage() {
                             : "Đình chỉ"}
                     </span>
 
-                    <span className="absolute bottom-3 left-3 text-[10px] font-black uppercase bg-[#003580]/80 text-white px-2.5 py-1 rounded-md backdrop-blur-xs">
+                    <span className="absolute bottom-3 left-3 text-[10px] font-black uppercase bg-[#003580]/80 text-white px-2.5 py-1 rounded-md backdrop-blur-2xs">
                       {h.property_type || "Khách sạn"}
                     </span>
                   </div>
@@ -393,11 +399,11 @@ export default function HotelApprovalPage() {
         />
       )}
 
-      {/* ─── MODAL XEM CHI TIẾT TOÀN DIỆN ─── */}
+      {/* MODAL XEM CHI TIẾT TOÀN DIỆN */}
       {selectedHotel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-2xs animate-in fade-in font-sans">
           <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[92vh] shadow-2xl border border-gray-200 flex flex-col overflow-hidden text-gray-900">
-            {/* MODAL HEADER */}
+            {/* HEADER MODAL */}
             <div className="p-5 sm:p-6 bg-[#003580] text-white flex items-center justify-between shrink-0">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -488,7 +494,7 @@ export default function HotelApprovalPage() {
               })}
             </div>
 
-            {/* MODAL BODY */}
+            {/* BODY NỘI DUNG MODAL */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
               {detailLoading ? (
                 <div className="py-16 flex justify-center">
@@ -498,7 +504,7 @@ export default function HotelApprovalPage() {
                 <>
                   {/* TAB 1: TỔNG QUAN & PHÁP LÝ */}
                   {activeModalTab === "overview" && (
-                    <div className="space-y-4 animate-fadeIn">
+                    <div className="space-y-4 animate-in fade-in">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 space-y-2">
                           <h4 className="font-black text-[#0a2540] uppercase tracking-wider flex items-center gap-1.5 text-xs">
@@ -606,9 +612,9 @@ export default function HotelApprovalPage() {
                     </div>
                   )}
 
-                  {/* TAB 2: DANH MỤC HẠNG PHÒNG & GIÁ (HIỂN THỊ ĐÚNG ẢNH THẬT) */}
+                  {/* TAB 2: HẠNG PHÒNG & GIÁ */}
                   {activeModalTab === "rooms" && (
-                    <div className="space-y-4 animate-fadeIn">
+                    <div className="space-y-4 animate-in fade-in">
                       {Array.isArray(selectedHotel.rooms) &&
                       selectedHotel.rooms.length > 0 ? (
                         <div className="space-y-3.5">
@@ -624,7 +630,7 @@ export default function HotelApprovalPage() {
                             return (
                               <div
                                 key={room.id || idx}
-                                className="p-4 rounded-2xl border border-gray-200 bg-white hover:border-[#003580] transition shadow-xs flex flex-col sm:flex-row justify-between gap-4"
+                                className="p-4 rounded-2xl border border-gray-200 bg-white hover:border-[#003580] transition shadow-2xs flex flex-col sm:flex-row justify-between gap-4"
                               >
                                 <div className="space-y-2 flex-1">
                                   <div className="flex items-center gap-2 flex-wrap">
@@ -686,17 +692,15 @@ export default function HotelApprovalPage() {
                                     </span>
                                   </div>
 
-                                  {roomImg ? (
-                                    <img
-                                      src={parseRealImageUrl(roomImg)}
-                                      alt={room.name}
-                                      className="w-24 h-16 object-cover rounded-xl border border-gray-200 shadow-xs"
-                                    />
-                                  ) : (
-                                    <div className="w-24 h-16 rounded-xl border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-[10px] text-gray-400">
-                                      Chưa có ảnh
-                                    </div>
-                                  )}
+                                  <img
+                                    src={parseRealImageUrl(roomImg)}
+                                    alt={room.name}
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      e.currentTarget.src = DEFAULT_COVER;
+                                    }}
+                                    className="w-24 h-16 object-cover rounded-xl border border-gray-200 shadow-2xs"
+                                  />
                                 </div>
                               </div>
                             );
@@ -710,9 +714,9 @@ export default function HotelApprovalPage() {
                     </div>
                   )}
 
-                  {/* TAB 3: HÌNH ẢNH CƠ SỞ (CHỈ 3 ẢNH CƠ SỞ, KHÔNG CÓ ẢNH PHÒNG) */}
+                  {/* TAB 3: HÌNH ẢNH CƠ SỞ */}
                   {activeModalTab === "photos" && (
-                    <div className="space-y-4 animate-fadeIn">
+                    <div className="space-y-4 animate-in fade-in">
                       {hotelPropertyImages.length > 0 ? (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
                           {hotelPropertyImages.map((img, i) => (
@@ -723,6 +727,10 @@ export default function HotelApprovalPage() {
                               <img
                                 src={parseRealImageUrl(img.path || img.url)}
                                 alt="Ảnh cơ sở"
+                                loading="lazy"
+                                onError={(e) => {
+                                  e.currentTarget.src = DEFAULT_COVER;
+                                }}
                                 className="w-full h-full object-cover"
                               />
                               {img.is_thumbnail && (
@@ -743,7 +751,7 @@ export default function HotelApprovalPage() {
 
                   {/* TAB 4: QUY ĐỊNH & TIỆN NGHI */}
                   {activeModalTab === "policy" && (
-                    <div className="space-y-4 animate-fadeIn">
+                    <div className="space-y-4 animate-in fade-in">
                       <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200 grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                           <span className="text-gray-500 block">
@@ -781,7 +789,7 @@ export default function HotelApprovalPage() {
 
                       <div className="p-4 rounded-2xl bg-white border border-gray-200 space-y-3">
                         <span className="font-black text-gray-900 uppercase tracking-wider block">
-                          Tiện nghi & Dịch vụ cơ sở lưu trú:
+                          Tiện nghi & Dịch vụ cơ sở:
                         </span>
                         {Array.isArray(selectedHotel.amenities) &&
                         selectedHotel.amenities.length > 0 ? (
@@ -820,7 +828,7 @@ export default function HotelApprovalPage() {
                     onClick={() => {
                       const reason = window.prompt(
                         "Nhập lý do đình chỉ hoạt động chỗ nghỉ:",
-                        "Vi phạm chính sách thanh toán và cam kết dịch vụ.",
+                        "Vi phạm chính sách thanh toán hoặc cam kết dịch vụ.",
                       );
                       if (reason)
                         handleUpdateStatus(
@@ -858,14 +866,14 @@ export default function HotelApprovalPage() {
                   disabled={selectedHotel.status === "rejected"}
                   className="px-5 py-2.5 border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-black text-xs cursor-pointer disabled:opacity-30 flex items-center gap-1.5 transition"
                 >
-                  <XCircle size={14} /> Từ chối
+                  <XCircle size={15} /> Từ chối
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleUpdateStatus(selectedHotel.id, "active")}
                   disabled={selectedHotel.status === "active"}
-                  className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white rounded-xl font-black text-xs cursor-pointer shadow-sm disabled:opacity-30 flex items-center gap-1.5 transition active:scale-95"
+                  className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white rounded-xl font-black text-xs cursor-pointer shadow-2xs disabled:opacity-30 flex items-center gap-1.5 transition active:scale-95"
                 >
                   <CheckCircle2 size={15} /> Duyệt mở bán ngay
                 </button>

@@ -1,3 +1,4 @@
+// src/components/auth/RegisterForm/Step4PricingAndPayout.jsx
 import React, { useState, useEffect } from "react";
 import {
   CheckCircle2,
@@ -5,7 +6,8 @@ import {
   Sparkles,
   Percent,
   ShieldCheck,
-  ArrowRight,
+  ChevronDown,
+  Loader2,
 } from "lucide-react";
 
 export const VIETNAM_BANKS = [
@@ -31,6 +33,17 @@ export const VIETNAM_BANKS = [
   { code: "TPB", name: "TPBank", fullName: "Ngân hàng Tiên Phong" },
 ];
 
+// Hàm chuyển đổi tiếng Việt có dấu thành không dấu in hoa chuẩn Napas
+const removeVietnameseTonesUpper = (str = "") => {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toUpperCase()
+    .trim();
+};
+
 export const Step4PricingAndPayout = ({
   data = {},
   onChange = () => {},
@@ -40,22 +53,21 @@ export const Step4PricingAndPayout = ({
   const [isVerifyingBank, setIsVerifyingBank] = useState(false);
   const [bankVerifyResult, setBankVerifyResult] = useState(null);
 
+  // Điền giá trị mặc định ban đầu
   useEffect(() => {
     const updates = {};
-    if (!data.commissionRate) {
-      updates.commissionRate = 18.0;
-    }
+    if (!data.commissionRate) updates.commissionRate = 18.0;
     if (!data.bankCode) {
       updates.bankCode = "VCB";
       updates.bankName = "Vietcombank";
     }
     if (!data.bankAccountHolder && data.ownerName) {
-      updates.bankAccountHolder = String(data.ownerName).trim().toUpperCase();
+      updates.bankAccountHolder = removeVietnameseTonesUpper(data.ownerName);
     }
     if (Object.keys(updates).length > 0) {
       onChange(updates);
     }
-  }, []);
+  }, [data.ownerName]);
 
   const handleBankSelect = (e) => {
     const selectedCode = e.target.value;
@@ -94,7 +106,7 @@ export const Step4PricingAndPayout = ({
   };
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
+    <div className="space-y-6 font-sans text-slate-800 animate-in fade-in">
       <div>
         <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
           <Sparkles size={14} className="text-[#006ce4]" />
@@ -109,8 +121,8 @@ export const Step4PricingAndPayout = ({
         </p>
       </div>
 
-      {/* 🌟 KHỐI MINH BẠCH HOA HỒNG SÀN */}
-      <div className="bg-white border-2 border-blue-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
+      {/* KHỐI MINH BẠCH HOA HỒNG SÀN */}
+      <div className="bg-white border-2 border-blue-200 rounded-3xl p-5 sm:p-6 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-[#003580] text-white flex items-center justify-center font-black text-lg shrink-0 shadow-md">
@@ -195,21 +207,20 @@ export const Step4PricingAndPayout = ({
           <p className="text-[11px] text-slate-500 leading-relaxed pt-1 flex items-center gap-1.5">
             <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
             Tiền sẽ được sàn tự động quyết toán (Payout) về tài khoản ngân hàng
-            của Quý đối tác định kỳ hoặc sau khi khách hoàn tất thủ tục trả
-            phòng (Check-out).
+            của Quý đối tác định kỳ hoặc sau khi khách hoàn tất trả phòng.
           </p>
         </div>
       </div>
 
-      {/* 🌟 KHỐI NHẬP TÀI KHOẢN NGÂN HÀNG THỤ HƯỞNG */}
-      <div className="p-5 sm:p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-xs">
+      {/* KHỐI NHẬP TÀI KHOẢN NGÂN HÀNG THỤ HƯỞNG */}
+      <div className="p-5 sm:p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-2xs">
         <div>
           <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
             <CheckCircle2 size={16} className="text-[#006ce4]" /> Tài khoản ngân
             hàng nhận tiền quyết toán (Napas 24/7)
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Tiền phòng sau khi trừ hoa hồng sẽ được Admin giải ngân vào tài
+            Tiền phòng sau khi trừ hoa hồng sẽ được giải ngân trực tiếp vào tài
             khoản này.
           </p>
         </div>
@@ -219,22 +230,23 @@ export const Step4PricingAndPayout = ({
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
               Ngân hàng thụ hưởng *
             </label>
-            <select
-              value={data.bankCode || "VCB"}
-              onChange={handleBankSelect}
-              className="w-full h-11 sm:h-12 px-3 text-xs sm:text-sm font-bold rounded-xl border border-slate-300 focus:border-[#006ce4] bg-white outline-none cursor-pointer"
-            >
-              {VIETNAM_BANKS.map((b) => (
-                <option key={b.code} value={b.code}>
-                  {b.name} ({b.code}) - {b.fullName}
-                </option>
-              ))}
-            </select>
-            {(errors.bankName || errors.bankCode) && (
-              <p className="text-xs text-rose-500 font-bold mt-1">
-                {errors.bankName || errors.bankCode}
-              </p>
-            )}
+            <div className="relative">
+              <select
+                value={data.bankCode || "VCB"}
+                onChange={handleBankSelect}
+                className="w-full h-11 sm:h-12 px-3.5 pr-10 text-xs sm:text-sm font-bold rounded-xl border border-slate-300 focus:border-[#006ce4] bg-white outline-none cursor-pointer appearance-none"
+              >
+                {VIETNAM_BANKS.map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.name} ({b.code}) - {b.fullName}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={18}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              />
+            </div>
           </div>
 
           <div>
@@ -245,11 +257,13 @@ export const Step4PricingAndPayout = ({
               type="text"
               value={data.bankAccount || ""}
               onChange={(e) => {
-                onChange({ bankAccount: e.target.value.trim() });
+                onChange({
+                  bankAccount: e.target.value.replace(/[^a-zA-Z0-9]/g, ""),
+                });
                 setBankVerifyResult(null);
               }}
               placeholder="VD: 0071001234567"
-              className={`w-full h-11 sm:h-12 px-3 text-xs sm:text-sm font-mono font-bold rounded-xl border ${
+              className={`w-full h-11 sm:h-12 px-3.5 text-xs sm:text-sm font-mono font-bold rounded-xl border ${
                 errors.bankAccount
                   ? "border-rose-500 bg-rose-50/20"
                   : "border-slate-300 focus:border-[#006ce4]"
@@ -272,12 +286,12 @@ export const Step4PricingAndPayout = ({
             value={data.bankAccountHolder || ""}
             onChange={(e) => {
               onChange({
-                bankAccountHolder: e.target.value.toUpperCase(),
+                bankAccountHolder: removeVietnameseTonesUpper(e.target.value),
               });
               setBankVerifyResult(null);
             }}
             placeholder="VD: NGUYEN VAN AN"
-            className={`w-full h-11 sm:h-12 px-3 text-xs sm:text-sm font-bold uppercase rounded-xl border ${
+            className={`w-full h-11 sm:h-12 px-3.5 text-xs sm:text-sm font-bold rounded-xl border ${
               errors.bankAccountHolder
                 ? "border-rose-500 bg-rose-50/20"
                 : "border-slate-300 focus:border-[#006ce4]"
@@ -290,23 +304,26 @@ export const Step4PricingAndPayout = ({
           )}
         </div>
 
-        <div className="flex justify-between items-center pt-2">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pt-2 border-t border-slate-100">
           <span className="text-[11px] text-slate-400">
-            Hỗ trợ liên ngân hàng tự động chuyển khoản Napas 24/7
+            Hỗ trợ chuyển khoản liên ngân hàng tự động Napas 24/7
           </span>
           <button
             type="button"
             onClick={handleVerifyBank}
             disabled={isVerifyingBank}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition disabled:opacity-50"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5"
           >
-            {isVerifyingBank ? "Đang đối soát..." : "Kiểm tra số tài khoản"}
+            {isVerifyingBank && <Loader2 size={13} className="animate-spin" />}
+            <span>
+              {isVerifyingBank ? "Đang đối soát..." : "Kiểm tra số tài khoản"}
+            </span>
           </button>
         </div>
 
         {bankVerifyResult && (
           <div
-            className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+            className={`p-3.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in ${
               bankVerifyResult.success
                 ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                 : "bg-rose-50 text-rose-800 border border-rose-200"

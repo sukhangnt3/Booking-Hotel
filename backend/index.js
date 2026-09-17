@@ -3,6 +3,8 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const fs = require("fs");
+const compression = require("compression"); // 🌟 Tối ưu nén dữ liệu mạng
 const swaggerUi = require("swagger-ui-express");
 
 require("dotenv").config();
@@ -10,75 +12,61 @@ require("dotenv").config();
 const pool = require("./config/database");
 const apiRoutes = require("./routes");
 const swaggerSpec = require("./swagger");
-
-// 🌟 IMPORT ROUTE THANH TOÁN (SEPAY / VIETQR)
 const paymentRoutes = require("./routes/payment.routes");
-
 const bookingController = require("./controllers/booking.controller");
 const reviewController = require("./controllers/review.controller");
-
 const { requireAuth } = require("./middleware/auth.middleware");
-
 const {
   errorHandler,
   notFoundHandler,
 } = require("./middleware/error.middleware");
 
 const app = express();
-
 const PORT = Number(process.env.PORT || 5000);
 
 // ============================================================
-// CORS
+// 1. NÉN DỮ LIỆU (GZIP / BROTLI)
 // ============================================================
+app.use(
+  compression({
+    level: 6,
+    threshold: 1024, // Chỉ nén các response lớn hơn 1KB
+  }),
+);
 
+// ============================================================
+// 2. CORS
+// ============================================================
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
   "https://booking-hotel-fawn.vercel.app",
 ];
 
-// Cho phép thêm FRONTEND_URL từ Render Environment nếu có
 if (process.env.FRONTEND_URL) {
   process.env.FRONTEND_URL.split(",")
-    .map((origin) => origin.trim())
+    .map((o) => o.trim())
     .filter(Boolean)
-    .forEach((origin) => {
-      if (!allowedOrigins.includes(origin)) {
-        allowedOrigins.push(origin);
-      }
+    .forEach((o) => {
+      if (!allowedOrigins.includes(o)) allowedOrigins.push(o);
     });
 }
-
-console.log("CORS allowed origins:", allowedOrigins);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Request không có Origin
-      // Postman / server-to-server / SePay webhook
-      if (!origin) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        origin.startsWith("http://localhost:")
+      ) {
         return callback(null, true);
       }
-
-      // Origin được cho phép
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      // Cho phép localhost
-      if (origin.startsWith("http://localhost:")) {
-        return callback(null, true);
-      }
-
       console.warn("CORS blocked:", origin);
       return callback(null, false);
     },
-
     credentials: true,
-
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-
     allowedHeaders: [
       "Origin",
       "X-Requested-With",
@@ -90,295 +78,176 @@ app.use(
 );
 
 // ============================================================
-// BODY PARSER
+// 3. BODY PARSER
 // ============================================================
+app.use(express.json({ limit: "50MB" }));
+app.use(express.urlencoded({ extended: true, limit: "50MB" }));
+
+// ============================================================
+// 4. PHỤC VỤ FILE TĨNH (KÈM CACHE 7 NGÀY CHO ẢNH)
+// ============================================================
+const uploadsDir = path.resolve("uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 app.use(
-  express.json({
-    limit: "50MB",
+  "/uploads",
+  express.static(uploadsDir, {
+    maxAge: "7d", // Trình duyệt tự cache ảnh 7 ngày, không tải lại
+    immutable: true,
   }),
 );
 
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "50MB",
-  }),
-);
-
 // ============================================================
-// UPLOADS
+// 5. GHI LOG REQUEST (BỎ QUA OPTIONS & DOCS ĐỂ GIẢM TẢI DB)
 // ============================================================
-
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
-
-app.use("/uploads", express.static(path.resolve("uploads")));
-
-app.use("/uploads", express.static(path.resolve("backend/uploads")));
-
-// ============================================================
-// REQUEST LOGS
-// ============================================================
-
 app.use((req, res, next) => {
   const url = req.originalUrl || req.url || "";
 
   if (
+    req.method !== "OPTIONS" &&
     url.startsWith("/api") &&
     !url.startsWith("/api/docs") &&
     !url.includes("/admin/stats")
   ) {
     pool
       .query(
-        `
-        INSERT INTO public.request_logs
-        (method, endpoint, created_at)
-        VALUES ($1, $2, NOW())
-        `,
+        `INSERT INTO public.request_logs (method, endpoint, created_at) VALUES ($1, $2, NOW())`,
         [req.method, url.split("?")[0]],
       )
       .catch((error) => {
-        // Không nuốt lỗi nữa.
-        // In lỗi ra để biết chính xác database đang bị gì.
+        // Chỉ in lỗi ngắn gọn tránh spam terminal
         console.error("❌ REQUEST_LOGS ERROR:", error.message);
-
-        console.error(
-          "❌ REQUEST_LOGS DETAIL:",
-          error.detail || "Không có detail",
-        );
-
-        console.error("❌ REQUEST_LOGS HINT:", error.hint || "Không có hint");
-
-        console.error(
-          "❌ REQUEST_LOGS CODE:",
-          error.code || "Không có error code",
-        );
       });
   }
-
   next();
 });
 
 // ============================================================
-// SWAGGER
+// 6. TỰ ĐỘNG DỌN DẸP KHÓA PHÒNG HẾT HẠN (MỖI 10 PHÚT)
 // ============================================================
+setInterval(
+  async () => {
+    try {
+      const res = await pool.query(
+        `DELETE FROM public.temporary_locks WHERE expires_at < NOW()`,
+      );
+      if (res.rowCount > 0) {
+        console.log(
+          `🧹 [CRON] Đã dọn dẹp ${res.rowCount} khóa phòng tạm thời hết hạn.`,
+        );
+      }
+    } catch (err) {
+      console.warn("⚠️ Cron temporary_locks error:", err.message);
+    }
+  },
+  10 * 60 * 1000,
+);
 
+// ============================================================
+// 7. SWAGGER & ROUTERS
+// ============================================================
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// ============================================================
-// PAYMENT
-// ============================================================
-
-// SePay / VietQR
+// Thanh toán SePay / VietQR
 app.use("/api/payments", paymentRoutes);
-
-// Endpoint xác nhận đơn cũ
 app.post("/api/bookings/confirm-payment", bookingController.confirmPayment);
 
-// ============================================================
-// REVIEW ROUTES
-// ============================================================
-
+// Review Routes
 app.get("/api/hotels/:id/reviews", reviewController.listHotelReviews);
-
 app.get("/api/hotels/:hotelId/reviews", reviewController.listHotelReviews);
-
 app.get("/api/reviews/hotel/:hotelId", reviewController.listHotelReviews);
-
 app.get("/api/reviews/:hotelId", reviewController.listHotelReviews);
-
 app.post("/api/hotels/:id/reviews", requireAuth, reviewController.createReview);
-
 app.post(
   "/api/hotels/:hotelId/reviews",
   requireAuth,
   reviewController.createReview,
 );
-
 app.post("/api/reviews", requireAuth, reviewController.createReview);
-
 app.patch("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
-
 app.post("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
 
-// ============================================================
-// MAIN API ROUTES
-// ============================================================
-
+// Main API Routes
 app.use("/api", apiRoutes);
 
-// ============================================================
-// 404 + ERROR HANDLER
-// ============================================================
-
+// Error Handlers
 app.use(notFoundHandler);
-
 app.use(errorHandler);
 
 // ============================================================
-// DATABASE INITIALIZATION
+// 8. KHỞI CHẠY SERVER & BẢO VỆ DATABASE
 // ============================================================
-
 async function initDatabaseTables() {
   try {
-    // ========================================================
-    // PGCRYPTO
-    // ========================================================
-
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`)
-      .catch((error) => {
-        console.warn("⚠️ Không thể tạo pgcrypto:", error.message);
-      });
-
-    // ========================================================
-    // UNACCENT
-    // ========================================================
-
+      .catch(() => {});
     await pool
       .query(`CREATE EXTENSION IF NOT EXISTS "unaccent";`)
-      .catch((error) => {
-        console.warn("⚠️ Không thể tạo unaccent:", error.message);
-      });
+      .catch(() => {});
 
-    // ========================================================
-    // HOTEL PROPERTY TYPE
-    // ========================================================
-
+    // Đảm bảo bảng phụ trợ tồn tại
     await pool
       .query(
         `
-        ALTER TABLE public.hotel
-        ADD COLUMN IF NOT EXISTS property_type
-        VARCHAR(50)
-        DEFAULT 'hotel';
-        `,
+      CREATE TABLE IF NOT EXISTS public.request_logs (
+        id SERIAL PRIMARY KEY,
+        method VARCHAR(10),
+        endpoint VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON public.request_logs(created_at);
+      CREATE TABLE IF NOT EXISTS public.chatbot_log (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID,
+        session_id VARCHAR(255) NOT NULL,
+        role VARCHAR(20) NOT NULL,
+        message TEXT NOT NULL,
+        extracted_filter JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `,
       )
-      .catch((error) => {
-        console.warn("⚠️ Không thể thêm hotel.property_type:", error.message);
-      });
+      .catch(() => {});
 
-    // ========================================================
-    // REVIEW POINT CONSTRAINT
-    // ========================================================
-
-    await pool
-      .query(
-        `
-        ALTER TABLE public.review
-        DROP CONSTRAINT IF EXISTS chk_review_point;
-
-        ALTER TABLE public.review
-        ADD CONSTRAINT chk_review_point
-        CHECK (point >= 1 AND point <= 10);
-        `,
-      )
-      .catch((error) => {
-        console.warn("⚠️ Không thể cập nhật review constraint:", error.message);
-      });
-
-    // ========================================================
-    // REQUEST LOGS
-    // ========================================================
-    //
-    // id = SERIAL
-    // → INTEGER
-    //
-    // Không truyền id khi INSERT.
-    // PostgreSQL tự tăng id bằng sequence.
-    //
-    // ========================================================
-
-    await pool
-      .query(
-        `
-        CREATE TABLE IF NOT EXISTS public.request_logs (
-          id SERIAL PRIMARY KEY,
-          method VARCHAR(10),
-          endpoint VARCHAR(255),
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-        `,
-      )
-      .catch((error) => {
-        console.warn("⚠️ Không thể tạo request_logs:", error.message);
-      });
-
-    // ========================================================
-    // REQUEST LOGS INDEX
-    // ========================================================
-
-    await pool
-      .query(
-        `
-        CREATE INDEX IF NOT EXISTS
-        idx_request_logs_created_at
-        ON public.request_logs(created_at);
-        `,
-      )
-      .catch((error) => {
-        console.warn("⚠️ Không thể tạo request_logs index:", error.message);
-      });
-
-    // ========================================================
-    // CHATBOT LOG
-    // ========================================================
-    //
-    // id = UUID
-    // → dùng gen_random_uuid()
-    //
-    // ========================================================
-
-    await pool
-      .query(
-        `
-        CREATE TABLE IF NOT EXISTS public.chatbot_log (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id UUID,
-          session_id VARCHAR(255) NOT NULL,
-          role VARCHAR(20) NOT NULL,
-          message TEXT NOT NULL,
-          extracted_filter JSONB,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW()
-        );
-        `,
-      )
-      .catch((error) => {
-        console.warn("⚠️ Không thể tạo chatbot_log:", error.message);
-      });
-
-    console.log("✓ Đồng bộ và bảo vệ cấu trúc Database hoàn tất.");
+    console.log("✓ Đồng bộ cấu trúc Database hoàn tất.");
   } catch (err) {
     console.warn("Khởi tạo bảng phụ trợ thất bại:", err.message);
   }
 }
 
-// ============================================================
-// START SERVER
-// ============================================================
-
 async function startServer() {
   try {
     await pool.query("SELECT 1");
-
     await initDatabaseTables();
 
-    app.listen(PORT, () => {
-      console.log(`Server chạy tại http://localhost:${PORT}`);
-
+    const server = app.listen(PORT, () => {
+      console.log(`🚀 Server chạy tại http://localhost:${PORT}`);
       console.log(
-        `Đã kết nối PostgreSQL: ${process.env.DB_NAME || "hotel_booking"}`,
+        `📦 Kết nối PostgreSQL: ${process.env.DB_NAME || "hotel_booking"}`,
       );
     });
+
+    // Graceful Shutdown: Đóng kết nối an toàn khi server restart
+    const handleShutdown = async (signal) => {
+      console.log(`\nNhận tín hiệu ${signal}. Đang đóng server an toàn...`);
+      server.close(async () => {
+        try {
+          await pool.end();
+          console.log("✓ Đã đóng kết nối PostgreSQL Pool.");
+          process.exit(0);
+        } catch (e) {
+          process.exit(1);
+        }
+      });
+    };
+
+    process.on("SIGINT", () => handleShutdown("SIGINT"));
+    process.on("SIGTERM", () => handleShutdown("SIGTERM"));
   } catch (error) {
-    console.error("Không thể kết nối PostgreSQL:", error.message);
-
-    console.error("Database error detail:", error.detail || "Không có detail");
-
-    console.error("Database error code:", error.code || "Không có error code");
-
+    console.error("❌ Không thể khởi động server:", error.message);
     process.exit(1);
   }
 }

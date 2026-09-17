@@ -7,7 +7,7 @@ import { authService } from "@/services/authService";
 import { Button, Input } from "../ui";
 import { ArrowLeft } from "lucide-react";
 
-const LoginForm = () => {
+export const LoginForm = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [step, setStep] = useState("EMAIL");
@@ -17,7 +17,7 @@ const LoginForm = () => {
   const navigate = useNavigate();
   const loginStore = useAuthStore((state) => state.login);
 
-  // --- 🎯 ĐIỀU HƯỚNG CHÍNH XÁC THEO ROLE ---
+  // ─── 🎯 ĐIỀU HƯỚNG CHÍNH XÁC THEO ROLE ───
   const redirectByUserRole = (user) => {
     const rawRole =
       user?.role ||
@@ -25,10 +25,13 @@ const LoginForm = () => {
       (Array.isArray(user?.roles) ? user.roles[0] : "");
     const role = String(rawRole).toLowerCase();
 
-    // 1. Kiểm tra Lễ tân: vào thẳng Kênh Đặt phòng
-    const staffEmails = JSON.parse(
-      localStorage.getItem("staff_emails") || "[]",
-    ).map((e) => String(e).toLowerCase().trim());
+    // 1. Kiểm tra Lễ tân: vào thẳng Kênh sơ đồ phòng
+    let staffEmails = [];
+    try {
+      staffEmails = JSON.parse(
+        localStorage.getItem("staff_emails") || "[]",
+      ).map((e) => String(e).toLowerCase().trim());
+    } catch {}
 
     const isStaff =
       role === "staff" ||
@@ -56,7 +59,7 @@ const LoginForm = () => {
     navigate("/");
   };
 
-  // --- 🌐 ĐĂNG NHẬP GOOGLE ---
+  // ─── 🌐 ĐĂNG NHẬP GOOGLE ───
   const handleGoogleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setLoading(true);
@@ -80,16 +83,14 @@ const LoginForm = () => {
 
         if (!user) throw new Error("Không thể xác thực tài khoản");
 
-        // 🚀 BÍ QUYẾT: Dù Backend trả thiếu ảnh, Frontend vẫn tự ép link ảnh từ Google vào!
+        // Ép link ảnh từ Google vào avatar
         const finalUser = {
           ...user,
           full_name: user.full_name || googleUserInfo.name,
-          avatar: user.avatar || googleUserInfo.picture, // Ép cứng ảnh Google vào đây
+          avatar: user.avatar || googleUserInfo.picture,
         };
 
-        // Lưu vào Zustand Store
         if (loginStore) loginStore(finalUser, systemToken);
-
         redirectByUserRole(finalUser);
       } catch (err) {
         setError(err.message || "Đăng nhập Google thất bại");
@@ -100,14 +101,22 @@ const LoginForm = () => {
     onError: () => setError("Xác thực Google bị hủy bỏ"),
   });
 
-  // --- 🔑 ĐĂNG NHẬP EMAIL & MẬT KHẨU ---
+  // ─── 🔑 XÁC THỰC EMAIL Ở BƯỚC 1 ───
   const handleEmailNext = (e) => {
     e.preventDefault();
-    if (!email) return;
+    const cleanEmail = email.trim();
+    if (!cleanEmail) return;
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setError("Định dạng email không hợp lệ. Vui lòng kiểm tra lại!");
+      return;
+    }
+
     setError("");
     setStep("PASSWORD");
   };
 
+  // ─── 🔑 ĐĂNG NHẬP MẬT KHẨU Ở BƯỚC 2 ───
   const handleFinalSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -116,22 +125,22 @@ const LoginForm = () => {
     const cleanEmail = email.toLowerCase().trim();
 
     try {
-      // ─── 1. KIỂM TRA TÀI KHOẢN LỄ TÂN ĐƯỢC CHỦ NHÀ CẤP TẠI QUẦY ───
-      const pmsUsers = JSON.parse(
-        localStorage.getItem("pms_users_master") || "[]",
-      );
-      const regUsers = JSON.parse(
-        localStorage.getItem("registered_users") || "[]",
-      );
-      const staffEmails = JSON.parse(
-        localStorage.getItem("staff_emails") || "[]",
-      ).map((e) => String(e).toLowerCase().trim());
+      // 1. Kiểm tra tài khoản lễ tân cấp tại quầy PMS
+      let pmsUsers = [],
+        regUsers = [],
+        staffEmails = [];
+      try {
+        pmsUsers = JSON.parse(localStorage.getItem("pms_users_master") || "[]");
+        regUsers = JSON.parse(localStorage.getItem("registered_users") || "[]");
+        staffEmails = JSON.parse(
+          localStorage.getItem("staff_emails") || "[]",
+        ).map((e) => String(e).toLowerCase().trim());
+      } catch {}
 
       const allUsers = [...pmsUsers, ...regUsers];
       const matchedStaff = allUsers.find(
         (u) => u.email?.toLowerCase().trim() === cleanEmail,
       );
-
       const isStaffAccount =
         matchedStaff?.role === "receptionist" ||
         matchedStaff?.role === "staff" ||
@@ -143,24 +152,18 @@ const LoginForm = () => {
             "Tài khoản lễ tân đã bị Chủ khách sạn tạm khóa quyền truy cập!",
           );
         }
-
         if (matchedStaff.password && matchedStaff.password !== password) {
           throw new Error("Mật khẩu tài khoản lễ tân không chính xác!");
         }
 
-        const nowTime =
-          new Date().toLocaleTimeString("vi-VN") +
-          " " +
-          new Date().toLocaleDateString("vi-VN");
-
+        const nowTime = `${new Date().toLocaleTimeString("vi-VN")} ${new Date().toLocaleDateString("vi-VN")}`;
         const staffUserObj = {
           ...matchedStaff,
           role: "receptionist",
           role_name: "receptionist",
           last_login: nowTime,
         };
-
-        const staffToken = "receptionist-session-token-" + Date.now();
+        const staffToken = `receptionist-session-token-${Date.now()}`;
 
         if (loginStore) loginStore(staffUserObj, staffToken);
         localStorage.setItem("user", JSON.stringify(staffUserObj));
@@ -177,7 +180,7 @@ const LoginForm = () => {
         return;
       }
 
-      // ─── 2. ĐĂNG NHẬP API BACKEND ───
+      // 2. Đăng nhập qua API Backend
       let user = null;
       let systemToken = null;
 
@@ -195,7 +198,7 @@ const LoginForm = () => {
             throw new Error("Mật khẩu không chính xác!");
           }
           user = localMatched;
-          systemToken = "local-session-token-" + Date.now();
+          systemToken = `local-session-token-${Date.now()}`;
         } else {
           throw new Error(
             apiErr.message || "Tài khoản hoặc mật khẩu không chính xác",
@@ -221,53 +224,57 @@ const LoginForm = () => {
     <div className="w-full max-w-sm mx-auto py-12 px-4 font-sans">
       {step === "PASSWORD" && (
         <button
+          type="button"
           onClick={() => setStep("EMAIL")}
-          className="flex items-center gap-2 text-blue-600 mb-4 text-sm font-bold hover:bg-blue-50 w-fit p-2 rounded-lg transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 text-blue-600 mb-4 text-xs font-bold hover:bg-blue-50 w-fit px-2.5 py-1.5 rounded-lg transition cursor-pointer"
         >
-          <ArrowLeft size={16} /> Quay lại
+          <ArrowLeft size={15} /> Quay lại
         </button>
       )}
 
-      <h1 className="text-2xl font-black text-gray-900 mb-2 tracking-tight">
+      <h1 className="text-2xl font-black text-gray-900 mb-1.5 tracking-tight">
         {step === "EMAIL" ? "Đăng nhập hoặc tạo tài khoản" : "Nhập mật khẩu"}
       </h1>
-      <p className="text-sm text-gray-600 mb-8 leading-relaxed font-medium">
+      <p className="text-xs text-gray-500 mb-6 leading-relaxed font-medium">
         Sử dụng tài khoản GoStay của bạn để trải nghiệm các dịch vụ tốt nhất.
       </p>
 
       {error && (
-        <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl font-bold animate-in fade-in slide-in-from-top-1">
+        <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-bold animate-in fade-in">
           ⚠️ {error}
         </div>
       )}
 
       {step === "EMAIL" ? (
-        <form onSubmit={handleEmailNext} className="space-y-6">
+        <form onSubmit={handleEmailNext} className="space-y-4">
           <Input
             label="Địa chỉ email"
             type="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError("");
+            }}
             placeholder="Nhập địa chỉ email của bạn"
             clearable
           />
           <Button
             type="submit"
-            className="w-full font-bold"
+            className="w-full font-bold h-11 text-xs cursor-pointer"
             isLoading={loading}
           >
             Tiếp tục với email
           </Button>
         </form>
       ) : (
-        <form onSubmit={handleFinalSubmit} className="space-y-6">
-          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex justify-between items-center">
-            <span className="text-sm font-bold text-gray-700">{email}</span>
+        <form onSubmit={handleFinalSubmit} className="space-y-4">
+          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 flex justify-between items-center text-xs">
+            <span className="font-bold text-gray-700 truncate">{email}</span>
             <button
               type="button"
               onClick={() => setStep("EMAIL")}
-              className="text-xs text-blue-600 font-bold hover:underline cursor-pointer"
+              className="text-blue-600 font-bold hover:underline cursor-pointer shrink-0 ml-2"
             >
               Sửa
             </button>
@@ -277,12 +284,15 @@ const LoginForm = () => {
             type="password"
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError("");
+            }}
             placeholder="Nhập mật khẩu"
           />
           <Button
             type="submit"
-            className="w-full font-bold"
+            className="w-full font-bold h-11 text-xs cursor-pointer"
             isLoading={loading}
           >
             Đăng nhập
@@ -290,11 +300,11 @@ const LoginForm = () => {
         </form>
       )}
 
-      <div className="relative my-10 text-center">
+      <div className="relative my-8 text-center">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-200"></div>
+          <div className="w-full border-t border-gray-200" />
         </div>
-        <span className="relative bg-white px-4 text-xs text-gray-400 font-medium uppercase tracking-widest">
+        <span className="relative bg-white px-3 text-[10px] text-gray-400 font-bold uppercase tracking-widest">
           Hoặc
         </span>
       </div>
@@ -303,10 +313,10 @@ const LoginForm = () => {
         type="button"
         onClick={() => handleGoogleLogin()}
         disabled={loading}
-        className="w-full h-12 border border-gray-300 rounded-xl flex items-center justify-center hover:bg-gray-50 transition-all gap-3 shadow-xs active:scale-[0.98] cursor-pointer group"
+        className="w-full h-11 border border-gray-300 rounded-xl flex items-center justify-center hover:bg-gray-50 transition gap-2.5 shadow-2xs active:scale-[0.98] cursor-pointer group"
       >
         <svg
-          className="w-5 h-5 transition-transform group-hover:scale-110"
+          className="w-4 h-4 transition-transform group-hover:scale-110"
           viewBox="0 0 24 24"
         >
           <path
@@ -326,12 +336,12 @@ const LoginForm = () => {
             d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
           />
         </svg>
-        <span className="text-sm font-bold text-gray-700">
+        <span className="text-xs font-bold text-gray-700">
           Tiếp tục với Google
         </span>
       </button>
 
-      <p className="mt-12 text-[11px] text-center text-gray-400 leading-relaxed">
+      <p className="mt-8 text-[11px] text-center text-gray-400 leading-relaxed">
         Bằng cách đăng nhập, bạn đồng ý với{" "}
         <span className="text-blue-600 underline cursor-pointer">
           Điều khoản

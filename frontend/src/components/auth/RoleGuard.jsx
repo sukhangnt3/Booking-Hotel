@@ -1,14 +1,29 @@
-import React from "react";
+// src/components/auth/RoleGuard.jsx
+import React, { useMemo } from "react";
 import { useAuthStore } from "@/stores/authStore";
 
 /**
- * RoleGuard: Hiển thị nội dung dựa trên quyền hạn.
- * @param {Array} allowedRoles - Danh sách các role được phép xem (ví dụ: ['admin', 'owner'])
- * @param {ReactNode} children - Nội dung hiển thị nếu có quyền
- * @param {ReactNode} fallback - Nội dung hiển thị nếu KHÔNG có quyền (mặc định là null)
- * @param {Boolean} adminBypass - Admin có được xem mọi thứ không (mặc định là true)
+ * Helper chuẩn hóa tên Role (hỗ trợ String, Object { name, role, id })
  */
-const RoleGuard = ({
+const normalizeRole = (r) => {
+  if (!r) return "";
+  if (typeof r === "string") return r.toLowerCase().trim();
+  if (typeof r === "object") {
+    return String(r.name || r.role || r.role_name || r.id || "")
+      .toLowerCase()
+      .trim();
+  }
+  return String(r).toLowerCase().trim();
+};
+
+/**
+ * RoleGuard: Hiển thị / Ẩn nội dung dựa trên quyền hạn của người dùng.
+ * @param {Array} allowedRoles - Danh sách role được phép xem (VD: ['admin', 'owner'])
+ * @param {ReactNode} children - Nội dung hiển thị nếu CÓ quyền
+ * @param {ReactNode} fallback - Nội dung hiển thị nếu KHÔNG có quyền (mặc định: null)
+ * @param {Boolean} adminBypass - Cho phép Admin xem tất cả (mặc định: true)
+ */
+export const RoleGuard = ({
   allowedRoles = [],
   children,
   fallback = null,
@@ -16,33 +31,42 @@ const RoleGuard = ({
 }) => {
   const { user, isAuthenticated } = useAuthStore();
 
-  // 1. Nếu chưa đăng nhập -> Trả về fallback ngay lập tức
+  // 1. Nếu chưa đăng nhập -> Trả về fallback
   if (!isAuthenticated || !user) {
     return fallback;
   }
 
-  // 2. Lấy Role hiện tại (Hỗ trợ nhiều định dạng từ Backend)
-  const getRoles = () => {
-    const raw = user?.role || user?.role_name || user?.roles || "";
-    if (Array.isArray(raw)) return raw.map((r) => String(r).toLowerCase());
-    return [String(raw).toLowerCase()];
-  };
+  // 2. 🌟 TRÍCH XUẤT VÀ ĐỒNG HÓA CÁC ROLE TƯƠNG ĐƯƠNG
+  const userRoles = useMemo(() => {
+    const raw = user?.roles || user?.role || user?.role_name || [];
+    const roleList = Array.isArray(raw) ? raw : [raw];
+    const rolesSet = new Set(roleList.map(normalizeRole).filter(Boolean));
 
-  const userRoles = getRoles();
-  const normalizedAllowedRoles = allowedRoles.map((role) =>
-    String(role).toLowerCase(),
-  );
+    // Đồng hóa các role tương đương để phân quyền luôn chính xác
+    if (rolesSet.has("hotel_owner")) rolesSet.add("owner");
+    if (rolesSet.has("owner")) rolesSet.add("hotel_owner");
+    if (rolesSet.has("receptionist")) rolesSet.add("staff");
+    if (rolesSet.has("staff")) rolesSet.add("receptionist");
+
+    return Array.from(rolesSet);
+  }, [user]);
+
+  const normalizedAllowedRoles = useMemo(() => {
+    return allowedRoles.map(normalizeRole).filter(Boolean);
+  }, [allowedRoles]);
 
   // 3. Logic kiểm tra quyền
   const isSystemAdmin =
-    userRoles.includes("admin") || userRoles.includes("role_admin");
+    userRoles.includes("admin") ||
+    userRoles.includes("role_admin") ||
+    userRoles.includes("superadmin");
 
   const hasAccess =
-    (adminBypass && isSystemAdmin) || // Admin xem được tất cả
+    (adminBypass && isSystemAdmin) || // Admin luôn được xem
     normalizedAllowedRoles.length === 0 || // Không yêu cầu role cụ thể
     normalizedAllowedRoles.some((role) => userRoles.includes(role)); // Khớp role
 
-  // 4. Trả về kết quả
+  // 4. Trả về kết quả hiển thị
   if (hasAccess) {
     return <>{children}</>;
   }

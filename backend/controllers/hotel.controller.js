@@ -1,5 +1,7 @@
 // backend/controllers/hotel.controller.js
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const pool = require("../config/database");
 
 const safeRequire = (mod) => {
@@ -58,20 +60,80 @@ const parseAmenityArray = (raw) => {
     : [];
 };
 
+// 🌟 HÀM LƯU BASE64 DÙNG MD5 HASH (ĐẢM BẢO ẢNH TRÙNG SẼ CÙNG TÊN FILE, KHÔNG BỊ NHÂN ĐÔI)
+const base64Cache = new Map();
+
+const saveBase64ToFile = (rawString) => {
+  if (
+    !rawString ||
+    typeof rawString !== "string" ||
+    !rawString.startsWith("data:image/")
+  ) {
+    return rawString;
+  }
+
+  if (base64Cache.has(rawString)) {
+    return base64Cache.get(rawString);
+  }
+
+  try {
+    const matches = rawString.match(
+      /^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/,
+    );
+    if (!matches) return rawString;
+
+    const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+    const buffer = Buffer.from(matches[2], "base64");
+
+    // Tạo mã băm từ buffer để nếu cùng 1 ảnh thì sẽ có cùng 1 tên file duy nhất
+    const fileHash = crypto.createHash("md5").update(buffer).digest("hex");
+    const fileName = `hotel_${fileHash}.${ext}`;
+    const uploadsDir = path.resolve("uploads");
+
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const filePath = path.join(uploadsDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, buffer);
+    }
+
+    const publicUrl = `/uploads/${fileName}`;
+    base64Cache.set(rawString, publicUrl);
+    return publicUrl;
+  } catch (err) {
+    console.warn("⚠️ Lỗi lưu base64 thành file:", err.message);
+    return rawString;
+  }
+};
+
+// 🌟 Hàm trích xuất và khử trùng lặp URL
 const extractImageUrls = (raw) => {
   const list = [];
+  const seen = new Set();
+
   const walk = (item) => {
     if (!item) return;
     if (Array.isArray(item)) return item.forEach(walk);
-    const u = (
+    let u = (
       typeof item === "string"
         ? item
         : item.url || item.path || item.image_url || item.thumbnail || ""
     ).trim();
-    if (u && !u.startsWith("blob:")) list.push(u);
+
+    if (u && !u.startsWith("blob:")) {
+      if (u.startsWith("data:image/")) {
+        u = saveBase64ToFile(u);
+      }
+      if (!seen.has(u)) {
+        seen.add(u);
+        list.push(u);
+      }
+    }
   };
   walk(raw);
-  return [...new Set(list)];
+  return list;
 };
 
 async function ensureAmenityRecord(client, rawItem) {
@@ -304,7 +366,6 @@ const parseSearchDate = (v) =>
     ? new Date(v).toISOString().slice(0, 10)
     : null;
 
-// SQL tái sử dụng để query phòng cùng ảnh & tiện nghi
 const ROOM_BASE_SELECT = `
   SELECT r.*,
     COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS amount,
@@ -341,12 +402,10 @@ async function listHotels(req, res, next) {
       (req.query.checkIn || req.query.checkOut) &&
       (!checkIn || !checkOut || checkOut <= checkIn)
     ) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Ngày nhận phòng và trả phòng không hợp lệ.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Ngày nhận phòng và trả phòng không hợp lệ.",
+      });
     }
 
     const minPrice = Number(req.query.minPrice || 0);
@@ -430,6 +489,7 @@ async function getHotelById(req, res, next) {
         `SELECT h.*, COALESCE(h.is_beachfront, false) AS is_beachfront, COALESCE(h.distance_to_center, 1.2) AS distance_to_center FROM public.hotel h WHERE h.id::text = $1 LIMIT 1`,
         [rawId],
       ),
+      // 🌟 CHỈ LẤY ẢNH CƠ SỞ (room_id IS NULL)
       pool
         .query(
           `SELECT id, path, is_thumbnail, display_order FROM public.image WHERE hotel_id = $1 AND room_id IS NULL ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
@@ -521,7 +581,7 @@ async function listDestinationSuggestions(req, res) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ KHÁCH SẠN (BATCH INSERT TỐI ƯU HIỆU NĂNG) ───
+// ─── 5. ĐĂNG KÝ KHÁCH SẠN (ĐÃ FIX LỖI TẠO 8 HÌNH) ───
 async function registerHotel(req, res) {
   const client = await pool.connect();
   try {
@@ -565,12 +625,10 @@ async function registerHotel(req, res) {
     }
 
     if (!validOwnerId)
-      return res
-        .status(401)
-        .json({
-          message:
-            "Không tìm thấy hoặc không thể tạo tài khoản chủ cơ sở hợp lệ.",
-        });
+      return res.status(401).json({
+        message:
+          "Không tìm thấy hoặc không thể tạo tài khoản chủ cơ sở hợp lệ.",
+      });
 
     if (!b.name || !b.address || !b.city) {
       return res
@@ -646,7 +704,7 @@ async function registerHotel(req, res) {
       ],
     );
 
-    // ── Xử lý ảnh: Bóc tách ảnh phòng và khách sạn ──
+    // ── 1. BÓC TÁCH ẢNH PHÒNG TRƯỚC ──
     const rooms = Array.isArray(b.rooms || b.roomList || b.room_data)
       ? b.rooms || b.roomList || b.room_data
       : [];
@@ -660,60 +718,32 @@ async function registerHotel(req, res) {
         r.imageUrl,
         r.thumbnail,
         r.photos,
-        r.room_images,
-        r.roomImages,
       ]);
-      if (b.roomImages)
-        extractImageUrls([
-          b.roomImages[r.id],
-          b.roomImages[idx],
-          b.roomImages[String(idx)],
-          b.roomImages[String(r.id)],
-        ]).forEach((u) => roomUrls.push(u));
 
-      if (Array.isArray(b.hotelImages)) {
-        b.hotelImages.forEach((img) => {
-          if (
-            img &&
-            typeof img === "object" &&
-            (img.roomId === r.id ||
-              img.room_id === r.id ||
-              String(img.roomId) === String(idx) ||
-              String(img.room_id) === String(idx))
-          ) {
-            const u = img.url || img.path;
-            if (u && !u.startsWith("blob:")) roomUrls.push(u.trim());
-          }
-        });
-      }
       roomUrls.forEach((u) => allRoomImageSet.add(u));
       roomPhotosMap.set(idx, [...new Set(roomUrls)]);
     });
 
-    // Auto fallback nếu phòng chưa có ảnh
-    if (Array.isArray(b.hotelImages) && b.hotelImages.length > 1) {
-      let unassigned = extractImageUrls(b.hotelImages).filter(
-        (url) => !allRoomImageSet.has(url),
-      );
-      rooms.forEach((_, idx) => {
-        if (!roomPhotosMap.get(idx)?.length && unassigned.length > 1) {
-          const picked = unassigned.shift();
-          roomPhotosMap.set(idx, [picked]);
-          allRoomImageSet.add(picked);
-        }
-      });
+    // ── 2. LƯU ẢNH CƠ SỞ (ĐÃ KHỬ TRÙNG & LOẠI HOÀN TOÀN ẢNH PHÒNG) ──
+    const rawFacilitySources = b.hotelImages || b.images || [];
+    const facilityUrls = extractImageUrls(rawFacilitySources).filter(
+      (url) => !allRoomImageSet.has(url),
+    );
+
+    // Bổ sung ảnh bìa chính nếu chưa có trong danh sách
+    if (b.image) {
+      const coverUrl = extractImageUrls(b.image)[0];
+      if (
+        coverUrl &&
+        !facilityUrls.includes(coverUrl) &&
+        !allRoomImageSet.has(coverUrl)
+      ) {
+        facilityUrls.unshift(coverUrl);
+      }
     }
 
-    // Lưu ảnh khách sạn (hotel_id NOT NULL, room_id IS NULL)
-    const hotelImgCandidates = extractImageUrls([
-      b.hotelMainImage,
-      b.image,
-      b.hotelImages,
-      b.images,
-      b.gallery,
-    ]).filter((url) => !allRoomImageSet.has(url));
-    if (hotelImgCandidates.length) {
-      const imgValues = hotelImgCandidates
+    if (facilityUrls.length) {
+      const imgValues = facilityUrls
         .map(
           (url, i) =>
             `(gen_random_uuid(), '${newHotelId}', NULL, '${url.replace(/'/g, "''")}', ${i === 0}, ${i}, NOW())`,
@@ -741,7 +771,7 @@ async function registerHotel(req, res) {
           .catch(() => {});
     }
 
-    // ── Lưu danh sách phòng ──
+    // ── 3. LƯU DANH SÁCH PHÒNG & ẢNH PHÒNG ──
     for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
       const r = rooms[rIdx];
       const newRoomId = crypto.randomUUID();
@@ -772,7 +802,7 @@ async function registerHotel(req, res) {
         ],
       );
 
-      // Batch Insert ảnh phòng (hotel_id IS NULL, room_id NOT NULL)
+      // 🌟 Batch Insert ảnh phòng (BẮT BUỘC: hotel_id = NULL, room_id = newRoomId)
       const rImages = roomPhotosMap.get(rIdx) || [];
       if (rImages.length) {
         const rImgValues = rImages
@@ -852,12 +882,10 @@ async function registerHotel(req, res) {
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Máy chủ gặp lỗi khi tạo hồ sơ.",
-      });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Máy chủ gặp lỗi khi tạo hồ sơ.",
+    });
   } finally {
     client.release();
   }

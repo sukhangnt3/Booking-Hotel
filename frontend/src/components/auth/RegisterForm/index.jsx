@@ -95,14 +95,12 @@ const STEPS = [
 export const RegisterForm = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-
   const { user, isAuthenticated, setAuth } = useAuthStore();
 
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [submittedApplication, setSubmittedApplication] = useState(null);
 
@@ -134,17 +132,14 @@ export const RegisterForm = () => {
 
   const validateCurrentStep = () => {
     const err = {};
+    const isAlreadyReady = isAuthenticated && Boolean(user?.id);
 
     if (currentStep === 1) {
-      const isAlreadyReady = isAuthenticated && Boolean(user?.id);
-
       if (!isAlreadyReady) {
-        if (!formData.ownerName?.trim()) {
+        if (!formData.ownerName?.trim())
           err.ownerName = "Vui lòng nhập họ và tên chủ cơ sở!";
-        }
-        if (!formData.phoneContact?.trim()) {
+        if (!formData.phoneContact?.trim())
           err.phoneContact = "Vui lòng nhập số điện thoại liên lạc!";
-        }
         if (!formData.emailContact?.trim()) {
           err.emailContact = "Vui lòng nhập email đăng nhập!";
         } else if (
@@ -157,15 +152,10 @@ export const RegisterForm = () => {
         }
       }
 
-      if (!formData.hotelName?.trim()) {
+      if (!formData.hotelName?.trim())
         err.hotelName = "Vui lòng nhập tên cơ sở lưu trú!";
-      }
-      if (!formData.address?.trim()) {
-        err.address = "Vui lòng nhập địa chỉ phố!";
-      }
-      if (!formData.city?.trim()) {
-        err.city = "Vui lòng nhập tên thành phố!";
-      }
+      if (!formData.address?.trim()) err.address = "Vui lòng nhập địa chỉ phố!";
+      if (!formData.city?.trim()) err.city = "Vui lòng nhập tên thành phố!";
     }
 
     if (currentStep === 3) {
@@ -173,29 +163,24 @@ export const RegisterForm = () => {
         err.rooms = "Cần ít nhất 1 loại phòng để sẵn sàng mở bán!";
       } else {
         formData.rooms.forEach((r, i) => {
-          if (!r.name?.trim()) {
+          if (!r.name?.trim())
             err[`room_${i}_name`] = "Vui lòng chọn hoặc nhập tên phòng!";
-          }
-          if (!r.base_price || Number(r.base_price) <= 0) {
+          if (!r.base_price || Number(r.base_price) <= 0)
             err[`room_${i}_price`] = "Giá bán phòng phải lớn hơn 0 ₫!";
-          }
         });
       }
     }
 
     if (currentStep === 4) {
       if (formData.payoutMethod === "bank_transfer") {
-        if (!formData.bankAccount?.trim()) {
+        if (!formData.bankAccount?.trim())
           err.bankAccount = "Vui lòng cung cấp số tài khoản ngân hàng!";
-        }
-        if (!formData.bankAccountHolder?.trim()) {
+        if (!formData.bankAccountHolder?.trim())
           err.bankAccountHolder = "Vui lòng nhập tên chủ tài khoản thụ hưởng!";
-        }
       }
     }
 
     if (currentStep === 5) {
-      // Chỉ tính các ảnh thực sự của cơ sở
       const propertyPhotos = (formData.hotelImages || []).filter(
         (img) => !img.roomId && !img.room_id,
       );
@@ -206,18 +191,16 @@ export const RegisterForm = () => {
     }
 
     if (currentStep === 6) {
-      if (!formData.checkInFrom) {
+      if (!formData.checkInFrom)
         err.checkInFrom = "Vui lòng chọn thời gian nhận phòng!";
-      }
-      if (!formData.checkOutTo) {
+      if (!formData.checkOutTo)
         err.checkOutTo = "Vui lòng chọn thời gian trả phòng!";
-      }
     }
 
     if (currentStep === 8) {
       if (!formData.acceptedTerms) {
         err.acceptedTerms =
-          "Quý đối tác cần đọc và chấp nhận Quy chế hoạt động cùng biểu phí hoa hồng để kích hoạt mở bán!";
+          "Quý đối tác cần đọc và chấp nhận Quy chế hoạt động cùng biểu phí hoa hồng để mở bán!";
       }
     }
 
@@ -231,13 +214,11 @@ export const RegisterForm = () => {
 
   const handleNext = async () => {
     if (!validateCurrentStep()) return;
-
     const isAccountReady = isAuthenticated && Boolean(user?.id);
 
     if (currentStep === 1 && !isAccountReady) {
       setLoading(true);
       const email = (formData.emailContact || "").trim().toLowerCase();
-
       try {
         const checkRes = await apiClient
           .get(`/auth/check-email?email=${encodeURIComponent(email)}`)
@@ -247,16 +228,13 @@ export const RegisterForm = () => {
           setErrors((prev) => ({
             ...prev,
             emailContact:
-              "⚠️ Email này đã có tài khoản trên hệ thống! Vui lòng sử dụng email khác hoặc đăng nhập.",
+              "⚠️ Email này đã có tài khoản trên hệ thống! Vui lòng dùng email khác hoặc đăng nhập.",
           }));
-          setLoading(false);
           return;
         }
-
         setCurrentStep(2);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
-        console.warn("Bỏ qua kiểm tra email offline:", err);
         setCurrentStep(2);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } finally {
@@ -269,9 +247,8 @@ export const RegisterForm = () => {
   };
 
   const handleBack = () => {
-    if (currentStep === 1) {
-      navigate("/");
-    } else {
+    if (currentStep === 1) navigate("/");
+    else {
       setCurrentStep((prev) => Math.max(prev - 1, 1));
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -283,7 +260,7 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
-  // 🌟 BƯỚC 8: TẠO TÀI KHOẢN VÀ ĐĂNG TẢI KHÁCH SẠN TRỌN GÓI VÀO DATABASE
+  // 🌟 BƯỚC 8: TẠO TÀI KHOẢN VÀ ĐĂNG TẢI KHÁCH SẠN VÀO DATABASE
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
@@ -297,47 +274,23 @@ export const RegisterForm = () => {
         localStorage.getItem("token") ||
         localStorage.getItem("access_token") ||
         useAuthStore.getState().token;
-
       let currentOwnerId = user?.id || formData.ownerId;
 
-      // 1. NẾU CHƯA CÓ TÀI KHOẢN -> TẠO NGAY TẠI BƯỚC NÀY
+      // 1. TỰ ĐỘNG ĐĂNG KÝ NẾU CHƯA CÓ TÀI KHOẢN
       if (!activeToken || !currentOwnerId) {
         const email = (formData.emailContact || "").trim().toLowerCase();
-        const password = formData.password;
-
         const regRes = await apiClient.post("/auth/register", {
           full_name: formData.ownerName.trim(),
           name: formData.ownerName.trim(),
-          email: email,
+          email,
           phone: formData.phoneContact.trim(),
-          password: password,
+          password: formData.password,
           role: "hotel_owner",
         });
 
         activeToken =
-          regRes.data?.token ||
-          regRes.data?.data?.token ||
-          regRes.token ||
-          regRes.data?.accessToken;
-
-        const createdUser =
-          regRes.data?.user || regRes.data?.data?.user || regRes.user;
-
-        if (!activeToken) {
-          try {
-            const loginRes = await apiClient.post("/auth/login", {
-              email: email,
-              password: password,
-            });
-            activeToken =
-              loginRes.data?.token ||
-              loginRes.data?.data?.token ||
-              loginRes.token ||
-              loginRes.data?.accessToken;
-          } catch (autoLoginErr) {
-            console.warn("Lỗi tự động đăng nhập sau đăng ký:", autoLoginErr);
-          }
-        }
+          regRes.data?.token || regRes.data?.accessToken || regRes.token;
+        const createdUser = regRes.data?.user || regRes.user;
 
         if (activeToken) {
           localStorage.setItem("token", activeToken);
@@ -346,7 +299,7 @@ export const RegisterForm = () => {
         }
       }
 
-      // 🌟 2. CHUẨN BỊ PAYLOAD PHÒNG & GIỮ NGUYÊN VẸN 100% HÌNH ẢNH CỦA PHÒNG
+      // 2. XỬ LÝ HẠNG PHÒNG & SỐ PHÒNG
       const processedRooms = formData.rooms.map((r, rIdx) => {
         let numbers = [];
         if (r.roomNumbersText) {
@@ -360,14 +313,12 @@ export const RegisterForm = () => {
           for (let i = 1; i <= count; i++) numbers.push(`P.${rIdx + 1}0${i}`);
         }
 
-        // Trích xuất mảng ảnh của phòng
         const roomImgs =
           Array.isArray(r.images) && r.images.length > 0
             ? r.images
             : r.image
               ? [r.image]
               : [];
-
         const mainRoomImg = r.image || r.thumbnail || roomImgs[0] || "";
 
         return {
@@ -382,7 +333,6 @@ export const RegisterForm = () => {
           room_area: Number(r.room_area || 28),
           amount: numbers.length,
           room_numbers: numbers,
-          // 🌟 TRẢ LẠI ĐẦY ĐỦ CÁC TRƯỜNG ẢNH CỦA PHÒNG CHO SERVER:
           image: mainRoomImg,
           thumbnail: mainRoomImg,
           images: roomImgs,
@@ -396,15 +346,14 @@ export const RegisterForm = () => {
         };
       });
 
-      // Tạo map roomImages để Server bắt chắc chắn 100%
       const roomImagesMap = {};
       processedRooms.forEach((r, idx) => {
         if (r.id) roomImagesMap[r.id] = r.images;
         roomImagesMap[idx] = r.images;
       });
 
-      // 🌟 3. CHỈ LẤY ĐÚNG CÁC ẢNH CỦA CƠ SỞ (LOẠI TRỪ TOÀN BỘ ẢNH PHÒNG)
-      const hotelPropertyImages = (formData.hotelImages || [])
+      // 3. TÁCH BIỆT ẢNH CỦA KHÁCH SẠN
+      const propertyImages = (formData.hotelImages || [])
         .filter((img) => !img.roomId && !img.room_id)
         .map((img, idx) => {
           const pathUrl = typeof img === "string" ? img : img.url || img.path;
@@ -417,14 +366,15 @@ export const RegisterForm = () => {
           };
         });
 
+      // Đảm bảo luôn có 1 ảnh bìa chính
       const hotelCover =
-        formData.hotelMainImage || hotelPropertyImages[0]?.path || "";
+        formData.hotelMainImage || propertyImages[0]?.path || "";
 
       const payload = {
         name: formData.hotelName || "Cơ sở lưu trú",
         property_type: formData.propertyType || "hotel",
         address: formData.address,
-        city: formData.city || formData.province || "Vũng Tàu",
+        city: formData.city || formData.province || "Hồ Chí Minh",
         latitude: Number(formData.latitude || 10.7769),
         longitude: Number(formData.longitude || 106.7009),
         is_beachfront: Boolean(formData.is_beachfront),
@@ -434,69 +384,41 @@ export const RegisterForm = () => {
         star_rating: Number(formData.starRating || 3),
         description:
           formData.description ||
-          `Tận hưởng kỳ nghỉ dưỡng tuyệt vời tại ${formData.hotelName} với dịch vụ chất lượng cao và vị trí đắc địa.`,
+          `Tận hưởng kỳ nghỉ dưỡng tuyệt vời tại ${formData.hotelName} với dịch vụ chất lượng cao.`,
         checkin_time: sanitizeTimeToPostgres(formData.checkInFrom, "14:00:00"),
         checkout_time: sanitizeTimeToPostgres(formData.checkOutTo, "12:00:00"),
         cancellation_deadline_hours: Number(
           formData.cancellation_deadline_hours || 24,
         ),
         bank_code: formData.bankCode || "VCB",
-        bankCode: formData.bankCode || "VCB",
         bank_name: formData.bankName || "Vietcombank",
-        bankName: formData.bankName || "Vietcombank",
         bank_account: formData.bankAccount || "Chưa cập nhật",
-        bankAccount: formData.bankAccount || "Chưa cập nhật",
         bank_account_holder: formData.bankAccountHolder || formData.ownerName,
-        bankAccountHolder: formData.bankAccountHolder || formData.ownerName,
         tax_code: formData.taxCode || null,
         business_license_url: formData.businessLicenseUrl || null,
         commission_rate: Number(formData.commissionRate || 18.0),
-        // 🌟 ẢNH CƠ SỞ ĐƯỢC PHÂN LẬP RIÊNG BIỆT:
         image: hotelCover,
         hotelMainImage: hotelCover,
-        hotelImages: hotelPropertyImages,
-        images: hotelPropertyImages,
-        // 🌟 ẢNH PHÒNG ĐƯỢC TRUYỀN ĐẦY ĐỦ:
+        hotelImages: propertyImages,
+        images: propertyImages,
         rooms: processedRooms,
         roomImages: roomImagesMap,
         amenities: formData.propertyAmenities,
       };
 
       const res = await apiClient.post("/hotels/register", payload, {
-        headers: {
-          Authorization: `Bearer ${activeToken}`,
-        },
+        headers: { Authorization: `Bearer ${activeToken}` },
       });
 
       const responseData = res?.data || res;
       const createdHotel = responseData?.hotel || responseData;
-
       const newToken = responseData?.token || responseData?.accessToken;
       const newUser = responseData?.user;
 
       if (newToken) {
         localStorage.setItem("token", newToken);
         localStorage.setItem("access_token", newToken);
-        if (setAuth && newUser) {
-          setAuth(newToken, newUser);
-        }
-      }
-
-      try {
-        if (authService?.getProfile) {
-          const profileRes = await authService.getProfile();
-          const updatedUser =
-            profileRes?.data?.user ||
-            profileRes?.data?.data?.user ||
-            profileRes?.data ||
-            profileRes?.user;
-
-          if (updatedUser && setAuth) {
-            setAuth(newToken || activeToken, updatedUser);
-          }
-        }
-      } catch (profileErr) {
-        // Bỏ qua cảnh báo phụ
+        if (setAuth && newUser) setAuth(newToken, newUser);
       }
 
       setSubmittedApplication({
@@ -509,12 +431,10 @@ export const RegisterForm = () => {
 
       setIsReviewOpen(false);
     } catch (err) {
-      console.error("Lỗi đăng tải khách sạn:", err);
-      const errorMsg =
-        err.response?.data?.message ||
-        err.message ||
-        "Đã xảy ra lỗi khi đăng tải.";
-      alert(`Đăng ký chưa thành công: ${errorMsg}`);
+      console.error("Lỗi đăng ký khách sạn:", err);
+      alert(
+        `Đăng ký chưa thành công: ${err.response?.data?.message || err.message || "Lỗi máy chủ."}`,
+      );
     } finally {
       setLoading(false);
     }
@@ -554,7 +474,8 @@ export const RegisterForm = () => {
       </header>
 
       <div className="max-w-7xl mx-auto pt-8 px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-        <div className="hidden md:block md:col-span-4 lg:col-span-3 sticky top-20 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+        {/* SIDEBAR TIẾN TRÌNH */}
+        <div className="hidden md:block md:col-span-4 lg:col-span-3 sticky top-20 bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs">
           <div className="text-xs font-black text-[#003580] uppercase tracking-wider pb-3 border-b border-slate-100 mb-4 flex items-center justify-between">
             <span>Tiến trình hồ sơ</span>
             <span className="text-[#006ce4] font-black">{currentStep}/8</span>
@@ -571,7 +492,7 @@ export const RegisterForm = () => {
                   onClick={() => s.id <= currentStep && setCurrentStep(s.id)}
                   className={`flex items-center gap-3 p-2.5 rounded-xl text-xs font-bold cursor-pointer transition ${
                     isCurrent
-                      ? "bg-[#e8f2ff] text-[#003580] shadow-xs"
+                      ? "bg-[#e8f2ff] text-[#003580] shadow-2xs"
                       : isPassed
                         ? "text-slate-700 hover:bg-slate-50"
                         : "text-slate-400 opacity-60 cursor-not-allowed"
@@ -604,7 +525,8 @@ export const RegisterForm = () => {
           </div>
         </div>
 
-        <div className="md:col-span-8 lg:col-span-9 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xs">
+        {/* NỘI DUNG TỪNG BƯỚC */}
+        <div className="md:col-span-8 lg:col-span-9 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-2xs">
           {currentStep === 1 && (
             <Step1HotelInfo
               data={formData}
@@ -658,6 +580,7 @@ export const RegisterForm = () => {
             />
           )}
 
+          {/* THANH ĐIỀU HƯỚNG NÚT BẤM */}
           <div className="flex items-center justify-between pt-8 mt-10 border-t border-slate-100 gap-3">
             <button
               type="button"

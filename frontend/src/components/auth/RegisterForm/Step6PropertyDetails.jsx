@@ -1,6 +1,6 @@
 // src/components/auth/RegisterForm/Step6PropertyDetails.jsx
 import React, { useState, useRef, useEffect } from "react";
-import { Star, ChevronDown, Sparkles } from "lucide-react";
+import { Star, ChevronDown, Sparkles, AlertCircle } from "lucide-react";
 
 const TIME_SLOTS = [
   { label: "06:00 SA (06:00)", value: "06:00" },
@@ -21,6 +21,7 @@ const TIME_SLOTS = [
   { label: "09:00 CH (21:00)", value: "21:00" },
   { label: "10:00 CH (22:00)", value: "22:00" },
   { label: "11:00 CH (23:00)", value: "23:00" },
+  { label: "11:59 ĐÊM (23:59)", value: "23:59" },
 ];
 
 const TimePicker = ({ value, onChange, placeholder = "Chọn giờ" }) => {
@@ -30,7 +31,6 @@ const TimePicker = ({ value, onChange, placeholder = "Chọn giờ" }) => {
   const currentSlot = TIME_SLOTS.find(
     (s) => s.value === value || s.label === value,
   );
-
   const displayLabel = currentSlot ? currentSlot.label : value || placeholder;
 
   useEffect(() => {
@@ -39,29 +39,23 @@ const TimePicker = ({ value, onChange, placeholder = "Chọn giờ" }) => {
         setIsOpen(false);
       }
     };
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    if (isOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
   return (
     <div className="relative w-full" ref={popoverRef}>
-      <div
+      <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full h-11 px-3.5 text-xs font-bold bg-white rounded-xl border border-slate-300 flex items-center justify-between cursor-pointer focus:border-[#006ce4] select-none"
+        className="w-full h-11 px-3.5 text-xs font-bold bg-white rounded-xl border border-slate-300 flex items-center justify-between cursor-pointer focus:border-[#006ce4] select-none text-left"
       >
-        <span className="text-slate-900">{displayLabel}</span>
-
-        <ChevronDown size={16} className="text-slate-400" />
-      </div>
+        <span className="text-slate-900 truncate">{displayLabel}</span>
+        <ChevronDown size={16} className="text-slate-400 shrink-0 ml-1" />
+      </button>
 
       {isOpen && (
-        <div className="absolute top-full mt-2 z-50 left-0 w-64 max-h-64 overflow-y-auto bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 space-y-1 animate-fadeIn">
+        <div className="absolute top-full mt-1.5 z-50 left-0 w-full sm:w-60 max-h-60 overflow-y-auto bg-white rounded-2xl shadow-2xl border border-slate-200 p-1.5 space-y-1 animate-in fade-in">
           {TIME_SLOTS.map((slot) => (
             <div
               key={slot.value}
@@ -69,7 +63,11 @@ const TimePicker = ({ value, onChange, placeholder = "Chọn giờ" }) => {
                 onChange(slot.value);
                 setIsOpen(false);
               }}
-              className="p-2 hover:bg-[#e8f2ff] rounded-xl text-xs font-bold text-slate-700 hover:text-[#003580] cursor-pointer"
+              className={`p-2 rounded-xl text-xs font-bold cursor-pointer transition ${
+                value === slot.value
+                  ? "bg-[#e8f2ff] text-[#003580]"
+                  : "text-slate-700 hover:bg-slate-50"
+              }`}
             >
               {slot.label}
             </div>
@@ -89,36 +87,36 @@ export const Step6PropertyDetails = ({
   const cancellationHours = Number(data?.cancellation_deadline_hours ?? 24);
 
   const checkInFrom = data?.checkInFrom || "14:00";
-  const checkInTo = data?.checkInTo || "16:00";
+  const checkInTo = data?.checkInTo || "23:59";
   const checkOutTo = data?.checkOutTo || "12:00";
 
   const isInvalidCheckInTime =
-    checkInFrom && checkInTo && checkInFrom >= checkInTo;
+    checkInFrom &&
+    checkInTo &&
+    checkInFrom >= checkInTo &&
+    checkInTo !== "23:59";
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
+    <div className="space-y-6 font-sans text-slate-800 animate-in fade-in">
       <div>
         <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
           <Sparkles size={14} className="text-[#006ce4]" /> Bước 6 / 8: Xếp hạng
           & Quy định chỗ nghỉ
         </div>
-
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
           Quy định nhận phòng & Chính sách hủy
         </h1>
-
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
           Các mốc thời gian này sẽ được trình bày trực tiếp tại mục Quy định của
-          chỗ nghỉ trên trang khách sạn.
+          chỗ nghỉ trên trang chi tiết khách sạn.
         </p>
       </div>
 
       {/* XẾP HẠNG SAO */}
-      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+      <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
         <label className="block text-xs font-black text-slate-800 uppercase tracking-wider">
           Tiêu chuẩn xếp hạng sao
         </label>
-
         <div className="flex items-center gap-2">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
@@ -137,7 +135,6 @@ export const Step6PropertyDetails = ({
               />
             </button>
           ))}
-
           <span className="text-xs font-black text-[#003580] ml-2">
             ({starRating} Sao tiêu chuẩn)
           </span>
@@ -147,79 +144,63 @@ export const Step6PropertyDetails = ({
       {/* GIỜ CHECK-IN / CHECK-OUT */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* CHECK-IN */}
-        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+        <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
           <label className="block text-xs font-black text-slate-800">
             Thời gian nhận phòng (Check-in)
           </label>
 
           <div className="grid grid-cols-2 gap-3">
-            {/* CHECK-IN FROM */}
             <div className="space-y-1">
               <span className="block text-[10px] font-bold text-slate-500">
                 Từ
               </span>
-
               <TimePicker
                 value={checkInFrom}
-                onChange={(val) =>
-                  onChange({
-                    checkInFrom: val,
-                  })
-                }
+                onChange={(val) => onChange({ checkInFrom: val })}
               />
             </div>
 
-            {/* CHECK-IN TO */}
             <div className="space-y-1">
               <span className="block text-[10px] font-bold text-slate-500">
                 Đến
               </span>
-
               <TimePicker
                 value={checkInTo}
-                onChange={(val) =>
-                  onChange({
-                    checkInTo: val,
-                  })
-                }
+                onChange={(val) => onChange({ checkInTo: val })}
               />
             </div>
           </div>
 
           {isInvalidCheckInTime && (
-            <p className="text-[11px] font-bold text-red-500">
-              Thời gian "Đến" phải sau thời gian "Từ".
-            </p>
+            <div className="flex items-center gap-1 text-[11px] font-bold text-rose-600">
+              <AlertCircle size={13} />
+              <span>Thời gian "Đến" phải sau thời gian "Từ".</span>
+            </div>
           )}
 
           <p className="text-[10px] text-slate-400">
-            Ví dụ: Khách có thể nhận phòng từ 14:00 đến 16:00.
+            Ví dụ: Khách có thể nhận phòng linh hoạt từ 14:00 đến 23:59.
           </p>
         </div>
 
         {/* CHECK-OUT */}
-        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+        <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
           <label className="block text-xs font-black text-slate-800">
             Thời gian trả phòng (Check-out)
           </label>
 
           <div className="space-y-1">
             <span className="block text-[10px] font-bold text-slate-500">
-              Đến
+              Trước
             </span>
-
             <TimePicker
               value={checkOutTo}
-              onChange={(val) =>
-                onChange({
-                  checkOutTo: val,
-                })
-              }
+              onChange={(val) => onChange({ checkOutTo: val })}
             />
           </div>
 
           <p className="text-[10px] text-slate-400">
-            Đây là thời hạn cuối để khách trả phòng.
+            Đây là thời hạn cuối cùng để khách hoàn tất trả phòng.
           </p>
         </div>
       </div>
@@ -253,7 +234,7 @@ export const Step6PropertyDetails = ({
               key={pol.hours}
               className={`flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition ${
                 cancellationHours === pol.hours
-                  ? "border-[#006ce4] bg-[#e8f2ff]/30 shadow-xs"
+                  ? "border-[#006ce4] bg-[#e8f2ff]/40 shadow-xs"
                   : "border-slate-200 bg-white hover:border-slate-300"
               }`}
             >
@@ -262,9 +243,7 @@ export const Step6PropertyDetails = ({
                 name="cancellation_hours"
                 checked={cancellationHours === pol.hours}
                 onChange={() =>
-                  onChange({
-                    cancellation_deadline_hours: pol.hours,
-                  })
+                  onChange({ cancellation_deadline_hours: pol.hours })
                 }
                 className="w-4 h-4 mt-0.5 accent-[#006ce4] cursor-pointer"
               />
@@ -272,14 +251,12 @@ export const Step6PropertyDetails = ({
               <div className="text-xs leading-relaxed flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-black text-slate-900">{pol.title}</span>
-
                   {pol.badge && (
                     <span className="text-[10px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded">
                       {pol.badge}
                     </span>
                   )}
                 </div>
-
                 <p className="text-slate-500 mt-0.5">{pol.desc}</p>
               </div>
             </label>

@@ -1,5 +1,11 @@
 // src/pages/guest/HomePage.jsx
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   TrendingUp,
@@ -14,6 +20,9 @@ import {
   Sun,
   Hourglass,
   ChevronDown,
+  Building,
+  MapPin,
+  Loader2,
 } from "lucide-react";
 import {
   format,
@@ -25,16 +34,15 @@ import {
   getDay,
   isSameDay,
   isBefore,
-  isAfter,
   startOfToday,
   differenceInDays,
   addDays,
-  isWithinInterval,
 } from "date-fns";
 import { vi } from "date-fns/locale";
 
 import { HotelCard } from "@/components/hotel";
 import { hotelService } from "@/services";
+import apiClient from "@/services/apiClient";
 
 const HERO_BG_IMAGE =
   "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=2000&q=80";
@@ -67,23 +75,21 @@ const DEFAULT_LANDMARK =
   "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800";
 
 const getCityLandmarkImage = (cityName = "") => {
-  const norm = cityName
+  const norm = (cityName || "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d")
     .trim();
 
-  if (norm.includes("khanh hoa") || norm.includes("nha trang")) {
+  if (norm.includes("khanh hoa") || norm.includes("nha trang"))
     return CITY_LANDMARK_IMAGES["Khánh Hòa"];
-  }
   if (
     norm.includes("ho chi minh") ||
     norm.includes("sai gon") ||
     norm.includes("hcm")
-  ) {
+  )
     return CITY_LANDMARK_IMAGES["Hồ Chí Minh"];
-  }
   if (norm.includes("dong thap")) return CITY_LANDMARK_IMAGES["Đồng Tháp"];
   if (norm.includes("ha noi")) return CITY_LANDMARK_IMAGES["Hà Nội"];
   if (norm.includes("da nang")) return CITY_LANDMARK_IMAGES["Đà Nẵng"];
@@ -97,8 +103,9 @@ const getCityLandmarkImage = (cityName = "") => {
 const parseImageUrl = (img) => {
   if (!img)
     return "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
-  let raw = typeof img === "string" ? img : img.url || img.path || "";
-  raw = String(raw).trim();
+  let raw = String(
+    typeof img === "string" ? img : img.url || img.path || "",
+  ).trim();
   if (!raw || raw.startsWith("blob:"))
     return "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
   if (
@@ -107,16 +114,16 @@ const parseImageUrl = (img) => {
     raw.startsWith("data:image/")
   )
     return raw;
-  const cleanPath = raw.startsWith("/") ? raw : `/${raw}`;
-  return `${BACKEND_BASE_URL}${cleanPath}`;
+  return `${BACKEND_BASE_URL}${raw.startsWith("/") ? raw : `/${raw}`}`;
 };
 
 const safeFormatDisplayDate = (date) => {
   if (!date) return "Chọn ngày";
   try {
     const d = new Date(date);
-    if (isNaN(d.getTime())) return "Chọn ngày";
-    return format(d, "eee, dd 'Thg' M, yyyy", { locale: vi });
+    return isNaN(d.getTime())
+      ? "Chọn ngày"
+      : format(d, "eee, dd 'Thg' M, yyyy", { locale: vi });
   } catch {
     return "Chọn ngày";
   }
@@ -126,8 +133,7 @@ const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
   if (!date) return "";
   try {
     const d = new Date(date);
-    if (isNaN(d.getTime())) return "";
-    return format(d, pattern, { locale: vi });
+    return isNaN(d.getTime()) ? "" : format(d, pattern, { locale: vi });
   } catch {
     return "";
   }
@@ -135,55 +141,37 @@ const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const today = useMemo(() => startOfToday(), []);
 
   const [trendingDestinations, setTrendingDestinations] = useState([]);
   const [uniqueStays, setUniqueStays] = useState([]);
   const [favoriteHotelIds, setFavoriteHotelIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
+  // Carousel
   const [newestIndex, setNewestIndex] = useState(0);
   const [visibleCount, setVisibleCount] = useState(4);
   const MAX_DISPLAY_STAYS = 12;
 
-  useEffect(() => {
-    const handleResize = () => {
-      const width = window.innerWidth;
-      if (width < 640) setVisibleCount(1);
-      else if (width < 1024) setVisibleCount(2);
-      else setVisibleCount(4);
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  const maxNewestIndex = Math.max(0, uniqueStays.length - visibleCount);
-  useEffect(() => {
-    if (newestIndex > maxNewestIndex) {
-      setNewestIndex(maxNewestIndex);
-    }
-  }, [visibleCount, uniqueStays.length, maxNewestIndex, newestIndex]);
-
-  const today = startOfToday();
+  // Search States
   const [destination, setDestination] = useState("");
   const [isDestDropdownOpen, setIsDestDropdownOpen] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState([]);
+  const [isSearchingDest, setIsSearchingDest] = useState(false);
 
-  // 🌟 HÌNH THỨC THUÊ: "HOUR" (Giờ) | "DAY" (Ngày) | "OVERNIGHT" (Đêm) | "HALF_DAY" (Buổi)
+  // Rental Type & Times
   const [rentalType, setRentalType] = useState("DAY");
-
-  // Giờ nhận & Giờ trả (Cho chọn thoải mái từ 00:00 đến 23:00 ở CẢ 4 TAB)
   const [checkInTime, setCheckInTime] = useState("14:00");
   const [checkOutTime, setCheckOutTime] = useState("12:00");
-
   const [checkInDate, setCheckInDate] = useState(today);
   const [checkOutDate, setCheckOutDate] = useState(addDays(today, 1));
 
-  // Bộ chọn lịch: xác định đang click đổi ngày nhận hay ngày trả
+  // Calendar Popup
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [calendarTarget, setCalendarTarget] = useState("checkIn");
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
 
+  // Guests & Rooms
   const [rooms, setRooms] = useState(1);
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
@@ -192,33 +180,54 @@ export default function HomePage() {
   const destRef = useRef(null);
   const calendarRef = useRef(null);
   const guestRef = useRef(null);
-
   const touchStartX = useRef(0);
-  const touchEndX = useRef(0);
 
-  const handleTouchStart = (e) => {
-    touchStartX.current = e.targetTouches[0].clientX;
-  };
+  // Responsive Carousel
+  useEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      if (w < 640) setVisibleCount(1);
+      else if (w < 1024) setVisibleCount(2);
+      else setVisibleCount(4);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-  const handleTouchMove = (e) => {
-    touchEndX.current = e.targetTouches[0].clientX;
-  };
+  const maxNewestIndex = Math.max(0, uniqueStays.length - visibleCount);
 
-  const handleTouchEnd = () => {
-    if (!touchStartX.current || !touchEndX.current) return;
-    const distance = touchStartX.current - touchEndX.current;
-    if (distance > 50) handleNextNewest();
-    else if (distance < -50) handlePrevNewest();
-    touchStartX.current = 0;
-    touchEndX.current = 0;
-  };
+  // 🌟 LIVE SEARCH AUTOCOMPLETE VỚI DEBOUNCE 300MS
+  useEffect(() => {
+    if (!destination.trim()) {
+      setSearchSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearchingDest(true);
+      try {
+        const res = await apiClient.get(
+          `/hotels/destinations?q=${encodeURIComponent(destination.trim())}`,
+        );
+        const list =
+          res?.data?.data || res?.data?.destinations || res?.data || [];
+        setSearchSuggestions(Array.isArray(list) ? list : []);
+      } catch (err) {
+        console.warn("Lỗi tìm kiếm gợi ý:", err.message);
+      } finally {
+        setIsSearchingDest(false);
+      }
+    }, 300);
 
-  // Tự động nhảy giờ và ngày mặc định thông minh khi chuyển Tab giống hệt 3 ảnh bạn gửi
+    return () => clearTimeout(timer);
+  }, [destination]);
+
+  // Tab switching
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
       setCheckInTime("00:00");
-      setCheckOutTime("01:00");
+      setCheckOutTime("02:00");
       setCheckOutDate(checkInDate);
     } else if (type === "DAY") {
       setCheckInTime("14:00");
@@ -235,108 +244,75 @@ export default function HomePage() {
     }
   };
 
-  // Tự động tính nhãn thời lượng hiển thị trên thanh badge ở giữa
+  // Duration Badge Label
   const durationBadgeLabel = useMemo(() => {
     if (rentalType === "HOUR") {
-      const inH = parseInt((checkInTime || "00:00").split(":")[0], 10);
-      const outH = parseInt((checkOutTime || "01:00").split(":")[0], 10);
+      const inH = parseInt(checkInTime.split(":")[0], 10);
+      const outH = parseInt(checkOutTime.split(":")[0], 10);
       const diffDays = Math.max(0, differenceInDays(checkOutDate, checkInDate));
-      const totalHours = diffDays * 24 + (outH - inH);
-      return `${Math.max(1, totalHours)} Giờ`;
+      let total = diffDays * 24 + (outH - inH);
+      return `${Math.max(1, total <= 0 ? total + 24 : total)} Giờ`;
     }
     if (rentalType === "OVERNIGHT") return "Qua đêm";
     if (rentalType === "HALF_DAY") return "1 Buổi";
-    const nights = Math.max(1, differenceInDays(checkOutDate, checkInDate));
-    return `${nights} Ngày`;
+    return `${Math.max(1, differenceInDays(checkOutDate, checkInDate))} Ngày`;
   }, [rentalType, checkInTime, checkOutTime, checkInDate, checkOutDate]);
 
+  // Fetch initial home data
   useEffect(() => {
     let isMounted = true;
-
     const fetchRealData = async () => {
       setLoading(true);
       try {
-        let apiHotels = [];
-        try {
-          const res = await hotelService.getAll();
-          apiHotels = Array.isArray(res) ? res : res?.data || [];
-        } catch (e) {
-          console.error("Lỗi lấy danh sách khách sạn:", e);
+        const [hotelsRes, trendingRes] = await Promise.all([
+          hotelService.getAll().catch(() => []),
+          apiClient
+            .get("/hotels/trending-destinations")
+            .catch(() => ({ data: [] })),
+        ]);
+
+        const apiHotels = Array.isArray(hotelsRes)
+          ? hotelsRes
+          : hotelsRes?.data || [];
+        const formattedHotels = apiHotels.map((h) => ({
+          ...h,
+          id: String(h.id),
+          title: h.name || "Khách sạn nghỉ dưỡng",
+          name: h.name || "Khách sạn nghỉ dưỡng",
+          city: h.city || "Việt Nam",
+          location: h.address
+            ? `${h.address}, ${h.city}`
+            : h.city || "Việt Nam",
+          image: parseImageUrl(h.image || h.thumbnail || ""),
+          salePrice: Number(h.min_price || h.base_price || 500000),
+          star_rating: Number(h.star_rating || 3),
+          rating: Number(h.average_rating || 9.0),
+          review_count: Number(h.review_count || 0),
+        }));
+
+        let trendingList =
+          trendingRes?.data?.trendingDestinations ||
+          trendingRes?.data?.data ||
+          [];
+        if (!trendingList.length) {
+          const map = new Map();
+          formattedHotels.forEach((h) => {
+            const c = h.city ? h.city.trim() : "Hồ Chí Minh";
+            map.set(c, (map.get(c) || 0) + 1);
+          });
+          trendingList = Array.from(map.entries()).map(([name, count]) => ({
+            name,
+            hotelCount: count,
+            image: getCityLandmarkImage(name),
+          }));
         }
 
-        const formattedHotels = apiHotels.map((h) => {
-          const hotelId = String(h.id);
-          const rawImg = h.image || h.thumbnail || "";
-          const price = Number(h.min_price || h.base_price || 500000);
-
-          return {
-            ...h,
-            id: hotelId,
-            title: h.name || "Khách sạn nghỉ dưỡng",
-            name: h.name || "Khách sạn nghỉ dưỡng",
-            city: h.city || "Việt Nam",
-            location: h.address
-              ? `${h.address}, ${h.city}`
-              : h.city || "Việt Nam",
-            image: parseImageUrl(rawImg),
-            salePrice: price,
-            min_price: price,
-            star_rating: Number(h.star_rating || 3),
-            stars: Number(h.star_rating || 3),
-            rating: Number(h.average_rating || 9.0),
-            review_count: Number(h.review_count || 0),
-            createdAt: h.created_at || h.createdAt || null,
-          };
-        });
-
-        formattedHotels.sort((a, b) => {
-          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          if (dateB !== dateA) return dateB - dateA;
-          return String(b.id).localeCompare(String(a.id));
-        });
-
-        const cityStatsMap = new Map();
-        formattedHotels.forEach((h) => {
-          const cityName = h.city ? h.city.trim() : "Hồ Chí Minh";
-          if (!cityStatsMap.has(cityName)) {
-            cityStatsMap.set(cityName, {
-              name: cityName,
-              hotelCount: 0,
-              image: getCityLandmarkImage(cityName),
-            });
-          }
-          cityStatsMap.get(cityName).hotelCount += 1;
-        });
-
-        const validTrendingCities = Array.from(cityStatsMap.values())
-          .filter((c) => c.hotelCount > 0)
-          .sort((a, b) => b.hotelCount - a.hotelCount)
-          .map((c, index) => ({
-            ...c,
-            rank: index + 1,
-            countText: `${c.hotelCount} cơ sở lưu trú`,
-            isTop1: index === 0,
-          }));
-
-        let favIdsSet = new Set();
-        try {
-          if (hotelService?.getFavorites) {
-            const myFavs = await hotelService.getFavorites();
-            const favList = Array.isArray(myFavs) ? myFavs : myFavs?.data || [];
-            favIdsSet = new Set(
-              favList.map((item) => String(item.id || item.hotel_id)),
-            );
-          }
-        } catch {}
-
-        if (!isMounted) return;
-
-        setUniqueStays(formattedHotels.slice(0, MAX_DISPLAY_STAYS));
-        setTrendingDestinations(validTrendingCities);
-        setFavoriteHotelIds(favIdsSet);
-      } catch (error) {
-        console.error("Lỗi tải trang chủ:", error);
+        if (isMounted) {
+          setUniqueStays(formattedHotels.slice(0, MAX_DISPLAY_STAYS));
+          setTrendingDestinations(trendingList);
+        }
+      } catch (err) {
+        console.error("Lỗi tải trang chủ:", err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -348,6 +324,7 @@ export default function HomePage() {
     };
   }, []);
 
+  // Click Outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (destRef.current && !destRef.current.contains(e.target))
@@ -361,15 +338,8 @@ export default function HomePage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSelectDestination = (destName) => {
-    setDestination(destName);
-    setIsDestDropdownOpen(false);
-    setIsCalendarOpen(true);
-  };
-
   const handleSelectDateFromCalendar = (date) => {
     if (isBefore(date, today)) return;
-
     if (calendarTarget === "checkIn") {
       setCheckInDate(date);
       if (isBefore(checkOutDate, date)) {
@@ -385,14 +355,6 @@ export default function HomePage() {
     }
   };
 
-  const handlePrevNewest = () => {
-    setNewestIndex((prev) => Math.max(0, prev - 1));
-  };
-
-  const handleNextNewest = () => {
-    setNewestIndex((prev) => Math.min(maxNewestIndex, prev + 1));
-  };
-
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
     const query = new URLSearchParams();
@@ -400,7 +362,6 @@ export default function HomePage() {
       query.append("destination", destination.trim());
       query.append("search", destination.trim());
     }
-
     query.append("rentalType", rentalType);
     query.append("checkInTime", checkInTime);
     query.append("checkOutTime", checkOutTime);
@@ -413,80 +374,6 @@ export default function HomePage() {
     navigate(`/hotels?${query.toString()}`);
   };
 
-  const renderMonthCalendar = (monthDate) => {
-    const start = startOfMonth(monthDate);
-    const end = endOfMonth(monthDate);
-    const days = eachDayOfInterval({ start, end });
-    const startDayIndex = (getDay(start) + 6) % 7;
-    const blanks = Array.from({ length: startDayIndex });
-
-    const weekHeaders = [
-      { label: "T2", isWeekend: false },
-      { label: "T3", isWeekend: false },
-      { label: "T4", isWeekend: false },
-      { label: "T5", isWeekend: false },
-      { label: "T6", isWeekend: false },
-      { label: "T7", isWeekend: true },
-      { label: "CN", isWeekend: true },
-    ];
-
-    const targetDate =
-      calendarTarget === "checkIn" ? checkInDate : checkOutDate;
-
-    return (
-      <div className="flex-1 min-w-[260px]">
-        <div className="text-center font-black text-sm text-gray-900 mb-4 tracking-tight">
-          {safeFormatDate(monthDate, "'Tháng' M, yyyy")}
-        </div>
-        <div className="grid grid-cols-7 gap-1 text-center mb-2 pb-1 border-b border-gray-100">
-          {weekHeaders.map((w, idx) => (
-            <span
-              key={idx}
-              className={`text-xs font-bold ${w.isWeekend ? "text-[#006ce4]" : "text-gray-700"}`}
-            >
-              {w.label}
-            </span>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-y-1 text-center text-xs">
-          {blanks.map((_, i) => (
-            <div key={`blank-${i}`} className="h-9" />
-          ))}
-          {days.map((day) => {
-            const isPast = isBefore(day, today);
-            const isSelected = targetDate && isSameDay(day, targetDate);
-            const isWeekend = getDay(day) === 0 || getDay(day) === 6;
-
-            let btnClasses =
-              "h-9 w-full flex items-center justify-center text-xs transition-all rounded-lg ";
-
-            if (isPast) {
-              btnClasses += "text-gray-300 font-normal cursor-not-allowed";
-            } else if (isSelected) {
-              btnClasses += "bg-[#006ce4] text-white font-black shadow-md";
-            } else {
-              btnClasses += isWeekend
-                ? "text-[#006ce4] font-bold hover:bg-gray-100 cursor-pointer"
-                : "text-gray-900 font-semibold hover:bg-gray-100 cursor-pointer";
-            }
-
-            return (
-              <button
-                key={day.toISOString()}
-                type="button"
-                disabled={isPast}
-                onClick={() => handleSelectDateFromCalendar(day)}
-                className={btnClasses}
-              >
-                {safeFormatDate(day, "d")}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   const cardTranslatePercentage = 100 / visibleCount;
 
   return (
@@ -494,12 +381,7 @@ export default function HomePage() {
       {/* HERO BANNER */}
       <div
         className="relative w-full min-h-[480px] lg:min-h-[520px] bg-cover bg-center flex items-center overflow-visible"
-        style={{
-          backgroundImage: `url('${HERO_BG_IMAGE}')`,
-          backgroundPosition: "center",
-          backgroundSize: "cover",
-          backgroundRepeat: "no-repeat",
-        }}
+        style={{ backgroundImage: `url('${HERO_BG_IMAGE}')` }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10 pointer-events-none" />
 
@@ -515,8 +397,9 @@ export default function HomePage() {
                 </p>
               </div>
 
-              {/* BỘ LỌC TÌM KIẾM */}
+              {/* KHUNG TÌM KIẾM CHÍNH */}
               <div className="space-y-3">
+                {/* Ô TÌM ĐIỂM ĐẾN / KHÁCH SẠN */}
                 <div ref={destRef} className="relative">
                   <div
                     onClick={() => setIsDestDropdownOpen(true)}
@@ -534,48 +417,106 @@ export default function HomePage() {
                       }
                       className="w-full text-sm md:text-base font-bold text-gray-800 focus:outline-none placeholder:text-gray-400 placeholder:font-normal bg-transparent"
                     />
+                    {isSearchingDest && (
+                      <Loader2
+                        size={16}
+                        className="animate-spin text-blue-600 ml-2"
+                      />
+                    )}
                   </div>
 
-                  {isDestDropdownOpen && trendingDestinations.length > 0 && (
-                    <div className="absolute left-0 top-full mt-2 w-full sm:w-[620px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-5 z-50 animate-in fade-in zoom-in-95">
-                      <h4 className="font-extrabold text-sm text-gray-900 mb-3.5 flex items-center gap-1.5">
-                        <Flame size={16} className="text-orange-500" />
-                        Điểm đến có chỗ nghỉ đang mở bán
-                      </h4>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {trendingDestinations.map((item) => (
-                          <div
-                            key={item.name}
-                            onClick={() => handleSelectDestination(item.name)}
-                            className="flex items-center gap-3 p-2 rounded-xl hover:bg-blue-50/60 cursor-pointer transition-colors group"
-                          >
-                            <img
-                              src={item.image}
-                              alt={item.name}
-                              className="w-11 h-11 rounded-xl object-cover shrink-0 shadow-sm group-hover:scale-105 transition-transform"
-                            />
-                            <div className="overflow-hidden">
-                              <span className="font-bold text-sm text-gray-900 block group-hover:text-[#006ce4] transition-colors truncate">
-                                {item.name}
-                              </span>
-                              <span className="text-[11px] text-gray-500 font-medium block truncate">
-                                {item.countText}
-                              </span>
+                  {/* DROPDOWN GỢI Ý ĐIỂM ĐẾN (LIVE SEARCH HOẶC TOP TRENDING) */}
+                  {isDestDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-2 w-full sm:w-[580px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 z-50 animate-in fade-in zoom-in-95 max-h-[380px] overflow-y-auto">
+                      {searchSuggestions.length > 0 ? (
+                        <div className="space-y-1">
+                          <h4 className="font-extrabold text-xs text-gray-400 uppercase mb-2">
+                            Kết quả tìm kiếm
+                          </h4>
+                          {searchSuggestions.map((item, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                setDestination(item.name);
+                                setIsDestDropdownOpen(false);
+                                setIsCalendarOpen(true);
+                              }}
+                              className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-blue-50/70 cursor-pointer transition"
+                            >
+                              {item.type === "city" ? (
+                                <MapPin
+                                  size={18}
+                                  className="text-blue-600 shrink-0"
+                                />
+                              ) : (
+                                <Building
+                                  size={18}
+                                  className="text-amber-600 shrink-0"
+                                />
+                              )}
+                              <div className="overflow-hidden">
+                                <span className="font-bold text-sm text-gray-900 block truncate">
+                                  {item.name}
+                                </span>
+                                <span className="text-xs text-gray-500 block truncate">
+                                  {item.type === "city"
+                                    ? `${item.hotel_count || 1} chỗ nghỉ`
+                                    : "Khách sạn"}
+                                </span>
+                              </div>
                             </div>
+                          ))}
+                        </div>
+                      ) : trendingDestinations.length > 0 ? (
+                        <div>
+                          <h4 className="font-extrabold text-sm text-gray-900 mb-3 flex items-center gap-1.5">
+                            <Flame size={16} className="text-orange-500" />
+                            Điểm đến phổ biến
+                          </h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            {trendingDestinations.slice(0, 6).map((item) => (
+                              <div
+                                key={item.name}
+                                onClick={() => {
+                                  setDestination(item.name);
+                                  setIsDestDropdownOpen(false);
+                                  setIsCalendarOpen(true);
+                                }}
+                                className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-blue-50/60 cursor-pointer transition group"
+                              >
+                                <img
+                                  src={
+                                    item.image ||
+                                    getCityLandmarkImage(item.name)
+                                  }
+                                  alt={item.name}
+                                  loading="lazy"
+                                  className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-2xs group-hover:scale-105 transition-transform"
+                                />
+                                <div className="overflow-hidden">
+                                  <span className="font-bold text-xs text-gray-900 block group-hover:text-[#006ce4] truncate">
+                                    {item.name}
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 block truncate">
+                                    {item.hotelCount || item.hotel_count || 1}{" "}
+                                    chỗ nghỉ
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>
 
-                {/* NGÀY & KHÁCH */}
+                {/* HÀNG BỘ LỌC NGÀY & KHÁCH */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
-                  {/* Ô CHỌN THỜI GIAN VÀ HÌNH THỨC THUÊ */}
+                  {/* Ô CHỌN NGÀY & HÌNH THỨC THUÊ */}
                   <div
                     ref={calendarRef}
-                    className="relative md:col-span-7 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center justify-between hover:border-blue-600 transition-all select-none"
+                    className="relative md:col-span-7 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center justify-between hover:border-blue-600 transition select-none"
                     onClick={() => setIsCalendarOpen(!isCalendarOpen)}
                   >
                     <div className="flex items-center gap-2">
@@ -584,11 +525,7 @@ export default function HomePage() {
                         <span className="text-[10px] font-black text-slate-500 block leading-tight">
                           {rentalType === "HOUR"
                             ? `Giờ (${checkInTime})`
-                            : rentalType === "OVERNIGHT"
-                              ? `Đêm (${checkInTime})`
-                              : rentalType === "HALF_DAY"
-                                ? `Buổi (${checkInTime})`
-                                : `Ngày (${checkInTime})`}
+                            : `Nhận (${checkInTime})`}
                         </span>
                         <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
                           {safeFormatDate(checkInDate, "dd-MM-yyyy")}
@@ -596,8 +533,8 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
-                      <span>{durationBadgeLabel}</span>
+                    <div className="text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                      {durationBadgeLabel}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -612,205 +549,210 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* POPUP 4 TABS CHỌN THUÊ THEO GIỜ, NGÀY, ĐÊM, BUỔI (CHUẨN THEO 3 ẢNH) */}
+                    {/* POPUP 4 TABS LỊCH THUÊ PHÒNG */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
                         className="absolute left-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-3xl shadow-2xl p-5 w-[330px] sm:w-[500px] animate-in fade-in cursor-default"
                       >
-                        {/* 1. HÀNG 4 TABS: GIỜ, NGÀY, ĐÊM, BUỔI */}
+                        {/* 4 Tabs: Giờ, Ngày, Đêm, Buổi */}
                         <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl mb-4">
-                          <button
-                            type="button"
-                            onClick={() => handleTabChange("HOUR")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                              rentalType === "HOUR"
-                                ? "bg-[#006ce4] text-white shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            <Clock size={14} /> <span>Giờ</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleTabChange("DAY")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                              rentalType === "DAY"
-                                ? "bg-[#006ce4] text-white shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            <Sun size={14} /> <span>Ngày</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleTabChange("OVERNIGHT")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                              rentalType === "OVERNIGHT"
-                                ? "bg-[#006ce4] text-white shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            <Moon size={14} /> <span>Đêm</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleTabChange("HALF_DAY")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                              rentalType === "HALF_DAY"
-                                ? "bg-[#006ce4] text-white shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            <Hourglass size={14} /> <span>Buổi</span>
-                          </button>
-                        </div>
-
-                        {/* 2. NHẬN PHÒNG: CHỌN GIỜ + CHỌN NGÀY */}
-                        <div className="space-y-1 mb-3">
-                          <label className="text-xs font-bold text-slate-700 block">
-                            Nhận phòng
-                          </label>
-                          <div className="grid grid-cols-12 gap-2">
-                            <div className="col-span-4">
-                              <select
-                                value={checkInTime}
-                                onChange={(e) => setCheckInTime(e.target.value)}
-                                className="w-full h-11 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4] cursor-pointer"
-                              >
-                                {[...Array(24)].map((_, i) => {
-                                  const t = `${String(i).padStart(2, "0")}:00`;
-                                  return (
-                                    <option key={t} value={t}>
-                                      {t}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </div>
-
-                            <div className="col-span-8">
+                          {[
+                            { id: "HOUR", label: "Giờ", icon: Clock },
+                            { id: "DAY", label: "Ngày", icon: Sun },
+                            { id: "OVERNIGHT", label: "Đêm", icon: Moon },
+                            { id: "HALF_DAY", label: "Buổi", icon: Hourglass },
+                          ].map((t) => {
+                            const Icon = t.icon;
+                            return (
                               <button
+                                key={t.id}
                                 type="button"
-                                onClick={() => setCalendarTarget("checkIn")}
-                                className={`w-full h-11 px-3 bg-white border rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between cursor-pointer ${
-                                  calendarTarget === "checkIn"
-                                    ? "border-[#006ce4] ring-2 ring-blue-100"
-                                    : "border-gray-300"
+                                onClick={() => handleTabChange(t.id)}
+                                className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
+                                  rentalType === t.id
+                                    ? "bg-[#006ce4] text-white shadow-xs"
+                                    : "text-slate-600 hover:text-slate-900"
                                 }`}
                               >
-                                <span className="truncate">
-                                  {safeFormatDisplayDate(checkInDate)}
-                                </span>
-                                <ChevronDown
-                                  size={14}
-                                  className="text-gray-400"
-                                />
+                                <Icon size={14} /> <span>{t.label}</span>
                               </button>
-                            </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Dropdown giờ nhận & Trả */}
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-slate-700 block">
+                              Nhận phòng ({checkInTime})
+                            </label>
+                            <select
+                              value={checkInTime}
+                              onChange={(e) => setCheckInTime(e.target.value)}
+                              className="w-full h-10 px-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4]"
+                            >
+                              {[...Array(24)].map((_, i) => {
+                                const t = `${String(i).padStart(2, "0")}:00`;
+                                return (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-slate-700 block">
+                              Trả phòng ({checkOutTime})
+                            </label>
+                            <select
+                              value={checkOutTime}
+                              onChange={(e) => setCheckOutTime(e.target.value)}
+                              className="w-full h-10 px-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4]"
+                            >
+                              {[...Array(24)].map((_, i) => {
+                                const t = `${String(i).padStart(2, "0")}:00`;
+                                return (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                );
+                              })}
+                            </select>
                           </div>
                         </div>
 
-                        {/* 3. TRẢ PHÒNG: CHỌN GIỜ + CHỌN NGÀY */}
-                        <div className="space-y-1 mb-3">
-                          <label className="text-xs font-bold text-slate-700 block">
-                            Trả phòng
-                          </label>
-                          <div className="grid grid-cols-12 gap-2">
-                            <div className="col-span-4">
-                              <select
-                                value={checkOutTime}
-                                onChange={(e) =>
-                                  setCheckOutTime(e.target.value)
-                                }
-                                className="w-full h-11 px-2.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4] cursor-pointer"
-                              >
-                                {[...Array(24)].map((_, i) => {
-                                  const t = `${String(i).padStart(2, "0")}:00`;
-                                  return (
-                                    <option key={t} value={t}>
-                                      {t}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            </div>
+                        {/* Chọn nhanh mục tiêu: Ngày nhận hay Ngày trả */}
+                        <div className="flex gap-2 mb-3">
+                          <button
+                            type="button"
+                            onClick={() => setCalendarTarget("checkIn")}
+                            className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold text-left transition ${
+                              calendarTarget === "checkIn"
+                                ? "border-[#006ce4] bg-blue-50/50 text-[#006ce4]"
+                                : "border-gray-200"
+                            }`}
+                          >
+                            <span className="text-[10px] text-gray-500 block font-normal">
+                              Ngày nhận:
+                            </span>
+                            {safeFormatDisplayDate(checkInDate)}
+                          </button>
 
-                            <div className="col-span-8">
-                              <button
-                                type="button"
-                                onClick={() => setCalendarTarget("checkOut")}
-                                className={`w-full h-11 px-3 bg-white border rounded-xl text-xs font-bold text-slate-800 flex items-center justify-between cursor-pointer ${
-                                  calendarTarget === "checkOut"
-                                    ? "border-[#006ce4] ring-2 ring-blue-100"
-                                    : "border-gray-300"
-                                }`}
-                              >
-                                <span className="truncate">
-                                  {safeFormatDisplayDate(checkOutDate)}
-                                </span>
-                                <ChevronDown
-                                  size={14}
-                                  className="text-gray-400"
-                                />
-                              </button>
-                            </div>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCalendarTarget("checkOut")}
+                            className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold text-left transition ${
+                              calendarTarget === "checkOut"
+                                ? "border-[#006ce4] bg-blue-50/50 text-[#006ce4]"
+                                : "border-gray-200"
+                            }`}
+                          >
+                            <span className="text-[10px] text-gray-500 block font-normal">
+                              Ngày trả:
+                            </span>
+                            {safeFormatDisplayDate(checkOutDate)}
+                          </button>
                         </div>
 
-                        {/* THANH NHÃN XANH HIỂN THỊ THỜI LƯỢNG Ở GIỮA */}
-                        <div className="w-full py-2 bg-blue-50 text-[#006ce4] border border-blue-100 rounded-xl font-black text-center text-xs mb-3">
-                          {durationBadgeLabel}
-                        </div>
-
-                        {/* LỊCH CHỌN NGÀY */}
+                        {/* Lưới lịch */}
                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
                           <div className="flex justify-between items-center mb-2">
                             <span className="text-xs font-bold text-[#006ce4]">
                               {calendarTarget === "checkIn"
-                                ? "Chọn ngày nhận phòng:"
-                                : "Chọn ngày trả phòng:"}
+                                ? "👉 Chọn ngày nhận"
+                                : "👉 Chọn ngày trả"}
                             </span>
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
                                 onClick={() =>
-                                  setCurrentCalendarMonth((prev) =>
-                                    subMonths(prev, 1),
+                                  setCurrentCalendarMonth((p) =>
+                                    subMonths(p, 1),
                                   )
                                 }
                                 disabled={isBefore(
                                   startOfMonth(currentCalendarMonth),
                                   startOfMonth(today),
                                 )}
-                                className="p-1 hover:bg-white rounded"
+                                className="p-1 hover:bg-white rounded disabled:opacity-20 cursor-pointer"
                               >
                                 <ChevronLeft size={16} />
                               </button>
                               <button
                                 type="button"
                                 onClick={() =>
-                                  setCurrentCalendarMonth((prev) =>
-                                    addMonths(prev, 1),
+                                  setCurrentCalendarMonth((p) =>
+                                    addMonths(p, 1),
                                   )
                                 }
-                                className="p-1 hover:bg-white rounded"
+                                className="p-1 hover:bg-white rounded cursor-pointer"
                               >
                                 <ChevronRight size={16} />
                               </button>
                             </div>
                           </div>
-                          {renderMonthCalendar(currentCalendarMonth)}
+
+                          {/* Grid tháng */}
+                          <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                            {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map(
+                              (w, idx) => (
+                                <span
+                                  key={w}
+                                  className={`font-bold py-1 ${idx >= 5 ? "text-blue-600" : "text-gray-600"}`}
+                                >
+                                  {w}
+                                </span>
+                              ),
+                            )}
+                            {Array.from({
+                              length:
+                                (getDay(startOfMonth(currentCalendarMonth)) +
+                                  6) %
+                                7,
+                            }).map((_, i) => (
+                              <div key={`blank-${i}`} className="h-8" />
+                            ))}
+                            {eachDayOfInterval({
+                              start: startOfMonth(currentCalendarMonth),
+                              end: endOfMonth(currentCalendarMonth),
+                            }).map((d) => {
+                              const isPast = isBefore(d, today);
+                              const target =
+                                calendarTarget === "checkIn"
+                                  ? checkInDate
+                                  : checkOutDate;
+                              const isSelected = isSameDay(d, target);
+                              return (
+                                <button
+                                  key={d.toISOString()}
+                                  type="button"
+                                  disabled={isPast}
+                                  onClick={() =>
+                                    handleSelectDateFromCalendar(d)
+                                  }
+                                  className={`h-8 w-full flex items-center justify-center rounded-lg font-bold text-xs transition ${
+                                    isPast
+                                      ? "text-gray-300 cursor-not-allowed"
+                                      : isSelected
+                                        ? "bg-[#006ce4] text-white shadow"
+                                        : "hover:bg-white text-gray-800"
+                                  }`}
+                                >
+                                  {format(d, "d")}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
 
-                        <div className="mt-3 pt-2 border-t flex items-center justify-end text-xs">
+                        <div className="mt-3 pt-2 border-t flex justify-end">
                           <button
                             type="button"
                             onClick={() => setIsCalendarOpen(false)}
-                            className="px-5 py-2 bg-[#003580] text-white font-bold rounded-xl shadow cursor-pointer"
+                            className="px-5 py-2 bg-[#003580] text-white font-bold rounded-xl text-xs cursor-pointer"
                           >
                             Xong
                           </button>
@@ -819,15 +761,15 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* Ô CHỌN KHÁCH & PHÒNG */}
+                  {/* Ô CHỌN SỐ LƯỢNG PHÒNG & KHÁCH */}
                   <div
                     ref={guestRef}
-                    className="relative md:col-span-3 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center gap-2.5 hover:border-blue-600 transition-all select-none"
+                    className="relative md:col-span-3 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center gap-2.5 hover:border-blue-600 transition select-none"
                     onClick={() => setIsGuestOpen(!isGuestOpen)}
                   >
                     <Users size={20} className="text-gray-400 shrink-0" />
                     <div className="leading-tight overflow-hidden">
-                      <span className="text-xs font-bold text-gray-800 block">
+                      <span className="text-xs font-bold text-gray-800 block truncate">
                         {rooms} Phòng · {adults} Lớn
                       </span>
                       <span className="text-[11px] text-gray-500 font-medium truncate block">
@@ -838,93 +780,62 @@ export default function HomePage() {
                     {isGuestOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute left-0 right-0 md:left-auto md:w-64 top-full mt-2 z-50 bg-white border border-gray-200 rounded-xl shadow-2xl p-4 space-y-3 cursor-default"
+                        className="absolute left-0 right-0 md:left-auto md:w-64 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 space-y-3 cursor-default"
                       >
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gray-700">
-                            Phòng
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setRooms((r) => Math.max(1, r - 1))
-                              }
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <span className="text-xs font-bold w-4 text-center">
-                              {rooms}
+                        {[
+                          {
+                            label: "Số phòng",
+                            val: rooms,
+                            set: setRooms,
+                            min: 1,
+                          },
+                          {
+                            label: "Người lớn",
+                            val: adults,
+                            set: setAdults,
+                            min: 1,
+                          },
+                          {
+                            label: "Trẻ em",
+                            val: children,
+                            set: setChildren,
+                            min: 0,
+                          },
+                        ].map((g) => (
+                          <div
+                            key={g.label}
+                            className="flex justify-between items-center"
+                          >
+                            <span className="text-xs font-bold text-gray-700">
+                              {g.label}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => setRooms((r) => r + 1)}
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                            >
-                              +
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  g.set((v) => Math.max(g.min, v - 1))
+                                }
+                                className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="text-xs font-bold w-4 text-center">
+                                {g.val}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => g.set((v) => v + 1)}
+                                className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
                           </div>
-                        </div>
-
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gray-700">
-                            Người lớn
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setAdults((a) => Math.max(1, a - 1))
-                              }
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <span className="text-xs font-bold w-4 text-center">
-                              {adults}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setAdults((a) => a + 1)}
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-gray-700">
-                            Trẻ em
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setChildren((c) => Math.max(0, c - 1))
-                              }
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <span className="text-xs font-bold w-4 text-center">
-                              {children}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setChildren((c) => c + 1)}
-                              className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-
+                        ))}
                         <button
                           type="button"
                           onClick={() => setIsGuestOpen(false)}
-                          className="w-full py-2 bg-[#003580] text-white text-xs font-bold rounded-lg mt-2 cursor-pointer"
+                          className="w-full py-2 bg-[#003580] text-white text-xs font-bold rounded-lg cursor-pointer"
                         >
                           Áp dụng
                         </button>
@@ -932,10 +843,11 @@ export default function HomePage() {
                     )}
                   </div>
 
+                  {/* NÚT TÌM KIẾM */}
                   <button
                     type="button"
                     onClick={handleSearchSubmit}
-                    className="md:col-span-2 h-full min-h-[48px] bg-[#003580] hover:bg-blue-900 text-white font-black text-base rounded-xl shadow-lg flex items-center justify-center transition-all active:scale-[0.98] cursor-pointer"
+                    className="md:col-span-2 h-full min-h-[48px] bg-[#003580] hover:bg-blue-900 text-white font-black text-base rounded-xl shadow-lg flex items-center justify-center transition active:scale-[0.98] cursor-pointer"
                   >
                     Tìm kiếm
                   </button>
@@ -943,16 +855,16 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* COMBO PROMO */}
+            {/* BANNER PROMO */}
             <div className="lg:col-span-4 h-full flex items-end">
               <div
-                onClick={() => handleSearchSubmit()}
-                className="w-full max-w-sm bg-white/95 backdrop-blur-md rounded-2xl p-5 shadow-2xl border border-white/50 space-y-2 cursor-pointer hover:bg-white transition-all group"
+                onClick={handleSearchSubmit}
+                className="w-full max-w-sm bg-white/95 backdrop-blur-md rounded-2xl p-5 shadow-2xl border border-white/50 space-y-2 cursor-pointer hover:bg-white transition group"
               >
                 <div className="text-xs font-black text-blue-700 uppercase tracking-wide">
                   Hệ thống GoStay
                 </div>
-                <h3 className="text-lg font-black text-[#0a2540] leading-tight group-hover:text-blue-600 transition-colors">
+                <h3 className="text-lg font-black text-[#0a2540] leading-tight group-hover:text-blue-600 transition">
                   ĐẶT PHÒNG TRỰC TUYẾN 24/7
                 </h3>
                 <div className="text-xs text-gray-600 space-y-1">
@@ -965,7 +877,7 @@ export default function HomePage() {
                   <span className="text-xs font-bold text-slate-800">
                     Khám phá ngay &rarr;
                   </span>
-                  <div className="w-8 h-8 rounded-full bg-[#0a2540] group-hover:bg-blue-600 text-white flex items-center justify-center transition-all">
+                  <div className="w-8 h-8 rounded-full bg-[#0a2540] group-hover:bg-blue-600 text-white flex items-center justify-center transition">
                     <ChevronRight size={16} />
                   </div>
                 </div>
@@ -986,8 +898,8 @@ export default function HomePage() {
               </h2>
             </div>
             <p className="text-gray-500 text-sm mt-1">
-              Các thành phố có cơ sở lưu trú đang mở bán được du khách lựa chọn
-              nhiều nhất
+              Các thành phố có cơ sở lưu trú đang mở bán được lựa chọn nhiều
+              nhất
             </p>
           </div>
 
@@ -1003,25 +915,18 @@ export default function HomePage() {
                 className="relative rounded-2xl overflow-hidden group cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 h-64 sm:h-72"
               >
                 <img
-                  src={place.image}
+                  src={place.image || getCityLandmarkImage(place.name)}
                   alt={place.name}
+                  loading="lazy"
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 select-none"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
-
                 <div className="absolute bottom-5 left-5 text-white drop-shadow-md">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h3 className="text-2xl font-black tracking-tight">
-                      {place.name}
-                    </h3>
-                    {place.isTop1 && (
-                      <span className="bg-amber-400 text-slate-900 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
-                        🔥 Top 1 Thịnh Hành
-                      </span>
-                    )}
-                  </div>
+                  <h3 className="text-2xl font-black tracking-tight mb-1">
+                    {place.name}
+                  </h3>
                   <p className="text-xs font-bold text-white/90">
-                    {place.countText}
+                    {place.hotelCount || place.hotel_count || 1} chỗ nghỉ
                   </p>
                 </div>
               </div>
@@ -1030,7 +935,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* SECTION 2: CHỖ NGHỈ NỔI BẬT & MỚI NHẤT */}
+      {/* SECTION 2: CHỖ NGHỈ MỚI NHẤT (CAROUSEL) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 select-none">
         <div className="mb-6 flex items-center justify-between">
           <div>
@@ -1041,8 +946,8 @@ export default function HomePage() {
               </h2>
             </div>
             <p className="text-gray-500 text-sm mt-1">
-              Các cơ sở lưu trú thực tế đang mở bán trên hệ thống GoStay (
-              {uniqueStays.length} chỗ nghỉ)
+              Cơ sở lưu trú đang mở bán trên hệ thống ({uniqueStays.length} chỗ
+              nghỉ)
             </p>
           </div>
 
@@ -1050,28 +955,19 @@ export default function HomePage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handlePrevNewest}
+                onClick={() => setNewestIndex((p) => Math.max(0, p - 1))}
                 disabled={newestIndex === 0}
-                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all ${
-                  newestIndex === 0
-                    ? "border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50"
-                    : "border-gray-300 text-gray-700 hover:bg-[#003580] hover:text-white hover:border-[#003580] shadow-sm active:scale-95 cursor-pointer"
-                }`}
-                title="Xem khách sạn trước"
+                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-[#003580] hover:text-white disabled:opacity-30 cursor-pointer transition shadow-2xs"
               >
                 <ChevronLeft size={20} />
               </button>
-
               <button
                 type="button"
-                onClick={handleNextNewest}
+                onClick={() =>
+                  setNewestIndex((p) => Math.min(maxNewestIndex, p + 1))
+                }
                 disabled={newestIndex >= maxNewestIndex}
-                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all ${
-                  newestIndex >= maxNewestIndex
-                    ? "border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50"
-                    : "border-gray-300 text-gray-700 hover:bg-[#003580] hover:text-white hover:border-[#003580] shadow-sm active:scale-95 cursor-pointer"
-                }`}
-                title="Xem thêm khách sạn tiếp theo"
+                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center hover:bg-[#003580] hover:text-white disabled:opacity-30 cursor-pointer transition shadow-2xs"
               >
                 <ChevronRight size={20} />
               </button>
@@ -1089,44 +985,34 @@ export default function HomePage() {
             ))}
           </div>
         ) : uniqueStays.length > 0 ? (
-          <div
-            className="overflow-hidden py-2 -my-2 touch-pan-y"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-          >
+          <div className="overflow-hidden py-2 -my-2">
             <div
               className="flex flex-nowrap transition-transform duration-500 ease-out -mx-3"
               style={{
                 transform: `translateX(-${newestIndex * cardTranslatePercentage}%)`,
               }}
             >
-              {uniqueStays.map((stay) => {
-                const stayId = String(stay.id);
-                const isSavedInDb = favoriteHotelIds.has(stayId);
-
-                return (
-                  <div
-                    key={stayId}
-                    className="w-full sm:w-1/2 lg:w-1/4 shrink-0 px-3"
-                  >
-                    <HotelCard
-                      id={stayId}
-                      hotel={stay}
-                      image={stay.image}
-                      type={stay.type || "Khách sạn"}
-                      title={stay.title || stay.name}
-                      location={stay.location || stay.address}
-                      rating={stay.rating || 9.0}
-                      reviewsCount={stay.review_count || 0}
-                      salePrice={stay.salePrice || stay.min_price || 650000}
-                      stars={stay.star_rating || 3}
-                      isFavoriteInitial={isSavedInDb}
-                      onClick={() => navigate(`/hotel/${stayId}`)}
-                    />
-                  </div>
-                );
-              })}
+              {uniqueStays.map((stay) => (
+                <div
+                  key={stay.id}
+                  className="w-full sm:w-1/2 lg:w-1/4 shrink-0 px-3"
+                >
+                  <HotelCard
+                    id={stay.id}
+                    hotel={stay}
+                    image={stay.image}
+                    type={stay.type || "Khách sạn"}
+                    title={stay.title || stay.name}
+                    location={stay.location || stay.address}
+                    rating={stay.rating || 9.0}
+                    reviewsCount={stay.review_count || 0}
+                    salePrice={stay.salePrice || stay.min_price || 650000}
+                    stars={stay.star_rating || 3}
+                    isFavoriteInitial={favoriteHotelIds.has(stay.id)}
+                    onClick={() => navigate(`/hotel/${stay.id}`)}
+                  />
+                </div>
+              ))}
             </div>
           </div>
         ) : (

@@ -10,6 +10,7 @@ import {
   AlertCircle,
   ShieldCheck,
   X,
+  Loader2,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import { useAuthStore } from "@/stores/authStore";
@@ -34,6 +35,7 @@ export default function UserManagementPage() {
   const [apiError, setApiError] = useState("");
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [createFormData, setCreateFormData] = useState({
     full_name: "",
     email: "",
@@ -42,6 +44,18 @@ export default function UserManagementPage() {
     role: "CUSTOMER",
   });
 
+  // Đóng modal bằng phím Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && isCreateModalOpen && !isCreating) {
+        setIsCreateModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isCreateModalOpen, isCreating]);
+
+  // Tải danh sách người dùng từ Database
   const fetchUsersFromDB = useCallback(async () => {
     setLoading(true);
     setApiError("");
@@ -49,14 +63,10 @@ export default function UserManagementPage() {
     try {
       let resData = null;
       try {
-        const res = await apiClient.get("/admin/users", {
-          params: { search: search.trim() || undefined },
-        });
+        const res = await apiClient.get("/admin/users");
         resData = res?.data || res;
       } catch {
-        const resFallback = await apiClient.get("/users", {
-          params: { search: search.trim() || undefined },
-        });
+        const resFallback = await apiClient.get("/users");
         resData = resFallback?.data || resFallback;
       }
 
@@ -102,9 +112,9 @@ export default function UserManagementPage() {
             u.username ||
             email.split("@")[0] ||
             "Người dùng",
-          email: email,
+          email,
           phone: u.phone || u.phone_number || "---",
-          role: role,
+          role,
           activate: u.activate !== undefined ? Boolean(u.activate) : true,
           created_at: (u.created_at || u.createdAt || "2026-01-01").split(
             "T",
@@ -124,12 +134,13 @@ export default function UserManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, []);
 
   useEffect(() => {
     fetchUsersFromDB();
   }, [fetchUsersFromDB]);
 
+  // Thay đổi Role
   const handleRoleChange = async (userId, newRole, userEmail) => {
     if (userId === currentAdminId && newRole !== "ADMIN") {
       alert("⚠️ Bạn không thể tự hạ quyền ADMIN của chính mình!");
@@ -149,8 +160,10 @@ export default function UserManagementPage() {
     }
   };
 
+  // Tạo tài khoản người dùng mới
   const handleCreateUser = async (e) => {
     e.preventDefault();
+    setIsCreating(true);
     try {
       await apiClient.post("/admin/users", createFormData);
       alert(`✓ Đã tạo thành công tài khoản [${createFormData.full_name}]!`);
@@ -167,9 +180,12 @@ export default function UserManagementPage() {
       alert(
         `Lỗi tạo tài khoản: ${apiErr?.response?.data?.message || "Máy chủ từ chối tạo tài khoản!"}`,
       );
+    } finally {
+      setIsCreating(false);
     }
   };
 
+  // Khóa hoặc Mở khóa tài khoản
   const handleToggleActive = async (targetUser) => {
     if (targetUser.id === currentAdminId) {
       alert("⚠️ Bạn không thể tự khóa tài khoản Admin của mình!");
@@ -194,11 +210,12 @@ export default function UserManagementPage() {
     }
   };
 
+  // 🌟 TÌM KIẾM TỨC THÌ (IN-MEMORY FILTER SIÊU TỐC)
   const filteredUsers = useMemo(() => {
+    const q = search.toLowerCase().trim();
     return users.filter((u) => {
       if (roleFilter !== "all" && u.role !== roleFilter) return false;
-      if (search.trim()) {
-        const q = search.toLowerCase().trim();
+      if (q) {
         return (
           u.full_name.toLowerCase().includes(q) ||
           u.email.toLowerCase().includes(q) ||
@@ -211,8 +228,8 @@ export default function UserManagementPage() {
 
   return (
     <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* ─── HEADER THEO PHONG CÁCH GHOSTAY ─── */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* HEADER */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
             <ShieldCheck size={16} /> Quản Trị Hệ Thống Người Dùng GoStay
@@ -230,7 +247,7 @@ export default function UserManagementPage() {
           <button
             type="button"
             onClick={() => setIsCreateModalOpen(true)}
-            className="flex-1 sm:flex-none px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+            className="flex-1 sm:flex-none px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-xl shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
           >
             <Plus size={16} /> Thêm tài khoản mới
           </button>
@@ -246,14 +263,14 @@ export default function UserManagementPage() {
       </div>
 
       {apiError && (
-        <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-2xl flex items-center gap-2 font-bold">
+        <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
           <AlertCircle size={16} className="text-amber-600 shrink-0" />
           <span>Lỗi kết nối: {apiError}</span>
         </div>
       )}
 
-      {/* ─── TOOLBAR & BỘ LỌC ROLE ─── */}
-      <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-xs space-y-3">
+      {/* TOOLBAR & BỘ LỌC ROLE */}
+      <div className="bg-white p-4 rounded-3xl border border-gray-200 shadow-2xs space-y-3">
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
           {ROLE_TABS.map((tab) => {
             const count = users.filter((u) =>
@@ -266,7 +283,7 @@ export default function UserManagementPage() {
                 onClick={() => setRoleFilter(tab.id)}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                   roleFilter === tab.id
-                    ? "bg-[#003580] text-white shadow-xs"
+                    ? "bg-[#003580] text-white shadow-2xs"
                     : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                 }`}
               >
@@ -292,7 +309,7 @@ export default function UserManagementPage() {
           />
           <input
             type="text"
-            placeholder="Tìm kiếm theo Tên, Email hoặc Số điện thoại..."
+            placeholder="Tìm kiếm nhanh theo Tên, Email hoặc Số điện thoại..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold outline-none focus:border-[#003580] focus:bg-white transition"
@@ -300,13 +317,13 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      {/* ─── BẢNG DANH SÁCH TÀI KHOẢN ─── */}
+      {/* BẢNG DANH SÁCH TÀI KHOẢN */}
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-2xs">
           <LoadingSpinner size="lg" label="Đang tải dữ liệu người dùng..." />
         </div>
       ) : filteredUsers.length > 0 ? (
-        <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
+        <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-2xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
@@ -323,6 +340,7 @@ export default function UserManagementPage() {
                 {filteredUsers.map((u) => {
                   const isSelf =
                     u.id === currentAdminId || u.email === currentAdmin?.email;
+
                   return (
                     <tr key={u.id} className="hover:bg-blue-50/40 transition">
                       <td className="py-4 px-5">
@@ -409,13 +427,13 @@ export default function UserManagementPage() {
         <EmptyState
           icon={Users}
           title="Không tìm thấy tài khoản nào"
-          description="Bấm '+ Thêm Tài Khoản Mới' để tạo người dùng vào hệ thống."
+          description="Thử tìm kiếm với từ khóa khác hoặc bấm '+ Thêm Tài Khoản Mới'."
         />
       )}
 
-      {/* ─── MODAL TẠO TÀI KHOẢN MỚI ─── */}
+      {/* MODAL TẠO TÀI KHOẢN MỚI */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs font-sans animate-in fade-in">
           <div className="bg-white rounded-3xl p-6 sm:p-7 w-full max-w-md shadow-2xl border border-gray-200 space-y-4 text-xs">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <h3 className="font-black text-base text-[#0a2540]">
@@ -423,8 +441,9 @@ export default function UserManagementPage() {
               </h3>
               <button
                 type="button"
+                disabled={isCreating}
                 onClick={() => setIsCreateModalOpen(false)}
-                className="p-1 hover:bg-gray-100 rounded-xl cursor-pointer text-gray-400 hover:text-gray-700 transition"
+                className="p-1 hover:bg-gray-100 rounded-xl cursor-pointer text-gray-400 hover:text-gray-700 transition disabled:opacity-50"
               >
                 <X size={18} />
               </button>
@@ -533,16 +552,19 @@ export default function UserManagementPage() {
               <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                 <button
                   type="button"
+                  disabled={isCreating}
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl font-bold cursor-pointer hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-xl font-bold cursor-pointer hover:bg-gray-50 disabled:opacity-50"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer shadow-sm transition active:scale-95"
+                  disabled={isCreating}
+                  className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer shadow-2xs transition active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Xác nhận lưu
+                  {isCreating && <Loader2 size={14} className="animate-spin" />}
+                  <span>{isCreating ? "Đang tạo..." : "Xác nhận lưu"}</span>
                 </button>
               </div>
             </form>

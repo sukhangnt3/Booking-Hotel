@@ -8,7 +8,6 @@ import {
   Activity,
   Users,
   Building2,
-  CalendarCheck,
   DollarSign,
   CheckCircle2,
   Clock,
@@ -41,7 +40,6 @@ export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
-
   const [timeRange, setTimeRange] = useState("today");
 
   const [stats, setStats] = useState({
@@ -58,7 +56,7 @@ export default function AdminDashboardPage() {
   const [pendingList, setPendingList] = useState([]);
   const [hotelRevenues, setHotelRevenues] = useState([]);
 
-  // BỘ NHỚ LƯU CÁC KHÁCH SẠN ĐÃ QUYẾT TOÁN
+  // BỘ NHỚ LƯU TRẠNG THÁI ĐÃ QUYẾT TOÁN CỦA KHÁCH SẠN
   const [settledHotelsMap, setSettledHotelsMap] = useState(() => {
     try {
       return JSON.parse(
@@ -81,6 +79,17 @@ export default function AdminDashboardPage() {
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
+
+  // Đóng modal khi bấm Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && selectedPayoutHotel && !isConfirming) {
+        setSelectedPayoutHotel(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedPayoutHotel, isConfirming]);
 
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
@@ -159,6 +168,7 @@ export default function AdminDashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
+  // XÁC NHẬN QUYẾT TOÁN CHO CHỦ KHÁCH SẠN
   const handleConfirmPayout = async () => {
     if (!selectedPayoutHotel) return;
     setIsConfirming(true);
@@ -169,12 +179,12 @@ export default function AdminDashboardPage() {
 
     try {
       await apiClient.post("/payments/payouts/confirm", {
-        hotelId: hotelId,
+        hotelId,
         hotel_id: hotelId,
-        amount: amount,
+        amount,
       });
     } catch (e) {
-      console.warn("Lưu Database cục bộ...", e);
+      console.warn("Lưu Database cục bộ...", e.message);
     } finally {
       const updatedSettledMap = { ...settledHotelsMap, [hotelId]: true };
       setSettledHotelsMap(updatedSettledMap);
@@ -208,6 +218,7 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // PHÊ DUYỆT NHANH KHÁCH SẠN MỚI
   const handleQuickApprove = async (hotelId) => {
     try {
       await apiClient.patch(`/admin/hotels/${hotelId}/status`, {
@@ -220,6 +231,7 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Tóm tắt phân tích lưu lượng
   const analyticsSummary = useMemo(() => {
     const total = trafficData.reduce(
       (sum, item) => sum + Number(item.requests || 0),
@@ -241,6 +253,7 @@ export default function AdminDashboardPage() {
     return { total, avg, peak };
   }, [trafficData]);
 
+  // Danh sách doanh thu đã lọc & sắp xếp
   const processedHotelRevenues = useMemo(() => {
     let list = [...hotelRevenues];
 
@@ -280,8 +293,8 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* ─── HEADER QUẢN TRỊ ADMIN THEO CHUẨN GHOSTAY ─── */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      {/* HEADER QUẢN TRỊ ADMIN */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 text-[#006ce4] font-bold text-xs uppercase tracking-wider mb-1">
             <ShieldCheck size={16} /> Bảng Điều Hành Quản Trị Viên (Admin
@@ -307,21 +320,20 @@ export default function AdminDashboardPage() {
       </div>
 
       {apiError && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2 font-bold">
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
           <AlertCircle size={16} /> <span>{apiError}</span>
         </div>
       )}
 
       {loading ? (
-        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-sm">
+        <div className="py-24 flex justify-center bg-white rounded-3xl border border-gray-200 shadow-2xs">
           <LoadingSpinner size="lg" label="Đang đối soát số liệu hệ thống..." />
         </div>
       ) : (
         <>
-          {/* ─── 1. 4 THẺ TỔNG QUAN METRICS ─── */}
+          {/* 1. 4 THẺ CHỈ SỐ TỔNG QUAN */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* THẺ 1: GMV */}
-            <div className="bg-white p-5 rounded-3xl border border-blue-100 shadow-sm space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-blue-100 shadow-2xs space-y-2">
               <div className="flex justify-between items-center text-gray-400">
                 <span className="text-[11px] font-black uppercase tracking-wider text-[#003580]">
                   Tổng Giao Dịch Sàn (GMV)
@@ -336,8 +348,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* THẺ 2: HOA HỒNG THỰC THU */}
-            <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-2xs space-y-2">
               <div className="flex justify-between items-center text-gray-400">
                 <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800">
                   Hoa Hồng Sàn Thực Thu
@@ -352,8 +363,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* THẺ 3: TIỀN TRẢ OWNER CÒN LẠI */}
-            <div className="bg-white p-5 rounded-3xl border border-amber-100 shadow-sm space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-amber-100 shadow-2xs space-y-2">
               <div className="flex justify-between items-center text-gray-400">
                 <span className="text-[11px] font-black uppercase tracking-wider text-amber-800">
                   Tiền Cần Trả Owner
@@ -368,11 +378,10 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* THẺ 4: QUY MÔ MẠNG LƯỚI */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-2xs space-y-2">
               <div className="flex justify-between items-center text-gray-400">
                 <span className="text-[11px] font-black uppercase tracking-wider text-[#0a2540]">
-                  Quy Mô Đối Tác & Khách
+                  Quy Mô Mạng Lưới
                 </span>
                 <Building2 size={18} className="text-purple-600" />
               </div>
@@ -388,8 +397,8 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* ─── 2. BẢNG QUẢN LÝ DOANH THU & QUYẾT TOÁN CƠ SỞ ─── */}
-          <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
+          {/* 2. BẢNG DOANH THU & QUYẾT TOÁN CƠ SỞ */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-4">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pb-4 border-b border-gray-100">
               <div>
                 <h3 className="font-black text-base text-[#0a2540] flex items-center gap-2">
@@ -400,12 +409,11 @@ export default function AdminDashboardPage() {
                   </span>
                 </h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Quét mã chuyển tiền $\rightarrow$ Bấm Xác Nhận để đưa tiền nợ
-                  về 0 ₫
+                  Quét mã chuyển tiền &rarr; Bấm Xác Nhận để đưa tiền nợ về 0 ₫
                 </p>
               </div>
 
-              {/* THANH TÌM KIẾM & BỘ LỌC */}
+              {/* Tìm kiếm & Phân loại */}
               <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
                 <div className="relative flex-1 sm:w-56">
                   <Search
@@ -581,23 +589,19 @@ export default function AdminDashboardPage() {
                   <button
                     type="button"
                     disabled={currentPage === 1}
-                    onClick={() =>
-                      setCurrentPage((prev) => Math.max(1, prev - 1))
-                    }
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     className="p-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer text-gray-700"
                   >
                     <ChevronLeft size={16} />
                   </button>
-
                   <span className="px-3 py-1 font-bold bg-gray-100 rounded-xl text-gray-700">
                     Trang {currentPage} / {totalPages}
                   </span>
-
                   <button
                     type="button"
                     disabled={currentPage === totalPages}
                     onClick={() =>
-                      setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                      setCurrentPage((p) => Math.min(totalPages, p + 1))
                     }
                     className="p-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer text-gray-700"
                   >
@@ -608,8 +612,8 @@ export default function AdminDashboardPage() {
             )}
           </div>
 
-          {/* ─── 3. BIỂU ĐỒ GIÁM SÁT LƯU LƯỢNG ─── */}
-          <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-5">
+          {/* 3. BIỂU ĐỒ GIÁM SÁT LƯU LƯỢNG */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-5">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b pb-4 border-gray-100">
               <div>
                 <h3 className="font-black text-base text-[#0a2540] flex items-center gap-2">
@@ -755,8 +759,8 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* ─── 4. HÀNG CHỜ PHÊ DUYỆT ĐỐI TÁC ─── */}
-          <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm space-y-4">
+          {/* 4. HÀNG CHỜ PHÊ DUYỆT ĐỐI TÁC */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-4">
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="font-black text-base text-[#0a2540] flex items-center gap-2">
@@ -859,10 +863,10 @@ export default function AdminDashboardPage() {
         </>
       )}
 
-      {/* ─── MODAL QUYẾT TOÁN CHO OWNER ─── */}
+      {/* MODAL QUYẾT TOÁN CHO OWNER */}
       {selectedPayoutHotel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl max-w-lg w-full overflow-hidden animate-fadeIn font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xs animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl max-w-lg w-full overflow-hidden font-sans">
             <div className="bg-[#003580] text-white p-5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Wallet size={18} />
@@ -960,7 +964,7 @@ export default function AdminDashboardPage() {
                   <img
                     src={`https://img.vietqr.io/image/${selectedPayoutHotel.bank_code || "VCB"}-${selectedPayoutHotel.bank_account}-compact2.png?amount=${selectedPayoutHotel.owner_payout}&addInfo=${encodeURIComponent(`PAYOUT${String(selectedPayoutHotel.hotel_id).replace(/[^a-zA-Z0-9]/g, "")}`)}&accountName=${encodeURIComponent(selectedPayoutHotel.bank_account_holder || selectedPayoutHotel.owner_name)}`}
                     alt="VietQR Payout"
-                    className="w-40 h-40 mx-auto rounded-2xl border border-gray-200 p-2 shadow-xs bg-white"
+                    className="w-40 h-40 mx-auto rounded-2xl border border-gray-200 p-2 shadow-2xs bg-white"
                   />
                   <p className="text-[11px] text-gray-400 font-medium">
                     Sau khi quét mã chuyển tiền thành công trên điện thoại, bấm
@@ -973,7 +977,7 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              {/* NÚT BẤM XÁC NHẬN */}
+              {/* NÚT XÁC NHẬN */}
               <div className="pt-2 flex justify-end gap-2 border-t border-gray-100">
                 <button
                   type="button"
@@ -987,7 +991,7 @@ export default function AdminDashboardPage() {
                   type="button"
                   disabled={isConfirming}
                   onClick={handleConfirmPayout}
-                  className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl cursor-pointer transition shadow-xs disabled:opacity-50 inline-flex items-center gap-1.5 active:scale-95"
+                  className="px-5 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl cursor-pointer transition shadow-2xs disabled:opacity-50 inline-flex items-center gap-1.5 active:scale-95"
                 >
                   {isConfirming ? (
                     <>

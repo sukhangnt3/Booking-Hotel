@@ -1,8 +1,6 @@
 // src/pages/guest/UserProfilePage.jsx
-
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-
 import {
   CalendarDays,
   Users,
@@ -28,6 +26,9 @@ import { hotelService } from "@/services";
 import apiClient from "@/services/apiClient";
 import { useAuthStore } from "@/stores/authStore";
 
+const DEFAULT_IMAGE =
+  "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500";
+
 const SCORE_LABELS = {
   1: "Rất tệ",
   2: "Tệ",
@@ -41,13 +42,39 @@ const SCORE_LABELS = {
   10: "Xuất sắc tuyệt đối",
 };
 
+// 🌟 HELPER TÍNH TOÁN TIỀN PHÒNG & PHÂN LOẠI CỌC 30% / 100% CHUẨN XÁC
+const resolveBookingPaymentInfo = (b) => {
+  const total = Number(b?.total_price || 0);
+  const paidMoney = Number(
+    b?.customer_paid ?? b?.paid_amount ?? b?.deposit_amount ?? 0,
+  );
+  const remMoney = Number(b?.remaining_amount || 0);
+
+  const isDeposit =
+    (b?.payment_type === "DEPOSIT_30" && paidMoney < total) ||
+    (paidMoney > 0 && paidMoney < total) ||
+    (remMoney > 0 && paidMoney < total);
+
+  const deposit = isDeposit
+    ? paidMoney > 0
+      ? paidMoney
+      : Math.round(total * 0.3)
+    : total;
+  const remaining = isDeposit
+    ? remMoney > 0
+      ? remMoney
+      : Math.max(0, total - deposit)
+    : 0;
+
+  return { total, paidMoney, deposit, remaining, isDeposit };
+};
+
 export default function UserProfilePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, updateUser } = useAuthStore();
 
   const initialTab = searchParams.get("tab") || "trips";
-
   const [activeTab, setActiveTab] = useState(initialTab);
   const [tripFilter, setTripFilter] = useState("all");
   const [bookings, setBookings] = useState([]);
@@ -57,6 +84,7 @@ export default function UserProfilePage() {
   const [toast, setToast] = useState(null);
   const [selectedTicket, setSelectedTicket] = useState(null);
 
+  // Review Modal State
   const [reviewingBooking, setReviewingBooking] = useState(null);
   const [reviewPoint, setReviewPoint] = useState(10);
   const [reviewComment, setReviewComment] = useState("");
@@ -65,7 +93,6 @@ export default function UserProfilePage() {
   const resolveAvatarUrl = (url) => {
     if (!url) return "";
     const avatarUrl = String(url).trim();
-
     if (
       avatarUrl.startsWith("http://") ||
       avatarUrl.startsWith("https://") ||
@@ -74,16 +101,10 @@ export default function UserProfilePage() {
     ) {
       return avatarUrl;
     }
-
     const cleanPath = avatarUrl.replace(/\\/g, "/").replace(/^\/+/, "");
     const backendBase = (
-      import.meta.env.VITE_API_URL ||
-      apiClient.defaults?.baseURL ||
-      "http://localhost:5000"
-    )
-      .replace(/\/api\/?$/, "")
-      .replace(/\/+$/, "");
-
+      import.meta.env.VITE_API_URL || "http://localhost:5000"
+    ).replace(/\/api\/?$/, "");
     return `${backendBase}/${cleanPath}`;
   };
 
@@ -107,9 +128,7 @@ export default function UserProfilePage() {
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 3000);
+    setTimeout(() => setToast(null), 3000);
   };
 
   const handleTabChange = (tabId) => {
@@ -156,7 +175,6 @@ export default function UserProfilePage() {
 
   const syncGlobalUser = (updatedData) => {
     if (!updatedData) return;
-
     const updatedUser = {
       ...user,
       full_name: updatedData.full_name ?? user?.full_name ?? "",
@@ -168,125 +186,67 @@ export default function UserProfilePage() {
           ? updatedData.avatar
           : user?.avatar || "",
     };
-
     useAuthStore.setState({ user: updatedUser });
     if (updateUser) updateUser(updatedUser);
-
-    setProfileForm({
-      full_name: updatedUser.full_name || "",
-      email: updatedUser.email || "",
-      phone: updatedUser.phone || "",
-      dob: updatedUser.dob ? String(updatedUser.dob).split("T")[0] : "",
-    });
   };
 
-  const fetchProfileFromDB = async () => {
-    try {
-      const response = await apiClient.get(`/users/profile?t=${Date.now()}`);
-      const databaseUser =
-        response?.data?.user ||
-        response?.data?.data?.user ||
-        response?.data?.data ||
-        response?.data;
-
-      if (databaseUser) {
-        syncGlobalUser(databaseUser);
-      }
-    } catch (error) {
-      console.error("❌ Lỗi lấy thông tin người dùng từ Database:", error);
-    }
-  };
-
-  const fetchDatabaseBookings = async () => {
+  const fetchDatabaseBookings = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await apiClient.get(
-        `/bookings/my-bookings?_t=${Date.now()}`,
-      );
-      const databaseBookings =
-        response?.data?.data ||
-        response?.data?.bookings ||
-        (Array.isArray(response?.data)
-          ? response.data
-          : Array.isArray(response)
-            ? response
-            : []);
-      setBookings(databaseBookings);
+      const res = await apiClient.get(`/bookings/my-bookings?_t=${Date.now()}`);
+      const data =
+        res?.data?.data ||
+        res?.data?.bookings ||
+        (Array.isArray(res?.data) ? res.data : []);
+      setBookings(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("❌ Lỗi lấy đơn đặt phòng:", error);
+      console.error("Lỗi lấy đơn đặt phòng:", error);
       setBookings([]);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchProfileFromDB();
     fetchDatabaseBookings();
-
     if (hotelService?.getFavorites) {
       hotelService
         .getFavorites()
-        .then((response) => {
-          setFavorites(
-            Array.isArray(response) ? response : response?.data || [],
-          );
-        })
+        .then((res) => setFavorites(Array.isArray(res) ? res : res?.data || []))
         .catch(() => setFavorites([]));
     }
-  }, []);
+  }, [fetchDatabaseBookings]);
 
+  // Cập nhật thông tin tài khoản
   const handleProfileSubmit = async (event) => {
     event.preventDefault();
-
-    if (!profileForm.full_name.trim()) {
-      showToast("Vui lòng nhập họ và tên.", "error");
-      return;
-    }
+    if (!profileForm.full_name.trim())
+      return showToast("Vui lòng nhập họ và tên.", "error");
 
     setIsSubmitting(true);
-
     const payload = {
       full_name: profileForm.full_name.trim(),
-      phone:
-        profileForm.phone && profileForm.phone.trim() !== ""
-          ? profileForm.phone.trim()
-          : null,
-      dob:
-        profileForm.dob && profileForm.dob.trim() !== ""
-          ? profileForm.dob.trim()
-          : null,
+      phone: profileForm.phone?.trim() || null,
+      dob: profileForm.dob?.trim() || null,
     };
 
     try {
       const res = await apiClient.put("/users/profile", payload);
       const updatedUser =
-        res?.data?.user ||
-        res?.data?.data?.user ||
-        res?.data?.data ||
-        res?.data;
-
-      if (updatedUser && typeof updatedUser === "object") {
-        syncGlobalUser(updatedUser);
-      } else {
-        syncGlobalUser(payload);
-      }
-
-      await fetchProfileFromDB();
-      showToast("Đã lưu thông tin vào Database thành công!");
+        res?.data?.user || res?.data?.data?.user || res?.data?.data || payload;
+      syncGlobalUser(updatedUser);
+      showToast("Đã lưu thông tin tài khoản thành công!");
     } catch (err) {
-      console.error("❌ Lỗi cập nhật profile:", err);
-      const errorMsg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        "Cập nhật thông tin thất bại.";
-      showToast(errorMsg, "error");
+      showToast(
+        err?.response?.data?.message || "Cập nhật thông tin thất bại.",
+        "error",
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Hủy đơn đặt phòng
   const handleCancelBooking = async (event, bookingCode) => {
     event.stopPropagation();
     if (
@@ -305,12 +265,12 @@ export default function UserProfilePage() {
     }
   };
 
+  // Xóa yêu thích
   const handleRemoveFavorite = async (event, hotelId) => {
     event.stopPropagation();
     try {
-      if (hotelService?.removeFavorite) {
+      if (hotelService?.removeFavorite)
         await hotelService.removeFavorite(hotelId);
-      }
       setFavorites((prev) =>
         prev.filter(
           (item) => String(item.id || item.hotel_id) !== String(hotelId),
@@ -322,18 +282,11 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleOpenReviewModal = (booking) => {
-    setReviewingBooking(booking);
-    setReviewPoint(10);
-    setReviewComment("");
-  };
-
+  // Gửi đánh giá
   const handleSubmitReview = async (e) => {
     e.preventDefault();
-    if (!reviewComment.trim()) {
-      showToast("Vui lòng nhập nhận xét kỳ nghỉ.", "error");
-      return;
-    }
+    if (!reviewComment.trim())
+      return showToast("Vui lòng nhập nhận xét kỳ nghỉ.", "error");
 
     setIsSendingReview(true);
     try {
@@ -347,7 +300,6 @@ export default function UserProfilePage() {
 
       showToast("✓ Đã gửi đánh giá thành công!");
       setReviewingBooking(null);
-
       setBookings((prev) =>
         prev.map((item) =>
           item.id === reviewingBooking.id
@@ -365,31 +317,29 @@ export default function UserProfilePage() {
     }
   };
 
-  const isBookingCheckedOut = (status) => {
-    const s = String(status || "")
-      .toLowerCase()
-      .trim();
-    return ["checked_out", "checkout", "completed", "done"].includes(s);
-  };
+  const isBookingCheckedOut = (status) =>
+    ["checked_out", "checkout", "completed", "done"].includes(
+      String(status || "")
+        .toLowerCase()
+        .trim(),
+    );
 
-  const filteredBookings = bookings.filter((b) => {
-    const s = String(b.status || "")
-      .toLowerCase()
-      .trim();
-    const isOut = isBookingCheckedOut(b.status);
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const s = String(b.status || "")
+        .toLowerCase()
+        .trim();
+      const isOut = isBookingCheckedOut(b.status);
+      if (tripFilter === "upcoming") return s !== "cancelled" && !isOut;
+      if (tripFilter === "completed") return isOut;
+      if (tripFilter === "cancelled") return s === "cancelled";
+      return true;
+    });
+  }, [bookings, tripFilter]);
 
-    if (tripFilter === "upcoming") return s !== "cancelled" && !isOut;
-    if (tripFilter === "completed") return isOut;
-    if (tripFilter === "cancelled") return s === "cancelled";
-    return true;
-  });
-
-  const fallbackAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    profileForm.full_name || "User",
-  )}&background=003580&color=fff&bold=true`;
-
-  const finalAvatarSrc = resolveAvatarUrl(user?.avatar || "");
-  const displayAvatarUrl = finalAvatarSrc || fallbackAvatarUrl;
+  const fallbackAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(profileForm.full_name || "User")}&background=003580&color=fff&bold=true`;
+  const displayAvatarUrl =
+    resolveAvatarUrl(user?.avatar || "") || fallbackAvatarUrl;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans pb-24">
@@ -404,21 +354,17 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      {/* HEADER */}
+      {/* HEADER TÀI KHOẢN */}
       <div className="bg-[#003580] text-white py-8 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 flex items-center gap-5">
-          <div className="relative shrink-0 block">
-            <img
-              src={displayAvatarUrl}
-              alt="Avatar"
-              onError={(event) => {
-                event.currentTarget.onerror = null;
-                event.currentTarget.src = fallbackAvatarUrl;
-              }}
-              className="w-20 h-20 rounded-full border-2 border-white object-cover bg-slate-200 shadow"
-            />
-          </div>
-
+          <img
+            src={displayAvatarUrl}
+            alt="Avatar"
+            onError={(e) => {
+              e.currentTarget.src = fallbackAvatarUrl;
+            }}
+            className="w-20 h-20 rounded-full border-2 border-white object-cover bg-slate-200 shadow"
+          />
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
               {profileForm.full_name || "Tài khoản của tôi"}
@@ -429,6 +375,7 @@ export default function UserProfilePage() {
       </div>
 
       <main className="max-w-5xl mx-auto px-4 mt-6 space-y-6">
+        {/* TABS CHÍNH */}
         <div className="flex flex-wrap border-b border-slate-200 text-sm font-semibold text-slate-600 gap-8">
           <button
             type="button"
@@ -439,8 +386,7 @@ export default function UserProfilePage() {
                 : "hover:text-slate-900"
             }`}
           >
-            <Ticket size={17} />
-            Chuyến đi của tôi ({bookings.length})
+            <Ticket size={17} /> Chuyến đi của tôi ({bookings.length})
           </button>
 
           <button
@@ -452,8 +398,7 @@ export default function UserProfilePage() {
                 : "hover:text-slate-900"
             }`}
           >
-            <Heart size={17} />
-            Khách sạn yêu thích ({favorites.length})
+            <Heart size={17} /> Khách sạn yêu thích ({favorites.length})
           </button>
 
           <button
@@ -465,8 +410,7 @@ export default function UserProfilePage() {
                 : "hover:text-slate-900"
             }`}
           >
-            <User size={17} />
-            Thông tin tài khoản
+            <User size={17} /> Thông tin tài khoản
           </button>
         </div>
 
@@ -477,7 +421,7 @@ export default function UserProfilePage() {
               className="text-[#003580] animate-spin mx-auto"
             />
             <p className="text-sm text-slate-500 font-medium">
-              Đang nạp dữ liệu từ Database...
+              Đang nạp dữ liệu từ hệ thống...
             </p>
           </div>
         ) : (
@@ -490,34 +434,15 @@ export default function UserProfilePage() {
                     { id: "all", label: `Tất cả (${bookings.length})` },
                     {
                       id: "upcoming",
-                      label: `Sắp tới (${
-                        bookings.filter((b) => {
-                          const s = String(b.status || "")
-                            .toLowerCase()
-                            .trim();
-                          return (
-                            s !== "cancelled" && !isBookingCheckedOut(b.status)
-                          );
-                        }).length
-                      })`,
+                      label: `Sắp tới (${bookings.filter((b) => String(b.status).toLowerCase() !== "cancelled" && !isBookingCheckedOut(b.status)).length})`,
                     },
                     {
                       id: "completed",
-                      label: `Đã hoàn thành (${
-                        bookings.filter((b) => isBookingCheckedOut(b.status))
-                          .length
-                      })`,
+                      label: `Đã hoàn thành (${bookings.filter((b) => isBookingCheckedOut(b.status)).length})`,
                     },
                     {
                       id: "cancelled",
-                      label: `Đã hủy (${
-                        bookings.filter(
-                          (b) =>
-                            String(b.status || "")
-                              .toLowerCase()
-                              .trim() === "cancelled",
-                        ).length
-                      })`,
+                      label: `Đã hủy (${bookings.filter((b) => String(b.status).toLowerCase() === "cancelled").length})`,
                     },
                   ].map((f) => (
                     <button
@@ -542,49 +467,23 @@ export default function UserProfilePage() {
                       const rawStatus = String(b.status || "")
                         .toLowerCase()
                         .trim();
-
                       const isCancelled = rawStatus === "cancelled";
-                      const isCheckedIn =
-                        rawStatus === "checked_in" || rawStatus === "checkin";
+                      const isCheckedIn = ["checked_in", "checkin"].includes(
+                        rawStatus,
+                      );
                       const isCheckedOut = isBookingCheckedOut(b.status);
                       const isPaid =
                         b.payment_status === "paid" ||
                         rawStatus === "confirmed";
                       const isReviewed = b.is_reviewed || Boolean(b.review_id);
 
-                      // ─── LOGIC PHÂN BIỆT 100% VÀ CỌC 30% CHUẨN XÁC TUYỆT ĐỐI ───
-                      const totalPrice = Number(b.total_price || 0);
-                      const paidMoney = Number(
-                        b.customer_paid ??
-                          b.paid_amount ??
-                          b.deposit_amount ??
-                          0,
-                      );
-                      const remMoney = Number(b.remaining_amount || 0);
-
-                      // CHỈ ĐƯỢC COI LÀ CỌC NẾU TIỀN ĐÃ TRẢ NHỎ HƠN TỔNG TIỀN VÀ CÒN NỢ TIỀN
-                      const isDeposit =
-                        (b.payment_type === "DEPOSIT_30" &&
-                          paidMoney < totalPrice) ||
-                        (paidMoney > 0 && paidMoney < totalPrice) ||
-                        (remMoney > 0 && paidMoney < totalPrice);
-
-                      const depositAmount = isDeposit
-                        ? paidMoney > 0
-                          ? paidMoney
-                          : Math.round(totalPrice * 0.3)
-                        : totalPrice;
-
-                      const remainingAmount = isDeposit
-                        ? remMoney > 0
-                          ? remMoney
-                          : totalPrice - depositAmount
-                        : 0;
+                      const { total, deposit, remaining, isDeposit } =
+                        resolveBookingPaymentInfo(b);
 
                       return (
                         <div
                           key={bookingCode}
-                          className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 hover:border-blue-300 transition"
+                          className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4 hover:border-blue-300 transition"
                         >
                           <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-slate-100 text-xs">
                             <div className="flex items-center gap-3">
@@ -599,7 +498,7 @@ export default function UserProfilePage() {
                               </span>
                             </div>
 
-                            {/* HUY HIỆU TRẠNG THÁI: PHÂN BIỆT RÕ 100% VÀ 30% */}
+                            {/* Badge trạng thái */}
                             {isCancelled ? (
                               <span className="px-2.5 py-1 bg-rose-50 text-rose-700 font-semibold rounded-md border border-rose-200 flex items-center gap-1">
                                 <XCircle size={13} /> Đã hủy
@@ -617,7 +516,7 @@ export default function UserProfilePage() {
                                 <Building2
                                   size={13}
                                   className="text-amber-700"
-                                />
+                                />{" "}
                                 Đã cọc 30% (Thu nốt tại quầy)
                               </span>
                             ) : isPaid ? (
@@ -695,7 +594,7 @@ export default function UserProfilePage() {
                               </div>
                             </div>
 
-                            {/* CỘT HIỂN THỊ TIỀN: NẾU 100% THÌ CHỈ HIỆN 1 DÒNG DUY NHẤT */}
+                            {/* Cột hiển thị tiền phòng */}
                             <div className="w-full md:w-auto flex md:flex-col justify-between items-end gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-slate-100">
                               <div className="text-left md:text-right space-y-1">
                                 {isDeposit ? (
@@ -703,15 +602,14 @@ export default function UserProfilePage() {
                                     <div className="text-xs text-slate-500 font-medium">
                                       Tổng tiền:{" "}
                                       <strong className="text-slate-800">
-                                        {formatVND(totalPrice)}
+                                        {formatVND(total)}
                                       </strong>
                                     </div>
                                     <div className="text-xs text-emerald-700 font-bold">
-                                      ✓ Đã cọc 30%: {formatVND(depositAmount)}
+                                      ✓ Đã cọc 30%: {formatVND(deposit)}
                                     </div>
                                     <div className="text-xs font-black text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-200">
-                                      Cần trả tại quầy:{" "}
-                                      {formatVND(remainingAmount)}
+                                      Cần trả tại quầy: {formatVND(remaining)}
                                     </div>
                                   </>
                                 ) : (
@@ -720,7 +618,7 @@ export default function UserProfilePage() {
                                       Đã thanh toán (100%)
                                     </span>
                                     <strong className="text-xl font-bold text-[#1b6a38]">
-                                      {formatVND(totalPrice)}
+                                      {formatVND(total)}
                                     </strong>
                                   </div>
                                 )}
@@ -757,17 +655,20 @@ export default function UserProfilePage() {
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => handleOpenReviewModal(b)}
-                                      className="px-4 py-1.5 bg-[#2e7d32] hover:bg-emerald-800 text-white font-bold text-xs rounded-lg shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
-                                      title="Kỳ nghỉ đã hoàn tất! Hãy chia sẻ trải nghiệm của bạn"
+                                      onClick={() => {
+                                        setReviewingBooking(b);
+                                        setReviewPoint(10);
+                                        setReviewComment("");
+                                      }}
+                                      className="px-4 py-1.5 bg-[#2e7d32] hover:bg-emerald-800 text-white font-bold text-xs rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
                                     >
-                                      <Star size={13} fill="currentColor" />
+                                      <Star size={13} fill="currentColor" />{" "}
                                       Viết đánh giá
                                     </button>
                                   )
                                 ) : isCheckedIn ? (
                                   <span className="px-2.5 py-1 text-[11px] text-slate-500 font-medium italic">
-                                    Đang lưu trú (Đánh giá sau khi trả phòng)
+                                    Đang lưu trú
                                   </span>
                                 ) : null}
                               </div>
@@ -804,9 +705,7 @@ export default function UserProfilePage() {
                       const hotel = item.hotel || item;
                       const hotelId = hotel.id || hotel.hotel_id;
                       const hotelImage =
-                        hotel.image ||
-                        hotel.images?.[0]?.path ||
-                        "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500";
+                        hotel.image || hotel.images?.[0]?.path || DEFAULT_IMAGE;
                       const hotelPrice = Number(
                         hotel.min_price || hotel.base_price || 500000,
                       );
@@ -815,13 +714,17 @@ export default function UserProfilePage() {
                         <div
                           key={hotelId}
                           onClick={() => navigate(`/hotel/${hotelId}`)}
-                          className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md cursor-pointer transition flex flex-col justify-between"
+                          className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs hover:shadow-md cursor-pointer transition flex flex-col justify-between"
                         >
                           <div>
                             <div className="relative aspect-[16/10] bg-slate-100">
                               <img
                                 src={hotelImage}
-                                alt={hotel.name || "Khách sạn"}
+                                alt={hotel.name}
+                                loading="lazy"
+                                onError={(e) => {
+                                  e.currentTarget.src = DEFAULT_IMAGE;
+                                }}
                                 className="w-full h-full object-cover"
                               />
                               <button
@@ -875,7 +778,7 @@ export default function UserProfilePage() {
             {/* TAB 3: THÔNG TIN TÀI KHOẢN */}
             {activeTab === "profile" && (
               <div className="max-w-2xl mx-auto">
-                <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs">
+                <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-2xs">
                   <div className="border-b border-slate-100 pb-4 mb-5">
                     <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
                       <User size={18} className="text-[#003580]" /> Hồ sơ cá
@@ -956,11 +859,9 @@ export default function UserProfilePage() {
                       <button
                         type="submit"
                         disabled={isSubmitting}
-                        className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-semibold text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                        className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-semibold text-xs rounded-xl shadow-2xs transition cursor-pointer disabled:opacity-50"
                       >
-                        {isSubmitting
-                          ? "Đang lưu vào Database..."
-                          : "Lưu thay đổi"}
+                        {isSubmitting ? "Đang lưu..." : "Lưu thay đổi"}
                       </button>
                     </div>
                   </form>
@@ -971,9 +872,9 @@ export default function UserProfilePage() {
         )}
       </main>
 
-      {/* MODAL ĐÁNH GIÁ */}
+      {/* MODAL ĐÁNH GIÁ KỲ NGHỈ */}
       {reviewingBooking && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
             <div className="bg-[#2e7d32] text-white p-5 flex justify-between items-center">
               <div>
@@ -987,7 +888,7 @@ export default function UserProfilePage() {
               <button
                 type="button"
                 onClick={() => setReviewingBooking(null)}
-                className="p-1.5 rounded-full hover:bg-white/10 text-white cursor-pointer transition"
+                className="p-1.5 rounded-full hover:bg-white/10 text-white cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -1047,9 +948,9 @@ export default function UserProfilePage() {
                 <button
                   type="submit"
                   disabled={isSendingReview}
-                  className="px-6 py-2.5 bg-[#2e7d32] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-6 py-2.5 bg-[#2e7d32] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  <Send size={14} />
+                  <Send size={14} />{" "}
                   {isSendingReview ? "Đang gửi..." : "Gửi đánh giá ngay"}
                 </button>
               </div>
@@ -1058,36 +959,15 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      {/* MODAL PHIẾU ĐẶT PHÒNG */}
+      {/* MODAL PHIẾU ĐẶT PHÒNG (VOUCHER) */}
       {selectedTicket &&
         (() => {
-          const total = Number(selectedTicket.total_price || 0);
-          const paidMoney = Number(
-            selectedTicket.customer_paid ??
-              selectedTicket.paid_amount ??
-              selectedTicket.deposit_amount ??
-              0,
-          );
-          const remMoney = Number(selectedTicket.remaining_amount || 0);
-
-          // PHÂN BIỆT RÕ 100% VÀ 30%
-          const isDep =
-            (selectedTicket.payment_type === "DEPOSIT_30" &&
-              paidMoney < total) ||
-            (paidMoney > 0 && paidMoney < total) ||
-            (remMoney > 0 && paidMoney < total);
-
-          const dep = isDep
-            ? paidMoney > 0
-              ? paidMoney
-              : Math.round(total * 0.3)
-            : total;
-
-          const rem = isDep ? (remMoney > 0 ? remMoney : total - dep) : 0;
+          const { total, deposit, remaining, isDeposit } =
+            resolveBookingPaymentInfo(selectedTicket);
 
           return (
             <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-              <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+              <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
                 <div className="bg-[#003580] text-white p-5 flex justify-between items-center">
                   <div>
                     <span className="text-[10px] text-blue-200 block font-semibold uppercase">
@@ -1176,15 +1056,15 @@ export default function UserProfilePage() {
                       </strong>
                     </div>
 
-                    {isDep ? (
+                    {isDeposit ? (
                       <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1 mt-1">
                         <div className="flex justify-between text-emerald-800 font-bold">
                           <span>Đã thanh toán cọc (30%):</span>
-                          <span>{formatVND(dep)}</span>
+                          <span>{formatVND(deposit)}</span>
                         </div>
                         <div className="flex justify-between text-rose-600 font-black">
                           <span>Cần thanh toán tại quầy:</span>
-                          <span>{formatVND(rem)}</span>
+                          <span>{formatVND(remaining)}</span>
                         </div>
                       </div>
                     ) : (

@@ -1,14 +1,17 @@
+// src/components/auth/RegisterForm/Step8Publish.jsx
 import React, { useRef } from "react";
 import {
   MapPin,
-  Building2,
   Upload,
   FileCheck,
   AlertCircle,
   Sparkles,
-  ShieldCheck,
-  Percent,
+  Check,
+  Star,
 } from "lucide-react";
+
+const DEFAULT_COVER =
+  "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
 
 export const Step8Publish = ({
   data = {},
@@ -20,6 +23,14 @@ export const Step8Publish = ({
   const handleLicenseUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Giới hạn tệp không quá 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      alert("⚠️ Dung lượng tệp giấy phép kinh doanh tối đa là 5MB.");
+      e.target.value = null;
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       onChange({ businessLicenseUrl: event.target.result });
@@ -31,12 +42,18 @@ export const Step8Publish = ({
   const coverImage =
     data?.hotelMainImage ||
     data?.hotelImages?.[0]?.url ||
-    "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
+    data?.hotelImages?.[0]?.path ||
+    data?.image ||
+    DEFAULT_COVER;
 
   const commissionRate = Number(data?.commissionRate || 18.0);
+  const starCount = Math.min(
+    5,
+    Math.max(1, Math.round(Number(data?.starRating) || 3)),
+  );
 
   return (
-    <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
+    <div className="space-y-6 font-sans text-slate-800 animate-in fade-in">
       <div>
         <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
           <Sparkles size={14} className="text-[#006ce4]" /> Bước 8 / 8: Kiểm
@@ -52,12 +69,15 @@ export const Step8Publish = ({
       </div>
 
       {/* THẺ TÓM TẮT CHỖ NGHỈ & HOA HỒNG SÀN */}
-      <div className="p-5 rounded-3xl bg-[#e8f2ff]/50 border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="p-5 sm:p-6 rounded-3xl bg-[#e8f2ff]/50 border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs">
         <div className="flex items-center gap-4">
           <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-200 shrink-0 border border-slate-300">
             <img
               src={coverImage}
               alt="Property Cover"
+              onError={(e) => {
+                e.currentTarget.src = DEFAULT_COVER;
+              }}
               className="w-full h-full object-cover"
             />
           </div>
@@ -73,14 +93,18 @@ export const Step8Publish = ({
                 {data?.city || "Việt Nam"}
               </span>
             </p>
-            <span className="text-xs font-bold text-amber-500 block">
-              {"⭐".repeat(data?.starRating || 3)} ({data?.starRating || 3} sao
-              tiêu chuẩn)
-            </span>
+            <div className="flex items-center gap-1 text-amber-500 pt-0.5">
+              {[...Array(starCount)].map((_, i) => (
+                <Star key={i} size={13} fill="currentColor" />
+              ))}
+              <span className="text-xs font-bold text-slate-700 ml-1">
+                ({starCount} sao)
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 rounded-2xl border border-blue-200 shrink-0 w-full sm:w-auto text-left sm:text-right">
+        <div className="bg-white p-3.5 rounded-2xl border border-blue-200 shrink-0 w-full sm:w-auto text-left sm:text-right shadow-2xs">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
             Hoa hồng sàn áp dụng
           </span>
@@ -88,35 +112,35 @@ export const Step8Publish = ({
             {commissionRate}% / đơn
           </span>
           <span className="text-[10px] text-emerald-600 font-bold block">
-            ✓ Đối tác nhận: {100 - commissionRate}%
+            ✓ Đối tác thực nhận: {100 - commissionRate}%
           </span>
         </div>
       </div>
 
       {/* HỒ SƠ PHÁP LÝ & MÃ SỐ THUẾ */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 space-y-4 shadow-xs">
+      <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 space-y-4 shadow-2xs">
         <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
           <FileCheck size={16} className="text-[#006ce4]" />
           <span>Thông tin Thuế & Giấy phép đăng ký kinh doanh</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-[11px] font-bold text-slate-600 mb-1">
-              Mã số thuế (Doanh nghiệp hoặc Hộ KD cá thể)
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Mã số thuế (Doanh nghiệp hoặc Hộ KD)
             </label>
             <input
               type="text"
               value={data?.taxCode || ""}
               onChange={(e) => onChange({ taxCode: e.target.value })}
               placeholder="VD: 0101234567"
-              className="w-full h-11 px-3.5 text-xs font-mono font-bold bg-slate-50 rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
+              className="w-full h-11 px-3.5 text-xs sm:text-sm font-mono font-bold bg-slate-50 rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-600 mb-1">
-              Bản chụp GPKD (business_license)
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Bản chụp GPKD (PDF hoặc Ảnh)
             </label>
             <input
               type="file"
@@ -134,19 +158,19 @@ export const Step8Publish = ({
               <span className="truncate">
                 {data?.businessLicenseUrl
                   ? "✓ Đã đính kèm tệp giấy phép"
-                  : "Tải lên tài liệu PDF / Ảnh"}
+                  : "Tải lên tài liệu (Tối đa 5MB)"}
               </span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* 🌟 ĐIỀU KHOẢN VÀ CAM KẾT HOA HỒNG RÕ RÀNG */}
+      {/* ĐIỀU KHOẢN VÀ CAM KẾT */}
       <div className="space-y-3 pt-2">
-        <label className="flex items-start gap-3.5 p-4 sm:p-5 rounded-3xl bg-white border-2 border-slate-200 hover:border-blue-300 cursor-pointer transition select-none shadow-xs">
+        <label className="flex items-start gap-3.5 p-4 sm:p-5 rounded-3xl bg-white border-2 border-slate-200 hover:border-blue-300 cursor-pointer transition select-none shadow-2xs">
           <input
             type="checkbox"
-            checked={data?.acceptedTerms || false}
+            checked={Boolean(data?.acceptedTerms)}
             onChange={(e) => onChange({ acceptedTerms: e.target.checked })}
             className="w-5 h-5 mt-0.5 accent-[#003580] rounded cursor-pointer shrink-0"
           />
