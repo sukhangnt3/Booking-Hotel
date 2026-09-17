@@ -2,7 +2,7 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tự động nâng cấp cột path và kích hoạt toàn bộ phòng đang có trong DB
+// Tự động nâng cấp kiểu dữ liệu path thành TEXT và kích hoạt toàn bộ phòng đang có trong DB
 (async function ensureDatabaseSchema() {
   try {
     await pool.query(`
@@ -557,7 +557,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TRUY VẤN TẤT CẢ PHÒNG, KHÔNG ĐỂ MẤT PHÒNG) ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (AN TOÀN TUYỆT ĐỐI - KHÔNG BAO GIỜ LÀM MẤT PHÒNG) ───
 async function getHotelById(req, res, next) {
   try {
     const rawId = String(req.params.id || "").trim();
@@ -591,7 +591,7 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // 🌟 TRUY VẤN MỌI HẠNG PHÒNG THUỘC KHÁCH SẠN NÀY (HỖ TRỢ MỌI KIỂU DỮ LIỆU) 🌟
+    // 🌟 TRUY VẤN MỌI HẠNG PHÒNG THUỘC KHÁCH SẠN NÀY
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -666,7 +666,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (LUÔN TRẢ VỀ TOÀN BỘ PHÒNG ĐÃ TẠO) ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (TRUY VẤN TRỰC TIẾP TOÀN BỘ PHÒNG) ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
