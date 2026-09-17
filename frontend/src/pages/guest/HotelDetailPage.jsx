@@ -273,7 +273,8 @@ export default function HotelDetailPage() {
           list = res.rooms;
         }
 
-        if (list.length > 0) {
+        // 🌟 CHỈ SET NẾU CÓ DỮ LIỆU ĐỂ TRÁNH GHI ĐÈ LÀM MẤT PHÒNG GỐC CỦA HOTEL
+        if (Array.isArray(list) && list.length > 0) {
           setAvailableRooms(list);
         }
       } catch (err) {
@@ -318,6 +319,7 @@ export default function HotelDetailPage() {
         setSearchQuery(hotelData.name || "");
         setIsFavorite(Boolean(hotelData.is_favorite));
 
+        // Kiểm tra availability
         await fetchRoomAvailability(appliedCheckIn, appliedCheckOut, adults);
 
         if (Array.isArray(hotelData.reviews) && hotelData.reviews.length > 0) {
@@ -433,7 +435,7 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ── 1. BENTO GALLERY TRÊN CÙNG: CHỈ LẤY ẢNH CỦA KHÁCH SẠN (KHÔNG CHỨA ẢNH XE CỦA PHÒNG) ──
+  // ── 1. BENTO GALLERY TRÊN CÙNG: CHỈ HIỂN THỊ ẢNH CỦA KHÁCH SẠN (KHÔNG LẤY ẢNH PHÒNG) ──
   const hotelGalleryImages = [];
   if (hotel?.image) {
     const u = parseRealImageUrl(hotel.image);
@@ -441,7 +443,6 @@ export default function HotelDetailPage() {
   }
   if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
     hotel.images.forEach((img) => {
-      // Chỉ lấy ảnh cơ sở không có room_id
       const rId = typeof img === "object" ? img.room_id || img.roomId : null;
       if (!rId) {
         const u = parseRealImageUrl(img);
@@ -469,7 +470,6 @@ export default function HotelDetailPage() {
     if (!room)
       return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
 
-    // Kiểm tra trong mảng images riêng của phòng
     const rImgs = parseImagesList(room.images);
     if (rImgs.length > 0) {
       for (const item of rImgs) {
@@ -478,19 +478,16 @@ export default function HotelDetailPage() {
       }
     }
 
-    // Kiểm tra room.image
     if (room.image && !room.image.startsWith("blob:")) {
       const u = parseRealImageUrl(room.image);
       if (u) return u;
     }
 
-    // Kiểm tra room.thumbnail
     if (room.thumbnail && !room.thumbnail.startsWith("blob:")) {
       const u = parseRealImageUrl(room.thumbnail);
       if (u) return u;
     }
 
-    // Dự phòng theo số thứ tự (mỗi phòng một ảnh khác nhau, không lấy ảnh khách sạn)
     return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
   };
 
@@ -657,9 +654,13 @@ export default function HotelDetailPage() {
     { label: hotel.name },
   ];
 
-  // Ưu tiên danh sách phòng trống thực tế từ API availability
+  // 🌟 KHÔNG BAO GIỜ ĐỂ BỊ MẤT PHÒNG: Nếu availableRooms rỗng thì dùng ngay hotel.rooms
   const displayRooms =
-    availableRooms.length > 0 ? availableRooms : hotel.rooms || [];
+    Array.isArray(availableRooms) && availableRooms.length > 0
+      ? availableRooms
+      : Array.isArray(hotel.rooms)
+        ? hotel.rooms
+        : [];
 
   return (
     <div className="bg-[#f5f7fa] min-h-screen pb-20 font-sans text-slate-800">
@@ -745,7 +746,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BENTO GALLERY KHÁCH SẠN (CHỈ HIỂN THỊ ẢNH CƠ SỞ) */}
+        {/* BENTO GALLERY KHÁCH SẠN */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[340px] md:h-[400px]">
             <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
@@ -1088,7 +1089,7 @@ export default function HotelDetailPage() {
           {displayRooms && displayRooms.length > 0 ? (
             <div className="space-y-4">
               {displayRooms.map((room, idx) => {
-                // Lấy đúng ảnh riêng của hạng phòng
+                // Lấy đúng ảnh riêng của từng phòng
                 const roomImg = getRoomImage(room, idx);
 
                 const stock =

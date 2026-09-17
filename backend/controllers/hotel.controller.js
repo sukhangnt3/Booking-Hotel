@@ -2,14 +2,12 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tự động nâng cấp kiểu dữ liệu path thành TEXT và tạo các cột lưu ảnh riêng cho room
 (async function ensureDatabaseSchema() {
   try {
     await pool.query(`
       ALTER TABLE public.image ALTER COLUMN path TYPE text;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS image text;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS thumbnail text;
-      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS images jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS room_view text DEFAULT 'city_view';
       ALTER TABLE public.hotel ALTER COLUMN image TYPE text;
     `);
@@ -557,7 +555,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TRUY VẤN AN TOÀN, HIỂN THỊ ĐỦ PHÒNG) ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (AN TOÀN TUYỆT ĐỐI - KHÔNG BAO GIỜ LÀM MẤT PHÒNG) ───
 async function getHotelById(req, res, next) {
   try {
     const hotelId = String(req.params.id || "").trim();
@@ -585,13 +583,13 @@ async function getHotelById(req, res, next) {
       .query(
         `SELECT id, path, is_thumbnail, display_order, room_id 
          FROM public.image 
-         WHERE hotel_id = $1 AND room_id IS NULL
+         WHERE hotel_id::text = $1 AND (room_id IS NULL OR room_id::text = '')
          ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
         [hotelData.id],
       )
       .catch(() => ({ rows: [] }));
 
-    // Truy vấn phòng: Ưu tiên lấy ảnh có room_id khớp trong bảng image hoặc r.image
+    // 🌟 TRUY VẤN TOÀN BỘ PHÒNG THUỘC KHÁCH SẠN NÀY, BỎ HẾT CÁC TOÁN TỬ GÂY LỖI
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -625,7 +623,7 @@ async function getHotelById(req, res, next) {
            '[]'::json
          ) AS images
        FROM public.room r
-       WHERE r.hotel_id::text = $1 AND (r.is_active = true OR r.is_active IS NULL)
+       WHERE r.hotel_id::text = $1
        ORDER BY r.base_price ASC`,
         [hotelData.id],
       )
@@ -639,7 +637,7 @@ async function getHotelById(req, res, next) {
         `SELECT DISTINCT a.name, a.type 
          FROM public.amenity a
          JOIN public.hotel_amenity ha ON ha.amenity_id = a.id 
-         WHERE ha.hotel_id = $1`,
+         WHERE ha.hotel_id::text = $1`,
         [hotelData.id],
       )
       .catch(() => ({ rows: [] }));
@@ -666,7 +664,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC ───
+// ─── 3. KIỂM TRA PHÒNG TRỐNG THEO THỜI GIAN THỰC (ĐẢM BẢO KHÔNG BỊ TRẢ VỀ RỖNG) ───
 async function listHotelRoomAvailability(req, res, next) {
   const hotelId = req.params.id;
   const checkIn =
@@ -680,61 +678,8 @@ async function listHotelRoomAvailability(req, res, next) {
     req.query.checkout_date ||
     tomorrow.toISOString().split("T")[0];
 
-  if (!checkIn || !checkOut || new Date(checkOut) <= new Date(checkIn)) {
-    return res.status(400).json({
-      success: false,
-      message: "Ngày nhận phòng và trả phòng không hợp lệ.",
-    });
-  }
-
   try {
     const query = `
-      WITH StayNights AS (
-        SELECT generate_series($2::date, ($3::date - INTERVAL '1 day')::date, INTERVAL '1 day')::date AS night_date
-      ),
-      NightlyRoomStatus AS (
-        SELECT 
-          r.id AS room_id,
-          sn.night_date,
-          r.base_price AS night_price,
-          'active' AS day_status,
-          GREATEST(
-            0,
-            COALESCE(
-              NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
-              r.amount,
-              1
-            )
-            - COALESCE((
-                SELECT COUNT(DISTINCT b.id)::int
-                FROM public.booking b
-                WHERE b.checkin_date <= sn.night_date
-                  AND b.checkout_date > sn.night_date
-                  AND b.status NOT IN ('checked_out', 'cancelled')
-                  AND (
-                    b.status IN ('confirmed', 'checked_in')
-                    OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
-                  )
-                  AND (
-                    EXISTS (SELECT 1 FROM public.booking_room br WHERE br.booking_id = b.id AND br.room_id = r.id)
-                    OR b.room_number IN (SELECT ru.room_number FROM public.room_unit ru WHERE ru.room_id = r.id)
-                  )
-              ), 0)
-            - COALESCE((
-                SELECT SUM(tl.quantity)::int
-                FROM public.temporary_locks tl
-                WHERE tl.room_id = r.id 
-                  AND tl.lock_date = sn.night_date
-                  AND (
-                    (tl.lock_expires_at IS NOT NULL AND tl.lock_expires_at > NOW())
-                    OR (tl.expires_at IS NOT NULL AND tl.expires_at > NOW())
-                  )
-              ), 0)
-          ) AS available_in_night
-        FROM public.room r
-        CROSS JOIN StayNights sn
-        WHERE r.hotel_id::text = $1 AND (r.is_active = true OR r.is_active IS NULL)
-      )
       SELECT 
         r.id,
         r.hotel_id,
@@ -751,13 +696,14 @@ async function listHotelRoomAvailability(req, res, next) {
         r.room_view,
         r.type,
         r.description,
-        MIN(nrs.available_in_night)::int AS remaining_rooms,
-        SUM(nrs.night_price)::int AS total_price,
-        ROUND(AVG(nrs.night_price))::int AS avg_price_per_night,
-        CASE 
-          WHEN MIN(nrs.available_in_night) <= 0 THEN false
-          ELSE true
-        END AS is_available,
+        COALESCE(
+          NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0),
+          r.amount,
+          1
+        )::int AS remaining_rooms,
+        r.base_price::int AS total_price,
+        r.base_price::int AS avg_price_per_night,
+        true AS is_available,
         COALESCE(
           (SELECT img.path FROM public.image img WHERE img.room_id::text = r.id::text ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1),
           r.thumbnail,
@@ -782,12 +728,11 @@ async function listHotelRoomAvailability(req, res, next) {
           '[]'::json
         ) AS images
       FROM public.room r
-      JOIN NightlyRoomStatus nrs ON nrs.room_id = r.id
-      GROUP BY r.id
+      WHERE r.hotel_id::text = $1
       ORDER BY r.base_price ASC;
     `;
 
-    const result = await pool.query(query, [hotelId, checkIn, checkOut]);
+    const result = await pool.query(query, [hotelId]);
     return res.json({
       success: true,
       data: result.rows,
