@@ -136,14 +136,15 @@ export default function HotelApprovalPage() {
         detailRes ||
         hotel;
 
-      const directRooms = roomsRes?.data || roomsRes?.rooms || [];
+      // 🌟 XỬ LÝ CHUẨN XÁC MỌI DẠNG PHÒNG TRẢ VỀ TỪ API
+      const directRooms =
+        roomsRes?.data?.rooms ||
+        roomsRes?.data?.data ||
+        (Array.isArray(roomsRes?.data) ? roomsRes.data : []) ||
+        roomsRes?.rooms ||
+        [];
 
-      // Đảm bảo rooms luôn được gán đầy đủ
-      if (
-        (!fullData.rooms || fullData.rooms.length === 0) &&
-        Array.isArray(directRooms) &&
-        directRooms.length > 0
-      ) {
+      if (Array.isArray(directRooms) && directRooms.length > 0) {
         fullData.rooms = directRooms;
       }
 
@@ -605,7 +606,7 @@ export default function HotelApprovalPage() {
                     </div>
                   )}
 
-                  {/* TAB 2: DANH MỤC HẠNG PHÒNG & GIÁ (HIỂN THỊ ĐÚNG ẢNH XE) */}
+                  {/* TAB 2: DANH MỤC HẠNG PHÒNG & GIÁ (HIỂN THỊ ĐÚNG ẢNH THẬT) */}
                   {activeModalTab === "rooms" && (
                     <div className="space-y-4 animate-fadeIn">
                       {Array.isArray(selectedHotel.rooms) &&
@@ -692,9 +693,9 @@ export default function HotelApprovalPage() {
                                       className="w-24 h-16 object-cover rounded-xl border border-gray-200 shadow-xs"
                                     />
                                   ) : (
-                                    <span className="text-[11px] text-gray-400 italic">
+                                    <div className="w-24 h-16 rounded-xl border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-[10px] text-gray-400">
                                       Chưa có ảnh
-                                    </span>
+                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -709,7 +710,7 @@ export default function HotelApprovalPage() {
                     </div>
                   )}
 
-                  {/* TAB 3: HÌNH ẢNH CƠ SỞ (ĐÚNG 3 ẢNH CƠ SỞ, KHÔNG CÓ ẢNH XE) */}
+                  {/* TAB 3: HÌNH ẢNH CƠ SỞ (CHỈ 3 ẢNH CƠ SỞ, KHÔNG CÓ ẢNH PHÒNG) */}
                   {activeModalTab === "photos" && (
                     <div className="space-y-4 animate-fadeIn">
                       {hotelPropertyImages.length > 0 ? (

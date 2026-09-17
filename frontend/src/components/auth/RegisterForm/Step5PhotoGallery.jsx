@@ -26,7 +26,7 @@ export const Step5PhotoGallery = ({
   const [openRoomPhotos, setOpenRoomPhotos] = useState(true);
   const [selectedRoomIdForUpload, setSelectedRoomIdForUpload] = useState(null);
 
-  // 🌟 hotelImages LÀ NƠI CHỈ CHỨA DUY NHẤT ẢNH CỦA CƠ SỞ (KHÔNG CHỨA ẢNH PHÒNG)
+  // 🌟 CHỈ LẤY CÁC ẢNH CỦA CƠ SỞ (KHÔNG CÓ ROOMID)
   const hotelImages = data?.hotelImages || [];
   const rooms = data?.rooms || [];
 
@@ -45,14 +45,14 @@ export const Step5PhotoGallery = ({
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement("canvas");
-            const maxWidth = 1200;
+            const maxWidth = 1000;
             const scale = Math.min(maxWidth / img.width, 1);
             canvas.width = img.width * scale;
             canvas.height = img.height * scale;
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            const compressed = canvas.toDataURL("image/jpeg", 0.85);
+            const compressed = canvas.toDataURL("image/jpeg", 0.8);
 
             resolve({
               id: `img-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
@@ -72,7 +72,7 @@ export const Step5PhotoGallery = ({
         Array.from(files).map((f, i) => compressSingleImage(f, i)),
       );
 
-      // Nếu tải ảnh phòng: CHỈ CẬP NHẬT VÀO ROOMS CỦA CHÍNH NÓ (KHÔNG ĐƯỢC CHẠM VÀO HOTELIMAGES)
+      // Nếu tải ảnh phòng: Cập nhật RIÊNG vào rooms[i]
       if (targetRoomId) {
         const updatedRooms = rooms.map((r) => {
           if (r.id === targetRoomId) {
@@ -90,7 +90,7 @@ export const Step5PhotoGallery = ({
         });
         onChange({ rooms: updatedRooms });
       } else {
-        // Nếu tải ảnh cơ sở: CHỈ CẬP NHẬT ẢNH CƠ SỞ VÀO HOTELIMAGES
+        // Nếu tải ảnh cơ sở: Chỉ cập nhật vào hotelImages
         const updatedImages = [...propertyPhotos, ...newImages];
         const updates = { hotelImages: updatedImages };
         if (!data?.hotelMainImage && newImages.length > 0) {
@@ -306,7 +306,7 @@ export const Step5PhotoGallery = ({
         </div>
       </div>
 
-      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG (LẤY RIÊNG TỪ ROOMS, KHÔNG LẪN VÀO CƠ SỞ) ── */}
+      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG (LẤY TỪ ROOMS, KHÔNG LẪN VÀO CƠ SỞ) ── */}
       <div className="pt-6 border-t border-slate-200 space-y-4">
         <button
           type="button"

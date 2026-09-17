@@ -310,13 +310,14 @@ export default function HotelDetailPage() {
     }
   };
 
+  // 🌟 ĐÃ SỬA LỖI GỌI HÀM safeFormat THÀNH safeFormatDate
   const fetchRoomAvailability = useCallback(
     async (cIn, cOut, adCount) => {
       if (!id) return;
       setCheckingRooms(true);
       try {
-        const inStr = safeFormat(cIn, "yyyy-MM-dd");
-        const outStr = safeFormat(cOut, "yyyy-MM-dd");
+        const inStr = safeFormatDate(cIn, "yyyy-MM-dd");
+        const outStr = safeFormatDate(cOut, "yyyy-MM-dd");
         const res = await apiClient.get(`/hotels/${id}/availability`, {
           params: {
             checkIn: inStr,
@@ -353,7 +354,8 @@ export default function HotelDetailPage() {
     if (!id) return;
     try {
       const res = await apiClient.get(`/hotels/${id}/rooms`);
-      const list = res?.data || res?.rooms || [];
+      const list =
+        res?.data?.rooms || res?.data?.data || res?.data || res?.rooms || [];
       if (Array.isArray(list) && list.length > 0) {
         setFallbackRooms(list);
       }
@@ -472,7 +474,7 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ── 1. BENTO GALLERY: LẤY ĐỦ 3 ẢNH CỦA CƠ SỞ TỪ BƯỚC 5 ──
+  // ── 1. BENTO GALLERY: LẤY ĐỦ 3 ẢNH CỦA CƠ SỞ (ĐÃ ĐƯỢC TÁCH BIỆT KHỎI ẢNH PHÒNG) ──
   const hotelGalleryImages = [];
   if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
     hotel.images.forEach((img) => {
@@ -1242,7 +1244,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG (HIỂN THỊ ĐÚNG ẢNH XE) ─── */}
+        {/* ─── BẢNG GIÁ VÀ CHI TIẾT CÁC HẠNG PHÒNG (HIỂN THỊ ĐẦY ĐỦ ẢNH) ─── */}
         <section ref={roomsRef} className="space-y-4 mb-10">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <div>

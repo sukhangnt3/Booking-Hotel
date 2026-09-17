@@ -119,13 +119,13 @@ export const Step3RoomsAndPricing = ({
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          const maxWidth = 1200;
+          const maxWidth = 1000;
           const scale = Math.min(maxWidth / img.width, 1);
           canvas.width = img.width * scale;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const compressed = canvas.toDataURL("image/jpeg", 0.85);
+          const compressed = canvas.toDataURL("image/jpeg", 0.8);
           resolve(compressed);
         };
         img.src = event.target.result;
@@ -185,17 +185,8 @@ export const Step3RoomsAndPricing = ({
       return merged;
     });
 
-    // 🌟 CHỈ CẬP NHẬT TRONG ROOMS, TUYỆT ĐỐI KHÔNG NHÉT ẢNH PHÒNG VÀO HOTELIMAGES 🌟
-    const payload = { rooms: updatedRooms };
-
-    if (updates.images !== undefined) {
-      payload.roomImages = {
-        ...(data?.roomImages || {}),
-        [roomId]: updates.images,
-      };
-    }
-
-    onChange(payload);
+    // 🌟 CHỈ LƯU VÀO ROOMS, TUYỆT ĐỐI KHÔNG GÁN VÀO HOTELIMAGES
+    onChange({ rooms: updatedRooms });
   };
 
   const handleCategoryChange = (roomId, newCategory) => {
@@ -259,7 +250,6 @@ export const Step3RoomsAndPricing = ({
 
       const updated = [...currentImgs, ...compressedUrls];
 
-      // Gán riêng cho chính hạng phòng này
       handleUpdateRoom(targetId, {
         images: updated,
         image: updated[0] || "",

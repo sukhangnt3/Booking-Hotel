@@ -195,9 +195,13 @@ export const RegisterForm = () => {
     }
 
     if (currentStep === 5) {
-      const totalPhotos = (formData.hotelImages || []).length;
-      if (totalPhotos < 3) {
-        err.hotelImages = "Vui lòng tải lên tối thiểu 3 hình ảnh sắc nét!";
+      // Chỉ tính các ảnh thực sự của cơ sở
+      const propertyPhotos = (formData.hotelImages || []).filter(
+        (img) => !img.roomId && !img.room_id,
+      );
+      if (propertyPhotos.length < 3) {
+        err.hotelImages =
+          "Vui lòng tải lên tối thiểu 3 hình ảnh sắc nét của cơ sở (mặt tiền, sảnh, khuôn viên)!";
       }
     }
 
@@ -225,7 +229,6 @@ export const RegisterForm = () => {
     return true;
   };
 
-  // 🌟 BƯỚC 1: CHỈ CHECK TRÙNG EMAIL QUA API (KHÔNG TẠO USER VỘI ĐỂ TRÁNH RÁC DATABASE)
   const handleNext = async () => {
     if (!validateCurrentStep()) return;
 
@@ -250,7 +253,6 @@ export const RegisterForm = () => {
           return;
         }
 
-        // Email hợp lệ -> Chỉ chuyển bước 2, KHÔNG TẠO USER RÁC ở đây
         setCurrentStep(2);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
@@ -344,7 +346,7 @@ export const RegisterForm = () => {
         }
       }
 
-      // 2. CHUẨN BỊ PAYLOAD PHÒNG & KHÁCH SẠN
+      // 🌟 2. CHUẨN BỊ PAYLOAD PHÒNG & GIỮ NGUYÊN VẸN 100% HÌNH ẢNH CỦA PHÒNG
       const processedRooms = formData.rooms.map((r, rIdx) => {
         let numbers = [];
         if (r.roomNumbersText) {
@@ -358,7 +360,18 @@ export const RegisterForm = () => {
           for (let i = 1; i <= count; i++) numbers.push(`P.${rIdx + 1}0${i}`);
         }
 
+        // Trích xuất mảng ảnh của phòng
+        const roomImgs =
+          Array.isArray(r.images) && r.images.length > 0
+            ? r.images
+            : r.image
+              ? [r.image]
+              : [];
+
+        const mainRoomImg = r.image || r.thumbnail || roomImgs[0] || "";
+
         return {
+          id: r.id,
           name: r.name || `Phòng Hạng ${rIdx + 1}`,
           capacity: Number(r.capacity || 2),
           base_price: Number(r.base_price || 650000),
@@ -369,6 +382,11 @@ export const RegisterForm = () => {
           room_area: Number(r.room_area || 28),
           amount: numbers.length,
           room_numbers: numbers,
+          // 🌟 TRẢ LẠI ĐẦY ĐỦ CÁC TRƯỜNG ẢNH CỦA PHÒNG CHO SERVER:
+          image: mainRoomImg,
+          thumbnail: mainRoomImg,
+          images: roomImgs,
+          photos: roomImgs,
           amenities: r.roomAmenities || [
             "air_conditioner",
             "tv_smart",
@@ -378,12 +396,29 @@ export const RegisterForm = () => {
         };
       });
 
-      const allImages = (formData.hotelImages || []).map((img, idx) => ({
-        path: img.url,
-        is_thumbnail: img.url === formData.hotelMainImage,
-        room_id: img.roomId || null,
-        display_order: idx,
-      }));
+      // Tạo map roomImages để Server bắt chắc chắn 100%
+      const roomImagesMap = {};
+      processedRooms.forEach((r, idx) => {
+        if (r.id) roomImagesMap[r.id] = r.images;
+        roomImagesMap[idx] = r.images;
+      });
+
+      // 🌟 3. CHỈ LẤY ĐÚNG CÁC ẢNH CỦA CƠ SỞ (LOẠI TRỪ TOÀN BỘ ẢNH PHÒNG)
+      const hotelPropertyImages = (formData.hotelImages || [])
+        .filter((img) => !img.roomId && !img.room_id)
+        .map((img, idx) => {
+          const pathUrl = typeof img === "string" ? img : img.url || img.path;
+          return {
+            path: pathUrl,
+            url: pathUrl,
+            is_thumbnail: pathUrl === formData.hotelMainImage || idx === 0,
+            room_id: null,
+            display_order: idx,
+          };
+        });
+
+      const hotelCover =
+        formData.hotelMainImage || hotelPropertyImages[0]?.path || "";
 
       const payload = {
         name: formData.hotelName || "Cơ sở lưu trú",
@@ -415,11 +450,16 @@ export const RegisterForm = () => {
         bankAccountHolder: formData.bankAccountHolder || formData.ownerName,
         tax_code: formData.taxCode || null,
         business_license_url: formData.businessLicenseUrl || null,
-        commission_rate: Number(formData.commissionRate || 18.0), // 💰 HOA HỒNG SÀN HƯỞNG
-        image: formData.hotelMainImage || allImages[0]?.path || "",
+        commission_rate: Number(formData.commissionRate || 18.0),
+        // 🌟 ẢNH CƠ SỞ ĐƯỢC PHÂN LẬP RIÊNG BIỆT:
+        image: hotelCover,
+        hotelMainImage: hotelCover,
+        hotelImages: hotelPropertyImages,
+        images: hotelPropertyImages,
+        // 🌟 ẢNH PHÒNG ĐƯỢC TRUYỀN ĐẦY ĐỦ:
         rooms: processedRooms,
+        roomImages: roomImagesMap,
         amenities: formData.propertyAmenities,
-        images: allImages,
       };
 
       const res = await apiClient.post("/hotels/register", payload, {
@@ -491,7 +531,6 @@ export const RegisterForm = () => {
 
   return (
     <div className="min-h-screen bg-[#f5f7fa] font-sans text-slate-800 pb-20">
-      {/* 🌟 HEADER SIÊU GỌN: BẤM LOGO LÀ VỀ TRANG CHỦ, BỎ HOÀN TOÀN 2 NÚT THỪA */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 sm:px-12 py-3.5 shadow-2xs">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div

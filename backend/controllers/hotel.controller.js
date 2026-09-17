@@ -21,9 +21,7 @@ try {
 }
 
 // 🌟 CHỈ HIỂN THỊ CÁC KHÁCH SẠN ĐÃ ĐƯỢC ADMIN DUYỆT (ACTIVE) TRÊN TRANG CHỦ & TÌM KIẾM 🌟
-// Chặn tuyệt đối hồ sơ đang chờ duyệt ('pending'), từ chối ('rejected') hoặc đình chỉ ('suspended')
-const PUBLIC_HOTEL_STATUS =
-  "LOWER(TRIM(h.status::text)) = 'active' AND LOWER(TRIM(h.status::text)) NOT IN ('pending', 'rejected', 'suspended')";
+const PUBLIC_HOTEL_STATUS = "h.status = 'active'";
 
 const AMENITY_LABEL_MAP = {
   wifi: "Wi-Fi miễn phí toàn khuôn viên",
@@ -395,7 +393,7 @@ function parseSearchDate(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
-// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (CHỈ HIỂN THỊ ACTIVE ĐÃ DUYỆT) ───
+// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (CHỈ STATUS = ACTIVE) ───
 async function listHotels(req, res, next) {
   try {
     const destination = (
@@ -449,7 +447,6 @@ async function listHotels(req, res, next) {
       destinationVariants = [`%${destination}%`];
     }
 
-    // BẮT BUỘC KHÁCH SẠN PHẢI LÀ 'ACTIVE' - CHƯA DUYỆT (PENDING) KHÔNG THỂ LỌT VÀO
     let where = `WHERE ${PUBLIC_HOTEL_STATUS}`;
 
     if (destinationVariants.length > 0) {
@@ -575,18 +572,18 @@ async function getHotelById(req, res, next) {
     const hotelData = hotelRes.rows[0];
     const hotelId = hotelData.id;
 
-    // 🌟 CHỈ LẤY ĐÚNG ẢNH CỦA CƠ SỞ (room_id IS NULL) - KHÔNG BAO GIỜ LẤY ẢNH CỦA PHÒNG
+    // 🌟 CHỈ LẤY ẢNH CỦA CƠ SỞ (room_id IS NULL)
     const imagesRes = await pool
       .query(
         `SELECT id, path, is_thumbnail, display_order 
          FROM public.image 
-         WHERE hotel_id::text = $1::text AND room_id IS NULL
+         WHERE hotel_id = $1 AND room_id IS NULL
          ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
         [hotelId],
       )
       .catch(() => ({ rows: [] }));
 
-    // 🌟 LẤY TỪNG HẠNG PHÒNG VÀ GẮN ĐÚNG ẢNH RIÊNG CỦA CHÍNH NÓ (WHERE img.room_id::text = r.id::text)
+    // 🌟 LẤY ĐẦY ĐỦ ẢNH RIÊNG CỦA TỪNG PHÒNG (img.room_id = r.id)
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -596,26 +593,32 @@ async function getHotelById(req, res, next) {
            r.amount,
            1
          ) AS amount,
-         (
-           SELECT img.path 
-           FROM public.image img 
-           WHERE img.room_id::text = r.id::text 
-           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-           LIMIT 1
+         COALESCE(
+           (
+             SELECT img.path 
+             FROM public.image img 
+             WHERE img.room_id = r.id 
+             ORDER BY img.is_thumbnail DESC, img.display_order ASC 
+             LIMIT 1
+           ),
+           ''
          ) AS image,
-         (
-           SELECT img.path 
-           FROM public.image img 
-           WHERE img.room_id::text = r.id::text 
-           ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-           LIMIT 1
+         COALESCE(
+           (
+             SELECT img.path 
+             FROM public.image img 
+             WHERE img.room_id = r.id 
+             ORDER BY img.is_thumbnail DESC, img.display_order ASC 
+             LIMIT 1
+           ),
+           ''
          ) AS thumbnail,
          COALESCE(
            (
              SELECT json_agg(a.name) 
              FROM public.room_amenity ra 
              JOIN public.amenity a ON a.id = ra.amenity_id 
-             WHERE ra.room_id::text = r.id::text
+             WHERE ra.room_id = r.id
            ), 
            '[]'::json
          ) AS amenities,
@@ -623,12 +626,12 @@ async function getHotelById(req, res, next) {
            (
              SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
              FROM public.image img 
-             WHERE img.room_id::text = r.id::text
-           ),
+             WHERE img.room_id = r.id
+           ), 
            '[]'::json
          ) AS images
        FROM public.room r
-       WHERE r.hotel_id::text = $1::text
+       WHERE r.hotel_id = $1
        ORDER BY r.base_price ASC`,
         [hotelId],
       )
@@ -646,7 +649,7 @@ async function getHotelById(req, res, next) {
         `SELECT DISTINCT a.name, a.type 
          FROM public.amenity a
          JOIN public.hotel_amenity ha ON ha.amenity_id = a.id 
-         WHERE ha.hotel_id::text = $1::text`,
+         WHERE ha.hotel_id = $1`,
         [hotelId],
       )
       .catch(() => ({ rows: [] }));
@@ -704,26 +707,32 @@ async function listHotelRoomAvailability(req, res, next) {
         r.base_price::int AS total_price,
         r.base_price::int AS avg_price_per_night,
         true AS is_available,
-        (
-          SELECT img.path 
-          FROM public.image img 
-          WHERE img.room_id::text = r.id::text 
-          ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-          LIMIT 1
+        COALESCE(
+          (
+            SELECT img.path 
+            FROM public.image img 
+            WHERE img.room_id = r.id 
+            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
+            LIMIT 1
+          ),
+          ''
         ) AS thumbnail,
-        (
-          SELECT img.path 
-          FROM public.image img 
-          WHERE img.room_id::text = r.id::text 
-          ORDER BY img.is_thumbnail DESC, img.display_order ASC 
-          LIMIT 1
+        COALESCE(
+          (
+            SELECT img.path 
+            FROM public.image img 
+            WHERE img.room_id = r.id 
+            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
+            LIMIT 1
+          ),
+          ''
         ) AS image,
         COALESCE(
           (
             SELECT json_agg(a.name) 
             FROM public.room_amenity ra 
             JOIN public.amenity a ON a.id = ra.amenity_id 
-            WHERE ra.room_id::text = r.id::text
+            WHERE ra.room_id = r.id
           ), 
           '[]'::json
         ) AS amenities,
@@ -731,12 +740,12 @@ async function listHotelRoomAvailability(req, res, next) {
           (
             SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
             FROM public.image img 
-            WHERE img.room_id::text = r.id::text
-          ),
+            WHERE img.room_id = r.id
+          ), 
           '[]'::json
         ) AS images
       FROM public.room r
-      WHERE r.hotel_id::text = $1::text
+      WHERE r.hotel_id = $1
       ORDER BY r.base_price ASC;
     `;
 
@@ -754,7 +763,7 @@ async function listHotelRoomAvailability(req, res, next) {
   }
 }
 
-// ─── 4. GỢI Ý ĐIỂM ĐẾN (CHỈ LẤY ACTIVE) ───
+// ─── 4. GỢI Ý ĐIỂM ĐẾN ───
 async function listDestinationSuggestions(req, res, next) {
   const keyword = (req.query.q || req.query.keyword || "").trim();
   try {
@@ -766,14 +775,14 @@ async function listDestinationSuggestions(req, res, next) {
       query = `
         SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type
         FROM public.hotel
-        WHERE LOWER(TRIM(status::text)) = 'active'
+        WHERE status = 'active'
           AND (unaccent(lower(city)) ILIKE unaccent(lower($1))
             OR unaccent(lower(name)) ILIKE unaccent(lower($1)))
         GROUP BY city
         UNION
         SELECT name, 1 AS hotel_count, 'hotel' AS type
         FROM public.hotel
-        WHERE LOWER(TRIM(status::text)) = 'active'
+        WHERE status = 'active'
           AND unaccent(lower(name)) ILIKE unaccent(lower($1))
         LIMIT 8;
       `;
@@ -781,7 +790,7 @@ async function listDestinationSuggestions(req, res, next) {
       query = `
         SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type
         FROM public.hotel
-        WHERE LOWER(TRIM(status::text)) = 'active'
+        WHERE status = 'active'
           AND city IS NOT NULL
         GROUP BY city
         ORDER BY hotel_count DESC
@@ -800,7 +809,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TÁCH BIỆT 100% ẢNH CƠ SỞ VÀ ẢNH PHÒNG) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ (BÓC TÁCH THÔNG MINH ẢNH PHÒNG & ẢNH CƠ SỞ) ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -965,7 +974,7 @@ async function registerHotel(req, res, next) {
     const newHotelId = crypto.randomUUID();
     const finalPropType = property_type || propertyType || "hotel";
 
-    // 🌟 LƯU KHÁCH SẠN VỚI STATUS LÀ 'pending' (CHỜ DUYỆT)
+    // 🌟 KHỞI TẠO KHÁCH SẠN VỚI STATUS LÀ 'pending'
     const hotelInsertSql = `
       INSERT INTO public.hotel (
         id, owner_id, name, address, city, latitude, longitude, phone, email,
@@ -1009,7 +1018,7 @@ async function registerHotel(req, res, next) {
 
     const newHotel = hotelResult.rows[0];
 
-    // ── 5.1. BÓC TÁCH TOÀN BỘ ẢNH THUỘC VỀ PHÒNG ĐỂ ĐẢM BẢO KHÔNG BỊ LẪN VÀO CƠ SỞ ──
+    // ── 5.1. BÓC TÁCH RIÊNG TOÀN BỘ ẢNH THUỘC VỀ PHÒNG ──
     const roomPhotosMap = new Map();
     const allRoomImageSet = new Set();
 
@@ -1021,22 +1030,66 @@ async function registerHotel(req, res, next) {
         r.image,
         r.imageUrl,
         r.thumbnail,
+        r.photos,
+        r.room_images,
+        r.roomImages,
       ]).forEach((u) => {
         roomUrls.push(u);
         allRoomImageSet.add(u);
       });
 
       if (roomImages && typeof roomImages === "object") {
-        extractImageUrls([roomImages[r.id], roomImages[idx]]).forEach((u) => {
+        extractImageUrls([
+          roomImages[r.id],
+          roomImages[idx],
+          roomImages[String(idx)],
+          roomImages[String(r.id)],
+        ]).forEach((u) => {
           roomUrls.push(u);
           allRoomImageSet.add(u);
+        });
+      }
+
+      // Nếu ảnh phòng nằm lẫn trong hotelImages có gắn roomId
+      if (Array.isArray(hotelImages)) {
+        hotelImages.forEach((img) => {
+          if (img && typeof img === "object") {
+            const matches =
+              (r.id && (img.roomId === r.id || img.room_id === r.id)) ||
+              String(img.roomId) === String(idx) ||
+              String(img.room_id) === String(idx);
+            if (matches) {
+              const u = img.url || img.path;
+              if (u && typeof u === "string" && !u.startsWith("blob:")) {
+                roomUrls.push(u.trim());
+                allRoomImageSet.add(u.trim());
+              }
+            }
+          }
         });
       }
 
       roomPhotosMap.set(idx, [...new Set(roomUrls)]);
     });
 
-    // ── 5.2. THU THẬP ĐÚNG 3+ ẢNH CỦA CƠ SỞ (LOẠI BỎ TRIỆT ĐỂ BẤT KỲ ẢNH NÀO CỦA PHÒNG) ──
+    // 🌟 TRƯỜNG HỢP ĐẶC BIỆT: NẾU PHÒNG KHÔNG CÓ ẢNH MÀ HOTELIMAGES LẠI CHỨA ẢNH PHÒNG NGỦ
+    // Tự động phân chia ảnh phòng ngủ vào phòng và giữ lại ảnh khách sạn cho cơ sở
+    if (Array.isArray(hotelImages) && hotelImages.length > 1) {
+      let unassignedImgs = extractImageUrls(hotelImages).filter(
+        (url) => !allRoomImageSet.has(url),
+      );
+
+      rooms.forEach((r, idx) => {
+        const existing = roomPhotosMap.get(idx) || [];
+        if (existing.length === 0 && unassignedImgs.length > 1) {
+          const picked = unassignedImgs.shift();
+          roomPhotosMap.set(idx, [picked]);
+          allRoomImageSet.add(picked);
+        }
+      });
+    }
+
+    // ── 5.2. LẤY ĐÚNG ẢNH CƠ SỞ (LOẠI TRỪ 100% ẢNH THUỘC VỀ PHÒNG) ──
     const propertyCandidates = [];
     if (Array.isArray(hotelImages)) {
       hotelImages.forEach((img) => {
@@ -1060,7 +1113,6 @@ async function registerHotel(req, res, next) {
       });
     }
 
-    // LỌC NGHIÊM NGẶT: Bỏ hoàn toàn những URL trùng với ảnh của phòng
     const cleanHotelImages = extractImageUrls(propertyCandidates).filter(
       (url) => !allRoomImageSet.has(url),
     );
@@ -1101,7 +1153,7 @@ async function registerHotel(req, res, next) {
       }
     }
 
-    // ── 5.4. LƯU TỪNG HẠNG PHÒNG VÀ GẮN ẢNH RIÊNG VỚI HOTEL_ID VÀ ROOM_ID HỢP LỆ ──
+    // ── 5.4. LƯU TỪNG HẠNG PHÒNG VÀ GẮN ẢNH RIÊNG VỚI $1::UUID ──
     if (rooms.length > 0) {
       let roomFloor = 1;
       for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
@@ -1140,25 +1192,18 @@ async function registerHotel(req, res, next) {
           ],
         );
 
-        // 🌟 LƯU ẢNH RIÊNG CHO TỪNG PHÒNG: hotel_id = newHotel.id VÀ room_id = newRoomId 🌟
-        // Vì có room_id khác NULL nên ảnh này KHÔNG BAO GIỜ bị nhảy lên 3 ảnh đầu của cơ sở!
+        // 🌟 LƯU ẢNH RIÊNG CỦA PHÒNG VỚI $1::UUID (ĐÚNG RÀNG BUỘC CHK_IMAGE_TARGET: hotel_id = NULL)
         for (let imgIdx = 0; imgIdx < uniqueRoomImages.length; imgIdx++) {
           await client.query("SAVEPOINT sp_room_img");
           try {
             await client.query(
               `INSERT INTO public.image (id, hotel_id, room_id, path, is_thumbnail, display_order, created_at)
-               VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3, $4, $5, NOW())`,
-              [
-                newHotel.id,
-                newRoomId,
-                uniqueRoomImages[imgIdx],
-                imgIdx === 0,
-                imgIdx,
-              ],
+               VALUES (gen_random_uuid(), NULL, $1::uuid, $2, $3, $4, NOW())`,
+              [newRoomId, uniqueRoomImages[imgIdx], imgIdx === 0, imgIdx],
             );
             await client.query("RELEASE SAVEPOINT sp_room_img");
             console.log(
-              `✅ [REGISTER] Đã lưu ảnh riêng cho phòng: ${newRoomId}`,
+              `✅ [REGISTER] Đã lưu thành công ảnh cho phòng ${newRoomId}`,
             );
           } catch (e) {
             console.error("❌ Lỗi lưu ảnh phòng:", e.message);
@@ -1292,7 +1337,7 @@ async function getMyHotels(req, res, next) {
     `;
 
     const params = [userId];
-    if (activeOnly) sql += ` AND LOWER(TRIM(h.status::text)) = 'active'`;
+    if (activeOnly) sql += ` AND h.status = 'active'`;
     sql += ` ORDER BY h.created_at DESC`;
 
     const result = await pool.query(sql, params);
@@ -1324,7 +1369,7 @@ async function listTrendingDestinations(req, res, next) {
            'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800'
          ) AS image
        FROM public.hotel h
-       WHERE LOWER(TRIM(h.status::text)) = 'active' AND h.city IS NOT NULL
+       WHERE h.status = 'active' AND h.city IS NOT NULL
        GROUP BY h.city
        ORDER BY hotelCount DESC
        LIMIT 8`,
@@ -1485,7 +1530,7 @@ async function searchHotels(req, res, next) {
   return listHotels(req, res, next);
 }
 
-// ─── 6. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID ───
+// ─── 6. LẤY DANH SÁCH PHÒNG THEO HOTEL_ID (img.room_id = r.id) ───
 async function listHotelRooms(req, res, next) {
   try {
     const r = await pool.query(
@@ -1494,14 +1539,14 @@ async function listHotelRooms(req, res, next) {
          (
            SELECT img.path 
            FROM public.image img 
-           WHERE img.room_id::text = r.id::text 
+           WHERE img.room_id = r.id 
            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
            LIMIT 1
          ) AS thumbnail,
          (
            SELECT img.path 
            FROM public.image img 
-           WHERE img.room_id::text = r.id::text 
+           WHERE img.room_id = r.id 
            ORDER BY img.is_thumbnail DESC, img.display_order ASC 
            LIMIT 1
          ) AS image,
@@ -1510,7 +1555,7 @@ async function listHotelRooms(req, res, next) {
              SELECT json_agg(a.name) 
              FROM public.room_amenity ra 
              JOIN public.amenity a ON a.id = ra.amenity_id 
-             WHERE ra.room_id::text = r.id::text
+             WHERE ra.room_id = r.id
            ), 
            '[]'::json
          ) AS amenities,
@@ -1518,12 +1563,12 @@ async function listHotelRooms(req, res, next) {
            (
              SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) 
              FROM public.image img 
-             WHERE img.room_id::text = r.id::text
-           ),
+             WHERE img.room_id = r.id
+           ), 
            '[]'::json
          ) AS images
        FROM public.room r 
-       WHERE r.hotel_id::text = $1::text
+       WHERE r.hotel_id = $1
        ORDER BY r.base_price ASC`,
       [req.params.id],
     );
