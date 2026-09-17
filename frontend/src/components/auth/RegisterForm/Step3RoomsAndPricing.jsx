@@ -105,7 +105,6 @@ export const Step3RoomsAndPricing = ({
   errors = {},
 }) => {
   const rooms = data?.rooms || [];
-  const hotelImages = data?.hotelImages || [];
 
   const fileInputRef = useRef(null);
   const activeRoomIdRef = useRef(null);
@@ -185,21 +184,8 @@ export const Step3RoomsAndPricing = ({
       return merged;
     });
 
-    const payload = { rooms: updatedRooms };
-
-    // 🌟 ĐỒNG BỘ RIÊNG CHO PHÒNG NÀY: Giữ nguyên ảnh của các phòng khác
-    if (updates.images !== undefined) {
-      const otherPhotos = hotelImages.filter((img) => img.roomId !== roomId);
-      const newRoomPhotos = updates.images.map((url, i) => ({
-        id: `img-${roomId}-${i}-${Date.now()}`,
-        url,
-        roomId: roomId,
-        title: `Ảnh phòng ${roomId}`,
-      }));
-      payload.hotelImages = [...otherPhotos, ...newRoomPhotos];
-    }
-
-    onChange(payload);
+    // 🌟 CHỈ CẬP NHẬT RIÊNG CHO PHÒNG, TUYỆT ĐỐI KHÔNG NHÉT VÀO HOTELIMAGES 🌟
+    onChange({ rooms: updatedRooms });
   };
 
   const handleCategoryChange = (roomId, newCategory) => {
@@ -231,10 +217,7 @@ export const Step3RoomsAndPricing = ({
       return;
     }
     const updatedRooms = rooms.filter((r) => r.id !== roomId);
-    const updatedHotelImages = hotelImages.filter(
-      (img) => img.roomId !== roomId,
-    );
-    onChange({ rooms: updatedRooms, hotelImages: updatedHotelImages });
+    onChange({ rooms: updatedRooms });
   };
 
   const triggerComputerUpload = (roomId) => {
@@ -330,8 +313,8 @@ export const Step3RoomsAndPricing = ({
           Chi tiết hạng phòng & Hình ảnh
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Tải ảnh phòng thực tế từ máy tính, thiết lập cấu hình giường và giá
-          niêm yết.
+          Tải ảnh xe/ảnh phòng thực tế từ máy tính, thiết lập cấu hình giường và
+          giá niêm yết.
         </p>
       </div>
 
@@ -340,16 +323,12 @@ export const Step3RoomsAndPricing = ({
           const currentCat = room.category || "double";
           const nameOptions = SUGGESTED_NAMES_MAP[currentCat] || [room.name];
 
-          let roomImages =
+          const roomImages =
             Array.isArray(room.images) && room.images.length > 0
               ? room.images
-              : hotelImages
-                  .filter((img) => img.roomId === room.id)
-                  .map((img) => img.url);
-
-          if (roomImages.length === 0 && room.image) {
-            roomImages = [room.image];
-          }
+              : room.image
+                ? [room.image]
+                : [];
 
           return (
             <div
@@ -463,8 +442,8 @@ export const Step3RoomsAndPricing = ({
                       ảnh hạng phòng ({roomImages.length} ảnh)
                     </label>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Ảnh này sẽ chỉ hiển thị riêng cho hạng phòng này, không bị
-                      lẫn vào phòng khác.
+                      Ảnh này chỉ hiển thị riêng cho hạng phòng này, không bị
+                      lẫn vào ảnh cơ sở.
                     </p>
                   </div>
 
@@ -521,7 +500,7 @@ export const Step3RoomsAndPricing = ({
                   >
                     <Upload size={22} />
                     <span className="text-xs font-bold">
-                      Bấm vào đây để chọn ảnh riêng cho hạng phòng này
+                      Bấm vào đây để chọn ảnh xe/ảnh phòng từ máy tính
                     </span>
                     <span className="text-[10px] text-slate-400">
                       Hỗ trợ định dạng JPG, PNG, WEBP

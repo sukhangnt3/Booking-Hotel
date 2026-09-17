@@ -1,5 +1,5 @@
 // src/components/auth/RegisterForm/Step5PhotoGallery.jsx
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -29,39 +29,7 @@ export const Step5PhotoGallery = ({
   const hotelImages = data?.hotelImages || [];
   const rooms = data?.rooms || [];
 
-  // Tự động đồng bộ ảnh phòng từ Bước 3 (room.images) sang hotelImages có gắn roomId
-  useEffect(() => {
-    let hasChanges = false;
-    let syncedImages = [...hotelImages];
-
-    rooms.forEach((r) => {
-      const rImgs = Array.isArray(r.images)
-        ? r.images
-        : r.image
-          ? [r.image]
-          : [];
-      rImgs.forEach((url, idx) => {
-        const alreadyExists = syncedImages.some(
-          (img) => img.url === url && img.roomId === r.id,
-        );
-        if (!alreadyExists && url && !url.startsWith("blob:")) {
-          hasChanges = true;
-          syncedImages.push({
-            id: `img-${r.id}-${idx}-${Date.now()}`,
-            url,
-            roomId: r.id,
-            title: `Ảnh phòng ${r.name}`,
-          });
-        }
-      });
-    });
-
-    if (hasChanges) {
-      onChange({ hotelImages: syncedImages });
-    }
-  }, [rooms]);
-
-  // Lọc chỉ ảnh của cơ sở (không gắn roomId)
+  // Chỉ lấy các ảnh của cơ sở (không có roomId)
   const propertyPhotos = hotelImages.filter(
     (img) => !img.roomId && !img.room_id,
   );
@@ -104,14 +72,7 @@ export const Step5PhotoGallery = ({
         Array.from(files).map((f, i) => compressSingleImage(f, i)),
       );
 
-      const updatedImages = [...hotelImages, ...newImages];
-      const updates = { hotelImages: updatedImages };
-
-      if (!data?.hotelMainImage && !targetRoomId && newImages.length > 0) {
-        updates.hotelMainImage = newImages[0].url;
-      }
-
-      // Nếu tải ảnh phòng thì cập nhật ngay mảng rooms để đồng bộ với Bước 3
+      // Nếu tải ảnh phòng: Cập nhật trực tiếp vào room.images
       if (targetRoomId) {
         const updatedRooms = rooms.map((r) => {
           if (r.id === targetRoomId) {
@@ -127,10 +88,16 @@ export const Step5PhotoGallery = ({
           }
           return r;
         });
-        updates.rooms = updatedRooms;
+        onChange({ rooms: updatedRooms });
+      } else {
+        // Nếu tải ảnh cơ sở: Cập nhật vào hotelImages
+        const updatedImages = [...propertyPhotos, ...newImages];
+        const updates = { hotelImages: updatedImages };
+        if (!data?.hotelMainImage && newImages.length > 0) {
+          updates.hotelMainImage = newImages[0].url;
+        }
+        onChange(updates);
       }
-
-      onChange(updates);
     } catch (err) {
       console.error("Lỗi tải ảnh:", err);
     } finally {
@@ -163,35 +130,30 @@ export const Step5PhotoGallery = ({
     onChange({ hotelMainImage: imgUrl });
   };
 
-  const handleDeletePhoto = (id, imgUrl, targetRoomId = null) => {
-    const updatedImages = hotelImages.filter((img) => img.id !== id);
+  const handleDeletePropertyPhoto = (id, imgUrl) => {
+    const updatedImages = propertyPhotos.filter((img) => img.id !== id);
     const updates = { hotelImages: updatedImages };
-
-    if (!targetRoomId && data?.hotelMainImage === imgUrl) {
-      const remainingProperty = updatedImages.filter(
-        (img) => !img.roomId && !img.room_id,
-      );
-      updates.hotelMainImage = remainingProperty[0]?.url || "";
+    if (data?.hotelMainImage === imgUrl) {
+      updates.hotelMainImage = updatedImages[0]?.url || "";
     }
-
-    if (targetRoomId) {
-      const updatedRooms = rooms.map((r) => {
-        if (r.id === targetRoomId) {
-          const currentImgs = Array.isArray(r.images) ? r.images : [];
-          const remaining = currentImgs.filter((url) => url !== imgUrl);
-          return {
-            ...r,
-            images: remaining,
-            image: remaining[0] || "",
-            thumbnail: remaining[0] || "",
-          };
-        }
-        return r;
-      });
-      updates.rooms = updatedRooms;
-    }
-
     onChange(updates);
+  };
+
+  const handleDeleteRoomPhoto = (roomId, imgUrl) => {
+    const updatedRooms = rooms.map((r) => {
+      if (r.id === roomId) {
+        const currentImgs = Array.isArray(r.images) ? r.images : [];
+        const remaining = currentImgs.filter((url) => url !== imgUrl);
+        return {
+          ...r,
+          images: remaining,
+          image: remaining[0] || "",
+          thumbnail: remaining[0] || "",
+        };
+      }
+      return r;
+    });
+    onChange({ rooms: updatedRooms });
   };
 
   const hasEnoughPropertyPhotos = propertyPhotos.length >= 3;
@@ -265,7 +227,7 @@ export const Step5PhotoGallery = ({
         className="hidden"
       />
 
-      {/* ── 1. KHU VỰC ẢNH CƠ SỞ LƯU TRÚ ── */}
+      {/* ── 1. KHU VỰC ẢNH CƠ SỞ LƯU TRÚ (CHỈ CHỨA ẢNH CƠ SỞ) ── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
@@ -313,7 +275,7 @@ export const Step5PhotoGallery = ({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDeletePhoto(img.id, img.url, null);
+                    handleDeletePropertyPhoto(img.id, img.url);
                   }}
                   className="absolute top-2.5 right-2.5 w-7 h-7 bg-rose-600 hover:bg-rose-700 text-white rounded-lg flex items-center justify-center shadow transition cursor-pointer"
                 >
@@ -344,7 +306,7 @@ export const Step5PhotoGallery = ({
         </div>
       </div>
 
-      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG ── */}
+      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG (LẤY TỪ ROOMS, KHÔNG LẪN VÀO CƠ SỞ) ── */}
       <div className="pt-6 border-t border-slate-200 space-y-4">
         <button
           type="button"
@@ -361,9 +323,12 @@ export const Step5PhotoGallery = ({
         {openRoomPhotos && (
           <div className="space-y-4 animate-fadeIn">
             {rooms.map((room, rIdx) => {
-              const roomImages = hotelImages.filter(
-                (img) => img.roomId === room.id,
-              );
+              const roomImages =
+                Array.isArray(room.images) && room.images.length > 0
+                  ? room.images
+                  : room.image
+                    ? [room.image]
+                    : [];
 
               return (
                 <div
@@ -379,7 +344,7 @@ export const Step5PhotoGallery = ({
                         {room.name || `Hạng phòng #${rIdx + 1}`}
                       </h4>
                       <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        {roomImages.length} ảnh thực tế (đồng bộ với Bước 3)
+                        {roomImages.length} ảnh xe/ảnh phòng thực tế
                       </p>
                     </div>
 
@@ -395,13 +360,13 @@ export const Step5PhotoGallery = ({
 
                   {roomImages.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {roomImages.map((img, iIdx) => (
+                      {roomImages.map((imgUrl, iIdx) => (
                         <div
-                          key={img.id || iIdx}
+                          key={iIdx}
                           className="group relative h-28 rounded-xl overflow-hidden border border-slate-200 bg-white shadow-xs"
                         >
                           <img
-                            src={img.url}
+                            src={imgUrl}
                             alt="Ảnh phòng"
                             className="w-full h-full object-cover"
                           />
@@ -413,7 +378,7 @@ export const Step5PhotoGallery = ({
                           <button
                             type="button"
                             onClick={() =>
-                              handleDeletePhoto(img.id, img.url, room.id)
+                              handleDeleteRoomPhoto(room.id, imgUrl)
                             }
                             className="absolute top-1.5 right-1.5 w-6 h-6 bg-rose-600 text-white rounded-md flex items-center justify-center shadow cursor-pointer opacity-0 group-hover:opacity-100 transition"
                           >
