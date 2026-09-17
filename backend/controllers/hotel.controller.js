@@ -2,53 +2,50 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// 🌟 TỰ ĐỘNG CỨU DỮ LIỆU CŨ: Tự động chuyển các ảnh xe bị lưu nhầm ở khách sạn về đúng hạng phòng tương ứng 🌟
-(async function autoFixOrphanRoomImages() {
+// 🌟 AUTO-FIX CSDL: TỰ ĐỘNG CHUYỂN ẢNH XE BỊ LƯU NHẦM Ở KHÁCH SẠN VỀ ĐÚNG 2 HẠNG PHÒNG 🌟
+(async function autoFixDatabaseImages() {
   try {
-    const orphanRooms = await pool.query(`
-      SELECT r.id, r.hotel_id, r.created_at
+    const hotelsWithRooms = await pool.query(`
+      SELECT DISTINCT r.hotel_id, h.name 
       FROM public.room r
-      WHERE NOT EXISTS (SELECT 1 FROM public.image img WHERE img.room_id = r.id)
-      ORDER BY r.hotel_id, r.created_at ASC
+      JOIN public.hotel h ON h.id = r.hotel_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.image img WHERE img.room_id = r.id
+      )
     `);
 
-    if (orphanRooms.rows.length > 0) {
-      const hotelRoomMap = {};
-      orphanRooms.rows.forEach((rm) => {
-        if (!hotelRoomMap[rm.hotel_id]) hotelRoomMap[rm.hotel_id] = [];
-        hotelRoomMap[rm.hotel_id].push(rm.id);
-      });
+    for (const row of hotelsWithRooms.rows) {
+      const hId = row.hotel_id;
 
-      for (const [hId, rIds] of Object.entries(hotelRoomMap)) {
-        // Lấy các ảnh của hotel này mà is_thumbnail = false (các ảnh xe bị lưu nhầm)
-        const hotelExtraImgs = await pool.query(
-          `SELECT id FROM public.image 
-           WHERE hotel_id = $1 AND room_id IS NULL AND is_thumbnail = false
-           ORDER BY display_order ASC, created_at ASC`,
-          [hId],
+      const roomsRes = await pool.query(
+        `SELECT id FROM public.room WHERE hotel_id = $1 ORDER BY created_at ASC`,
+        [hId],
+      );
+
+      const extraImgs = await pool.query(
+        `SELECT id, path FROM public.image 
+         WHERE hotel_id = $1 AND room_id IS NULL AND is_thumbnail = false
+         ORDER BY display_order ASC, created_at ASC`,
+        [hId],
+      );
+
+      const count = Math.min(roomsRes.rows.length, extraImgs.rows.length);
+      for (let i = 0; i < count; i++) {
+        const imgId = extraImgs.rows[i].id;
+        const rId = roomsRes.rows[i].id;
+        await pool.query(
+          `UPDATE public.image 
+           SET room_id = $1, hotel_id = NULL, is_thumbnail = true, display_order = 0 
+           WHERE id = $2`,
+          [rId, imgId],
         );
-
-        for (
-          let i = 0;
-          i < Math.min(rIds.length, hotelExtraImgs.rows.length);
-          i++
-        ) {
-          const imgId = hotelExtraImgs.rows[i].id;
-          const roomId = rIds[i];
-          await pool.query(
-            `UPDATE public.image 
-             SET room_id = $1, hotel_id = NULL, is_thumbnail = true, display_order = 0 
-             WHERE id = $2`,
-            [roomId, imgId],
-          );
-          console.log(
-            `✅ Đã tự động chuyển ảnh ${imgId} về đúng phòng ${roomId}!`,
-          );
-        }
+        console.log(
+          `✅ [AUTO-FIX] Đã trả ảnh xe ${imgId} về đúng phòng ${rId} của cơ sở ${row.name}!`,
+        );
       }
     }
   } catch (err) {
-    console.warn("⚠️ Cảnh báo autoFixOrphanRoomImages:", err.message);
+    console.warn("⚠️ Cảnh báo autoFixDatabaseImages:", err.message);
   }
 })();
 
@@ -70,8 +67,8 @@ try {
   jwt = null;
 }
 
-const PUBLIC_HOTEL_STATUS =
-  "h.status::text IN ('active', 'approved', 'pending')";
+// 🌟 CHỈ CHO PHÉP KHÁCH SẠN ĐÃ DUYỆT (ACTIVE) HIỆN TRÊN TRANG CHỦ & TÌM KIẾM (KHÔNG CÓ PENDING) 🌟
+const PUBLIC_HOTEL_STATUS = "h.status::text = 'active'";
 
 const AMENITY_LABEL_MAP = {
   wifi: "Wi-Fi miễn phí toàn khuôn viên",
@@ -122,6 +119,7 @@ const parseAmenityArray = (raw) => {
   return [];
 };
 
+// Hàm làm phẳng mảng và khử sạch ảnh trùng lặp
 const extractImageUrls = (raw) => {
   if (!raw) return [];
   const list = [];
@@ -442,7 +440,7 @@ function parseSearchDate(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
-// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI ───
+// ─── 1. DANH SÁCH KHÁCH SẠN CÔNG KHAI (CHỈ HIỂN THỊ CÁC KHÁCH SẠN ĐÃ ĐƯỢC ADMIN DUYỆT) ───
 async function listHotels(req, res, next) {
   try {
     const destination = (
@@ -544,6 +542,7 @@ async function listHotels(req, res, next) {
             ? "h.average_rating DESC NULLS LAST, min_price ASC"
             : "h.created_at DESC, h.average_rating DESC NULLS LAST, min_price ASC";
 
+    // Truy vấn ảnh đại diện của khách sạn (chỉ lấy ảnh có room_id IS NULL)
     const sql = `
       SELECT
          h.id,
@@ -621,7 +620,7 @@ async function getHotelById(req, res, next) {
     const hotelData = hotelRes.rows[0];
     const hotelId = hotelData.id;
 
-    // 🌟 CHỈ LẤY ĐÚNG ẢNH CỦA CƠ SỞ (room_id IS NULL) 🌟
+    // Chỉ lấy ảnh cơ sở (room_id IS NULL)
     const imagesRes = await pool
       .query(
         `SELECT id, path, is_thumbnail, display_order, room_id 
@@ -632,7 +631,7 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // 🌟 TRUY VẤN MỌI HẠNG PHÒNG, ẢNH XE LẤY TỪ BẢNG IMAGE THEO ROOM_ID 🌟
+    // Truy vấn phòng kèm đúng ảnh xe từ bảng image theo room_id
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -826,6 +825,7 @@ async function listDestinationSuggestions(req, res, next) {
         SELECT DISTINCT city AS name, COUNT(*)::int AS hotel_count, 'city' AS type
         FROM public.hotel
         WHERE status::text IN ('active', 'approved')
+          AND city IS NOT NULL
         GROUP BY city
         ORDER BY hotel_count DESC
         LIMIT 6;
@@ -843,7 +843,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TÁCH BẠCH 100% ẢNH CƠ SỞ VÀ ẢNH PHÒNG) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -861,6 +861,24 @@ async function registerHotel(req, res, next) {
     const userPassword = req.body?.password;
     const ownerFullName = req.body?.ownerName || req.body?.name || "Chủ cơ sở";
     const userPhone = req.body?.phoneContact || req.body?.phone;
+
+    let refTable = "users";
+    let refCol = "id";
+
+    try {
+      const fkRes = await client.query(`
+        SELECT ccu.table_name, ccu.column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+        WHERE tc.constraint_name = 'hotel_owner_id_fkey'
+        LIMIT 1
+      `);
+      if (fkRes.rows.length > 0) {
+        refTable = fkRes.rows[0].table_name;
+        refCol = fkRes.rows[0].column_name;
+      }
+    } catch (fkErr) {}
 
     let validOwnerId = null;
 
@@ -1184,7 +1202,7 @@ async function registerHotel(req, res, next) {
           ],
         );
 
-        // 🌟 LƯU ẢNH XE CHO PHÒNG: hotel_id = NULL, room_id = newRoomId (THỎA MÃN 100% CHK_IMAGE_TARGET) 🌟
+        // 🌟 LƯU ẢNH XE CHO PHÒNG: hotel_id = NULL, room_id = newRoomId 🌟
         for (let imgIdx = 0; imgIdx < uniqueRoomImages.length; imgIdx++) {
           await client.query("SAVEPOINT sp_room_img");
           try {
