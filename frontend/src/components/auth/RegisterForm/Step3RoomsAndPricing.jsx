@@ -1,5 +1,5 @@
 // src/components/auth/RegisterForm/Step3RoomsAndPricing.jsx
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Plus,
   Trash2,
@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Upload,
   X,
+  Loader2,
 } from "lucide-react";
 
 // DANH MỤC PHÂN LOẠI THEO CHUẨN BOOKING.COM
@@ -100,22 +101,41 @@ export const ROOM_AMENITIES_OPTIONS = [
   { id: "toiletries", label: "Đồ vệ sinh cá nhân" },
 ];
 
-// Danh sách ảnh mẫu nhanh tiện lợi khi đăng ký
-const SAMPLE_ROOM_IMAGES = [
-  "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
-  "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800",
-  "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
-  "https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800",
-  "https://images.unsplash.com/photo-1595526114035-0d45ed16cfbf?w=800",
-];
-
 export const Step3RoomsAndPricing = ({
   data = {},
   onChange = () => {},
   errors = {},
 }) => {
   const rooms = data?.rooms || [];
+  const hotelImages = data?.hotelImages || [];
+
+  const fileInputRef = useRef(null);
+  const [activeRoomId, setActiveRoomId] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [urlInputs, setUrlInputs] = useState({});
+
+  // Nén ảnh trực tiếp trên trình duyệt thành chuẩn base64 chất lượng cao
+  const compressImageFile = (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const maxWidth = 1200;
+          const scale = Math.min(maxWidth / img.width, 1);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.85);
+          resolve(compressed);
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
 
   const handleAddRoom = () => {
     const nextIdx = rooms.length + 1;
@@ -124,9 +144,6 @@ export const Step3RoomsAndPricing = ({
       { length: Math.min(initialAmount, 8) },
       (_, i) => `P.${nextIdx}0${i + 1}`,
     ).join(", ");
-
-    const defaultImg =
-      SAMPLE_ROOM_IMAGES[(nextIdx - 1) % SAMPLE_ROOM_IMAGES.length];
 
     const newRoom = {
       id: `room-${Date.now()}`,
@@ -143,15 +160,15 @@ export const Step3RoomsAndPricing = ({
       capacity: 2,
       base_price: 650000,
       description: "Phòng nghỉ hiện đại, tiện nghi.",
-      image: defaultImg,
-      images: [defaultImg],
+      image: "",
+      images: [],
       roomAmenities: ["air_conditioner", "wifi", "hot_water", "tv_smart"],
     };
     onChange({ rooms: [...rooms, newRoom] });
   };
 
   const handleUpdateRoom = (roomId, updates) => {
-    const updated = rooms.map((r) => {
+    const updatedRooms = rooms.map((r) => {
       if (r.id !== roomId) return r;
       const merged = { ...r, ...updates };
 
@@ -169,7 +186,22 @@ export const Step3RoomsAndPricing = ({
 
       return merged;
     });
-    onChange({ rooms: updated });
+
+    const payload = { rooms: updatedRooms };
+
+    // 🌟 ĐỒNG BỘ SANG BƯỚC 5 (hotelImages): Khi ảnh phòng thay đổi, cập nhật luôn hotelImages
+    if (updates.images !== undefined) {
+      const otherPhotos = hotelImages.filter((img) => img.roomId !== roomId);
+      const newRoomPhotos = updates.images.map((url, i) => ({
+        id: `img-${roomId}-${i}-${Date.now()}`,
+        url,
+        roomId: roomId,
+        title: `Ảnh phòng ${roomId}`,
+      }));
+      payload.hotelImages = [...otherPhotos, ...newRoomPhotos];
+    }
+
+    onChange(payload);
   };
 
   const handleCategoryChange = (roomId, newCategory) => {
@@ -200,10 +232,55 @@ export const Step3RoomsAndPricing = ({
       alert("Cơ sở cần tối thiểu 1 loại phòng để sẵn sàng mở bán.");
       return;
     }
-    onChange({ rooms: rooms.filter((r) => r.id !== roomId) });
+    const updatedRooms = rooms.filter((r) => r.id !== roomId);
+    const updatedHotelImages = hotelImages.filter(
+      (img) => img.roomId !== roomId,
+    );
+    onChange({ rooms: updatedRooms, hotelImages: updatedHotelImages });
   };
 
-  // Thêm ảnh vào hạng phòng
+  // Kích hoạt cửa sổ chọn ảnh từ máy tính
+  const triggerComputerUpload = (roomId) => {
+    setActiveRoomId(roomId);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = null;
+      fileInputRef.current.click();
+    }
+  };
+
+  // Xử lý khi người dùng chọn ảnh từ máy tính
+  const handleFilesSelected = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !activeRoomId) return;
+
+    setIsProcessing(true);
+    try {
+      const compressedUrls = await Promise.all(
+        Array.from(files).map((f) => compressImageFile(f)),
+      );
+
+      const targetRoom = rooms.find((r) => r.id === activeRoomId);
+      const currentImgs = Array.isArray(targetRoom?.images)
+        ? targetRoom.images
+        : targetRoom?.image
+          ? [targetRoom.image]
+          : [];
+
+      const updated = [...currentImgs, ...compressedUrls];
+      handleUpdateRoom(activeRoomId, {
+        images: updated,
+        image: updated[0] || "",
+        thumbnail: updated[0] || "",
+      });
+    } catch (err) {
+      console.error("Lỗi tải ảnh từ máy tính:", err);
+    } finally {
+      setIsProcessing(false);
+      setActiveRoomId(null);
+    }
+  };
+
+  // Thêm ảnh bằng URL (tùy chọn)
   const handleAddImageUrl = (roomId) => {
     const url = (urlInputs[roomId] || "").trim();
     if (!url) return;
@@ -235,23 +312,18 @@ export const Step3RoomsAndPricing = ({
     });
   };
 
-  const handlePickSampleImage = (roomId, sampleUrl) => {
-    const targetRoom = rooms.find((r) => r.id === roomId);
-    const currentImgs = Array.isArray(targetRoom?.images)
-      ? targetRoom.images
-      : [];
-    if (!currentImgs.includes(sampleUrl)) {
-      const updated = [...currentImgs, sampleUrl];
-      handleUpdateRoom(roomId, {
-        images: updated,
-        image: updated[0],
-        thumbnail: updated[0],
-      });
-    }
-  };
-
   return (
     <div className="space-y-6 font-sans text-slate-800 animate-fadeIn">
+      {/* Input file ẩn dùng chung để tải ảnh từ máy tính */}
+      <input
+        type="file"
+        multiple
+        accept="image/*"
+        ref={fileInputRef}
+        onChange={handleFilesSelected}
+        className="hidden"
+      />
+
       <div>
         <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
           <Sparkles size={14} className="text-[#006ce4]" /> Bước 3 / 8: Thiết
@@ -261,8 +333,8 @@ export const Step3RoomsAndPricing = ({
           Chi tiết hạng phòng & Hình ảnh
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Thiết lập cấu hình phòng chuẩn, tiện nghi và hình ảnh thực tế cho từng
-          loại phòng.
+          Tải ảnh phòng thực tế từ máy tính, thiết lập cấu hình giường và giá
+          niêm yết.
         </p>
       </div>
 
@@ -270,11 +342,18 @@ export const Step3RoomsAndPricing = ({
         {rooms.map((room, idx) => {
           const currentCat = room.category || "double";
           const nameOptions = SUGGESTED_NAMES_MAP[currentCat] || [room.name];
-          const roomImages = Array.isArray(room.images)
-            ? room.images
-            : room.image
-              ? [room.image]
-              : [];
+
+          // Lấy danh sách ảnh: Ưu tiên room.images, fallback qua hotelImages có roomId khớp
+          let roomImages =
+            Array.isArray(room.images) && room.images.length > 0
+              ? room.images
+              : hotelImages
+                  .filter((img) => img.roomId === room.id)
+                  .map((img) => img.url);
+
+          if (roomImages.length === 0 && room.image) {
+            roomImages = [room.image];
+          }
 
           return (
             <div
@@ -379,53 +458,88 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* ── 3. HÌNH ẢNH HẠNG PHÒNG (MỚI ĐẦY ĐỦ) ── */}
+              {/* ── 3. HÌNH ẢNH HẠNG PHÒNG (TẢI TỪ MÁY TÍNH & ĐỒNG BỘ SANG BƯỚC 5) ── */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <ImageIcon size={16} className="text-[#006ce4]" /> Hình ảnh
-                    hạng phòng ({roomImages.length} ảnh)
-                  </label>
-                  <span className="text-[11px] text-blue-600 font-semibold">
-                    * Ảnh đầu tiên làm ảnh đại diện
-                  </span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <ImageIcon size={16} className="text-[#006ce4]" /> Hình
+                      ảnh hạng phòng ({roomImages.length} ảnh)
+                    </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Ảnh này sẽ hiển thị trực tiếp tại danh sách phòng của
+                      khách sạn và đồng bộ với Bước 5.
+                    </p>
+                  </div>
+
+                  {/* NÚT TẢI ẢNH TỪ MÁY TÍNH */}
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => triggerComputerUpload(room.id)}
+                    className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-sm transition active:scale-95 disabled:opacity-50"
+                  >
+                    {isProcessing && activeRoomId === room.id ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" /> Đang
+                        tải...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={14} /> Tải ảnh từ máy tính
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 {/* Danh sách ảnh đã chọn */}
-                {roomImages.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {roomImages.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
                     {roomImages.map((imgUrl, imgIdx) => (
                       <div
                         key={imgIdx}
-                        className="relative group h-24 rounded-xl overflow-hidden border border-slate-200 bg-white"
+                        className="relative group h-28 rounded-xl overflow-hidden border border-slate-200 bg-white shadow-xs"
                       >
                         <img
                           src={imgUrl}
-                          alt="Ảnh phòng"
+                          alt={`Ảnh phòng ${imgIdx + 1}`}
                           className="w-full h-full object-cover"
                         />
                         {imgIdx === 0 && (
-                          <span className="absolute bottom-1 left-1 bg-[#003580] text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow">
-                            Ảnh chính
+                          <span className="absolute bottom-1.5 left-1.5 bg-[#003580] text-white text-[9px] font-black px-2 py-0.5 rounded shadow">
+                            Ảnh đại diện phòng
                           </span>
                         )}
                         <button
                           type="button"
                           onClick={() => handleRemoveImage(room.id, imgIdx)}
-                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer shadow"
+                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-md bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer shadow"
                         >
                           <X size={13} />
                         </button>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div
+                    onClick={() => triggerComputerUpload(room.id)}
+                    className="h-28 border-2 border-dashed border-slate-300 hover:border-[#006ce4] bg-white rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer transition text-slate-500 hover:text-[#006ce4]"
+                  >
+                    <Upload size={22} />
+                    <span className="text-xs font-bold">
+                      Bấm vào đây để chọn ảnh phòng từ máy tính
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Hỗ trợ định dạng JPG, PNG, WEBP (tải nhiều ảnh cùng lúc)
+                    </span>
+                  </div>
                 )}
 
-                {/* Nhập link ảnh */}
-                <div className="flex gap-2">
+                {/* Hoặc nhập link ảnh trực tiếp */}
+                <div className="flex gap-2 pt-1">
                   <input
                     type="url"
-                    placeholder="Dán đường dẫn link ảnh phòng (https://...)..."
+                    placeholder="Hoặc dán link ảnh trực tuyến (https://...)..."
                     value={urlInputs[room.id] || ""}
                     onChange={(e) =>
                       setUrlInputs({ ...urlInputs, [room.id]: e.target.value })
@@ -436,41 +550,15 @@ export const Step3RoomsAndPricing = ({
                         handleAddImageUrl(room.id);
                       }
                     }}
-                    className="flex-1 h-10 px-3 text-xs bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
+                    className="flex-1 h-9 px-3 text-xs bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
                   />
                   <button
                     type="button"
                     onClick={() => handleAddImageUrl(room.id)}
-                    className="px-4 h-10 bg-[#003580] hover:bg-blue-900 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-xs"
+                    className="px-3 h-9 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer transition"
                   >
-                    <Plus size={15} /> Thêm ảnh
+                    <Plus size={14} /> Thêm link
                   </button>
-                </div>
-
-                {/* Gợi ý ảnh phòng đẹp có sẵn */}
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                    Hoặc chọn nhanh ảnh mẫu có sẵn:
-                  </span>
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {SAMPLE_ROOM_IMAGES.map((sampleUrl, sIdx) => (
-                      <button
-                        key={sIdx}
-                        type="button"
-                        onClick={() =>
-                          handlePickSampleImage(room.id, sampleUrl)
-                        }
-                        className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 hover:border-blue-500 transition cursor-pointer group"
-                      >
-                        <img
-                          src={sampleUrl}
-                          alt="sample"
-                          className="w-full h-full object-cover group-hover:scale-110 transition"
-                        />
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent" />
-                      </button>
-                    ))}
-                  </div>
                 </div>
               </div>
 

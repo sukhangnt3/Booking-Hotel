@@ -52,7 +52,6 @@ const AMENITY_LABEL_MAP = {
   toiletries: "Đồ vệ sinh cá nhân miễn phí",
 };
 
-// Hàm chuẩn hóa danh sách tiện nghi
 const parseAmenityArray = (raw) => {
   if (!raw) return [];
   if (Array.isArray(raw)) {
@@ -75,7 +74,6 @@ const parseAmenityArray = (raw) => {
   return [];
 };
 
-// Hàm chuẩn hóa danh sách URL ảnh
 const extractImageUrls = (raw) => {
   if (!raw) return [];
   const list = [];
@@ -98,7 +96,6 @@ const extractImageUrls = (raw) => {
   return list.filter((url) => !url.startsWith("blob:"));
 };
 
-// Hàm đảm bảo bản ghi tiện nghi tồn tại trong database
 async function ensureAmenityRecord(client, rawItem) {
   if (!rawItem) return null;
   const clean =
@@ -768,7 +765,6 @@ async function getHotelById(req, res, next) {
     hotelData.rooms = roomsRes.rows;
     hotelData.amenities = amenitiesRes.rows.map((row) => row.name);
 
-    // Dự phòng tiện ích nếu bảng hotel có cột text[] hoặc jsonb amenities
     if (
       (!hotelData.amenities || hotelData.amenities.length === 0) &&
       hotelRes.rows[0]?.amenities
@@ -838,8 +834,8 @@ async function listHotelRoomAvailability(req, res, next) {
                     OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
                   )
                   AND (
-                    EXISTS (SELECT 1 FROM public.booking_room br WHERE br.booking_id = b.id AND br.room_id = r.id)
-                    OR b.room_number IN (SELECT ru.room_number FROM public.room_unit ru WHERE ru.room_id = r.id)
+                    EXISTS (SELECT 1 FROM public.booking_room br WHERE br.booking_id = b.id AND br.room_id = ar.id)
+                    OR b.room_number IN (SELECT ru.room_number FROM public.room_unit ru WHERE ru.room_id = ar.id)
                   )
               ), 0)
             - COALESCE((
@@ -965,7 +961,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (XỬ LÝ TOÀN DIỆN TIỆN ÍCH BƯỚC 2 VÀ HẠNG PHÒNG + HÌNH ẢNH BƯỚC 3) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -1127,6 +1123,8 @@ async function registerHotel(req, res, next) {
       image,
       images = [],
       gallery = [],
+      hotelImages = [],
+      hotelMainImage,
       is_beachfront = false,
       distance_to_center,
       propertyAmenities,
@@ -1241,8 +1239,14 @@ async function registerHotel(req, res, next) {
     const hotelResult = await client.query(hotelInsertSql, values);
     const newHotel = hotelResult.rows[0];
 
-    // ── 5.1. XỬ LÝ ẢNH CHÍNH & BỘ SƯU TẬP KHÁCH SẠN ──
+    // ── 5.1. XỬ LÝ ẢNH CƠ SỞ (MẶT TIỀN / KHUÔN VIÊN TỪ BƯỚC 5) ──
+    const propertyImagesFromHotelImages = Array.isArray(hotelImages)
+      ? hotelImages.filter((img) => !img.roomId).map((img) => img.url)
+      : [];
+
     const mainHotelImages = extractImageUrls([
+      hotelMainImage,
+      ...propertyImagesFromHotelImages,
       image,
       ...(Array.isArray(images) ? images : []),
       ...(Array.isArray(gallery) ? gallery : []),
@@ -1302,7 +1306,7 @@ async function registerHotel(req, res, next) {
         });
     }
 
-    // ── 5.3. XỬ LÝ HẠNG PHÒNG, ẢNH HẠNG PHÒNG & TIỆN NGHI PHÒNG (BƯỚC 3) ──
+    // ── 5.3. XỬ LÝ HẠNG PHÒNG, ẢNH HẠNG PHÒNG & TIỆN NGHI PHÒNG (BƯỚC 3 & BƯỚC 5) ──
     const roomColRes = await client.query(
       `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'room'`,
     );
@@ -1366,26 +1370,22 @@ async function registerHotel(req, res, next) {
           roomValues,
         );
 
-        // 🌟 LƯU TẤT CẢ ẢNH CỦA HẠNG PHÒNG VÀO BẢNG IMAGE 🌟
+        // 🌟 TỔNG HỢP TOÀN BỘ ẢNH PHÒNG TỪ BƯỚC 3 (r.images) VÀ BƯỚC 5 (hotelImages có roomId) 🌟
+        const roomPhotosFromStep5 = Array.isArray(hotelImages)
+          ? hotelImages
+              .filter((img) => img.roomId === r.id)
+              .map((img) => img.url)
+          : [];
+
         const roomImgCandidates = extractImageUrls([
+          ...(Array.isArray(r.images) ? r.images : []),
           r.image,
           r.imageUrl,
           r.image_url,
           r.thumbnail,
           r.photo,
-          ...(Array.isArray(r.images) ? r.images : []),
-          ...(Array.isArray(r.photos) ? r.photos : []),
+          ...roomPhotosFromStep5,
         ]);
-
-        if (req.body.roomImages && typeof req.body.roomImages === "object") {
-          const extra =
-            req.body.roomImages[r.id] ||
-            req.body.roomImages[rIdx] ||
-            req.body.roomImages[r.name];
-          if (extra) {
-            extractImageUrls(extra).forEach((u) => roomImgCandidates.push(u));
-          }
-        }
 
         const uniqueRoomImages = [...new Set(roomImgCandidates)];
 
@@ -1425,7 +1425,7 @@ async function registerHotel(req, res, next) {
             .catch(() => {});
         }
 
-        // 🌟 LƯU TIỆN NGHI RIÊNG CỦA HẠNG PHÒNG VÀO BẢNG ROOM_AMENITY 🌟
+        // 🌟 LƯU TIỆN NGHI HẠNG PHÒNG VÀO BẢNG ROOM_AMENITY 🌟
         const roomAmenitiesList = parseAmenityArray(
           r.roomAmenities || r.amenities || r.room_amenities,
         );
