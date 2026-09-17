@@ -26,10 +26,10 @@ export const Step5PhotoGallery = ({
   const [openRoomPhotos, setOpenRoomPhotos] = useState(true);
   const [selectedRoomIdForUpload, setSelectedRoomIdForUpload] = useState(null);
 
+  // 🌟 hotelImages LÀ NƠI CHỈ CHỨA DUY NHẤT ẢNH CỦA CƠ SỞ (KHÔNG CHỨA ẢNH PHÒNG)
   const hotelImages = data?.hotelImages || [];
   const rooms = data?.rooms || [];
 
-  // Chỉ lấy các ảnh của cơ sở (không có roomId và không có room_id)
   const propertyPhotos = hotelImages.filter(
     (img) => !img.roomId && !img.room_id,
   );
@@ -72,7 +72,7 @@ export const Step5PhotoGallery = ({
         Array.from(files).map((f, i) => compressSingleImage(f, i)),
       );
 
-      // Nếu tải ảnh phòng: Cập nhật trực tiếp vào room.images
+      // Nếu tải ảnh phòng: CHỈ CẬP NHẬT VÀO ROOMS CỦA CHÍNH NÓ (KHÔNG ĐƯỢC CHẠM VÀO HOTELIMAGES)
       if (targetRoomId) {
         const updatedRooms = rooms.map((r) => {
           if (r.id === targetRoomId) {
@@ -88,25 +88,10 @@ export const Step5PhotoGallery = ({
           }
           return r;
         });
-
-        // Giữ lại các ảnh phòng khác trong hotelImages
-        const otherImages = hotelImages.filter(
-          (img) => img.roomId !== targetRoomId,
-        );
-        onChange({
-          rooms: updatedRooms,
-          hotelImages: [...otherImages, ...newImages],
-        });
+        onChange({ rooms: updatedRooms });
       } else {
-        // Nếu tải ảnh cơ sở: Giữ nguyên tất cả ảnh phòng trong hotelImages
-        const roomImagesInState = hotelImages.filter(
-          (img) => img.roomId || img.room_id,
-        );
-        const updatedImages = [
-          ...roomImagesInState,
-          ...propertyPhotos,
-          ...newImages,
-        ];
+        // Nếu tải ảnh cơ sở: CHỈ CẬP NHẬT ẢNH CƠ SỞ VÀO HOTELIMAGES
+        const updatedImages = [...propertyPhotos, ...newImages];
         const updates = { hotelImages: updatedImages };
         if (!data?.hotelMainImage && newImages.length > 0) {
           updates.hotelMainImage = newImages[0].url;
@@ -146,15 +131,10 @@ export const Step5PhotoGallery = ({
   };
 
   const handleDeletePropertyPhoto = (id, imgUrl) => {
-    const roomImagesInState = hotelImages.filter(
-      (img) => img.roomId || img.room_id,
-    );
-    const updatedPropertyPhotos = propertyPhotos.filter((img) => img.id !== id);
-    const updates = {
-      hotelImages: [...roomImagesInState, ...updatedPropertyPhotos],
-    };
+    const updatedImages = propertyPhotos.filter((img) => img.id !== id);
+    const updates = { hotelImages: updatedImages };
     if (data?.hotelMainImage === imgUrl) {
-      updates.hotelMainImage = updatedPropertyPhotos[0]?.url || "";
+      updates.hotelMainImage = updatedImages[0]?.url || "";
     }
     onChange(updates);
   };
@@ -173,13 +153,7 @@ export const Step5PhotoGallery = ({
       }
       return r;
     });
-
-    const updatedHotelImages = hotelImages.filter(
-      (img) =>
-        !(img.roomId === roomId && (img.url === imgUrl || img.path === imgUrl)),
-    );
-
-    onChange({ rooms: updatedRooms, hotelImages: updatedHotelImages });
+    onChange({ rooms: updatedRooms });
   };
 
   const hasEnoughPropertyPhotos = propertyPhotos.length >= 3;
@@ -332,7 +306,7 @@ export const Step5PhotoGallery = ({
         </div>
       </div>
 
-      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG (LẤY TỪ ROOMS, KHÔNG LẪN VÀO CƠ SỞ) ── */}
+      {/* ── 2. BỘ SƯU TẬP ẢNH TỪNG HẠNG PHÒNG (LẤY RIÊNG TỪ ROOMS, KHÔNG LẪN VÀO CƠ SỞ) ── */}
       <div className="pt-6 border-t border-slate-200 space-y-4">
         <button
           type="button"
