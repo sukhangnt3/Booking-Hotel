@@ -88,7 +88,6 @@ const ROOM_VIEW_MAP = {
   internal_view: "Hướng nội khu",
 };
 
-// Danh sách ảnh mẫu dự phòng khác nhau cho từng phòng nếu chưa có ảnh
 const ROOM_FALLBACK_IMAGES = [
   "https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800",
   "https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800",
@@ -246,6 +245,7 @@ export default function HotelDetailPage() {
       ? Math.max(1, differenceInDays(tempCheckOut, tempCheckIn))
       : 1;
 
+  // Lấy danh sách phòng trống từ API
   const fetchRoomAvailability = useCallback(
     async (cIn, cOut, adCount) => {
       if (!id) return;
@@ -433,7 +433,7 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // ── 1. TÁCH BIỆT HOÀN TOÀN: ẢNH KHÁCH SẠN CHO BENTO GALLERY TRÊN CÙNG ──
+  // ── 1. BENTO GALLERY TRÊN CÙNG: CHỈ LẤY ẢNH CỦA KHÁCH SẠN (KHÔNG CHỨA ẢNH XE CỦA PHÒNG) ──
   const hotelGalleryImages = [];
   if (hotel?.image) {
     const u = parseRealImageUrl(hotel.image);
@@ -441,7 +441,7 @@ export default function HotelDetailPage() {
   }
   if (Array.isArray(hotel?.images) && hotel.images.length > 0) {
     hotel.images.forEach((img) => {
-      // Chỉ lấy ảnh không gán room_id
+      // Chỉ lấy ảnh cơ sở không có room_id
       const rId = typeof img === "object" ? img.room_id || img.roomId : null;
       if (!rId) {
         const u = parseRealImageUrl(img);
@@ -464,40 +464,33 @@ export default function HotelDetailPage() {
     );
   }
 
-  const hotelCoverImage = hotelGalleryImages[0];
-
-  // ── 2. LẤY CHÍNH XÁC ẢNH RIÊNG TỪNG HẠNG PHÒNG (KHÔNG LẤY ẢNH KHÁCH SẠN) ──
+  // ── 2. LẤY ĐÚNG ẢNH RIÊNG BIỆT CHO TỪNG HẠNG PHÒNG ──
   const getRoomImage = (room, roomIdx) => {
     if (!room)
       return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
 
-    // 1. Kiểm tra trong mảng images riêng của phòng
-    const roomImgs = parseImagesList(room.images);
-    if (roomImgs.length > 0) {
-      for (const item of roomImgs) {
+    // Kiểm tra trong mảng images riêng của phòng
+    const rImgs = parseImagesList(room.images);
+    if (rImgs.length > 0) {
+      for (const item of rImgs) {
         const u = parseRealImageUrl(item);
-        if (u && !hotelGalleryImages.includes(u)) return u;
+        if (u) return u;
       }
-      const firstValid = parseRealImageUrl(roomImgs[0]);
-      if (firstValid) return firstValid;
     }
 
-    // 2. Kiểm tra room.image
+    // Kiểm tra room.image
     if (room.image && !room.image.startsWith("blob:")) {
       const u = parseRealImageUrl(room.image);
-      if (u && !hotelGalleryImages.includes(u)) return u;
       if (u) return u;
     }
 
-    // 3. Kiểm tra room.thumbnail
+    // Kiểm tra room.thumbnail
     if (room.thumbnail && !room.thumbnail.startsWith("blob:")) {
       const u = parseRealImageUrl(room.thumbnail);
-      if (u && !hotelGalleryImages.includes(u)) return u;
       if (u) return u;
     }
 
-    // 4. Nếu phòng không có ảnh, dùng ảnh fallback theo số thứ tự roomIdx
-    // KHÔNG BAO GIỜ lấy hotelCoverImage để tránh nhầm với mặt tiền khách sạn
+    // Dự phòng theo số thứ tự (mỗi phòng một ảnh khác nhau, không lấy ảnh khách sạn)
     return ROOM_FALLBACK_IMAGES[roomIdx % ROOM_FALLBACK_IMAGES.length];
   };
 
@@ -664,6 +657,7 @@ export default function HotelDetailPage() {
     { label: hotel.name },
   ];
 
+  // Ưu tiên danh sách phòng trống thực tế từ API availability
   const displayRooms =
     availableRooms.length > 0 ? availableRooms : hotel.rooms || [];
 
@@ -751,7 +745,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BENTO GALLERY KHÁCH SẠN */}
+        {/* BENTO GALLERY KHÁCH SẠN (CHỈ HIỂN THỊ ẢNH CƠ SỞ) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 grid grid-cols-1 md:grid-cols-12 gap-3.5 h-[340px] md:h-[400px]">
             <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
@@ -1094,7 +1088,7 @@ export default function HotelDetailPage() {
           {displayRooms && displayRooms.length > 0 ? (
             <div className="space-y-4">
               {displayRooms.map((room, idx) => {
-                // 🌟 LẤY ĐÚNG ẢNH RIÊNG TỪNG PHÒNG, KHÔNG BỊ TRÙNG LẶP
+                // Lấy đúng ảnh riêng của hạng phòng
                 const roomImg = getRoomImage(room, idx);
 
                 const stock =

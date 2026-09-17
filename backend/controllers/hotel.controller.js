@@ -2,6 +2,7 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
+// Tự động nâng cấp kiểu dữ liệu path thành TEXT và tạo các cột lưu ảnh riêng cho room
 (async function ensureDatabaseSchema() {
   try {
     await pool.query(`
@@ -556,7 +557,7 @@ async function listHotels(req, res, next) {
   }
 }
 
-// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID ───
+// ─── 2. CHI TIẾT KHÁCH SẠN THEO ID (TRUY VẤN AN TOÀN, HIỂN THỊ ĐỦ PHÒNG) ───
 async function getHotelById(req, res, next) {
   try {
     const hotelId = String(req.params.id || "").trim();
@@ -590,7 +591,7 @@ async function getHotelById(req, res, next) {
       )
       .catch(() => ({ rows: [] }));
 
-    // Lấy thông tin phòng VÀ CHỈ LẤY ẢNH RIÊNG CỦA PHÒNG
+    // Truy vấn phòng: Ưu tiên lấy ảnh có room_id khớp trong bảng image hoặc r.image
     const roomsRes = await pool
       .query(
         `SELECT 
@@ -603,14 +604,12 @@ async function getHotelById(req, res, next) {
          COALESCE(
            (SELECT img.path FROM public.image img WHERE img.room_id::text = r.id::text ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1),
            r.image,
-           r.thumbnail,
-           (SELECT (r.images->>0))
+           r.thumbnail
          ) AS image,
          COALESCE(
            (SELECT img.path FROM public.image img WHERE img.room_id::text = r.id::text ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1),
            r.thumbnail,
-           r.image,
-           (SELECT (r.images->>0))
+           r.image
          ) AS thumbnail,
          COALESCE(
            (
@@ -623,7 +622,6 @@ async function getHotelById(req, res, next) {
          ) AS amenities,
          COALESCE(
            (SELECT json_agg(img.path) FROM public.image img WHERE img.room_id::text = r.id::text),
-           r.images,
            '[]'::json
          ) AS images
        FROM public.room r
@@ -631,7 +629,10 @@ async function getHotelById(req, res, next) {
        ORDER BY r.base_price ASC`,
         [hotelData.id],
       )
-      .catch(() => ({ rows: [] }));
+      .catch((err) => {
+        console.error("❌ Lỗi roomsRes:", err.message);
+        return { rows: [] };
+      });
 
     const amenitiesRes = await pool
       .query(
@@ -760,14 +761,12 @@ async function listHotelRoomAvailability(req, res, next) {
         COALESCE(
           (SELECT img.path FROM public.image img WHERE img.room_id::text = r.id::text ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1),
           r.thumbnail,
-          r.image,
-          (SELECT (r.images->>0))
+          r.image
         ) AS thumbnail,
         COALESCE(
           (SELECT img.path FROM public.image img WHERE img.room_id::text = r.id::text ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1),
           r.image,
-          r.thumbnail,
-          (SELECT (r.images->>0))
+          r.thumbnail
         ) AS image,
         COALESCE(
           (
@@ -780,7 +779,6 @@ async function listHotelRoomAvailability(req, res, next) {
         ) AS amenities,
         COALESCE(
           (SELECT json_agg(img.path) FROM public.image img WHERE img.room_id::text = r.id::text),
-          r.images,
           '[]'::json
         ) AS images
       FROM public.room r
@@ -848,7 +846,7 @@ async function listDestinationSuggestions(req, res, next) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC (TỰ ĐỘNG NÂNG CẤP VAI TRÒ OWNER CHO TÀI KHOẢN CŨ & TÁCH BẠCH ẢNH) ───
+// ─── 5. ĐĂNG KÝ CƠ SỞ ĐỐI TÁC ───
 async function registerHotel(req, res, next) {
   const client = await pool.connect();
   try {
@@ -979,7 +977,6 @@ async function registerHotel(req, res, next) {
 
     await client.query("BEGIN");
 
-    // 🌟 TỰ ĐỘNG NÂNG CẤP VAI TRÒ CỦA TÀI KHOẢN ĐÓ THÀNH HOTEL_OWNER TRONG CƠ SỞ DỮ LIỆU 🌟
     try {
       const roleRes = await client.query(
         `INSERT INTO public.roles (id, name) 
@@ -1299,7 +1296,6 @@ async function registerHotel(req, res, next) {
         addRoomField("overnight_price", Number(r.overnight_price || basePrice));
         addRoomField("image", primaryRoomImage);
         addRoomField("thumbnail", primaryRoomImage);
-        addRoomField("images", JSON.stringify(uniqueRoomImages));
         addRoomField("is_active", true);
         addRoomField("created_at", null, "NOW()");
         addRoomField("updated_at", null, "NOW()");
@@ -1377,7 +1373,6 @@ async function registerHotel(req, res, next) {
 
     await client.query("COMMIT");
 
-    // 🌟 PHÁT HÀNH TOKEN VỚI VAI TRÒ CHỦ KHÁCH SẠN (HOTEL_OWNER) 🌟
     let freshToken = null;
     if (jwt) {
       try {

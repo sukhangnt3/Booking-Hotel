@@ -2,32 +2,44 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
 
-// Tự động đảm bảo cột room_legs và receptionist_assigned tồn tại trong bảng booking
-(async function ensureRequiredColumns() {
+// Tự động nhận diện thư viện mã hóa bcrypt
+let bcrypt;
+try {
+  bcrypt = require("bcryptjs");
+} catch {
   try {
-    await pool.query(
-      `ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS room_legs jsonb DEFAULT '[]'::jsonb;`,
-    );
-    await pool.query(
-      `ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS receptionist_assigned boolean DEFAULT false;`,
-    );
+    bcrypt = require("bcrypt");
+  } catch {
+    bcrypt = null;
+  }
+}
+
+// Tự động đảm bảo các cột và bảng phân quyền lễ tân tồn tại
+(async function ensureRequiredColumnsAndTables() {
+  try {
+    await pool.query(`
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS room_legs jsonb DEFAULT '[]'::jsonb;
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS receptionist_assigned boolean DEFAULT false;
+      
+      CREATE TABLE IF NOT EXISTS public.hotel_staff (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        hotel_id uuid NOT NULL REFERENCES public.hotel(id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+        created_at timestamp with time zone DEFAULT NOW(),
+        updated_at timestamp with time zone DEFAULT NOW(),
+        CONSTRAINT hotel_staff_unique UNIQUE (hotel_id, user_id)
+      );
+    `);
   } catch (err) {
-    console.warn("⚠️ Cảnh báo migration columns:", err.message);
+    console.warn("⚠️ Cảnh báo migration owner/staff columns:", err.message);
   }
 })();
 
 const hashPassword = async (plainPassword) => {
-  try {
-    const bcryptjs = require("bcryptjs");
-    return await bcryptjs.hash(plainPassword, 10);
-  } catch {
-    try {
-      const bcrypt = require("bcrypt");
-      return await bcrypt.hash(plainPassword, 10);
-    } catch {
-      return crypto.createHash("sha256").update(plainPassword).digest("hex");
-    }
+  if (bcrypt) {
+    return await bcrypt.hash(plainPassword, 10);
   }
+  return crypto.createHash("sha256").update(plainPassword).digest("hex");
 };
 
 function resolveDateRange(rangeStr) {
@@ -88,7 +100,6 @@ function resolveDateRange(rangeStr) {
     dayCount = lastDay.getDate();
     compLabel = "so với tháng trước đó";
   } else {
-    // this_month
     const firstDay = new Date(currentYear, currentMonth, 1);
     startDate = firstDay.toLocaleDateString("en-CA");
     endDate = now.toLocaleDateString("en-CA");
@@ -124,7 +135,6 @@ async function getOwnerStats(req, res, next) {
       ? String(req.query.hotel_id).trim()
       : "all";
 
-    // 🌟 TÁCH ĐỘC LẬP KỲ DOANH THU VÀ KỲ CÔNG SUẤT PHÒNG
     const revenueRangeParam =
       req.query.revenue_range || req.query.range || "this_month";
     const occupancyRangeParam =
@@ -151,17 +161,15 @@ async function getOwnerStats(req, res, next) {
     const revDates = resolveDateRange(revenueRangeParam);
     const occDates = resolveDateRange(occupancyRangeParam);
 
-    // LẤY TỔNG SỐ PHÒNG
     const roomsRes = await pool.query(
       `SELECT COALESCE(SUM(r.amount), 0)::int AS total_rooms 
        FROM public.room r 
        JOIN public.hotel h ON h.id = r.hotel_id 
-       WHERE ${hotelFilter} AND r.is_active = true`,
+       WHERE ${hotelFilter} AND (r.is_active = true OR r.is_active IS NULL)`,
       baseParams,
     );
     const totalRooms = Number(roomsRes.rows[0]?.total_rooms || 0);
 
-    // CÔNG SUẤT THỰC TẾ HIỆN TẠI
     let occupiedCount = 0;
     let vacantCount = totalRooms;
     let currentRate = 0;
@@ -189,7 +197,6 @@ async function getOwnerStats(req, res, next) {
       vacantRate = Math.max(0, 100 - currentRate);
     }
 
-    // LƯU TRÚ
     const stayingRes = await pool.query(
       `SELECT 
          COALESCE(SUM(COALESCE(b.adult_total, 1)), 0)::int AS adults,
@@ -204,7 +211,6 @@ async function getOwnerStats(req, res, next) {
     const stayingChildren = Number(stayingRes.rows[0]?.children || 0);
     const totalGuests = stayingAdults + stayingChildren;
 
-    // BUỒNG PHÒNG
     const waitingCleanRes = await pool
       .query(
         `SELECT COUNT(DISTINCT ru.id)::int AS waiting_clean
@@ -239,7 +245,6 @@ async function getOwnerStats(req, res, next) {
       occupiedCleanRes.rows[0]?.occupied_dirty || 0,
     );
 
-    // ─── DOANH THU THEO KÊNH BÁN ───
     const revTimeParams = [...baseParams, revDates.startDate, revDates.endDate];
     const rpStart = revTimeParams.length - 1;
     const rpEnd = revTimeParams.length;
@@ -317,7 +322,6 @@ async function getOwnerStats(req, res, next) {
       ],
     };
 
-    // ─── 🌟 THỐNG KÊ THEO NGÀY LƯU TRÚ (TAB MỚI THEO ẢNH BẠN YÊU CẦU) ───
     const stayDateRes = await pool.query(
       `WITH period_days AS (
          SELECT generate_series($${rpStart}::date, $${rpEnd}::date, '1 day'::interval)::date AS day_date
@@ -344,7 +348,6 @@ async function getOwnerStats(req, res, next) {
       revTimeParams,
     );
 
-    // Doanh thu kỳ trước để tính % tăng trưởng
     const prevTimeParams = [
       ...baseParams,
       revDates.prevStartDate,
@@ -373,7 +376,7 @@ async function getOwnerStats(req, res, next) {
         ((totalRevenue - prevRevenue) / prevRevenue) * 100,
       );
     } else if (totalRevenue > 0) {
-      growthRate = 300; // Mặc định nếu kỳ trước chưa có dữ liệu
+      growthRate = 300;
     }
 
     const stayDateChartData = stayDateRes.rows.map((r) => {
@@ -395,7 +398,6 @@ async function getOwnerStats(req, res, next) {
       chartData: stayDateChartData,
     };
 
-    // ─── 🌟 CÔNG SUẤT PHÒNG (DÙNG ĐỘC LẬP THEO OCCUPANCY_RANGE) ───
     const occTimeParams = [...baseParams, occDates.startDate, occDates.endDate];
     const opStart = occTimeParams.length - 1;
     const opEnd = occTimeParams.length;
@@ -494,7 +496,7 @@ async function getOwnerStats(req, res, next) {
          AND (
            (b.checkin_date <= $${opEnd}::date AND b.checkout_date >= $${opStart}::date)
          )
-       WHERE ${hotelFilter} AND r.is_active = true
+       WHERE ${hotelFilter} AND (r.is_active = true OR r.is_active IS NULL)
        GROUP BY r.id, r.name, r.amount
        ORDER BY r.base_price ASC`,
       occTimeParams,
@@ -834,7 +836,7 @@ async function getPendingOnlineBookings(req, res, next) {
 async function confirmAndAssignRoom(req, res, next) {
   const client = await pool.connect();
   try {
-    const { booking_id, room_number, hotel_id } = req.body;
+    const { booking_id, room_number } = req.body;
 
     if (!booking_id || !room_number) {
       return res
@@ -1102,18 +1104,235 @@ async function updateOwnerBookingStatus(req, res, next) {
   return res.json({ success: true });
 }
 
+// ─── 9. LẤY DANH SÁCH NHÂN VIÊN LỄ TÂN CỦA OWNER (ĐẦY ĐỦ LOGIC SQL) ───
 async function getOwnerStaff(req, res, next) {
-  return res.json({ success: true, staff: [] });
+  try {
+    const ownerId = req.user?.id || req.auth?.sub;
+    if (!ownerId) {
+      return res.status(401).json({ message: "Vui lòng đăng nhập." });
+    }
+
+    const query = `
+      SELECT 
+        u.id,
+        u.full_name,
+        u.email,
+        u.phone,
+        u.activate,
+        u.created_at,
+        h.id AS hotel_id,
+        h.name AS hotel_name
+      FROM public.hotel_staff hs
+      JOIN public.hotel h ON h.id = hs.hotel_id
+      JOIN public.users u ON u.id = hs.user_id
+      WHERE h.owner_id = $1::uuid
+      ORDER BY hs.created_at DESC
+    `;
+
+    const result = await pool.query(query, [ownerId]);
+    return res.json({
+      success: true,
+      staff: result.rows || [],
+      data: result.rows || [],
+    });
+  } catch (error) {
+    console.error("❌ Lỗi getOwnerStaff:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
 }
+
+// ─── 10. TẠO TÀI KHOẢN LỄ TÂN MỚI (LƯU VÀO USERS, ROLES, HOTEL_STAFF) ───
 async function createOwnerStaff(req, res, next) {
-  return res.json({ success: true });
+  const client = await pool.connect();
+  try {
+    const ownerId = req.user?.id || req.auth?.sub;
+    const { full_name, email, phone, password, hotel_id } = req.body;
+
+    if (!full_name || !email || !password || !hotel_id) {
+      return res.status(400).json({
+        message: "Họ tên, email, mật khẩu và khách sạn là bắt buộc.",
+      });
+    }
+
+    const targetEmail = String(email).trim().toLowerCase();
+
+    await client.query("BEGIN");
+
+    // Kiểm tra xem khách sạn này có đúng là của Owner không
+    const hotelCheck = await client.query(
+      `SELECT id, name FROM public.hotel WHERE id::text = $1 AND owner_id::text = $2 LIMIT 1`,
+      [hotel_id, ownerId],
+    );
+
+    if (hotelCheck.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({
+        message: "Bạn không có quyền quản trị khách sạn này.",
+      });
+    }
+
+    // Kiểm tra xem email đã tồn tại trong bảng users chưa
+    const existingUser = await client.query(
+      `SELECT id FROM public.users WHERE email = $1 LIMIT 1`,
+      [targetEmail],
+    );
+
+    let staffUserId;
+
+    if (existingUser.rows.length > 0) {
+      staffUserId = existingUser.rows[0].id;
+    } else {
+      // Tạo user mới trong bảng users
+      const newUserId = crypto.randomUUID();
+      const hashedPassword = await hashPassword(password);
+
+      const userInsertSql = `
+        INSERT INTO public.users (
+          id, full_name, email, password, phone, activate, email_verified, created_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, true, true, NOW(), NOW()
+        ) RETURNING id;
+      `;
+
+      const userRes = await client.query(userInsertSql, [
+        newUserId,
+        full_name.trim(),
+        targetEmail,
+        hashedPassword,
+        phone ? phone.trim() : null,
+      ]);
+      staffUserId = userRes.rows[0].id;
+    }
+
+    // Đảm bảo Role RECEPTIONIST tồn tại
+    const roleRes = await client.query(
+      `INSERT INTO public.roles (id, name)
+       VALUES (gen_random_uuid(), 'RECEPTIONIST')
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+       RETURNING id`,
+    );
+    const receptionistRoleId = roleRes.rows[0].id;
+
+    // Gán role vào bảng user_roles
+    await client.query(
+      `INSERT INTO public.user_roles (user_id, role_id)
+       VALUES ($1::uuid, $2::uuid)
+       ON CONFLICT DO NOTHING`,
+      [staffUserId, receptionistRoleId],
+    );
+
+    // Gán nhân viên vào khách sạn trong bảng hotel_staff
+    await client.query(
+      `INSERT INTO public.hotel_staff (id, hotel_id, user_id, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1::uuid, $2::uuid, NOW(), NOW())
+       ON CONFLICT (hotel_id, user_id) DO NOTHING`,
+      [hotel_id, staffUserId],
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      success: true,
+      message: `Đã cấp tài khoản lễ tân cho ${full_name} thành công!`,
+      staff: {
+        id: staffUserId,
+        full_name,
+        email: targetEmail,
+        phone,
+        hotel_id,
+        hotel_name: hotelCheck.rows[0].name,
+      },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Lỗi createOwnerStaff:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Lỗi tạo tài khoản nhân viên.",
+    });
+  } finally {
+    client.release();
+  }
 }
+
+// ─── 11. XÓA NHÂN VIÊN LỄ TÂN KHỎI CƠ SỞ ───
 async function deleteOwnerStaff(req, res, next) {
-  return res.json({ success: true });
+  const client = await pool.connect();
+  try {
+    const ownerId = req.user?.id || req.auth?.sub;
+    const staffUserId = req.params.id;
+
+    await client.query("BEGIN");
+
+    // Xóa liên kết của nhân viên trong khách sạn thuộc quyền sở hữu của Owner
+    const deleteRes = await client.query(
+      `DELETE FROM public.hotel_staff 
+       WHERE user_id::text = $1 
+         AND hotel_id IN (SELECT id FROM public.hotel WHERE owner_id::text = $2)
+       RETURNING id`,
+      [staffUserId, ownerId],
+    );
+
+    if (deleteRes.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        message: "Không tìm thấy nhân viên lễ tân này trong cơ sở của bạn.",
+      });
+    }
+
+    await client.query("COMMIT");
+    return res.json({
+      success: true,
+      message: "Đã xóa nhân viên lễ tân khỏi cơ sở thành công!",
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Lỗi deleteOwnerStaff:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
+  }
 }
+
+// ─── 12. KHÓA HOẶC MỞ KHÓA TÀI KHOẢN LỄ TÂN ───
 async function toggleStaffStatus(req, res, next) {
-  return res.json({ success: true });
+  try {
+    const ownerId = req.user?.id || req.auth?.sub;
+    const staffUserId = req.params.id;
+    const { activate } = req.body;
+
+    const checkRes = await pool.query(
+      `SELECT hs.id 
+       FROM public.hotel_staff hs
+       JOIN public.hotel h ON h.id = hs.hotel_id
+       WHERE hs.user_id::text = $1 AND h.owner_id::text = $2
+       LIMIT 1`,
+      [staffUserId, ownerId],
+    );
+
+    if (checkRes.rows.length === 0) {
+      return res.status(403).json({
+        message: "Bạn không có quyền quản lý nhân viên này.",
+      });
+    }
+
+    await pool.query(
+      `UPDATE public.users 
+       SET activate = $1, updated_at = NOW() 
+       WHERE id::text = $2`,
+      [Boolean(activate), staffUserId],
+    );
+
+    return res.json({
+      success: true,
+      message: `Đã ${activate ? "mở khóa" : "tạm khóa"} tài khoản nhân viên thành công!`,
+    });
+  } catch (error) {
+    console.error("❌ Lỗi toggleStaffStatus:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
 }
+
 async function updateHotelInfo(req, res, next) {
   return res.json({ success: true });
 }
