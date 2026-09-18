@@ -88,7 +88,7 @@ async function cleanupExpiredLocks() {
   } catch (e) {}
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (KIỂM TRA XUNG ĐỘT THEO KHUNG GIỜ CHÍNH XÁC) ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (CÓ TÍNH THỜI GIAN ĐỆM DỌN PHÒNG 15-30 PHÚT) ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -199,7 +199,7 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
-    // Đảm bảo bảng booking có đủ 2 cột checkin_time và checkout_time để lưu mốc giờ
+    // Đảm bảo bảng booking có đủ các cột cần thiết
     await client
       .query(
         `
@@ -211,8 +211,10 @@ async function createBooking(req, res, next) {
       )
       .catch(() => {});
 
+    // Lấy thông tin khách sạn và thời gian dọn phòng quy định (buffer minutes)
     const hotelQueryRes = await client.query(
-      `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder 
+      `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder,
+              COALESCE(hourly_grace_minutes, 30) AS cleaning_buffer_minutes
        FROM public.hotel 
        WHERE id = $1 LIMIT 1`,
       [hotel_id],
@@ -228,6 +230,10 @@ async function createBooking(req, res, next) {
     }
 
     const hotelData = hotelQueryRes.rows[0];
+    const cleaningBufferMinutes = Math.max(
+      15,
+      Number(hotelData.cleaning_buffer_minutes || 30),
+    );
 
     const isWalkInBooking =
       Boolean(is_walk_in) ||
@@ -266,8 +272,7 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
-      // 🌟 KIỂM TRA XUNG ĐỘT PHÒNG THEO MỐC TIMESTAMP (NGÀY + GIỜ) CHÍNH XÁC:
-      // Khách A: 14:00 - 15:00. Khách B: 15:00 - 16:00 => KHÔNG XUNG ĐỘT VÌ 15:00 KHÔNG NHỎ HƠN 15:00
+      // 🌟 KIỂM TRA XUNG ĐỘT PHÒNG CỘNG THÊM THỜI GIAN DỌN PHÒNG ($4 = cleaningBufferMinutes)
       const conflictCheckSql = `
         SELECT COUNT(DISTINCT b.id)::int AS booked_count
         FROM public.booking b
@@ -279,10 +284,10 @@ async function createBooking(req, res, next) {
             OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
           )
           AND (
-            -- Đơn đặt phòng khác giao thoa về thời gian với đơn đặt mới:
-            -- Thời điểm vào của đơn mới < Thời điểm ra của đơn cũ
+            -- Đơn mới bắt đầu trước khi đơn cũ dọn phòng xong:
+            -- Thời điểm vào của đơn mới < (Thời điểm trả phòng đơn cũ + $4 phút dọn phòng)
             -- VÀ Thời điểm ra của đơn mới > Thời điểm vào của đơn cũ
-            $2::timestamp < (b.checkout_date + COALESCE(b.checkout_time, '12:00:00'::time))
+            $2::timestamp < (b.checkout_date + COALESCE(b.checkout_time, '12:00:00'::time) + ($4 || ' minutes')::interval)
             AND $3::timestamp > (b.checkin_date + COALESCE(b.checkin_time, '14:00:00'::time))
           );
       `;
@@ -291,17 +296,17 @@ async function createBooking(req, res, next) {
         room_id,
         inTimestamp.toISOString(),
         outTimestamp.toISOString(),
+        cleaningBufferMinutes,
       ]);
 
       const currentlyBooked = Number(conflictRes.rows[0]?.booked_count || 0);
 
-      // Kiểm tra xem số lượng phòng đặt thêm có vượt quá tổng số phòng vật lý của hạng phòng này không
       if (currentlyBooked + bookingQty > maxStock) {
         await client.query("ROLLBACK");
         client.release();
         return res.status(400).json({
           success: false,
-          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đã có khách đặt kín từ ${finalCheckInTime} đến ${finalCheckOutTime}. Vui lòng chọn khung giờ khác!`,
+          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đang có khách ở hoặc đang trong ${cleaningBufferMinutes} phút vệ sinh dọn phòng. Vui lòng chọn khung giờ khác!`,
         });
       }
     }
@@ -336,7 +341,6 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
-    // 🌟 LƯU CẢ GIỜ CHECKIN VÀ CHECKOUT VÀO CƠ SỞ DỮ LIỆU
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
