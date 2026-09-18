@@ -23,6 +23,8 @@ import {
   Building,
   MapPin,
   Loader2,
+  Plus,
+  Minus,
 } from "lucide-react";
 import {
   format,
@@ -36,7 +38,9 @@ import {
   isBefore,
   startOfToday,
   differenceInDays,
+  differenceInHours,
   addDays,
+  addHours,
 } from "date-fns";
 import { vi } from "date-fns/locale";
 
@@ -117,18 +121,6 @@ const parseImageUrl = (img) => {
   return `${BACKEND_BASE_URL}${raw.startsWith("/") ? raw : `/${raw}`}`;
 };
 
-const safeFormatDisplayDate = (date) => {
-  if (!date) return "Chọn ngày";
-  try {
-    const d = new Date(date);
-    return isNaN(d.getTime())
-      ? "Chọn ngày"
-      : format(d, "eee, dd 'Thg' M, yyyy", { locale: vi });
-  } catch {
-    return "Chọn ngày";
-  }
-};
-
 const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
   if (!date) return "";
   try {
@@ -165,24 +157,22 @@ export default function HomePage() {
   const [checkOutTime, setCheckOutTime] = useState("12:00");
   const [checkInDate, setCheckInDate] = useState(today);
   const [checkOutDate, setCheckOutDate] = useState(addDays(today, 1));
+  const [hoursCount, setHoursCount] = useState(2);
 
-  // Calendar Popup
+  // Calendar Popup & DatePicker
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [calendarTarget, setCalendarTarget] = useState("checkIn");
-  const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
+  const [activeDatePicker, setActiveDatePicker] = useState(null);
+  const [calendarMonth, setCalendarMonth] = useState(today);
 
   // Guests & Rooms
   const [rooms, setRooms] = useState(1);
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
-  const [isGuestOpen, setIsGuestOpen] = useState(false);
 
   const destRef = useRef(null);
   const calendarRef = useRef(null);
-  const guestRef = useRef(null);
-  const touchStartX = useRef(0);
+  const datePickerPopupRef = useRef(null);
 
-  // Responsive Carousel
   useEffect(() => {
     const handleResize = () => {
       const w = window.innerWidth;
@@ -197,7 +187,7 @@ export default function HomePage() {
 
   const maxNewestIndex = Math.max(0, uniqueStays.length - visibleCount);
 
-  // 🌟 LIVE SEARCH AUTOCOMPLETE VỚI DEBOUNCE 300MS
+  // LIVE SEARCH
   useEffect(() => {
     if (!destination.trim()) {
       setSearchSuggestions([]);
@@ -226,8 +216,8 @@ export default function HomePage() {
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
-      setCheckInTime("00:00");
-      setCheckOutTime("02:00");
+      setCheckInTime("12:00");
+      setHoursCount(2);
       setCheckOutDate(checkInDate);
     } else if (type === "DAY") {
       setCheckInTime("14:00");
@@ -240,23 +230,57 @@ export default function HomePage() {
     } else if (type === "HALF_DAY") {
       setCheckInTime("12:00");
       setCheckOutTime("21:00");
-      setCheckOutDate(checkInDate);
+      setCheckOutDate(addDays(checkInDate, 1));
     }
   };
 
-  // Duration Badge Label
-  const durationBadgeLabel = useMemo(() => {
+  // Tính thời lượng
+  const durationSummary = useMemo(() => {
+    const [inH, inM] = checkInTime.split(":").map(Number);
+    const inDateTime = new Date(checkInDate);
+    inDateTime.setHours(inH || 12, inM || 0, 0, 0);
+
+    let outDateTime = new Date(checkOutDate);
+    let outTimeStr = checkOutTime;
+
     if (rentalType === "HOUR") {
-      const inH = parseInt(checkInTime.split(":")[0], 10);
-      const outH = parseInt(checkOutTime.split(":")[0], 10);
-      const diffDays = Math.max(0, differenceInDays(checkOutDate, checkInDate));
-      let total = diffDays * 24 + (outH - inH);
-      return `${Math.max(1, total <= 0 ? total + 24 : total)} Giờ`;
+      outDateTime = addHours(inDateTime, hoursCount);
+      outTimeStr = `${String(outDateTime.getHours()).padStart(2, "0")}:${String(outDateTime.getMinutes()).padStart(2, "0")}`;
+      return {
+        badge: `${hoursCount} Giờ`,
+        inDateTime,
+        outDateTime,
+        outTimeStr,
+      };
     }
-    if (rentalType === "OVERNIGHT") return "Qua đêm";
-    if (rentalType === "HALF_DAY") return "1 Buổi";
-    return `${Math.max(1, differenceInDays(checkOutDate, checkInDate))} Ngày`;
-  }, [rentalType, checkInTime, checkOutTime, checkInDate, checkOutDate]);
+
+    const [outH, outM] = checkOutTime.split(":").map(Number);
+    outDateTime.setHours(outH || 12, outM || 0, 0, 0);
+
+    const diffDays = Math.max(0, differenceInDays(outDateTime, inDateTime));
+    const totalHours = Math.max(0, differenceInHours(outDateTime, inDateTime));
+
+    let badge = `${Math.max(1, diffDays)} Ngày`;
+    if (rentalType === "OVERNIGHT") {
+      badge = diffDays > 1 ? `${diffDays} Đêm` : "1 Đêm";
+    } else if (rentalType === "HALF_DAY") {
+      badge = totalHours > 9 ? `1 Buổi ${totalHours - 9} Giờ` : "1 Buổi";
+    }
+
+    return {
+      badge,
+      inDateTime,
+      outDateTime,
+      outTimeStr,
+    };
+  }, [
+    rentalType,
+    checkInTime,
+    checkOutTime,
+    checkInDate,
+    checkOutDate,
+    hoursCount,
+  ]);
 
   // Fetch initial home data
   useEffect(() => {
@@ -329,31 +353,14 @@ export default function HomePage() {
     const handleClickOutside = (e) => {
       if (destRef.current && !destRef.current.contains(e.target))
         setIsDestDropdownOpen(false);
-      if (calendarRef.current && !calendarRef.current.contains(e.target))
+      if (calendarRef.current && !calendarRef.current.contains(e.target)) {
         setIsCalendarOpen(false);
-      if (guestRef.current && !guestRef.current.contains(e.target))
-        setIsGuestOpen(false);
+        setActiveDatePicker(null);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const handleSelectDateFromCalendar = (date) => {
-    if (isBefore(date, today)) return;
-    if (calendarTarget === "checkIn") {
-      setCheckInDate(date);
-      if (isBefore(checkOutDate, date)) {
-        setCheckOutDate(rentalType === "DAY" ? addDays(date, 1) : date);
-      }
-    } else {
-      if (isBefore(date, checkInDate)) {
-        setCheckInDate(date);
-        setCheckOutDate(rentalType === "DAY" ? addDays(date, 1) : date);
-      } else {
-        setCheckOutDate(date);
-      }
-    }
-  };
 
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
@@ -364,9 +371,19 @@ export default function HomePage() {
     }
     query.append("rentalType", rentalType);
     query.append("checkInTime", checkInTime);
-    query.append("checkOutTime", checkOutTime);
+    query.append(
+      "checkOutTime",
+      rentalType === "HOUR" ? durationSummary.outTimeStr : checkOutTime,
+    );
     query.append("checkIn", format(checkInDate, "yyyy-MM-dd"));
-    query.append("checkOut", format(checkOutDate, "yyyy-MM-dd"));
+    query.append(
+      "checkOut",
+      format(
+        rentalType === "HOUR" ? durationSummary.outDateTime : checkOutDate,
+        "yyyy-MM-dd",
+      ),
+    );
+    query.append("hours", hoursCount.toString());
     query.append("adults", adults.toString());
     query.append("children", children.toString());
     query.append("rooms", rooms.toString());
@@ -425,7 +442,7 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* DROPDOWN GỢI Ý ĐIỂM ĐẾN (LIVE SEARCH HOẶC TOP TRENDING) */}
+                  {/* DROPDOWN GỢI Ý ĐIỂM ĐẾN */}
                   {isDestDropdownOpen && (
                     <div className="absolute left-0 top-full mt-2 w-full sm:w-[580px] bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 z-50 animate-in fade-in zoom-in-95 max-h-[380px] overflow-y-auto">
                       {searchSuggestions.length > 0 ? (
@@ -511,343 +528,443 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* HÀNG BỘ LỌC NGÀY & KHÁCH */}
+                {/* HÀNG BỘ LỌC NGÀY VÀ GIỜ KÈM POPUP ĐỒNG BỘ */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
-                  {/* Ô CHỌN NGÀY & HÌNH THỨC THUÊ */}
-                  <div
-                    ref={calendarRef}
-                    className="relative md:col-span-7 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center justify-between hover:border-blue-600 transition select-none"
-                    onClick={() => setIsCalendarOpen(!isCalendarOpen)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <CalendarIcon size={18} className="text-gray-400" />
-                      <div>
-                        <span className="text-[10px] font-black text-slate-500 block leading-tight">
-                          {rentalType === "HOUR"
-                            ? `Giờ (${checkInTime})`
-                            : `Nhận (${checkInTime})`}
-                        </span>
-                        <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
-                          {safeFormatDate(checkInDate, "dd-MM-yyyy")}
-                        </span>
+                  <div ref={calendarRef} className="relative md:col-span-9">
+                    <div
+                      onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                      className="bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 h-12 cursor-pointer flex items-center justify-between hover:border-blue-600 transition select-none"
+                    >
+                      <div className="flex items-center gap-2">
+                        <CalendarIcon size={18} className="text-gray-400" />
+                        <div>
+                          <span className="text-[10px] font-black text-slate-500 block leading-tight">
+                            {rentalType === "HOUR"
+                              ? `Giờ (${checkInTime})`
+                              : `Nhận (${checkInTime})`}
+                          </span>
+                          <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
+                            {safeFormatDate(checkInDate, "dd-MM-yyyy")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                        {durationSummary.badge}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Users size={18} className="text-gray-400" />
+                        <div>
+                          <span className="text-[10px] font-black text-gray-500 block leading-tight">
+                            Khách & Phòng
+                          </span>
+                          <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
+                            {adults} Lớn
+                            {children > 0 ? `, ${children} Trẻ` : ""} · {rooms}{" "}
+                            P
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
-                      {durationBadgeLabel}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <CalendarIcon size={18} className="text-gray-400" />
-                      <div>
-                        <span className="text-[10px] font-black text-gray-600 block leading-tight">
-                          Trả ({checkOutTime})
-                        </span>
-                        <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
-                          {safeFormatDate(checkOutDate, "dd-MM-yyyy")}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* POPUP 4 TABS LỊCH THUÊ PHÒNG */}
+                    {/* 🌟 POPUP CHỌN GIỜ ĐỒNG BỘ 100% VỚI HOTEL DETAIL 🌟 */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute left-0 top-full mt-2 z-50 bg-white border border-gray-200 rounded-3xl shadow-2xl p-5 w-[330px] sm:w-[500px] animate-in fade-in cursor-default"
+                        className="absolute left-0 top-full mt-2 z-50 bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 w-[340px] sm:w-[370px] space-y-4 animate-in fade-in cursor-default"
                       >
-                        {/* 4 Tabs: Giờ, Ngày, Đêm, Buổi */}
-                        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl mb-4">
-                          {[
-                            { id: "HOUR", label: "Giờ", icon: Clock },
-                            { id: "DAY", label: "Ngày", icon: Sun },
-                            { id: "OVERNIGHT", label: "Đêm", icon: Moon },
-                            { id: "HALF_DAY", label: "Buổi", icon: Hourglass },
-                          ].map((t) => {
-                            const Icon = t.icon;
-                            return (
-                              <button
-                                key={t.id}
-                                type="button"
-                                onClick={() => handleTabChange(t.id)}
-                                className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer ${
-                                  rentalType === t.id
-                                    ? "bg-[#006ce4] text-white shadow-xs"
-                                    : "text-slate-600 hover:text-slate-900"
-                                }`}
-                              >
-                                <Icon size={14} /> <span>{t.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Dropdown giờ nhận & Trả */}
-                        <div className="grid grid-cols-2 gap-3 mb-3">
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-700 block">
-                              Nhận phòng ({checkInTime})
-                            </label>
-                            <select
-                              value={checkInTime}
-                              onChange={(e) => setCheckInTime(e.target.value)}
-                              className="w-full h-10 px-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4]"
-                            >
-                              {[...Array(24)].map((_, i) => {
-                                const t = `${String(i).padStart(2, "0")}:00`;
-                                return (
-                                  <option key={t} value={t}>
-                                    {t}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-700 block">
-                              Trả phòng ({checkOutTime})
-                            </label>
-                            <select
-                              value={checkOutTime}
-                              onChange={(e) => setCheckOutTime(e.target.value)}
-                              className="w-full h-10 px-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-[#006ce4]"
-                            >
-                              {[...Array(24)].map((_, i) => {
-                                const t = `${String(i).padStart(2, "0")}:00`;
-                                return (
-                                  <option key={t} value={t}>
-                                    {t}
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* Chọn nhanh mục tiêu: Ngày nhận hay Ngày trả */}
-                        <div className="flex gap-2 mb-3">
+                        {/* 4 TABS: GIỜ, NGÀY, ĐÊM, BUỔI */}
+                        <div className="grid grid-cols-4 gap-1 p-1 bg-[#eef1f6] rounded-2xl">
                           <button
                             type="button"
-                            onClick={() => setCalendarTarget("checkIn")}
-                            className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold text-left transition ${
-                              calendarTarget === "checkIn"
-                                ? "border-[#006ce4] bg-blue-50/50 text-[#006ce4]"
-                                : "border-gray-200"
+                            onClick={() => handleTabChange("HOUR")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                              rentalType === "HOUR"
+                                ? "bg-[#006ce4] text-white shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
                             }`}
                           >
-                            <span className="text-[10px] text-gray-500 block font-normal">
-                              Ngày nhận:
-                            </span>
-                            {safeFormatDisplayDate(checkInDate)}
+                            <Clock size={14} /> <span>Giờ</span>
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => setCalendarTarget("checkOut")}
-                            className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold text-left transition ${
-                              calendarTarget === "checkOut"
-                                ? "border-[#006ce4] bg-blue-50/50 text-[#006ce4]"
-                                : "border-gray-200"
+                            onClick={() => handleTabChange("DAY")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                              rentalType === "DAY"
+                                ? "bg-[#006ce4] text-white shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
                             }`}
                           >
-                            <span className="text-[10px] text-gray-500 block font-normal">
-                              Ngày trả:
-                            </span>
-                            {safeFormatDisplayDate(checkOutDate)}
+                            <Sun size={14} /> <span>Ngày</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange("OVERNIGHT")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                              rentalType === "OVERNIGHT"
+                                ? "bg-[#006ce4] text-white shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            <Moon size={14} /> <span>Đêm</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange("HALF_DAY")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                              rentalType === "HALF_DAY"
+                                ? "bg-[#006ce4] text-white shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            <Hourglass size={14} /> <span>Buổi</span>
                           </button>
                         </div>
 
-                        {/* Lưới lịch */}
-                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs font-bold text-[#006ce4]">
-                              {calendarTarget === "checkIn"
-                                ? "👉 Chọn ngày nhận"
-                                : "👉 Chọn ngày trả"}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setCurrentCalendarMonth((p) =>
-                                    subMonths(p, 1),
-                                  )
-                                }
-                                disabled={isBefore(
-                                  startOfMonth(currentCalendarMonth),
-                                  startOfMonth(today),
-                                )}
-                                className="p-1 hover:bg-white rounded disabled:opacity-20 cursor-pointer"
+                        {/* NHẬN PHÒNG */}
+                        <div className="space-y-1.5 pt-1">
+                          <label className="text-xs font-bold text-slate-800 block">
+                            Nhận phòng
+                          </label>
+                          <div className="grid grid-cols-12 gap-2">
+                            <div className="col-span-4 relative">
+                              <select
+                                value={checkInTime}
+                                onChange={(e) => setCheckInTime(e.target.value)}
+                                className="w-full h-11 px-3 bg-white border border-[#006ce4] rounded-xl text-xs font-semibold text-slate-800 outline-none appearance-none cursor-pointer"
                               >
-                                <ChevronLeft size={16} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setCurrentCalendarMonth((p) =>
-                                    addMonths(p, 1),
-                                  )
-                                }
-                                className="p-1 hover:bg-white rounded cursor-pointer"
-                              >
-                                <ChevronRight size={16} />
-                              </button>
+                                {[...Array(24)].map((_, i) => {
+                                  const t = `${String(i).padStart(2, "0")}:00`;
+                                  return (
+                                    <option key={t} value={t}>
+                                      {t}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                              <ChevronDown
+                                size={15}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+                              />
                             </div>
-                          </div>
 
-                          {/* Grid tháng */}
-                          <div className="grid grid-cols-7 gap-1 text-center text-xs">
-                            {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map(
-                              (w, idx) => (
-                                <span
-                                  key={w}
-                                  className={`font-bold py-1 ${idx >= 5 ? "text-blue-600" : "text-gray-600"}`}
-                                >
-                                  {w}
+                            <div className="col-span-8 relative">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setActiveDatePicker(
+                                    activeDatePicker === "checkIn"
+                                      ? null
+                                      : "checkIn",
+                                  )
+                                }
+                                className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 flex items-center justify-between outline-none cursor-pointer hover:border-slate-400"
+                              >
+                                <span className="truncate">
+                                  {format(
+                                    checkInDate,
+                                    "eee, dd 'Thg' M, yyyy",
+                                    {
+                                      locale: vi,
+                                    },
+                                  )}
                                 </span>
-                              ),
-                            )}
-                            {Array.from({
-                              length:
-                                (getDay(startOfMonth(currentCalendarMonth)) +
-                                  6) %
-                                7,
-                            }).map((_, i) => (
-                              <div key={`blank-${i}`} className="h-8" />
-                            ))}
-                            {eachDayOfInterval({
-                              start: startOfMonth(currentCalendarMonth),
-                              end: endOfMonth(currentCalendarMonth),
-                            }).map((d) => {
-                              const isPast = isBefore(d, today);
-                              const target =
-                                calendarTarget === "checkIn"
-                                  ? checkInDate
-                                  : checkOutDate;
-                              const isSelected = isSameDay(d, target);
-                              return (
-                                <button
-                                  key={d.toISOString()}
-                                  type="button"
-                                  disabled={isPast}
-                                  onClick={() =>
-                                    handleSelectDateFromCalendar(d)
-                                  }
-                                  className={`h-8 w-full flex items-center justify-center rounded-lg font-bold text-xs transition ${
-                                    isPast
-                                      ? "text-gray-300 cursor-not-allowed"
-                                      : isSelected
-                                        ? "bg-[#006ce4] text-white shadow"
-                                        : "hover:bg-white text-gray-800"
-                                  }`}
-                                >
-                                  {format(d, "d")}
-                                </button>
-                              );
-                            })}
+                                <ChevronDown
+                                  size={15}
+                                  className="text-slate-500 shrink-0 ml-1"
+                                />
+                              </button>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="mt-3 pt-2 border-t flex justify-end">
+                        {/* TAB THEO GIỜ */}
+                        {rentalType === "HOUR" ? (
+                          <div className="space-y-1.5 pt-1">
+                            <label className="text-xs font-bold text-slate-800 block">
+                              Thời gian lưu trú
+                            </label>
+                            <div className="flex items-stretch border border-slate-300 rounded-xl h-11 overflow-hidden bg-white">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setHoursCount((prev) => Math.max(1, prev - 1))
+                                }
+                                className="w-12 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-r border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                              >
+                                <Minus size={16} />
+                              </button>
+
+                              <div className="flex-1 flex items-center justify-center font-extrabold text-xs text-slate-900 select-none">
+                                {hoursCount} Giờ
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setHoursCount((prev) =>
+                                    Math.min(24, prev + 1),
+                                  )
+                                }
+                                className="w-12 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-l border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-1.5 pt-1">
+                              <label className="text-xs font-bold text-slate-800 block">
+                                Trả phòng
+                              </label>
+                              <div className="grid grid-cols-12 gap-2">
+                                <div className="col-span-4 relative">
+                                  <select
+                                    value={checkOutTime}
+                                    onChange={(e) =>
+                                      setCheckOutTime(e.target.value)
+                                    }
+                                    className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 outline-none appearance-none cursor-pointer"
+                                  >
+                                    {[...Array(24)].map((_, i) => {
+                                      const t = `${String(i).padStart(2, "0")}:00`;
+                                      return (
+                                        <option key={t} value={t}>
+                                          {t}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                  <ChevronDown
+                                    size={15}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+                                  />
+                                </div>
+
+                                <div className="col-span-8 relative">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setActiveDatePicker(
+                                        activeDatePicker === "checkOut"
+                                          ? null
+                                          : "checkOut",
+                                      )
+                                    }
+                                    className="w-full h-11 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 flex items-center justify-between outline-none cursor-pointer hover:border-slate-400"
+                                  >
+                                    <span className="truncate">
+                                      {format(
+                                        checkOutDate,
+                                        "eee, dd 'Thg' M, yyyy",
+                                        { locale: vi },
+                                      )}
+                                    </span>
+                                    <ChevronDown
+                                      size={15}
+                                      className="text-slate-500 shrink-0 ml-1"
+                                    />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="w-full py-2.5 bg-[#eef5ff] text-[#006ce4] font-black text-xs text-center rounded-xl select-none">
+                              {durationSummary.badge}
+                            </div>
+                          </>
+                        )}
+
+                        {/* POPUP LỊCH THÁNG */}
+                        {activeDatePicker && (
+                          <div
+                            ref={datePickerPopupRef}
+                            className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xl animate-fadeIn"
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-xs font-bold text-[#006ce4]">
+                                {activeDatePicker === "checkIn"
+                                  ? "Chọn ngày nhận:"
+                                  : "Chọn ngày trả:"}{" "}
+                                {format(calendarMonth, "'Tháng' MM/yyyy", {
+                                  locale: vi,
+                                })}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCalendarMonth((p) => subMonths(p, 1))
+                                  }
+                                  disabled={isBefore(
+                                    startOfMonth(calendarMonth),
+                                    startOfMonth(today),
+                                  )}
+                                  className="p-1 hover:bg-slate-100 rounded disabled:opacity-20 cursor-pointer"
+                                >
+                                  <ChevronLeft size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCalendarMonth((p) => addMonths(p, 1))
+                                  }
+                                  className="p-1 hover:bg-slate-100 rounded cursor-pointer"
+                                >
+                                  <ChevronRight size={15} />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1 text-center text-[10px]">
+                              {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map(
+                                (d, idx) => (
+                                  <span
+                                    key={d}
+                                    className={`font-bold py-0.5 ${idx >= 5 ? "text-blue-600" : "text-slate-600"}`}
+                                  >
+                                    {d}
+                                  </span>
+                                ),
+                              )}
+                              {Array.from({
+                                length:
+                                  (getDay(startOfMonth(calendarMonth)) + 6) % 7,
+                              }).map((_, i) => (
+                                <div key={`blank-${i}`} className="h-6" />
+                              ))}
+                              {eachDayOfInterval({
+                                start: startOfMonth(calendarMonth),
+                                end: endOfMonth(calendarMonth),
+                              }).map((dayItem) => {
+                                const isPast = isBefore(dayItem, today);
+                                const isSelected = isSameDay(
+                                  dayItem,
+                                  activeDatePicker === "checkIn"
+                                    ? checkInDate
+                                    : checkOutDate,
+                                );
+                                return (
+                                  <button
+                                    key={dayItem.toISOString()}
+                                    type="button"
+                                    disabled={isPast}
+                                    onClick={() => {
+                                      if (activeDatePicker === "checkIn") {
+                                        setCheckInDate(dayItem);
+                                        if (isBefore(checkOutDate, dayItem)) {
+                                          setCheckOutDate(addDays(dayItem, 1));
+                                        }
+                                      } else {
+                                        if (isBefore(dayItem, checkInDate)) {
+                                          setCheckInDate(dayItem);
+                                          setCheckOutDate(addDays(dayItem, 1));
+                                        } else {
+                                          setCheckOutDate(dayItem);
+                                        }
+                                      }
+                                      setActiveDatePicker(null);
+                                    }}
+                                    className={`h-6 w-full flex items-center justify-center rounded font-bold text-[10px] transition ${
+                                      isPast
+                                        ? "text-slate-300 cursor-not-allowed"
+                                        : isSelected
+                                          ? "bg-[#006ce4] text-white shadow"
+                                          : "hover:bg-slate-100 text-slate-800"
+                                    }`}
+                                  >
+                                    {format(dayItem, "d")}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* NGƯỜI LỚN */}
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-xs font-bold text-slate-800">
+                            Người lớn
+                          </span>
+                          <div className="flex items-stretch border border-slate-300 rounded-xl h-10 w-32 overflow-hidden bg-white">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAdults((prev) => Math.max(1, prev - 1))
+                              }
+                              className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-r border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <div className="flex-1 flex items-center justify-center font-bold text-xs text-slate-900 select-none">
+                              {adults}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setAdults((prev) => prev + 1)}
+                              className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-l border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* TRẺ EM */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-800">
+                            Trẻ em
+                          </span>
+                          <div className="flex items-stretch border border-slate-300 rounded-xl h-10 w-32 overflow-hidden bg-white">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setChildren((prev) => Math.max(0, prev - 1))
+                              }
+                              className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-r border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <div className="flex-1 flex items-center justify-center font-bold text-xs text-slate-900 select-none">
+                              {children}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setChildren((prev) => prev + 1)}
+                              className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-l border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* NÚT TÌM PHÒNG */}
+                        <div className="pt-2">
                           <button
                             type="button"
-                            onClick={() => setIsCalendarOpen(false)}
-                            className="px-5 py-2 bg-[#003580] text-white font-bold rounded-xl text-xs cursor-pointer"
+                            onClick={() => {
+                              setIsCalendarOpen(false);
+                              handleSearchSubmit();
+                            }}
+                            className="w-full h-11 bg-[#006ce4] hover:bg-blue-600 text-white font-black text-sm rounded-xl shadow-md transition active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
                           >
-                            Xong
+                            <Search size={16} strokeWidth={2.5} />
+                            <span>Tìm phòng</span>
                           </button>
                         </div>
                       </div>
                     )}
                   </div>
 
-                  {/* Ô CHỌN SỐ LƯỢNG PHÒNG & KHÁCH */}
-                  <div
-                    ref={guestRef}
-                    className="relative md:col-span-3 bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 cursor-pointer flex items-center gap-2.5 hover:border-blue-600 transition select-none"
-                    onClick={() => setIsGuestOpen(!isGuestOpen)}
-                  >
-                    <Users size={20} className="text-gray-400 shrink-0" />
-                    <div className="leading-tight overflow-hidden">
-                      <span className="text-xs font-bold text-gray-800 block truncate">
-                        {rooms} Phòng · {adults} Lớn
-                      </span>
-                      <span className="text-[11px] text-gray-500 font-medium truncate block">
-                        {children > 0 ? `${children} trẻ em` : "0 trẻ em"}
-                      </span>
-                    </div>
-
-                    {isGuestOpen && (
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="absolute left-0 right-0 md:left-auto md:w-64 top-full mt-2 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 space-y-3 cursor-default"
-                      >
-                        {[
-                          {
-                            label: "Số phòng",
-                            val: rooms,
-                            set: setRooms,
-                            min: 1,
-                          },
-                          {
-                            label: "Người lớn",
-                            val: adults,
-                            set: setAdults,
-                            min: 1,
-                          },
-                          {
-                            label: "Trẻ em",
-                            val: children,
-                            set: setChildren,
-                            min: 0,
-                          },
-                        ].map((g) => (
-                          <div
-                            key={g.label}
-                            className="flex justify-between items-center"
-                          >
-                            <span className="text-xs font-bold text-gray-700">
-                              {g.label}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  g.set((v) => Math.max(g.min, v - 1))
-                                }
-                                className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                              >
-                                -
-                              </button>
-                              <span className="text-xs font-bold w-4 text-center">
-                                {g.val}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => g.set((v) => v + 1)}
-                                className="w-7 h-7 rounded border border-gray-300 font-bold hover:bg-gray-100 cursor-pointer"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setIsGuestOpen(false)}
-                          className="w-full py-2 bg-[#003580] text-white text-xs font-bold rounded-lg cursor-pointer"
-                        >
-                          Áp dụng
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* NÚT TÌM KIẾM */}
+                  {/* NÚT TÌM KIẾM TRÊN BANNER */}
                   <button
                     type="button"
                     onClick={handleSearchSubmit}
-                    className="md:col-span-2 h-full min-h-[48px] bg-[#003580] hover:bg-blue-900 text-white font-black text-base rounded-xl shadow-lg flex items-center justify-center transition active:scale-[0.98] cursor-pointer"
+                    className="md:col-span-3 h-full min-h-[48px] bg-[#003580] hover:bg-blue-900 text-white font-black text-base rounded-xl shadow-lg flex items-center justify-center transition active:scale-[0.98] cursor-pointer"
                   >
                     Tìm kiếm
                   </button>

@@ -22,6 +22,8 @@ import {
   CheckSquare,
   CheckCircle2,
   Tags,
+  ChevronDown,
+  Building2,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 import { LoadingSpinner } from "@/components/common";
@@ -39,15 +41,11 @@ const parseDotsToNumber = (val) => {
   return Number(cleanDigits) || 0;
 };
 
-function TimePickerDropdown({ value, onChange }) {
+// 🌟 BỘ CHỌN GIỜ ĐƯỢC THIẾT KẾ ĐÚNG HÌNH ẢNH: [14:00 🕒]
+function TimePickerInput({ value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [inputValue, setInputValue] = useState(value || "12:00");
   const containerRef = useRef(null);
   const selectedItemRef = useRef(null);
-
-  useEffect(() => {
-    setInputValue(value || "12:00");
-  }, [value]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -77,55 +75,40 @@ function TimePickerDropdown({ value, onChange }) {
     return list;
   }, []);
 
-  const handleSelect = (timeStr) => {
-    setInputValue(timeStr);
-    onChange(timeStr);
-    setIsOpen(false);
-  };
-
-  const handleManualInput = (e) => {
-    const val = e.target.value;
-    setInputValue(val);
-    onChange(val);
-  };
-
   return (
     <div className="relative inline-block" ref={containerRef}>
-      <div
-        className="flex items-center gap-1.5 border-b border-gray-300 pb-0.5 cursor-pointer hover:border-[#003580] transition"
+      <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between gap-2 px-3 py-1.5 bg-white border border-slate-300 hover:border-[#006ce4] rounded-full text-xs font-semibold text-slate-800 cursor-pointer transition shadow-2xs min-w-[90px]"
       >
-        <input
-          type="text"
-          value={inputValue}
-          onChange={handleManualInput}
-          onFocus={() => setIsOpen(true)}
-          className="w-12 text-xs font-bold text-gray-900 outline-none bg-transparent cursor-text"
-          placeholder="12:00"
-        />
-        <Clock size={13} className="text-[#006ce4] cursor-pointer" />
-      </div>
+        <span>{value || "12:00"}</span>
+        <Clock size={14} className="text-slate-500" />
+      </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-28 bg-white border border-gray-200 rounded-2xl shadow-xl py-1 z-50 max-h-48 overflow-y-auto">
+        <div className="absolute top-full left-0 mt-1.5 w-28 bg-white border border-slate-200 rounded-2xl shadow-xl py-1 z-50 max-h-48 overflow-y-auto animate-in fade-in">
           {timesList.map((t) => {
-            const isSelected = t === inputValue;
+            const isSelected = t === value;
             return (
               <div
                 key={t}
                 ref={isSelected ? selectedItemRef : null}
-                onClick={() => handleSelect(t)}
+                onClick={() => {
+                  onChange(t);
+                  setIsOpen(false);
+                }}
                 className={`px-3 py-1.5 flex items-center justify-between text-xs cursor-pointer transition ${
                   isSelected
                     ? "font-bold text-[#003580] bg-blue-50"
-                    : "text-gray-700 hover:bg-gray-50"
+                    : "text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 <span>{t}</span>
                 {isSelected && (
                   <Check
                     size={13}
-                    className="text-[#003580]"
+                    className="text-[#006ce4]"
                     strokeWidth={2.5}
                   />
                 )}
@@ -185,15 +168,34 @@ export default function RoomPricingPage() {
   const dropdownRef = useRef(null);
 
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
+
+  // 🌟 CẤU HÌNH THỜI GIAN THEO ĐÚNG HÌNH ẢNH (BẬT TẮT, GIỜ, BUỔI, ĐÊM, NGÀY, THÁNG)
   const [timeSettings, setTimeSettings] = useState({
+    enable_hourly: true,
+    enable_daily: true,
+    enable_overnight: true,
+    enable_halfday: true,
+    enable_monthly: false,
+
     hourly_grace_minutes: 30,
-    overnight_checkin: "22:00",
-    overnight_checkout: "11:00",
+
     daily_checkin: "14:00",
     daily_checkout: "12:00",
+    daily_grace_type: "late_only", // 'late_only' (Trả muộn quá) hoặc 'both' (Nhận sớm + Trả muộn quá)
     daily_grace_hours: 6,
+
+    overnight_checkin: "22:00",
+    overnight_checkout: "12:00",
+    overnight_enable_day_fee: false,
+    overnight_grace_hours: 12,
+
+    halfday_checkin: "12:00",
+    halfday_checkout: "21:00",
   });
+
+  const [isDailyGraceDropdownOpen, setIsDailyGraceDropdownOpen] =
+    useState(false);
+  const dailyGraceDropdownRef = useRef(null);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -204,6 +206,12 @@ export default function RoomPricingPage() {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsRoomDropdownOpen(false);
+      }
+      if (
+        dailyGraceDropdownRef.current &&
+        !dailyGraceDropdownRef.current.contains(event.target)
+      ) {
+        setIsDailyGraceDropdownOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -216,7 +224,8 @@ export default function RoomPricingPage() {
       const res = await apiClient.get(`/hotels/${hotelId}`);
       const h = res?.data?.hotel || res?.data || {};
 
-      setTimeSettings({
+      setTimeSettings((prev) => ({
+        ...prev,
         hourly_grace_minutes: Number(h.hourly_grace_minutes ?? 30),
         daily_grace_hours: Number(h.daily_grace_hours ?? 6),
         overnight_checkin: h.overnight_checkin_time
@@ -224,14 +233,20 @@ export default function RoomPricingPage() {
           : "22:00",
         overnight_checkout: h.overnight_checkout_time
           ? String(h.overnight_checkout_time).slice(0, 5)
-          : "11:00",
+          : "12:00",
+        halfday_checkin: h.halfday_checkin_time
+          ? String(h.halfday_checkin_time).slice(0, 5)
+          : "12:00",
+        halfday_checkout: h.halfday_checkout_time
+          ? String(h.halfday_checkout_time).slice(0, 5)
+          : "21:00",
         daily_checkin: h.checkin_time
           ? String(h.checkin_time).slice(0, 5)
           : "14:00",
         daily_checkout: h.checkout_time
           ? String(h.checkout_time).slice(0, 5)
           : "12:00",
-      });
+      }));
     } catch (err) {
       console.error("Lỗi lấy thông tin khách sạn từ DB:", err);
     }
@@ -266,23 +281,28 @@ export default function RoomPricingPage() {
           scope_branch: "all",
           scope_customer: "all",
           is_active: true,
-          room_prices: validRooms.map((r) => ({
-            room_id: r.id,
-            code: r.code || r.name,
-            name: r.name,
-            hourly_tiers:
-              r.hourly_tiers && r.hourly_tiers.length > 0
-                ? r.hourly_tiers
-                : [
-                    {
-                      from_hour: 1,
-                      calc_type: "each_hour",
-                      price: r.hourly_price || 100000,
-                    },
-                  ],
-            overnight_price: r.overnight_price || r.base_price || 300000,
-            daily_price: r.base_price || 200000,
-          })),
+          room_prices: validRooms.map((r) => {
+            const baseP = Number(r.base_price || 200000);
+            return {
+              room_id: r.id,
+              code: r.code || r.name,
+              name: r.name,
+              hourly_tiers:
+                r.hourly_tiers && r.hourly_tiers.length > 0
+                  ? r.hourly_tiers
+                  : [
+                      {
+                        from_hour: 1,
+                        calc_type: "each_hour",
+                        price: r.hourly_price || 100000,
+                      },
+                    ],
+              overnight_price: r.overnight_price || baseP,
+              half_day_price:
+                r.half_day_price || Math.round(baseP * 0.8) || 160000,
+              daily_price: baseP,
+            };
+          }),
         };
         setPriceBooks([defaultBook]);
         setExpandedRowId("default_pb");
@@ -302,23 +322,27 @@ export default function RoomPricingPage() {
     setEditingPriceBook(null);
     setModalTab("info");
 
-    const initialRoomPrices = availableRooms.map((r) => ({
-      room_id: r.id,
-      code: r.code || r.name,
-      name: r.name,
-      hourly_tiers:
-        r.hourly_tiers && r.hourly_tiers.length > 0
-          ? r.hourly_tiers
-          : [
-              {
-                from_hour: 1,
-                calc_type: "each_hour",
-                price: r.hourly_price || 100000,
-              },
-            ],
-      overnight_price: r.overnight_price || r.base_price || 300000,
-      daily_price: r.base_price || 200000,
-    }));
+    const initialRoomPrices = availableRooms.map((r) => {
+      const baseP = Number(r.base_price || 200000);
+      return {
+        room_id: r.id,
+        code: r.code || r.name,
+        name: r.name,
+        hourly_tiers:
+          r.hourly_tiers && r.hourly_tiers.length > 0
+            ? r.hourly_tiers
+            : [
+                {
+                  from_hour: 1,
+                  calc_type: "each_hour",
+                  price: r.hourly_price || 100000,
+                },
+              ],
+        overnight_price: r.overnight_price || baseP,
+        half_day_price: r.half_day_price || Math.round(baseP * 0.8) || 160000,
+        daily_price: baseP,
+      };
+    });
 
     setFormData({
       ...initialFormState,
@@ -351,6 +375,7 @@ export default function RoomPricingPage() {
           hourly_tiers: rp.hourly_tiers,
           hourly_price: rp.hourly_tiers?.[0]?.price || rp.hourly_price,
           overnight_price: rp.overnight_price,
+          half_day_price: rp.half_day_price,
           base_price: rp.daily_price,
         });
       }
@@ -393,6 +418,7 @@ export default function RoomPricingPage() {
       alert("Hạng phòng này đã có trong bảng giá!");
       return;
     }
+    const baseP = Number(room.base_price || 200000);
     const newRp = {
       room_id: room.id,
       code: room.code || room.name,
@@ -407,8 +433,9 @@ export default function RoomPricingPage() {
                 price: room.hourly_price || 100000,
               },
             ],
-      overnight_price: room.overnight_price || room.base_price || 300000,
-      daily_price: room.base_price || 200000,
+      overnight_price: room.overnight_price || baseP,
+      half_day_price: room.half_day_price || Math.round(baseP * 0.8) || 160000,
+      daily_price: baseP,
     };
     setFormData((prev) => ({
       ...prev,
@@ -484,21 +511,23 @@ export default function RoomPricingPage() {
     );
   }, [priceBooks, searchQuery]);
 
-  const handleSaveSettings = async (e) => {
-    e.preventDefault();
+  // 🌟 LƯU THẲNG CẤU HÌNH THỜI GIAN VÀO DATABASE QUA API
+  const handleSaveTimeSettings = async (e) => {
+    if (e) e.preventDefault();
     try {
       await apiClient.put(`/hotels/${selectedHotelId}`, {
         checkin_time: `${timeSettings.daily_checkin}:00`,
         checkout_time: `${timeSettings.daily_checkout}:00`,
         overnight_checkin_time: `${timeSettings.overnight_checkin}:00`,
         overnight_checkout_time: `${timeSettings.overnight_checkout}:00`,
+        halfday_checkin_time: `${timeSettings.halfday_checkin}:00`,
+        halfday_checkout_time: `${timeSettings.halfday_checkout}:00`,
         hourly_grace_minutes: Number(timeSettings.hourly_grace_minutes),
         daily_grace_hours: Number(timeSettings.daily_grace_hours),
       });
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-      setIsTimeModalOpen(false);
       await fetchHotelDetails(selectedHotelId);
     } catch (err) {
       alert("Lỗi lưu vào DB: " + (err.response?.data?.message || err.message));
@@ -577,6 +606,7 @@ export default function RoomPricingPage() {
       </div>
 
       {currentTab === "pricing" ? (
+        /* TAB 1: BẢNG GIÁ PHÒNG */
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
           <div className="md:col-span-3 space-y-4">
             <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-2">
@@ -600,8 +630,8 @@ export default function RoomPricingPage() {
                   Danh Sách Bảng Giá
                 </h1>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Thiết lập các khung giá giờ, giá qua đêm và giá ngày theo từng
-                  mùa
+                  Thiết lập các khung giá giờ, giá qua đêm, giá buổi và giá ngày
+                  theo từng mùa
                 </p>
               </div>
 
@@ -812,6 +842,9 @@ export default function RoomPricingPage() {
                                                 <th className="py-3 px-4 font-bold text-right">
                                                   Giá đêm
                                                 </th>
+                                                <th className="py-3 px-4 font-bold text-right text-[#003580]">
+                                                  Giá buổi
+                                                </th>
                                                 <th className="py-3 px-4 font-bold text-right">
                                                   Giá ngày
                                                 </th>
@@ -844,6 +877,12 @@ export default function RoomPricingPage() {
                                                       )}{" "}
                                                       đ
                                                     </td>
+                                                    <td className="py-3 px-4 text-right font-bold text-[#003580] tabular-nums">
+                                                      {formatNumberWithDots(
+                                                        rp.half_day_price,
+                                                      )}{" "}
+                                                      đ
+                                                    </td>
                                                     <td className="py-3 px-4 text-right font-bold text-[#ff6a00] tabular-nums">
                                                       {formatNumberWithDots(
                                                         rp.daily_price,
@@ -873,84 +912,454 @@ export default function RoomPricingPage() {
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-[#0a2540] tracking-tight">
-              Thiết lập phòng
-            </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Cấu hình mốc giờ nhận/trả phòng và cách tính phụ thu thời gian sử
-              dụng
-            </p>
+        /* ═══════════════════════════════════════════════════════════════════════ */
+        /* 🌟 TAB 2: GIAO DIỆN CÁC KHỐI CARD THIẾT KẾ Y HỆT HÌNH ẢNH BẠN GỬI 🌟 */
+        /* ═══════════════════════════════════════════════════════════════════════ */
+        <div className="space-y-4 max-w-4xl animate-in fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-[#0a2540] tracking-tight">
+                Thiết lập thời gian sử dụng phòng
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Cấu hình mốc giờ nhận, trả phòng và tự động tính thêm tiền khi
+                sử dụng quá giờ, nhận sớm hoặc trả muộn.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveTimeSettings}
+              className="px-6 py-2.5 bg-[#006ce4] hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shrink-0"
+            >
+              <Save size={15} /> <span>Lưu thiết lập</span>
+            </button>
           </div>
 
           {saveSuccess && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-2xl flex items-center gap-2 font-bold animate-fadeIn">
-              <CheckCircle2 size={16} className="text-emerald-600" />
+            <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-2xl flex items-center gap-2 font-bold animate-in fade-in">
+              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
               <span>
-                Đã lưu thành công thiết lập thời gian sử dụng phòng vào
+                Đã lưu thành công toàn bộ thiết lập thời gian sử dụng phòng vào
                 Database!
               </span>
             </div>
           )}
 
-          <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6">
-            <h2 className="text-base font-black text-[#0a2540] mb-4">
-              Cài đặt quy chuẩn thời gian
-            </h2>
-
-            <div className="border border-gray-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-gray-300 transition bg-white">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#003580] flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Calendar size={22} />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black uppercase text-gray-900 tracking-wider">
-                    Thiết lập thời gian sử dụng phòng
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Quy định thời gian nhận phòng, trả phòng, tính thêm giờ khi
-                    sử dụng quá thời gian...
-                  </p>
-
-                  <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-gray-600">
-                    <div className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-xl">
-                      Theo giờ:{" "}
-                      <b className="text-gray-900">
-                        Quá {timeSettings.hourly_grace_minutes}p tính 1h
-                      </b>
-                    </div>
-                    <div className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-xl">
-                      Qua đêm:{" "}
-                      <b className="text-gray-900">
-                        {timeSettings.overnight_checkin} -{" "}
-                        {timeSettings.overnight_checkout}
-                      </b>
-                    </div>
-                    <div className="bg-gray-50 border border-gray-200 px-3 py-1 rounded-xl">
-                      Cả ngày:{" "}
-                      <b className="text-gray-900">
-                        {timeSettings.daily_checkin} -{" "}
-                        {timeSettings.daily_checkout}
-                      </b>
-                    </div>
-                  </div>
-                </div>
+          {/* KHỐI 1: THUÊ THEO GIỜ */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Thuê theo giờ
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Tính tiền theo số giờ sử dụng, không cố định giờ nhận - trả
+                </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => setIsTimeModalOpen(true)}
-                className="px-5 py-2.5 border border-[#003580] text-[#003580] hover:bg-blue-50 font-bold text-xs rounded-xl transition cursor-pointer flex-shrink-0 active:scale-95 self-end sm:self-center"
+                onClick={() =>
+                  setTimeSettings((prev) => ({
+                    ...prev,
+                    enable_hourly: !prev.enable_hourly,
+                  }))
+                }
+                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
+                  timeSettings.enable_hourly ? "bg-[#006ce4]" : "bg-slate-300"
+                }`}
               >
-                Chi tiết
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    timeSettings.enable_hourly
+                      ? "translate-x-5"
+                      : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 text-xs text-slate-700 flex items-center gap-2 flex-wrap">
+              <span>
+                • Tính thêm <b className="text-slate-900">1 giờ</b> nếu sử dụng
+                quá
+              </span>
+              <div className="relative inline-block">
+                <select
+                  value={timeSettings.hourly_grace_minutes}
+                  onChange={(e) =>
+                    setTimeSettings({
+                      ...timeSettings,
+                      hourly_grace_minutes: Number(e.target.value),
+                    })
+                  }
+                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-full text-xs font-bold text-slate-800 outline-none cursor-pointer pr-7 appearance-none"
+                >
+                  <option value={15}>15 phút</option>
+                  <option value={30}>30 phút</option>
+                  <option value={45}>45 phút</option>
+                  <option value={60}>60 phút</option>
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* KHỐI 2: THUÊ NGÀY ĐÊM */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Thuê ngày đêm
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Khách nhận phòng buổi chiều và trả vào trưa hôm sau
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setTimeSettings((prev) => ({
+                    ...prev,
+                    enable_daily: !prev.enable_daily,
+                  }))
+                }
+                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
+                  timeSettings.enable_daily ? "bg-[#006ce4]" : "bg-slate-300"
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    timeSettings.enable_daily
+                      ? "translate-x-5"
+                      : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 space-y-3 text-xs text-slate-700">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>• Giờ nhận - trả quy định</span>
+                <TimePickerInput
+                  value={timeSettings.daily_checkin}
+                  onChange={(val) =>
+                    setTimeSettings((prev) => ({ ...prev, daily_checkin: val }))
+                  }
+                />
+                <span>đến</span>
+                <TimePickerInput
+                  value={timeSettings.daily_checkout}
+                  onChange={(val) =>
+                    setTimeSettings((prev) => ({
+                      ...prev,
+                      daily_checkout: val,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>
+                  • Tính thêm <b className="text-slate-900">1 ngày</b> khi
+                </span>
+
+                <div
+                  className="relative inline-block"
+                  ref={dailyGraceDropdownRef}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsDailyGraceDropdownOpen(!isDailyGraceDropdownOpen)
+                    }
+                    className="px-3 py-1.5 bg-white border border-[#006ce4] rounded-full text-xs font-semibold text-slate-800 flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>
+                      {timeSettings.daily_grace_type === "late_only"
+                        ? "Trả muộn quá"
+                        : "Nhận sớm + Trả muộn quá"}
+                    </span>
+                    <ChevronDown size={14} className="text-[#006ce4]" />
+                  </button>
+
+                  {isDailyGraceDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-1 z-50 animate-in fade-in">
+                      <div
+                        onClick={() => {
+                          setTimeSettings((prev) => ({
+                            ...prev,
+                            daily_grace_type: "late_only",
+                          }));
+                          setIsDailyGraceDropdownOpen(false);
+                        }}
+                        className="px-3.5 py-2 hover:bg-slate-50 flex items-center justify-between text-xs cursor-pointer text-slate-800 font-medium"
+                      >
+                        <span>Trả muộn quá</span>
+                        {timeSettings.daily_grace_type === "late_only" && (
+                          <Check
+                            size={14}
+                            className="text-[#006ce4]"
+                            strokeWidth={2.5}
+                          />
+                        )}
+                      </div>
+
+                      <div
+                        onClick={() => {
+                          setTimeSettings((prev) => ({
+                            ...prev,
+                            daily_grace_type: "both",
+                          }));
+                          setIsDailyGraceDropdownOpen(false);
+                        }}
+                        className="px-3.5 py-2 hover:bg-slate-50 flex items-center justify-between text-xs cursor-pointer text-slate-800 font-medium border-t border-slate-100"
+                      >
+                        <span>Nhận sớm + Trả muộn quá</span>
+                        {timeSettings.daily_grace_type === "both" && (
+                          <Check
+                            size={14}
+                            className="text-[#006ce4]"
+                            strokeWidth={2.5}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative inline-block">
+                  <select
+                    value={timeSettings.daily_grace_hours}
+                    onChange={(e) =>
+                      setTimeSettings({
+                        ...timeSettings,
+                        daily_grace_hours: Number(e.target.value),
+                      })
+                    }
+                    className="px-3 py-1.5 bg-white border border-slate-300 rounded-full text-xs font-bold text-slate-800 outline-none cursor-pointer pr-7 appearance-none"
+                  >
+                    <option value={4}>4 giờ</option>
+                    <option value={5}>5 giờ</option>
+                    <option value={6}>6 giờ</option>
+                    <option value={8}>8 giờ</option>
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* KHỐI 3: THUÊ QUA ĐÊM */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Thuê qua đêm
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Khách nhận phòng buổi tối và trả vào trưa hôm sau
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setTimeSettings((prev) => ({
+                    ...prev,
+                    enable_overnight: !prev.enable_overnight,
+                  }))
+                }
+                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
+                  timeSettings.enable_overnight
+                    ? "bg-[#006ce4]"
+                    : "bg-slate-300"
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    timeSettings.enable_overnight
+                      ? "translate-x-5"
+                      : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 space-y-3 text-xs text-slate-700">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>• Giờ nhận - trả quy định</span>
+                <TimePickerInput
+                  value={timeSettings.overnight_checkin}
+                  onChange={(val) =>
+                    setTimeSettings((prev) => ({
+                      ...prev,
+                      overnight_checkin: val,
+                    }))
+                  }
+                />
+                <span>đến</span>
+                <TimePickerInput
+                  value={timeSettings.overnight_checkout}
+                  onChange={(val) =>
+                    setTimeSettings((prev) => ({
+                      ...prev,
+                      overnight_checkout: val,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={timeSettings.overnight_enable_day_fee}
+                    onChange={(e) =>
+                      setTimeSettings((prev) => ({
+                        ...prev,
+                        overnight_enable_day_fee: e.target.checked,
+                      }))
+                    }
+                    className="rounded border-slate-300 text-[#006ce4] focus:ring-0 w-4 h-4 cursor-pointer"
+                  />
+                  <span>
+                    Tính thêm <b className="text-slate-900">1 ngày</b> nếu trả
+                    muộn quá
+                  </span>
+                </label>
+
+                <div className="relative inline-block">
+                  <select
+                    disabled={!timeSettings.overnight_enable_day_fee}
+                    value={timeSettings.overnight_grace_hours}
+                    onChange={(e) =>
+                      setTimeSettings({
+                        ...timeSettings,
+                        overnight_grace_hours: Number(e.target.value),
+                      })
+                    }
+                    className={`px-3 py-1.5 bg-white border border-slate-300 rounded-full text-xs font-bold text-slate-800 outline-none pr-7 appearance-none ${
+                      !timeSettings.overnight_enable_day_fee
+                        ? "opacity-50 cursor-not-allowed bg-slate-100"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    <option value={8}>8 giờ</option>
+                    <option value={10}>10 giờ</option>
+                    <option value={12}>12 giờ</option>
+                    <option value={14}>14 giờ</option>
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* KHỐI 4: THUÊ THEO BUỔI */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Thuê theo buổi
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Khách nhận và trả phòng trong cùng một ngày
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setTimeSettings((prev) => ({
+                    ...prev,
+                    enable_halfday: !prev.enable_halfday,
+                  }))
+                }
+                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
+                  timeSettings.enable_halfday ? "bg-[#006ce4]" : "bg-slate-300"
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    timeSettings.enable_halfday
+                      ? "translate-x-5"
+                      : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 text-xs text-slate-700 flex items-center gap-2 flex-wrap">
+              <span>• Giờ nhận - trả quy định</span>
+              <TimePickerInput
+                value={timeSettings.halfday_checkin}
+                onChange={(val) =>
+                  setTimeSettings((prev) => ({ ...prev, halfday_checkin: val }))
+                }
+              />
+              <span>đến</span>
+              <TimePickerInput
+                value={timeSettings.halfday_checkout}
+                onChange={(val) =>
+                  setTimeSettings((prev) => ({
+                    ...prev,
+                    halfday_checkout: val,
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          {/* KHỐI 5: THUÊ THEO THÁNG */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900">
+                  Thuê theo tháng
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Khách thuê dài hạn, trả phòng theo chu kỳ tháng
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setTimeSettings((prev) => ({
+                    ...prev,
+                    enable_monthly: !prev.enable_monthly,
+                  }))
+                }
+                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
+                  timeSettings.enable_monthly ? "bg-[#006ce4]" : "bg-slate-300"
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    timeSettings.enable_monthly
+                      ? "translate-x-5"
+                      : "translate-x-0"
+                  }`}
+                />
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL THIẾT LẬP BẢNG GIÁ */}
+      {/* MODAL THIẾT LẬP BẢNG GIÁ MỚI */}
       {isPricingModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-gray-200 flex flex-col max-h-[92vh] overflow-hidden font-sans">
@@ -1178,6 +1587,9 @@ export default function RoomPricingPage() {
                                   Giá giờ
                                 </div>
                                 <div className="py-1.5">Giá đêm</div>
+                                <div className="py-1.5 text-[#003580] font-bold">
+                                  Giá buổi
+                                </div>
                                 <div className="py-1.5">Giá ngày</div>
                               </td>
 
@@ -1289,6 +1701,34 @@ export default function RoomPricingPage() {
                                   <input
                                     type="text"
                                     inputMode="numeric"
+                                    value={formatNumberWithDots(
+                                      rp.half_day_price,
+                                    )}
+                                    onChange={(e) => {
+                                      const val = parseDotsToNumber(
+                                        e.target.value,
+                                      );
+                                      setFormData((prev) => ({
+                                        ...prev,
+                                        room_prices: prev.room_prices.map(
+                                          (item, i) =>
+                                            i === roomIdx
+                                              ? {
+                                                  ...item,
+                                                  half_day_price: val,
+                                                }
+                                              : item,
+                                        ),
+                                      }));
+                                    }}
+                                    className="w-28 text-right py-0.5 border-b border-[#003580] outline-none font-bold text-[#003580] text-xs"
+                                  />
+                                </div>
+
+                                <div>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
                                     value={formatNumberWithDots(rp.daily_price)}
                                     onChange={(e) => {
                                       const val = parseDotsToNumber(
@@ -1330,163 +1770,6 @@ export default function RoomPricingPage() {
                   type="button"
                   onClick={() => setIsPricingModalOpen(false)}
                   className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
-                >
-                  <Ban size={14} />
-                  <span>Bỏ qua</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL THIẾT LẬP THỜI GIAN SỬ DỤNG PHÒNG */}
-      {isTimeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-gray-200 flex flex-col font-sans">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-white">
-              <h3 className="font-black text-base text-[#0a2540]">
-                Thiết Lập Thời Gian Sử Dụng Phòng
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsTimeModalOpen(false)}
-                className="cursor-pointer text-gray-400 hover:text-gray-600 transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form
-              onSubmit={handleSaveSettings}
-              className="p-6 space-y-6 text-xs font-sans"
-            >
-              <div className="space-y-3">
-                <h4 className="font-black text-gray-900 uppercase tracking-wider text-xs">
-                  Theo giờ
-                </h4>
-                <div className="flex items-center justify-between pl-2">
-                  <span className="text-gray-700">
-                    • Tính thêm <b className="text-gray-900">1 giờ</b> khi sử
-                    dụng quá
-                  </span>
-                  <select
-                    value={timeSettings.hourly_grace_minutes}
-                    onChange={(e) =>
-                      setTimeSettings({
-                        ...timeSettings,
-                        hourly_grace_minutes: Number(e.target.value),
-                      })
-                    }
-                    className="w-32 py-1 px-2 border-b border-gray-300 outline-none focus:border-[#003580] font-bold text-gray-900 bg-transparent cursor-pointer text-right"
-                  >
-                    <option value={15}>15 phút</option>
-                    <option value={30}>30 phút</option>
-                    <option value={45}>45 phút</option>
-                    <option value={60}>60 phút</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <h4 className="font-black text-gray-900 uppercase tracking-wider text-xs">
-                  Qua đêm
-                </h4>
-                <div className="flex items-center justify-between pl-2">
-                  <span className="text-gray-700">
-                    • Giờ nhận - trả quy định
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <TimePickerDropdown
-                      value={timeSettings.overnight_checkin}
-                      onChange={(val) =>
-                        setTimeSettings((prev) => ({
-                          ...prev,
-                          overnight_checkin: val,
-                        }))
-                      }
-                    />
-                    <span className="text-gray-400">đến</span>
-                    <TimePickerDropdown
-                      value={timeSettings.overnight_checkout}
-                      onChange={(val) =>
-                        setTimeSettings((prev) => ({
-                          ...prev,
-                          overnight_checkout: val,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <h4 className="font-black text-gray-900 uppercase tracking-wider text-xs">
-                  Cả ngày
-                </h4>
-                <div className="flex items-center justify-between pl-2">
-                  <span className="text-gray-700">
-                    • Giờ nhận - trả quy định
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <TimePickerDropdown
-                      value={timeSettings.daily_checkin}
-                      onChange={(val) =>
-                        setTimeSettings((prev) => ({
-                          ...prev,
-                          daily_checkin: val,
-                        }))
-                      }
-                    />
-                    <span className="text-gray-400">đến</span>
-                    <TimePickerDropdown
-                      value={timeSettings.daily_checkout}
-                      onChange={(val) =>
-                        setTimeSettings((prev) => ({
-                          ...prev,
-                          daily_checkout: val,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pl-2 pt-1">
-                  <span className="text-gray-700">
-                    • Tính thêm <b className="text-gray-900">1 ngày</b> khi sử
-                    dụng quá
-                  </span>
-                  <select
-                    value={timeSettings.daily_grace_hours}
-                    onChange={(e) =>
-                      setTimeSettings({
-                        ...timeSettings,
-                        daily_grace_hours: Number(e.target.value),
-                      })
-                    }
-                    className="w-32 py-1 px-2 border-b border-gray-300 outline-none focus:border-[#003580] font-bold text-gray-900 bg-transparent cursor-pointer text-right"
-                  >
-                    <option value={4}>4 giờ</option>
-                    <option value={5}>5 giờ</option>
-                    <option value={6}>6 giờ</option>
-                    <option value={8}>8 giờ</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition active:scale-95"
-                >
-                  <Save size={14} />
-                  <span>Lưu cấu hình</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsTimeModalOpen(false)}
-                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
                 >
                   <Ban size={14} />
                   <span>Bỏ qua</span>

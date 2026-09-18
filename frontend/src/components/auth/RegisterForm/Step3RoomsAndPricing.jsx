@@ -100,6 +100,15 @@ export const ROOM_AMENITIES_OPTIONS = [
   { id: "toiletries", label: "Đồ vệ sinh cá nhân" },
 ];
 
+// Hàm phụ sinh danh sách số phòng tự động theo số tầng và số lượng
+const generateRoomNumbers = (roomIndex, count) => {
+  const floor = roomIndex + 1;
+  return Array.from({ length: count }, (_, i) => {
+    const roomNum = i + 1 < 10 ? `0${i + 1}` : `${i + 1}`;
+    return `P.${floor}${roomNum}`;
+  }).join(", ");
+};
+
 export const Step3RoomsAndPricing = ({
   data = {},
   onChange = () => {},
@@ -135,12 +144,9 @@ export const Step3RoomsAndPricing = ({
   };
 
   const handleAddRoom = () => {
-    const nextIdx = rooms.length + 1;
-    const initialAmount = 10;
-    const autoNumbers = Array.from(
-      { length: Math.min(initialAmount, 8) },
-      (_, i) => `P.${nextIdx}0${i + 1}`,
-    ).join(", ");
+    const nextIdx = rooms.length;
+    const initialAmount = 2; // Khởi tạo mặc định 2 phòng
+    const autoNumbers = generateRoomNumbers(nextIdx, initialAmount);
 
     const newRoom = {
       id: `room-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -148,8 +154,13 @@ export const Step3RoomsAndPricing = ({
       name: "Phòng Deluxe Giường Đôi",
       custom_name: "Deluxe Double Room",
       smoking_policy: "non_smoking",
+      // ĐỒNG BỘ TOÀN BỘ CÁC TRƯỜNG SỐ LƯỢNG ĐỂ BACKEND ĐỌC ĐÚNG
       amount: initialAmount,
+      total_rooms: initialAmount,
+      quantity: initialAmount,
+      room_count: initialAmount,
       roomNumbersText: autoNumbers,
+      room_numbers: autoNumbers,
       type: "Deluxe",
       room_view: "city_view",
       bed_type: "1 Giường đôi lớn (King/Queen Size)",
@@ -161,25 +172,27 @@ export const Step3RoomsAndPricing = ({
       images: [],
       thumbnail: "",
       roomAmenities: ["air_conditioner", "wifi", "hot_water", "tv_smart"],
+      amenities: ["air_conditioner", "wifi", "hot_water", "tv_smart"],
     };
     onChange({ rooms: [...rooms, newRoom] });
   };
 
   const handleUpdateRoom = (roomId, updates) => {
-    const updatedRooms = rooms.map((r) => {
+    const updatedRooms = rooms.map((r, rIdx) => {
       if (r.id !== roomId) return r;
       const merged = { ...r, ...updates };
 
+      // NẾU CẬP NHẬT SỐ LƯỢNG PHÒNG
       if (updates.amount !== undefined) {
-        const count = Math.max(1, Number(updates.amount) || 1);
+        const count = Math.max(1, parseInt(updates.amount, 10) || 1);
         merged.amount = count;
-        if (!r.roomNumbersText || r.roomNumbersText.includes("P.")) {
-          merged.roomNumbersText =
-            Array.from(
-              { length: Math.min(count, 8) },
-              (_, i) => `P.10${i + 1}`,
-            ).join(", ") + (count > 8 ? `... (+${count - 8} phòng)` : "");
-        }
+        merged.total_rooms = count;
+        merged.quantity = count;
+        merged.room_count = count;
+
+        const autoNumbers = generateRoomNumbers(rIdx, count);
+        merged.roomNumbersText = autoNumbers;
+        merged.room_numbers = autoNumbers;
       }
       return merged;
     });
@@ -331,6 +344,12 @@ export const Step3RoomsAndPricing = ({
               : room.image
                 ? [room.image]
                 : [];
+
+          // Đọc chính xác số phòng đang có
+          const roomCountVal =
+            room.amount !== undefined && room.amount !== null
+              ? room.amount
+              : (room.total_rooms ?? room.quantity ?? 1);
 
           return (
             <div
@@ -544,23 +563,35 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* SỐ LƯỢNG PHÒNG VẬT LÝ */}
-              <div className="w-full sm:w-1/3">
+              {/* SỐ LƯỢNG PHÒNG THỰC TẾ (BẢO TOÀN GIÁ TRỊ NHẬP) */}
+              <div className="w-full sm:w-1/2">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Số phòng thực tế (loại này)
+                  Số phòng thực tế (loại này) *
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={room.amount || 1}
-                  onChange={(e) =>
-                    handleUpdateRoom(room.id, {
-                      amount: Number(e.target.value),
-                    })
-                  }
-                  className="w-full h-11 px-3.5 text-sm font-black bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
-                />
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={roomCountVal}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleUpdateRoom(room.id, {
+                        amount: val === "" ? "" : Math.max(1, Number(val)),
+                      });
+                    }}
+                    onBlur={(e) => {
+                      if (!e.target.value || Number(e.target.value) < 1) {
+                        handleUpdateRoom(room.id, { amount: 1 });
+                      }
+                    }}
+                    className="w-32 h-11 px-3.5 text-sm font-black text-[#003580] bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4] text-center"
+                  />
+                  <span className="text-xs text-slate-500 font-medium">
+                    (Phòng đã sinh:{" "}
+                    <b>{room.roomNumbersText || "P.101, P.102..."}</b>)
+                  </span>
+                </div>
               </div>
 
               <hr className="border-slate-100 my-2" />
@@ -647,9 +678,11 @@ export const Step3RoomsAndPricing = ({
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {ROOM_AMENITIES_OPTIONS.map((am) => {
-                    const isChecked = (room.roomAmenities || []).includes(
-                      am.id,
-                    );
+                    const isChecked = (
+                      room.roomAmenities ||
+                      room.amenities ||
+                      []
+                    ).includes(am.id);
                     return (
                       <button
                         type="button"
@@ -657,7 +690,7 @@ export const Step3RoomsAndPricing = ({
                         onClick={() =>
                           toggleRoomAmenity(
                             room.id,
-                            room.roomAmenities || [],
+                            room.roomAmenities || room.amenities || [],
                             am.id,
                           )
                         }

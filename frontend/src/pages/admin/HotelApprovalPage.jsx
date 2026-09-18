@@ -31,21 +31,98 @@ const BACKEND_BASE_URL = (
 const DEFAULT_COVER =
   "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600";
 
+// Phân tích và chuyển đổi URL ảnh từ mọi định dạng API trả về
 const parseRealImageUrl = (item) => {
   if (!item) return DEFAULT_COVER;
-  let raw = String(
-    typeof item === "string"
-      ? item
-      : item.url || item.path || item.image_url || item.thumbnail || "",
-  ).trim();
+  let raw = "";
+
+  if (typeof item === "string") {
+    raw = item.trim();
+  } else if (typeof item === "object") {
+    raw = String(
+      item.path ||
+        item.url ||
+        item.image_url ||
+        item.imageUrl ||
+        item.thumbnail ||
+        item.image ||
+        "",
+    ).trim();
+  }
+
   if (!raw || raw.startsWith("blob:")) return DEFAULT_COVER;
+
+  // Chuẩn hóa dấu gạch chéo ngược trên hệ điều hành Windows
+  raw = raw.replace(/\\/g, "/");
+
   if (
     raw.startsWith("http://") ||
     raw.startsWith("https://") ||
     raw.startsWith("data:image/")
-  )
+  ) {
     return raw;
-  return `${BACKEND_BASE_URL}${raw.startsWith("/") ? raw : `/${raw}`}`;
+  }
+
+  const cleanPath = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${BACKEND_BASE_URL}${cleanPath}`;
+};
+
+// Hàm thông minh lấy đúng ảnh bìa của cơ sở lưu trú bên ngoài danh sách
+const getHotelCoverImage = (h) => {
+  if (!h) return DEFAULT_COVER;
+
+  // Xử lý nếu images là JSON string hoặc mảng
+  let images = [];
+  if (Array.isArray(h.images)) {
+    images = h.images;
+  } else if (Array.isArray(h.photos)) {
+    images = h.photos;
+  } else if (typeof h.images === "string" && h.images.trim().startsWith("[")) {
+    try {
+      images = JSON.parse(h.images);
+    } catch {
+      images = [];
+    }
+  }
+
+  // 1. Tìm ảnh đánh dấu là thumbnail của khách sạn (không thuộc phòng)
+  const thumbObj = images.find(
+    (img) =>
+      typeof img === "object" &&
+      (img.is_thumbnail === 1 ||
+        img.is_thumbnail === true ||
+        img.is_thumbnail === "1" ||
+        img.isThumbnail) &&
+      !img.room_id &&
+      !img.roomId,
+  );
+  if (thumbObj) return parseRealImageUrl(thumbObj);
+
+  // 2. Tìm ảnh cơ sở lưu trú không thuộc phòng
+  const propertyImg = images.find((img) => {
+    if (typeof img === "string") return true;
+    return typeof img === "object" && !img.room_id && !img.roomId;
+  });
+  if (propertyImg) return parseRealImageUrl(propertyImg);
+
+  // 3. Nếu có bất kỳ ảnh nào trong mảng ảnh
+  if (images.length > 0) {
+    return parseRealImageUrl(images[0]);
+  }
+
+  // 4. Lấy từ các thuộc tính trực tiếp của hotel
+  const directField =
+    h.thumbnail ||
+    h.thumbnail_url ||
+    h.cover_image ||
+    h.coverImage ||
+    h.image_url ||
+    h.imageUrl ||
+    h.image ||
+    h.avatar;
+  if (directField) return parseRealImageUrl(directField);
+
+  return DEFAULT_COVER;
 };
 
 const STATUS_TABS = [
@@ -192,9 +269,26 @@ export default function HotelApprovalPage() {
     statusFilter === "all" ? true : h.status === statusFilter,
   );
 
-  const hotelPropertyImages = (selectedHotel?.images || []).filter(
-    (img) => !img.room_id && !img.roomId,
-  );
+  // Chuẩn hóa danh sách ảnh cơ sở cho Modal
+  const rawModalImages = Array.isArray(selectedHotel?.images)
+    ? selectedHotel.images
+    : typeof selectedHotel?.images === "string" &&
+        selectedHotel.images.trim().startsWith("[")
+      ? (() => {
+          try {
+            return JSON.parse(selectedHotel.images);
+          } catch {
+            return [];
+          }
+        })()
+      : Array.isArray(selectedHotel?.photos)
+        ? selectedHotel.photos
+        : [];
+
+  const hotelPropertyImages = rawModalImages.filter((img) => {
+    if (typeof img === "string") return true;
+    return !img.room_id && !img.roomId;
+  });
 
   return (
     <div className="w-full pb-24 bg-gray-50/50 font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-8 space-y-6">
@@ -272,11 +366,7 @@ export default function HotelApprovalPage() {
       ) : filteredHotels.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredHotels.map((h) => {
-            const coverImage =
-              h.images?.find((img) => img.is_thumbnail && !img.room_id)?.path ||
-              h.images?.find((img) => !img.room_id)?.path ||
-              h.image ||
-              DEFAULT_COVER;
+            const finalCover = getHotelCoverImage(h);
 
             return (
               <div
@@ -286,7 +376,7 @@ export default function HotelApprovalPage() {
                 <div>
                   <div className="relative h-48 w-full bg-gray-100">
                     <img
-                      src={parseRealImageUrl(coverImage)}
+                      src={finalCover}
                       alt={h.name}
                       loading="lazy"
                       onError={(e) => {
@@ -625,6 +715,7 @@ export default function HotelApprovalPage() {
                             const roomImg =
                               room.image ||
                               room.thumbnail ||
+                              room.image_url ||
                               (Array.isArray(room.images) && room.images[0]);
 
                             return (
@@ -725,7 +816,7 @@ export default function HotelApprovalPage() {
                               className="group relative h-40 rounded-2xl overflow-hidden border border-gray-200 bg-gray-100"
                             >
                               <img
-                                src={parseRealImageUrl(img.path || img.url)}
+                                src={parseRealImageUrl(img)}
                                 alt="Ảnh cơ sở"
                                 loading="lazy"
                                 onError={(e) => {
@@ -733,7 +824,10 @@ export default function HotelApprovalPage() {
                                 }}
                                 className="w-full h-full object-cover"
                               />
-                              {img.is_thumbnail && (
+                              {(img.is_thumbnail === 1 ||
+                                img.is_thumbnail === true ||
+                                img.is_thumbnail === "1" ||
+                                img.isThumbnail) && (
                                 <span className="absolute top-2 left-2 bg-[#003580] text-white text-[9px] font-black px-2 py-0.5 rounded shadow">
                                   ★ Ảnh bìa
                                 </span>

@@ -152,7 +152,7 @@ export default function RoomManagementPage() {
   const [newRoomUnitInput, setNewRoomUnitInput] = useState("");
   const [newRoomUnitArea, setNewRoomUnitArea] = useState("Tầng 8");
 
-  // 🌟 KHỞI TẠO STATE CÓ CẢ PHỤ THU CỐ ĐỊNH VÀ BẬC THANG %
+  // KHỞI TẠO STATE CÓ CẢ PHỤ THU CỐ ĐỊNH VÀ BẬC THANG %
   const initialFormState = {
     hotel_id: "",
     code: "",
@@ -168,12 +168,10 @@ export default function RoomManagementPage() {
     overnight_price: "", // Qua đêm
     half_day_price: "", // Buổi
     hourly_price: "", // Giờ
-    // 🌟 CẤU HÌNH PHỤ THU:
-    auto_surcharge: true, // Bật/Tắt
-    surcharge_type: "tiered", // "hourly" (mỗi giờ) hoặc "tiered" (bậc thang %)
-    early_checkin_fee: "", // Nhận sớm (cố định đ/giờ)
-    late_checkout_fee: "", // Trả muộn (cố định đ/giờ)
-    // 🌟 DANH SÁCH BẬC THANG THEO % GIÁ PHÒNG:
+    auto_surcharge: true,
+    surcharge_type: "tiered",
+    early_checkin_fee: "",
+    late_checkout_fee: "",
     early_surcharge_tiers: [
       { hours: 1, percent: 10 },
       { hours: 2, percent: 30 },
@@ -184,7 +182,7 @@ export default function RoomManagementPage() {
     ],
     apply_to_all_rooms: false,
     description: "",
-    amount: 4,
+    amount: 1,
     bed_type: "1 Giường đôi King",
     room_area: 28,
     status: "active",
@@ -347,6 +345,7 @@ export default function RoomManagementPage() {
       ...initialFormState,
       hotel_id: selectedHotelId || (hotels[0]?.id ? String(hotels[0].id) : ""),
       code: "",
+      amount: 1,
       amenities: [],
       images: [],
     });
@@ -392,7 +391,6 @@ export default function RoomManagementPage() {
       })),
     );
 
-    // Đọc bậc thang từ database nếu có
     const earlyTiers =
       Array.isArray(room.early_surcharge_tiers) &&
       room.early_surcharge_tiers.length > 0
@@ -411,11 +409,21 @@ export default function RoomManagementPage() {
             { hours: 2, percent: 30 },
           ];
 
+    // Lấy chính xác số lượng phòng đã đăng ký
+    const roomAmount = Number(
+      room.amount ??
+        room.total_rooms ??
+        room.quantity ??
+        room.room_count ??
+        (relatedUnits.length > 0 ? relatedUnits.length : 1),
+    );
+
     setEditingRoom(room);
     setFormData({
       ...room,
       hotel_id: String(room.hotel_id || selectedHotelId),
       code: roomCode,
+      amount: roomAmount,
       base_price: baseP,
       overnight_price: overnightP,
       half_day_price: halfDayP,
@@ -439,7 +447,6 @@ export default function RoomManagementPage() {
     setIsModalOpen(true);
   };
 
-  // 🌟 THAO TÁC THÊM/XÓA BẬC THANG NHẬN SỚM
   const handleAddEarlyTier = () => {
     setFormData((prev) => {
       const currentTiers = prev.early_surcharge_tiers || [];
@@ -474,7 +481,6 @@ export default function RoomManagementPage() {
     }));
   };
 
-  // 🌟 THAO TÁC THÊM/XÓA BẬC THANG TRẢ MUỘN
   const handleAddLateTier = () => {
     setFormData((prev) => {
       const currentTiers = prev.late_surcharge_tiers || [];
@@ -517,20 +523,26 @@ export default function RoomManagementPage() {
     ) {
       return alert("Phòng này đã có trong danh sách!");
     }
-    setFormRoomUnits((prev) => [
-      ...prev,
+    const updatedUnits = [
+      ...formRoomUnits,
       {
         id: `temp_${Date.now()}`,
         name: trimmed,
         area: newRoomUnitArea || "Tầng 8",
         status: "available",
       },
-    ]);
+    ];
+    setFormRoomUnits(updatedUnits);
+    setFormData((prev) => ({
+      ...prev,
+      amount: Math.max(Number(prev.amount || 0), updatedUnits.length),
+    }));
     setNewRoomUnitInput("");
   };
 
   const handleRemoveUnitFromForm = (idx) => {
-    setFormRoomUnits((prev) => prev.filter((_, i) => i !== idx));
+    const updated = formRoomUnits.filter((_, i) => i !== idx);
+    setFormRoomUnits(updated);
   };
 
   const handleDeleteRoom = async (roomId, roomName) => {
@@ -599,7 +611,7 @@ export default function RoomManagementPage() {
     setIsRoomUnitModalOpen(true);
   };
 
-  // 🌟 LƯU HẠNG PHÒNG VÀ LƯU CẢ CẤU HÌNH BẬC THANG %
+  // LƯU HẠNG PHÒNG: Bảo toàn đúng số lượng phòng đã nhập
   const handleSaveRoom = async (e) => {
     if (e) e.preventDefault();
     const targetHotelId = formData.hotel_id || selectedHotelId;
@@ -615,10 +627,10 @@ export default function RoomManagementPage() {
     try {
       const selectedImg =
         formData.images.length > 0 ? formData.images[0] : null;
-      const finalAmount =
-        formRoomUnits.length > 0
-          ? formRoomUnits.length
-          : Number(formData.amount || 1);
+
+      // Ưu tiên số lượng phòng được thiết lập tại form, nếu có nhiều phòng cụ thể hơn thì lấy theo số lượng phòng thực tế
+      const parsedAmount = Number(formData.amount || 1);
+      const finalAmount = Math.max(parsedAmount, formRoomUnits.length);
 
       const earlyFee = formData.auto_surcharge
         ? Number(formData.early_checkin_fee || 0)
@@ -642,7 +654,6 @@ export default function RoomManagementPage() {
           Number(formData.half_day_price) || Math.round(dailyPrice * 0.8),
         hourly_price:
           Number(formData.hourly_price) || Math.round(dailyPrice * 0.25),
-        // 🌟 CẤU HÌNH BẬC THANG VÀ PHỤ THU:
         auto_surcharge: Boolean(formData.auto_surcharge),
         surcharge_type: formData.surcharge_type,
         early_checkin_fee: earlyFee,
@@ -651,6 +662,7 @@ export default function RoomManagementPage() {
         late_surcharge_tiers: formData.late_surcharge_tiers || [],
         apply_to_all_rooms: Boolean(formData.apply_to_all_rooms),
         amount: finalAmount,
+        total_rooms: finalAmount,
         room_units: formRoomUnits,
         type: formData.type || "Tiêu chuẩn",
         bed_type: formData.bed_type || "1 Giường đôi King",
@@ -962,6 +974,15 @@ export default function RoomManagementPage() {
                         (Array.isArray(room.images) && room.images[0]) ||
                         "";
 
+                      // Đọc đúng số lượng phòng từ các trường API
+                      const displayAmount = Number(
+                        room.amount ??
+                          room.total_rooms ??
+                          room.quantity ??
+                          room.room_count ??
+                          1,
+                      );
+
                       return (
                         <React.Fragment key={room.id}>
                           <tr
@@ -998,7 +1019,7 @@ export default function RoomManagementPage() {
                               {room.name}
                             </td>
                             <td className="py-3 px-2 text-center font-bold text-gray-900">
-                              {room.amount || 2}
+                              {displayAmount}
                             </td>
                             <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
                               {formatVND(room.base_price)}
@@ -1070,7 +1091,7 @@ export default function RoomManagementPage() {
                                       Số lượng phòng
                                     </span>
                                     <b className="text-gray-900 text-sm">
-                                      {room.amount || 2}
+                                      {displayAmount}
                                     </b>
                                   </div>
                                   <div>
@@ -1388,7 +1409,7 @@ export default function RoomManagementPage() {
         </div>
       </div>
 
-      {/* ══════════════ MODAL HẠNG PHÒNG (CÓ PHỤ THU BẬC THANG %) ══════════════ */}
+      {/* MODAL HẠNG PHÒNG */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 my-auto">
@@ -1524,6 +1545,26 @@ export default function RoomManagementPage() {
                           }
                           placeholder="VD: PHÒNG KHÁNH HOÀ"
                           className="flex-1 py-1.5 border-b border-[#003580] outline-none text-gray-900 font-bold bg-transparent"
+                        />
+                      </div>
+
+                      {/* TRƯỜNG SỐ LƯỢNG PHÒNG VẬT LÝ */}
+                      <div className="flex items-center gap-3">
+                        <label className="w-28 text-gray-700 font-bold">
+                          Số lượng phòng
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="200"
+                          value={formData.amount}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              amount: Math.max(1, Number(e.target.value) || 1),
+                            })
+                          }
+                          className="w-24 py-1.5 border-b border-gray-300 outline-none text-gray-900 font-bold bg-transparent text-center"
                         />
                       </div>
                     </div>
@@ -1696,9 +1737,7 @@ export default function RoomManagementPage() {
                     </div>
                   </div>
 
-                  {/* ═══════════════════════════════════════════════════════════════════════ */}
-                  {/* 🌟 KHỐI PHỤ THU THÊM GIỜ: BẬC THANG THEO % GIÁ PHÒNG VÀ NÚT "+ THÊM GIỜ" 🌟 */}
-                  {/* ═══════════════════════════════════════════════════════════════════════ */}
+                  {/* PHỤ THU THÊM GIỜ */}
                   <div className="border border-gray-200 rounded-2xl p-4 sm:p-5 bg-white shadow-2xs space-y-4">
                     <div className="flex items-start justify-between gap-4">
                       <div>
@@ -1711,7 +1750,6 @@ export default function RoomManagementPage() {
                         </p>
                       </div>
 
-                      {/* NÚT BẬT TẮT TOGGLE */}
                       <button
                         type="button"
                         onClick={() =>
@@ -1761,10 +1799,9 @@ export default function RoomManagementPage() {
                           </select>
                         </div>
 
-                        {/* 🌟 NẾU CHỌN BẬC THANG THEO % GIÁ PHÒNG (ĐÚNG YÊU CẦU BẠN NÊU) 🌟 */}
                         {formData.surcharge_type === "tiered" ? (
                           <div className="space-y-4">
-                            {/* 1. NHẬN SỚM THEO BẬC THANG */}
+                            {/* 1. NHẬN SỚM */}
                             <div className="p-3.5 bg-gray-50/70 border border-gray-200 rounded-2xl space-y-2.5">
                               <div className="flex items-center justify-between">
                                 <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
@@ -1851,7 +1888,7 @@ export default function RoomManagementPage() {
                               </div>
                             </div>
 
-                            {/* 2. TRẢ MUỘN THEO BẬC THANG */}
+                            {/* 2. TRẢ MUỘN */}
                             <div className="p-3.5 bg-gray-50/70 border border-gray-200 rounded-2xl space-y-2.5">
                               <div className="flex items-center justify-between">
                                 <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
@@ -1939,7 +1976,6 @@ export default function RoomManagementPage() {
                             </div>
                           </div>
                         ) : (
-                          /* NẾU CHỌN TÍNH CỐ ĐỊNH THEO MỖI GIỜ (Đ/GIỜ) */
                           <div className="space-y-3">
                             <div className="p-3 bg-gray-50/70 border border-gray-200 rounded-xl flex items-center justify-between gap-4">
                               <span className="font-bold text-gray-800 text-xs">
@@ -2356,8 +2392,9 @@ export default function RoomManagementPage() {
                   </div>
 
                   <div className="text-[11px] text-gray-500 font-medium">
-                    💡 Số lượng phòng sẽ tự động cập nhật là{" "}
-                    <b>{formRoomUnits.length} phòng</b>.
+                    💡 Hạng phòng hiện đang có <b>{formData.amount} phòng</b>{" "}
+                    (trong đó {formRoomUnits.length} phòng đã được gán tên định
+                    danh cụ thể).
                   </div>
                 </div>
               )}
@@ -2383,7 +2420,7 @@ export default function RoomManagementPage() {
         </div>
       )}
 
-      {/* ══════════════ MODAL PHÒNG CỤ THỂ ══════════════ */}
+      {/* MODAL PHÒNG CỤ THỂ */}
       {isRoomUnitModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 my-auto">
