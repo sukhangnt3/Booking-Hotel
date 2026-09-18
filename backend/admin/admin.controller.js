@@ -1,7 +1,8 @@
+// backend/controllers/admin.controller.js
 const pool = require("../config/database");
 const bcrypt = require("bcryptjs");
 
-// 🌟 TỰ ĐỘNG ĐẢM BẢO BẢNG QUYẾT TOÁN TỒN TẠI ĐỂ ĐỐI SOÁT TRỪ NỢ
+// 🌟 ĐẢM BẢO BẢNG LỊCH SỬ QUYẾT TOÁN TỒN TẠI
 pool
   .query(
     `
@@ -9,13 +10,14 @@ pool
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     hotel_id TEXT NOT NULL,
     amount NUMERIC NOT NULL,
+    note TEXT,
     created_at TIMESTAMP DEFAULT NOW()
   );
 `,
   )
   .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
 
-// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & DOANH THU TỪNG KHÁCH SẠN ───
+// ─── 1. THỐNG KÊ DASHBOARD & QUYẾT TOÁN ĐỊNH KỲ (CHUẨN CHECKED_OUT) ───
 async function getStats(req, res, next) {
   try {
     const dbStart = Date.now();
@@ -27,7 +29,7 @@ async function getStats(req, res, next) {
     const minutes = Math.floor((uptimeSeconds % 3600) / 60);
     const uptimeFormatted = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-    const range = (req.query.range || "today").toLowerCase(); // 'today' | '7days' | '30days'
+    const range = (req.query.range || "today").toLowerCase();
 
     let trafficQuery = "";
     let timeBookingFilter = "";
@@ -92,7 +94,8 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN CHI TIẾT DOANH THU: DÙNG b.booking_code LIKE 'BK%' ĐỂ LỌC ĐƠN ONLINE
+    // 🌟 TRUY VẤN BẢNG QUYẾT TOÁN CƠ SỞ:
+    // Chỉ các đơn ĐÃ CHECK-OUT (checked_out) mới đủ điều kiện chuyển tiền trả Owner.
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -109,7 +112,10 @@ async function getStats(req, res, next) {
         u.email AS owner_email,
         u.phone AS owner_phone,
         COUNT(b.id)::int AS total_bookings,
+        -- Đếm số đơn đã check-out hoàn tất kỳ nghỉ
+        COUNT(CASE WHEN b.status = 'checked_out' THEN 1 END)::int AS completed_bookings,
         COALESCE(SUM(b.total_price), 0)::bigint AS total_gmv,
+        -- Hoa hồng sàn thu
         COALESCE(
           SUM(
             CASE 
@@ -119,44 +125,29 @@ async function getStats(req, res, next) {
           ), 
           0
         )::bigint AS admin_commission,
-        -- 🌟 TỰ ĐỘNG TRỪ SỐ TIỀN ĐÃ QUYẾT TOÁN -> TIỀN NỢ TỰ NHẢY VỀ 0Đ TỪ DATABASE
+        -- 🌟 TIỀN SẴN SÀNG QUYẾT TOÁN CHO OWNER: CHỈ TÍNH CÁC ĐƠN ĐÃ CHECK-OUT VÀ TRỪ ĐI TIỀN ĐÃ CHUYỂN
         GREATEST(
           0,
           COALESCE(
             SUM(
               CASE 
-                WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
-                ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
+                WHEN b.status = 'checked_out' THEN 
+                  COALESCE(b.hotel_payout, ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0)))
+                ELSE 0
               END
             ), 
             0
           ) - COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0)
-        )::bigint AS owner_payout,
-        COALESCE(
-          SUM(
-            CASE 
-              WHEN b.status = 'checked_out' THEN COALESCE(b.hotel_payout, ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0)))
-              ELSE 0 
-            END
-          ),
-          0
-        )::bigint AS ready_to_payout,
-        CASE 
-          WHEN COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0) > 0 
-           AND COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0) >= COALESCE(SUM(b.hotel_payout), 0)
-          THEN true 
-          ELSE false 
-        END AS is_settled
+        )::bigint AS owner_payout
       FROM public.hotel h
       LEFT JOIN public.users u ON u.id = h.owner_id
       LEFT JOIN public.booking b 
         ON b.hotel_id = h.id 
        AND b.payment_status = 'paid'
        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-       -- 🛑 CHỈ LẤY ĐƠN ONLINE (BK), BỎ QUA ĐƠN KHÁCH LẺ (DP)
        AND b.booking_code LIKE 'BK%'
       GROUP BY h.id, u.id
-      ORDER BY total_gmv DESC, h.created_at DESC;
+      ORDER BY owner_payout DESC, total_gmv DESC, h.created_at DESC;
     `;
 
     const [
@@ -175,7 +166,6 @@ async function getStats(req, res, next) {
         `SELECT COUNT(*)::int AS count 
          FROM public.booking b 
          WHERE b.status IN ('confirmed', 'checked_in', 'checked_out') 
-           -- 🛑 CHỈ ĐẾM ĐƠN ONLINE SÀN
            AND b.booking_code LIKE 'BK%'
            ${timeBookingFilter}`,
       ),
@@ -194,14 +184,15 @@ async function getStats(req, res, next) {
              ), 
              0
            )::bigint AS commission_revenue,
-           -- 🌟 CÔNG NỢ TỔNG CỦA ADMIN: TRỪ TOÀN BỘ TIỀN ĐÃ GIẢI NGÂN
+           -- Tổng công nợ sàn cần trả cho các owner từ các đơn check-out
            GREATEST(
              0,
              COALESCE(
                SUM(
                  CASE 
-                   WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
-                   ELSE (b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))
+                   WHEN b.status = 'checked_out' THEN 
+                     COALESCE(b.hotel_payout, (b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0)))
+                   ELSE 0
                  END
                ), 
                0
@@ -211,7 +202,6 @@ async function getStats(req, res, next) {
          JOIN public.hotel h ON h.id = b.hotel_id
          WHERE b.payment_status = 'paid'
            AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-           -- 🛑 CHỈ TÍNH DOANH SỐ ĐƠN ONLINE TỪ SÀN
            AND b.booking_code LIKE 'BK%'
            ${timeBookingFilter}`,
       ),
@@ -247,7 +237,43 @@ async function getStats(req, res, next) {
   }
 }
 
-// ─── 2. DANH SÁCH NGƯỜI DÙNG ───
+// 🌟 2. XÁC NHẬN CHUYỂN TIỀN QUYẾT TOÁN (LƯU VÀO DATABASE ĐỂ TRỪ TIỀN VĨNH VIỄN)
+async function confirmPayout(req, res) {
+  try {
+    const { hotel_id, hotelId, amount, note } = req.body;
+    const targetHotelId = hotel_id || hotelId;
+    const payoutAmount = Number(amount || 0);
+
+    if (!targetHotelId || payoutAmount <= 0) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Thông tin quyết toán không hợp lệ.",
+        });
+    }
+
+    await pool.query(
+      `INSERT INTO public.payout_settlement (hotel_id, amount, note, created_at)
+       VALUES ($1, $2, $3, NOW())`,
+      [
+        String(targetHotelId),
+        payoutAmount,
+        note || "Quyết toán định kỳ GoStay",
+      ],
+    );
+
+    return res.json({
+      success: true,
+      message: `Đã ghi nhận quyết toán thành công ${payoutAmount.toLocaleString("vi-VN")} ₫ cho khách sạn!`,
+    });
+  } catch (error) {
+    console.error("❌ LỖI CONFIRM_PAYOUT:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─── 3. DANH SÁCH NGƯỜI DÙNG ───
 async function listUsers(req, res, next) {
   try {
     let search = (req.query.search || "").toString().trim();
@@ -291,12 +317,11 @@ async function listUsers(req, res, next) {
       total: result.rowCount,
     });
   } catch (error) {
-    console.error("❌ LỖI LIST_USERS:", error);
     return next(error);
   }
 }
 
-// ─── 3. TẠO TÀI KHOẢN MỚI ───
+// ─── 4. TẠO TÀI KHOẢN MỚI ───
 async function createUser(req, res, next) {
   const { full_name, email, phone, password, role } = req.body;
 
@@ -365,14 +390,13 @@ async function createUser(req, res, next) {
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("❌ LỖI CREATE_USER:", error);
     return next(error);
   } finally {
     client.release();
   }
 }
 
-// ─── 4. CẬP NHẬT ROLE ───
+// ─── 5. CẬP NHẬT ROLE ───
 async function updateUserRole(req, res, next) {
   const userId = req.params.id;
   let newRole = (req.body.role || "").toString().trim().toUpperCase();
@@ -424,7 +448,7 @@ async function updateUserRole(req, res, next) {
   }
 }
 
-// ─── 5. KHÓA / MỞ KHÓA TÀI KHOẢN ───
+// ─── 6. KHÓA / MỞ KHÓA TÀI KHOẢN ───
 async function toggleUserStatus(req, res, next) {
   const userId = req.params.id;
   try {
@@ -452,7 +476,7 @@ async function toggleUserStatus(req, res, next) {
   }
 }
 
-// ─── 6. DUYỆT & CẬP NHẬT TRẠNG THÁI KHÁCH SẠN ───
+// ─── 7. DUYỆT & CẬP NHẬT TRẠNG THÁI KHÁCH SẠN ───
 async function listAdminHotels(req, res, next) {
   try {
     let status = (req.query.status || "").toString().trim();
@@ -496,7 +520,6 @@ async function listAdminHotels(req, res, next) {
       total: result.rowCount,
     });
   } catch (error) {
-    console.error("❌ LỖI LIST_ADMIN_HOTELS:", error);
     return next(error);
   }
 }
@@ -533,7 +556,7 @@ async function updateHotelStatus(req, res, next) {
   }
 }
 
-// ─── 7. GIÁM SÁT ĐƠN ĐẶT PHÒNG TOÀN SÀN & HOA HỒNG TỪNG ĐƠN ───
+// ─── 8. GIÁM SÁT ĐƠN ĐẶT PHÒNG TOÀN SÀN ───
 async function listAllBookings(req, res, next) {
   try {
     const status = (req.query.status || "").toString().trim();
@@ -550,7 +573,6 @@ async function listAllBookings(req, res, next) {
          b.*,
          h.name AS hotel_name,
          h.commission_rate,
-         -- 🌟 NẾU LÀ ĐƠN KHÁCH LẺ (DP) THÌ HOA HỒNG = 0, CHỦ KHÁCH SẠN HƯỞNG 100%
          CASE 
            WHEN b.booking_code LIKE 'DP%' THEN 0
            WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
@@ -579,7 +601,6 @@ async function listAllBookings(req, res, next) {
       total: result.rowCount,
     });
   } catch (error) {
-    console.error("❌ LỖI LIST_ALL_BOOKINGS:", error);
     return next(error);
   }
 }
@@ -613,7 +634,7 @@ async function updateBookingStatusAdmin(req, res, next) {
   }
 }
 
-// ─── 8. PROMOTIONS & REVIEWS DÀNH CHO ADMIN ───
+// ─── 9. PROMOTIONS & REVIEWS ───
 async function listPromotions(req, res, next) {
   try {
     const result = await pool.query(
@@ -656,6 +677,7 @@ async function deleteReview(req, res, next) {
 
 module.exports = {
   getStats,
+  confirmPayout,
   listUsers,
   createUser,
   updateUserRole,

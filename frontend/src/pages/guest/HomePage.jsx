@@ -164,7 +164,7 @@ export default function HomePage() {
   const [activeDatePicker, setActiveDatePicker] = useState(null);
   const [calendarMonth, setCalendarMonth] = useState(today);
 
-  // Guests & Rooms
+  // 🌟 GUESTS & ROOMS
   const [rooms, setRooms] = useState(1);
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
@@ -568,7 +568,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* 🌟 POPUP CHỌN GIỜ ĐỒNG BỘ 100% VỚI HOTEL DETAIL 🌟 */}
+                    {/* POPUP CHỌN GIỜ & PHÒNG */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
@@ -942,6 +942,34 @@ export default function HomePage() {
                           </div>
                         </div>
 
+                        {/* 🌟 THÊM HÀNG CHỌN SỐ PHÒNG 🌟 */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-800">
+                            Số phòng
+                          </span>
+                          <div className="flex items-stretch border border-slate-300 rounded-xl h-10 w-32 overflow-hidden bg-white">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRooms((prev) => Math.max(1, prev - 1))
+                              }
+                              className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-r border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <div className="flex-1 flex items-center justify-center font-bold text-xs text-slate-900 select-none">
+                              {rooms}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setRooms((prev) => prev + 1)}
+                              className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-l border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                        </div>
+
                         {/* NÚT TÌM PHÒNG */}
                         <div className="pt-2">
                           <button
@@ -1052,7 +1080,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* SECTION 2: CHỖ NGHỈ MỚI NHẤT (CAROUSEL) */}
+      {/* SECTION 2: CHỖ NGHỈ MỚI NHẤT */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 select-none">
         <div className="mb-6 flex items-center justify-between">
           <div>

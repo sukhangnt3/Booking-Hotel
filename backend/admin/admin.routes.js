@@ -52,7 +52,13 @@ if (typeof requireRole === "function") {
 
 // ─── ĐĂNG KÝ CÁC ROUTE ADMIN ───
 if (adminController) {
+  // Thống kê & Báo cáo Dashboard
   router.get("/stats", adminController.getStats);
+
+  // 🌟 ROUTE QUYẾT TOÁN CHO OWNER (LƯU VÀO DATABASE)
+  if (typeof adminController.confirmPayout === "function") {
+    router.post("/payouts/confirm", adminController.confirmPayout);
+  }
 
   // Quản lý Users
   router.get("/users", adminController.listUsers);

@@ -23,6 +23,7 @@ import {
   X,
   Check,
   Loader2,
+  CalendarDays,
 } from "lucide-react";
 import {
   AreaChart,
@@ -56,17 +57,6 @@ export default function AdminDashboardPage() {
   const [pendingList, setPendingList] = useState([]);
   const [hotelRevenues, setHotelRevenues] = useState([]);
 
-  // BỘ NHỚ LƯU TRẠNG THÁI ĐÃ QUYẾT TOÁN CỦA KHÁCH SẠN
-  const [settledHotelsMap, setSettledHotelsMap] = useState(() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("admin_settled_hotels_map") || "{}",
-      );
-    } catch {
-      return {};
-    }
-  });
-
   // Filter & Phân trang
   const [hotelSearch, setHotelSearch] = useState("");
   const [sortBy, setSortBy] = useState("payout_desc");
@@ -80,7 +70,6 @@ export default function AdminDashboardPage() {
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
 
-  // Đóng modal khi bấm Escape
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape" && selectedPayoutHotel && !isConfirming) {
@@ -106,26 +95,6 @@ export default function AdminDashboardPage() {
         : hotelsRes?.hotels || hotelsRes?.data || [];
 
       const rawHotelRevenues = data.hotelRevenues || [];
-      const currentSettledMap = JSON.parse(
-        localStorage.getItem("admin_settled_hotels_map") || "{}",
-      );
-
-      const mergedHotelRevenues = rawHotelRevenues.map((h) => {
-        const isSettledAlready =
-          currentSettledMap[h.hotel_id] ||
-          h.is_settled ||
-          h.payout_status === "settled";
-        return {
-          ...h,
-          owner_payout: isSettledAlready ? 0 : Number(h.owner_payout || 0),
-          is_settled: isSettledAlready,
-        };
-      });
-
-      const realOwnerPayout = mergedHotelRevenues.reduce(
-        (sum, h) => sum + Number(h.owner_payout || 0),
-        0,
-      );
 
       setStats({
         totalGMV: Number(data.totalGMV || 0),
@@ -133,12 +102,12 @@ export default function AdminDashboardPage() {
         totalBookings: Number(data.totalBookings || 0),
         totalHotels: Number(data.totalHotels || 0),
         totalUsers: Number(data.totalUsers || 0),
-        totalOwnerPayout: realOwnerPayout,
+        totalOwnerPayout: Number(data.totalOwnerPayout || 0),
         pendingHotels: Number(data.pendingHotels || hotelsData.length || 0),
       });
 
       setPendingList(hotelsData.slice(0, 5));
-      setHotelRevenues(mergedHotelRevenues);
+      setHotelRevenues(rawHotelRevenues);
 
       if (Array.isArray(data.hourlyTraffic) && data.hourlyTraffic.length > 0) {
         setTrafficData(data.hourlyTraffic);
@@ -168,57 +137,37 @@ export default function AdminDashboardPage() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // XÁC NHẬN QUYẾT TOÁN CHO CHỦ KHÁCH SẠN
+  // 🌟 XÁC NHẬN QUYẾT TOÁN ĐỊNH KỲ CHO CHỦ KHÁCH SẠN
   const handleConfirmPayout = async () => {
     if (!selectedPayoutHotel) return;
     setIsConfirming(true);
 
     const hotelId = selectedPayoutHotel.hotel_id;
-    const amount = selectedPayoutHotel.owner_payout;
+    const amount = Number(selectedPayoutHotel.owner_payout || 0);
     const hotelName = selectedPayoutHotel.hotel_name;
 
     try {
-      await apiClient.post("/payments/payouts/confirm", {
-        hotelId,
+      await apiClient.post("/admin/payouts/confirm", {
         hotel_id: hotelId,
         amount,
+        note: `Quyết toán chu kỳ tuần cho khách sạn [${hotelName}]`,
       });
-    } catch (e) {
-      console.warn("Lưu Database cục bộ...", e.message);
-    } finally {
-      const updatedSettledMap = { ...settledHotelsMap, [hotelId]: true };
-      setSettledHotelsMap(updatedSettledMap);
-      localStorage.setItem(
-        "admin_settled_hotels_map",
-        JSON.stringify(updatedSettledMap),
-      );
-
-      setHotelRevenues((prev) =>
-        prev.map((h) =>
-          h.hotel_id === hotelId
-            ? { ...h, owner_payout: 0, is_settled: true }
-            : h,
-        ),
-      );
-
-      setStats((prev) => ({
-        ...prev,
-        totalOwnerPayout: Math.max(
-          0,
-          prev.totalOwnerPayout - Number(amount || 0),
-        ),
-      }));
-
-      setIsConfirming(false);
-      setSelectedPayoutHotel(null);
 
       alert(
-        `✓ THÀNH CÔNG! Đã hoàn tất quyết toán ${formatVND(amount)} cho cơ sở [${hotelName}]. Số tiền đã về 0 ₫!`,
+        `✓ THÀNH CÔNG! Đã hoàn tất quyết toán ${formatVND(amount)} cho cơ sở [${hotelName}]. Số tiền nợ kỳ này đã về 0 ₫!`,
       );
+
+      setSelectedPayoutHotel(null);
+      await fetchDashboardData();
+    } catch (e) {
+      alert(
+        "Lỗi khi lưu quyết toán: " + (e.response?.data?.message || e.message),
+      );
+    } finally {
+      setIsConfirming(false);
     }
   };
 
-  // PHÊ DUYỆT NHANH KHÁCH SẠN MỚI
   const handleQuickApprove = async (hotelId) => {
     try {
       await apiClient.patch(`/admin/hotels/${hotelId}/status`, {
@@ -231,7 +180,6 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Tóm tắt phân tích lưu lượng
   const analyticsSummary = useMemo(() => {
     const total = trafficData.reduce(
       (sum, item) => sum + Number(item.requests || 0),
@@ -253,7 +201,6 @@ export default function AdminDashboardPage() {
     return { total, avg, peak };
   }, [trafficData]);
 
-  // Danh sách doanh thu đã lọc & sắp xếp
   const processedHotelRevenues = useMemo(() => {
     let list = [...hotelRevenues];
 
@@ -301,11 +248,11 @@ export default function AdminDashboardPage() {
             Center)
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#0a2540] tracking-tight">
-            Giám Sát Doanh Thu & Quyết Toán Sàn
+            Giám Sát Doanh Thu & Quyết Toán Định Kỳ
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Tổng quan dòng tiền GMV, đối soát hoa hồng thực thu và phân phối
-            thanh toán cho cơ sở
+            Hệ thống đối soát hoa hồng thực thu và chuyển khoản định kỳ (Weekly
+            Payout) cho đối tác
           </p>
         </div>
 
@@ -374,7 +321,7 @@ export default function AdminDashboardPage() {
                 {formatVND(stats.totalOwnerPayout)}
               </h3>
               <p className="text-[11px] text-gray-500 font-medium">
-                Khoản chờ chuyển khoản quyết toán
+                Khoản đã check-out chờ quyết toán
               </p>
             </div>
 
@@ -403,13 +350,17 @@ export default function AdminDashboardPage() {
               <div>
                 <h3 className="font-black text-base text-[#0a2540] flex items-center gap-2">
                   <Building2 size={18} className="text-[#003580]" /> Quản Lý
-                  Doanh Thu & Quyết Toán Cơ Sở
+                  Quyết Toán Định Kỳ Cho Đối Tác
                   <span className="text-xs bg-blue-50 text-[#003580] px-2.5 py-0.5 rounded-full font-bold border border-blue-100">
                     {processedHotelRevenues.length} khách sạn
                   </span>
                 </h3>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Quét mã chuyển tiền &rarr; Bấm Xác Nhận để đưa tiền nợ về 0 ₫
+                <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
+                  <CalendarDays size={13} className="text-[#006ce4]" />
+                  <span>
+                    Chu kỳ thanh toán định kỳ: Chỉ quyết toán các đơn khách{" "}
+                    <strong>đã hoàn thành trả phòng</strong>
+                  </span>
                 </p>
               </div>
 
@@ -483,7 +434,7 @@ export default function AdminDashboardPage() {
                     </th>
                     <th className="py-3.5 px-3 text-right">Hoa Hồng Sàn Thu</th>
                     <th className="py-3.5 px-3 text-right">
-                      Tiền Phải Trả Owner
+                      Tiền Cần Quyết Toán
                     </th>
                     <th className="py-3.5 px-3 text-center">Thao Tác</th>
                   </tr>
@@ -491,8 +442,7 @@ export default function AdminDashboardPage() {
                 <tbody className="divide-y divide-gray-100 font-medium">
                   {paginatedHotelRevenues.length > 0 ? (
                     paginatedHotelRevenues.map((h) => {
-                      const isSettled =
-                        h.is_settled || Number(h.owner_payout || 0) <= 0;
+                      const isSettled = Number(h.owner_payout || 0) <= 0;
 
                       return (
                         <tr
@@ -504,8 +454,9 @@ export default function AdminDashboardPage() {
                               {h.hotel_name}
                             </strong>
                             <span className="text-[11px] text-gray-400 font-normal">
-                              {h.city || "Việt Nam"} • {h.total_bookings} đơn
-                              đặt
+                              {h.city || "Việt Nam"} • Đã hoàn thành:{" "}
+                              <b>{h.completed_bookings || 0}</b>/
+                              {h.total_bookings} đơn
                             </span>
                           </td>
                           <td className="py-3.5 px-3">
@@ -871,7 +822,7 @@ export default function AdminDashboardPage() {
               <div className="flex items-center gap-2">
                 <Wallet size={18} />
                 <h3 className="font-black text-base tracking-tight">
-                  Quyết Toán Cho Chủ Cơ Sở
+                  Quyết Toán Định Kỳ Cho Chủ Cơ Sở
                 </h3>
               </div>
               <button
@@ -900,6 +851,15 @@ export default function AdminDashboardPage() {
                   <span className="font-bold text-gray-800">
                     {selectedPayoutHotel.owner_name} (
                     {selectedPayoutHotel.owner_phone || "N/A"})
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 font-bold">
+                    Đơn hoàn tất (Check-out):
+                  </span>
+                  <span className="font-bold text-emerald-700">
+                    {selectedPayoutHotel.completed_bookings || 0} đơn đủ điều
+                    kiện
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -977,7 +937,6 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              {/* NÚT XÁC NHẬN */}
               <div className="pt-2 flex justify-end gap-2 border-t border-gray-100">
                 <button
                   type="button"

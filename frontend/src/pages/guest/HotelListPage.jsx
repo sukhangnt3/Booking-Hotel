@@ -224,7 +224,7 @@ export default function HotelListPage() {
       .catch(() => {});
   }, []);
 
-  // 🌟 GỌI API TÌM KIẾM KHÁCH SẠN
+  // GỌI API TÌM KIẾM KHÁCH SẠN
   useEffect(() => {
     let isMounted = true;
     const fetchHotelsAndFavorites = async () => {
@@ -532,7 +532,7 @@ export default function HotelListPage() {
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* THANH TÌM KIẾM NGANG ĐỒNG BỘ 100% VỚI HOTEL DETAIL */}
+        {/* THANH TÌM KIẾM NGANG */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6 relative">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
             {/* Ô 1: Điểm đến */}
@@ -600,7 +600,7 @@ export default function HotelListPage() {
               )}
             </div>
 
-            {/* Ô 2: Ô Lịch mở Popup theo phong cách chuẩn */}
+            {/* Ô 2: Ô Lịch mở Popup */}
             <div ref={calendarRef} className="relative md:col-span-5">
               <div
                 onClick={() => setIsCalendarOpen(!isCalendarOpen)}
@@ -631,13 +631,14 @@ export default function HotelListPage() {
                       Khách
                     </span>
                     <span className="text-xs font-bold text-slate-800 leading-none">
-                      {adults} Lớn{children > 0 ? `, ${children} Trẻ` : ""}
+                      {adults} Lớn{children > 0 ? `, ${children} Trẻ` : ""} ·{" "}
+                      {rooms} P
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* 🌟 POPUP CHỌN GIỜ ĐỒNG BỘ 100% 🌟 */}
+              {/* POPUP CHỌN GIỜ & PHÒNG */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
@@ -989,6 +990,34 @@ export default function HotelListPage() {
                       <button
                         type="button"
                         onClick={() => setChildren((prev) => prev + 1)}
+                        className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-l border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 🌟 BỔ SUNG BỘ ĐẾM SỐ PHÒNG 🌟 */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">
+                      Số phòng
+                    </span>
+                    <div className="flex items-stretch border border-slate-300 rounded-xl h-10 w-32 overflow-hidden bg-white">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRooms((prev) => Math.max(1, prev - 1))
+                        }
+                        className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-r border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <div className="flex-1 flex items-center justify-center font-bold text-xs text-slate-900 select-none">
+                        {rooms}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRooms((prev) => prev + 1)}
                         className="w-10 flex items-center justify-center text-slate-600 hover:bg-slate-50 border-l border-slate-300 active:bg-slate-100 cursor-pointer transition select-none"
                       >
                         <Plus size={14} />
