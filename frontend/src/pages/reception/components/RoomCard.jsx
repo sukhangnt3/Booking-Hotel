@@ -25,7 +25,6 @@ export default function RoomCard({
     room.status === "occupied" || room.status === "checkout_soon";
   const isIncoming = room.status === "incoming";
 
-  // Nhận diện trạng thái bẩn/cần dọn kể cả khi phòng ĐANG CÓ KHÁCH Ở
   const isDirty =
     room.status === "dirty" ||
     room.unit_status === "dirty" ||
@@ -34,13 +33,12 @@ export default function RoomCard({
   const isOccupiedAndDirty = isOccupied && isDirty;
   const isOverdue = isOccupied && occupiedInfo?.isOverdue;
 
-  // 🌟 ĐỌC HÌNH THỨC THUÊ ĐỂ HIỂN THỊ ĐÚNG ĐƠN GIÁ (GIỜ, ĐÊM, BUỔI, NGÀY)
   const b = room.booking;
   const rentalType = b?.rental_type || "DAY";
 
   const getPriceBadge = () => {
     if (b) {
-      return formatVND(b.total_price);
+      return `${formatVND(b.total_price)} ₫`;
     }
     if (rentalType === "HOUR") {
       return `${formatVND(room.hourly_price || Math.round(room.daily_price * 0.25))} ₫/h`;
@@ -93,7 +91,6 @@ export default function RoomCard({
             </span>
           )}
 
-          {/* Huy hiệu cảnh báo khi phòng Đang có khách mà yêu cầu dọn phòng */}
           {isOccupiedAndDirty && (
             <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-amber-500 text-white shadow-2xs animate-pulse">
               🧹 Cần dọn
@@ -102,7 +99,6 @@ export default function RoomCard({
         </div>
 
         <div className="flex items-center gap-1 relative">
-          {/* Nút trạng thái dọn dẹp */}
           {isDirty ? (
             <button
               type="button"
@@ -121,7 +117,6 @@ export default function RoomCard({
             </span>
           )}
 
-          {/* Nút ba chấm mở menu thao tác dọn phòng */}
           <button
             type="button"
             onClick={(e) => {
@@ -135,7 +130,6 @@ export default function RoomCard({
             <MoreVertical size={14} />
           </button>
 
-          {/* Menu popup */}
           {activeCleaningMenuId === room.id && (
             <div
               onClick={(e) => e.stopPropagation()}
@@ -174,7 +168,7 @@ export default function RoomCard({
         </div>
       </div>
 
-      {/* ─── NỘI DUNG THẺ THEO TỪNG TRẠNG THÁI ─── */}
+      {/* ─── NỘI DUNG THẺ ─── */}
       {isIncoming ? (
         <div className="my-2 space-y-1">
           <div className="font-black text-gray-900 text-xs truncate flex items-center justify-between">
@@ -188,11 +182,10 @@ export default function RoomCard({
             {b?.guest_phone || "---"}
           </div>
 
-          {/* 🌟 CẢNH BÁO CỌC 30% ĐỂ LỄ TÂN KHÔNG BỊ QUÊN THU TIỀN */}
           {isDeposit && Number(remainingAmount) > 0 ? (
             <div className="pt-0.5 flex items-center justify-between gap-1 flex-wrap">
               <span className="inline-block px-1.5 py-0.5 bg-rose-100 border border-rose-200 rounded text-[10px] text-rose-700 font-black">
-                Cọc 30% (Thu: {formatVND(remainingAmount)})
+                Cọc 30% (Thu: {formatVND(remainingAmount)} ₫)
               </span>
               <span className="text-[10px] text-amber-900 font-bold">
                 ⏱️ {countdownText}

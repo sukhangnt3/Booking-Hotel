@@ -1,3 +1,4 @@
+// backend/controllers/owner.controller.js
 const crypto = require("crypto");
 const pool = require("../config/database");
 
@@ -21,6 +22,19 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS rental_type VARCHAR(50) DEFAULT 'DAY';
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) DEFAULT 'FULL';
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS guest_declarations jsonb DEFAULT '[]'::jsonb;
+
+      CREATE TABLE IF NOT EXISTS public.temporary_locks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        room_id UUID,
+        user_id UUID,
+        session_id TEXT,
+        lock_date DATE,
+        quantity INT DEFAULT 1,
+        lock_expires_at TIMESTAMP,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
     `);
   } catch (err) {
     console.warn("⚠️ Cảnh báo migration owner columns:", err.message);
@@ -99,7 +113,7 @@ function resolveDateRange(range) {
   );
 }
 
-// ─── 1. THỐNG KÊ DASHBOARD ───
+// ─── 1. THỐNG KÊ DASHBOARD (ĐỒNG BỘ DOANH THU ĐƠN PAID VỚI ADMIN) ───
 async function getOwnerStats(req, res, next) {
   try {
     const ownerId =
@@ -525,7 +539,7 @@ async function getOwnerBookings(req, res) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (ĐÃ SỬA GIỜ GIẤC, CỌC 30% & CLEANUP 15 PHÚT) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (TỰ ĐỘNG HỦY ĐƠN RÁC 15P, SỬA GIỜ GIẤC & CỌC 30%) ───
 async function getRoomMapData(req, res) {
   try {
     const { hotel_id: hotelId } = req.query;
@@ -534,7 +548,7 @@ async function getRoomMapData(req, res) {
         .status(400)
         .json({ success: false, message: "hotel_id là bắt buộc." });
 
-    // 🌟 1. TỰ ĐỘNG HỦY ĐƠN PENDING QUÁ 15P CHƯA THANH TOÁN (CHỐNG SPAM)
+    // 🌟 1. TỰ ĐỘNG HỦY CÁC ĐƠN CHỜ QUÁ 15 PHÚT CHƯA TRẢ TIỀN (CHỐNG SPAM)
     await pool
       .query(
         `
@@ -624,7 +638,6 @@ async function getRoomMapData(req, res) {
       if (match) {
         usedBookingIds.add(match.id);
 
-        // 🌟 TÍNH THỜI GIAN LƯU TRÚ DỰA THEO CHECKIN VÀ CHECKOUT CỦA ĐƠN ĐẶT PHÒNG
         const inDate = String(match.checkin_date).slice(0, 10);
         const outDate = String(match.checkout_date).slice(0, 10);
         const inTime = String(match.checkin_time || "14:00").slice(0, 5);
@@ -634,6 +647,7 @@ async function getRoomMapData(req, res) {
         const endTimestamp = new Date(`${outDate}T${outTime}:00`).getTime();
         const diffMs = Math.max(0, endTimestamp - startTimestamp);
 
+        // 🌟 TÍNH CHÍNH XÁC SỐ GIỜ / ĐÊM / NGÀY
         let durationText = "1 ngày";
         if (match.rental_type === "HOUR") {
           const hours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
@@ -726,14 +740,45 @@ async function getPendingOnlineBookings(req, res) {
       LEFT JOIN public.payment p ON p.booking_id = b.id
       WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled') 
         AND TRIM(COALESCE(b.room_number, '')) = ''
-        -- CHỈ LẤY ĐƠN ĐÃ THANH TOÁN (PAID) HOẶC VẪN CÒN TRONG 15 PHÚT TẠO
         AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
         ${hotelFilter}
       ORDER BY b.created_at DESC LIMIT 50
     `,
       params,
     );
-    return res.json({ success: true, data: result.rows || [] });
+
+    // Tính chính xác stay_duration cho từng đơn chờ
+    const enrichedList = (result.rows || []).map((b) => {
+      const inD = String(b.checkin_date).slice(0, 10);
+      const outD = String(b.checkout_date).slice(0, 10);
+      const inT = String(b.checkin_time || "14:00").slice(0, 5);
+      const outT = String(b.checkout_time || "12:00").slice(0, 5);
+
+      const diffMs = Math.max(
+        0,
+        new Date(`${outD}T${outT}:00`).getTime() -
+          new Date(`${inD}T${inT}:00`).getTime(),
+      );
+
+      let durationLabel = "1 ngày";
+      if (b.rental_type === "HOUR") {
+        const h = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+        durationLabel = `${h} giờ`;
+      } else if (b.rental_type === "OVERNIGHT") {
+        durationLabel = "1 đêm";
+      } else {
+        const d = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        durationLabel = `${d} ngày`;
+      }
+
+      return {
+        ...b,
+        stay_duration: durationLabel,
+        duration_label: durationLabel,
+      };
+    });
+
+    return res.json({ success: true, data: enrichedList });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -867,7 +912,140 @@ async function createWalkInBooking(req, res) {
   }
 }
 
-// ─── 6. CHECK-IN / CHECK-OUT / ĐỔI PHÒNG (ĐÃ CỘNG PHỤ THU VÀO DOANH THU) ───
+// ─── 6. CHECK-IN (LƯU GIỜ THỰC TẾ & GHI NHẬN ĐỦ TIỀN 70% THU TẠI QUẦY) ───
+async function handleOwnerCheckIn(req, res) {
+  const client = await pool.connect();
+  try {
+    const bookingId = req.params.id;
+    const {
+      room_number,
+      checkin_date,
+      checkout_date,
+      adult_total,
+      children_total,
+      collected_at_counter = 0,
+      guests = [],
+    } = req.body || {};
+
+    await client.query("BEGIN");
+
+    let inDate = null,
+      inTime = null;
+    if (checkin_date) {
+      inDate = String(checkin_date).slice(0, 10);
+      if (String(checkin_date).includes("T")) {
+        inTime = String(checkin_date).split("T")[1].slice(0, 5) + ":00";
+      } else {
+        inTime = "14:00:00";
+      }
+    }
+
+    let outDate = null,
+      outTime = null;
+    if (checkout_date) {
+      outDate = String(checkout_date).slice(0, 10);
+      if (String(checkout_date).includes("T")) {
+        outTime = String(checkout_date).split("T")[1].slice(0, 5) + ":00";
+      } else {
+        outTime = "12:00:00";
+      }
+    }
+
+    const collectedNow = Number(collected_at_counter || 0);
+
+    const curRes = await client.query(
+      `SELECT * FROM public.booking WHERE id::text = $1 OR booking_code = $1 LIMIT 1 FOR UPDATE`,
+      [bookingId],
+    );
+    const booking = curRes.rows[0];
+    if (!booking) {
+      await client.query("ROLLBACK");
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy đơn đặt phòng." });
+    }
+
+    const totalP = Number(booking.total_price || 0);
+    const newDeposit = Number(booking.deposit_amount || 0) + collectedNow;
+    const isNowFullyPaid = newDeposit >= totalP;
+
+    const updateRes = await client.query(
+      `
+      UPDATE public.booking 
+      SET status = 'checked_in'::public.booking_status_enum,
+          room_number = COALESCE($1, room_number),
+          checkin_date = COALESCE($2::date, checkin_date),
+          checkout_date = COALESCE($3::date, checkout_date),
+          checkin_time = COALESCE($4::time, checkin_time),
+          checkout_time = COALESCE($5::time, checkout_time),
+          adult_total = COALESCE($6, adult_total),
+          children_total = COALESCE($7, children_total),
+          deposit_amount = $8,
+          subtotal = $8,
+          payment_status = CASE WHEN $9 THEN 'paid'::public.booking_payment_status_enum ELSE payment_status END,
+          payment_type = CASE WHEN $9 THEN 'FULL' ELSE payment_type END,
+          guest_declarations = CASE WHEN $10::jsonb IS NOT NULL AND jsonb_array_length($10::jsonb) > 0 THEN $10::jsonb ELSE guest_declarations END,
+          confirmed_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $11
+      RETURNING *
+    `,
+      [
+        room_number || null,
+        inDate,
+        outDate,
+        inTime,
+        outTime,
+        adult_total || null,
+        children_total !== undefined ? children_total : null,
+        newDeposit,
+        isNowFullyPaid,
+        JSON.stringify(guests || []),
+        booking.id,
+      ],
+    );
+
+    const updatedBooking = updateRes.rows[0];
+
+    if (updatedBooking.room_number && updatedBooking.hotel_id) {
+      await client
+        .query(
+          `UPDATE public.room_unit SET status = 'occupied', updated_at = NOW() WHERE hotel_id = $1 AND room_number = $2`,
+          [updatedBooking.hotel_id, updatedBooking.room_number],
+        )
+        .catch(() => {});
+    }
+
+    if (collectedNow > 0) {
+      await client
+        .query(
+          `
+        INSERT INTO public.payment (id, booking_id, amount, paid_amount, status, paid_at, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, $2, 'paid', NOW(), NOW(), NOW())
+        ON CONFLICT (booking_id) 
+        DO UPDATE SET paid_amount = public.payment.paid_amount + $2, updated_at = NOW()
+      `,
+          [booking.id, collectedNow],
+        )
+        .catch(() => {});
+    }
+
+    await client.query("COMMIT");
+    return res.json({
+      success: true,
+      message: `✓ Đã nhận phòng ${updatedBooking.room_number} thành công!`,
+      booking: updatedBooking,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Lỗi Check-in:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
+  }
+}
+
+// ─── 7. TRẢ PHÒNG & CỘNG PHỤ THU VÀO DOANH THU ───
 async function handleOwnerCheckOut(req, res) {
   const client = await pool.connect();
   try {
@@ -899,7 +1077,6 @@ async function handleOwnerCheckOut(req, res) {
       ? Number(total_price)
       : Number(booking.total_price || 0) + extraTotal;
 
-    // Cập nhật hóa đơn với tổng tiền mới bao gồm phụ thu
     const updateRes = await client.query(
       `
       UPDATE public.booking 
@@ -913,7 +1090,6 @@ async function handleOwnerCheckOut(req, res) {
       [finalTotalPrice, booking.id],
     );
 
-    // Cập nhật bản ghi thanh toán để Dashboard Admin & Owner ghi nhận đủ doanh thu phụ thu
     await client
       .query(
         `
@@ -926,7 +1102,6 @@ async function handleOwnerCheckOut(req, res) {
       )
       .catch(() => {});
 
-    // Đánh dấu phòng chuyển sang "Chưa dọn"
     if (booking.room_number) {
       await client
         .query(
@@ -954,32 +1129,7 @@ async function handleOwnerCheckOut(req, res) {
   }
 }
 
-async function handleOwnerCheckIn(req, res) {
-  try {
-    const { room_number } = req.body;
-    const updateRes = await pool.query(
-      `
-      UPDATE public.booking SET status = 'checked_in'::public.booking_status_enum, room_number = COALESCE($1, room_number), confirmed_at = NOW(), updated_at = NOW()
-      WHERE id::text = $2 OR booking_code = $2 RETURNING *
-    `,
-      [room_number || null, req.params.id],
-    );
-
-    const b = updateRes.rows[0];
-    if (b?.room_number && b?.hotel_id) {
-      await pool
-        .query(
-          `UPDATE public.room_unit SET status = 'occupied', updated_at = NOW() WHERE hotel_id = $1 AND room_number = $2`,
-          [b.hotel_id, b.room_number],
-        )
-        .catch(() => {});
-    }
-    return res.json({ success: true, booking: b });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-}
-
+// ─── 8. ĐỔI PHÒNG ───
 async function handleChangeRoom(req, res) {
   try {
     const { new_room_number, room_legs } = req.body;
@@ -1002,7 +1152,7 @@ async function handleChangeRoom(req, res) {
   }
 }
 
-// ─── 7. DỌN PHÒNG ───
+// ─── 9. BUỒNG PHÒNG DỌN DẸP ───
 const setRoomUnitCleanStatus = async (hotelId, roomNumber, status) => {
   const cleanNum = String(roomNumber || "").replace(/[^0-9]/g, "");
   return pool.query(
@@ -1010,6 +1160,7 @@ const setRoomUnitCleanStatus = async (hotelId, roomNumber, status) => {
     [status, hotelId, roomNumber, `%${cleanNum}%`],
   );
 };
+
 const markRoomCleaned = async (req, res) => {
   await setRoomUnitCleanStatus(
     req.body.hotel_id,
@@ -1021,6 +1172,7 @@ const markRoomCleaned = async (req, res) => {
     message: `Phòng ${req.body.room_number} đã được dọn sạch!`,
   });
 };
+
 const markRoomDirty = async (req, res) => {
   await setRoomUnitCleanStatus(
     req.body.hotel_id,
@@ -1033,7 +1185,7 @@ const markRoomDirty = async (req, res) => {
   });
 };
 
-// ─── 8. QUẢN LÝ NHÂN VIÊN LỄ TÂN ───
+// ─── 10. QUẢN LÝ NHÂN VIÊN LỄ TÂN ───
 async function getOwnerStaff(req, res) {
   try {
     const ownerId = req.user?.id || req.auth?.sub;
@@ -1206,12 +1358,12 @@ module.exports = {
   getPendingOnlineBookings,
   confirmAndAssignRoom,
   createWalkInBooking,
+  handleOwnerCheckIn,
   handleOwnerCheckOut,
   markRoomCleaned,
   markRoomDirty,
   handleChangeRoom,
   handleAddBookingService,
-  handleOwnerCheckIn,
   updateOwnerBookingStatus,
   updateHotelInfo,
   getOwnerStaff,

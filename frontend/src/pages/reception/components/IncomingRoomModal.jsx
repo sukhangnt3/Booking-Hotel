@@ -1,5 +1,5 @@
 // src/pages/reception/components/IncomingRoomModal.jsx
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Clock,
   User,
@@ -36,16 +36,14 @@ export default function IncomingRoomModal({
     String(b.code || b.booking_code || "").startsWith("BK") ||
     !String(b.code || b.booking_code || "").startsWith("DP");
 
-  // 🌟 XỬ LÝ CHÍNH XÁC ĐƠN CỌC 30% VS ĐƠN TRẢ ĐỦ 100%
   const totalPrice = Number(b.total_price || room.daily_price || 0);
 
   const isDeposit =
     b.payment_type === "DEPOSIT_30" ||
+    Boolean(room.is_deposit) ||
     (Number(b.deposit_amount) > 0 && Number(b.deposit_amount) < totalPrice) ||
-    (Number(b.paid_amount) > 0 && Number(b.paid_amount) < totalPrice) ||
-    (Number(b.customer_paid) > 0 && Number(b.customer_paid) < totalPrice);
+    (Number(b.paid_amount) > 0 && Number(b.paid_amount) < totalPrice);
 
-  // Số tiền khách thực tế đã trả (Cọc 30% hoặc 100%)
   const paidAmount = isDeposit
     ? Number(
         b.deposit_amount ||
@@ -53,16 +51,33 @@ export default function IncomingRoomModal({
           b.customer_paid ||
           Math.round(totalPrice * 0.3),
       )
-    : Number(
-        b.paid_amount !== undefined
-          ? b.paid_amount
-          : b.customer_paid !== undefined
-            ? b.customer_paid
-            : totalPrice,
-      );
+    : totalPrice;
 
-  // Số tiền còn lại cần thu tại quầy
   const remainingAmount = Math.max(0, totalPrice - paidAmount);
+
+  // 🌟 TÍNH THỜI GIAN LƯU TRÚ CHUẨN XÁC (KHÔNG BỊ LỖI "0 PHÚT GIỜ")
+  const durationDisplay = useMemo(() => {
+    const inDate = String(b.checkin_date || "").slice(0, 10);
+    const outDate = String(b.checkout_date || inDate).slice(0, 10);
+    const inTime = String(b.checkin_time || "14:00").slice(0, 5);
+    const outTime = String(b.checkout_time || "12:00").slice(0, 5);
+
+    if (inDate && outDate) {
+      const startMs = new Date(`${inDate}T${inTime}:00`).getTime();
+      const endMs = new Date(`${outDate}T${outTime}:00`).getTime();
+      const diffMs = Math.max(0, endMs - startMs);
+
+      if (b.rental_type === "HOUR") {
+        const hours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+        return `${hours} giờ`;
+      }
+      if (b.rental_type === "OVERNIGHT") return "1 đêm";
+      const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+      return `${days} ngày`;
+    }
+
+    return b.rental_type === "HOUR" ? "2 giờ" : "1 đêm";
+  }, [b]);
 
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
@@ -87,8 +102,8 @@ export default function IncomingRoomModal({
               </span>
             )}
             {isDeposit && (
-              <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200">
-                Đã cọc 30%
+              <span className="px-2.5 py-0.5 rounded-md bg-amber-400 text-gray-950 font-black text-[11px] shadow-xs">
+                Cọc 30% Online
               </span>
             )}
           </div>
@@ -99,7 +114,7 @@ export default function IncomingRoomModal({
               onClick={() => {
                 if (
                   window.confirm(
-                    `Bạn có chắc chắn muốn xóa/hủy đơn #${b.code || b.booking_code}?`,
+                    `Bạn có chắc chắn muốn hủy đơn #${b.code || b.booking_code}?`,
                   )
                 ) {
                   alert("Đã hủy đơn đặt phòng!");
@@ -123,7 +138,6 @@ export default function IncomingRoomModal({
 
         {/* ─── 2. THÂN CHI TIẾT ─── */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-white">
-          {/* Lưới 2 cột thông tin */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-xs">
             <div className="space-y-3">
               <div>
@@ -145,7 +159,7 @@ export default function IncomingRoomModal({
                   Nhận phòng
                 </span>
                 <strong className="text-gray-900 font-bold block mt-0.5">
-                  {formatDisplayDateTime(b.checkin_date)}
+                  {formatDisplayDateTime(b.checkin_date, b.checkin_time)}
                 </strong>
               </div>
             </div>
@@ -156,8 +170,7 @@ export default function IncomingRoomModal({
                   Khách lưu trú
                 </span>
                 <strong className="text-gray-800 font-bold block mt-0.5">
-                  {b.adult_total || 1} người lớn, {b.children_total || 0} trẻ
-                  em, 0 giấy tờ
+                  {b.adult_total || 1} người lớn, {b.children_total || 0} trẻ em
                 </strong>
               </div>
 
@@ -166,13 +179,12 @@ export default function IncomingRoomModal({
                   Trả phòng
                 </span>
                 <strong className="text-gray-900 font-bold block mt-0.5">
-                  {formatDisplayDateTime(b.checkout_date)}
+                  {formatDisplayDateTime(b.checkout_date, b.checkout_time)}
                 </strong>
               </div>
             </div>
           </div>
 
-          {/* Dòng mã đơn & Thời gian lưu trú */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 pt-3 border-t border-gray-100">
             <div>
               <span className="text-[11px] text-gray-400 font-semibold block">
@@ -188,10 +200,8 @@ export default function IncomingRoomModal({
                 Thời gian lưu trú
               </span>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className="font-bold text-gray-900">
-                  {b.rental_type === "HOUR"
-                    ? `${b.stay_duration || 1} giờ`
-                    : "1 đêm"}
+                <span className="font-bold text-gray-900 text-sm">
+                  {durationDisplay}
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-200 flex items-center gap-1">
                   <Clock size={12} className="text-amber-600" />
@@ -201,7 +211,6 @@ export default function IncomingRoomModal({
             </div>
           </div>
 
-          {/* Ghi chú */}
           <div className="flex items-center gap-2 text-gray-600 bg-gray-50/70 p-3 rounded-xl border border-gray-100">
             <Edit3 size={14} className="text-gray-400 shrink-0" />
             <span className="text-xs">
@@ -211,44 +220,47 @@ export default function IncomingRoomModal({
             </span>
           </div>
 
-          {/* 🌟 HỘP QUYẾT TOÁN TÀI CHÍNH (ĐÃ TÁCH RÕ TIỀN CỌC 30% VÀ SỐ TIỀN CẦN THU TẠI QUẦY) */}
           <div className="bg-gray-50/80 border border-gray-200 rounded-2xl p-4 space-y-2.5">
             <div className="flex justify-between items-center text-xs">
               <span className="text-gray-600 font-bold">
                 Tổng tiền phòng ({room.room_number}):
               </span>
               <span className="font-black text-[#003580] text-sm tabular-nums">
-                {formatVND(totalPrice)}
+                {formatVND(totalPrice)} ₫
               </span>
             </div>
 
             <div className="flex justify-between items-center text-xs pt-2 border-t border-gray-200">
               <span className="text-gray-600 font-bold">
                 {isDeposit
-                  ? "Khách đã cọc trước (30%):"
-                  : "Khách đã trả (100%):"}
+                  ? "Khách đã cọc trước qua sàn (30%):"
+                  : "Khách đã trả đủ qua sàn (100%):"}
               </span>
               <span className="font-black text-emerald-700 text-sm tabular-nums">
-                {formatVND(paidAmount)}
+                {formatVND(paidAmount)} ₫
               </span>
             </div>
 
-            {/* Hiển thị rõ số tiền còn thiếu phải thu tại quầy nếu là đơn cọc 30% */}
             {isDeposit && remainingAmount > 0 && (
-              <div className="flex justify-between items-center text-xs pt-2 border-t border-dashed border-rose-200 bg-rose-50/60 -mx-4 -mb-4 p-3 rounded-b-2xl">
-                <span className="text-rose-700 font-extrabold flex items-center gap-1.5">
-                  <AlertCircle size={14} />
-                  Còn lại cần thu tại quầy:
-                </span>
-                <span className="font-black text-rose-600 text-sm tabular-nums">
-                  {formatVND(remainingAmount)}
+              <div className="flex justify-between items-center text-xs pt-2 border-t border-dashed border-rose-200 bg-rose-50/70 -mx-4 -mb-4 p-3 rounded-b-2xl">
+                <div>
+                  <span className="text-rose-700 font-extrabold flex items-center gap-1.5">
+                    <AlertCircle size={14} />
+                    Còn lại cần thu tại quầy:
+                  </span>
+                  <span className="text-[10px] text-rose-500 font-medium block mt-0.5">
+                    (Yêu cầu thu 70% còn lại trước khi giao chìa khóa)
+                  </span>
+                </div>
+                <span className="font-black text-rose-600 text-base tabular-nums">
+                  {formatVND(remainingAmount)} ₫
                 </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* ─── 3. FOOTER NÚT THAO TÁC ─── */}
+        {/* ─── 3. FOOTER ─── */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/50 shrink-0">
           <button
             type="button"
@@ -263,22 +275,14 @@ export default function IncomingRoomModal({
 
           <button
             type="button"
-            onClick={() => alert("Chức năng chỉnh sửa thông tin đặt phòng")}
-            className="px-5 py-2.5 border border-gray-200 hover:bg-white text-gray-700 font-bold rounded-xl cursor-pointer transition text-xs shadow-2xs"
-          >
-            Sửa đặt phòng
-          </button>
-
-          <button
-            type="button"
             onClick={onOpenConfirmCheckIn}
             className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 text-xs flex items-center gap-1.5"
           >
             <CheckCircle2 size={15} />
             <span>
               {isDeposit && remainingAmount > 0
-                ? `Thu ${formatVND(remainingAmount)} & Nhận phòng`
-                : "Nhận phòng"}
+                ? `Thu ${formatVND(remainingAmount)} ₫ & Nhận phòng`
+                : "Nhận phòng ngay"}
             </span>
           </button>
         </div>
