@@ -55,7 +55,7 @@ const parseAmenityArray = (raw) => {
   return typeof raw === "string"
     ? raw
         .split(",")
-        .map((s) => s.trim().replace(/^["'{}[\]]+|["'{}[\]]+$/g, ""))
+        .map((s) => s.trim().replace(/^["'{}[\]]+|["'{}[\]]+$|_/g, ""))
         .filter(Boolean)
     : [];
 };
@@ -522,7 +522,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. CHECK PHÒNG TRỐNG (CẬP NHẬT TRỪ SỐ LƯỢNG ĐÃ ĐẶT THEO KHUNG GIỜ) ───
+// ─── 3. CHECK PHÒNG TRỐNG (ĐÃ TỐI ƯU CHÍNH XÁC THỜI GIAN GIAO THOA VÀ DỌN PHÒNG) ───
 async function listHotelRoomAvailability(req, res) {
   const { id: hotelId } = req.params;
   const checkIn =
@@ -547,7 +547,8 @@ async function listHotelRoomAvailability(req, res) {
         COALESCE((SELECT img.path FROM public.image img WHERE img.room_id = r.id ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1), '') AS thumbnail,
         COALESCE((SELECT json_agg(a.name) FROM public.room_amenity ra JOIN public.amenity a ON a.id = ra.amenity_id WHERE ra.room_id = r.id), '[]'::json) AS amenities,
         COALESCE((SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) FROM public.image img WHERE img.room_id = r.id), '[]'::json) AS images,
-        -- 🌟 TÍNH SỐ LƯỢNG PHÒNG ĐÃ BỊ ĐẶT TRONG KHOẢNG THỜI GIAN NÀY (KÈM 30P BUFFER VỆ SINH)
+        
+        -- 🌟 THUẬT TOÁN KIỂM TRA TRÙNG LẶP THỜI GIAN CHÍNH XÁC TUYỆT ĐỐI
         (
           SELECT COALESCE(SUM(br.quantity), 0)::int
           FROM public.booking b
@@ -562,8 +563,9 @@ async function listHotelRoomAvailability(req, res) {
               )
             )
             AND (
-              $2::timestamp < (b.checkout_date + COALESCE(b.checkout_time, '12:00:00'::time) + INTERVAL '30 minutes')
-              AND $3::timestamp > (b.checkin_date + COALESCE(b.checkin_time, '14:00:00'::time))
+              -- Kiểm tra giao thoa: StartA < EndB AND EndA > StartB
+              $2::timestamp < (b.checkout_date::timestamp + COALESCE(b.checkout_time, '12:00:00'::time) + INTERVAL '30 minutes')
+              AND $3::timestamp > (b.checkin_date::timestamp + COALESCE(b.checkin_time, '14:00:00'::time))
             )
         ) AS booked_count
       FROM public.room r
@@ -584,7 +586,7 @@ async function listHotelRoomAvailability(req, res) {
 
       return {
         ...row,
-        amount: availableStock, // Số lượng phòng trống thực tế
+        amount: availableStock,
         remaining_rooms: availableStock,
         total_rooms: total,
         booked_count: booked,

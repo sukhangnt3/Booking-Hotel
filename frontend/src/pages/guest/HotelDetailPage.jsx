@@ -1615,8 +1615,8 @@ export default function HotelDetailPage() {
                           )}
                           {isSoldOut && (
                             <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex items-center justify-center">
-                              <span className="bg-rose-600 text-white font-black text-xs px-3 py-1.5 rounded-lg uppercase tracking-wider shadow">
-                                Hết phòng ngày này
+                              <span className="bg-pink-950 text-white font-black text-xs px-3 py-1.5 rounded-lg uppercase tracking-wider shadow">
+                                Hết phòng
                               </span>
                             </div>
                           )}
