@@ -22,6 +22,7 @@ import {
   Minus,
   Plus,
   AlertCircle,
+  Info,
 } from "lucide-react";
 import {
   format,
@@ -152,7 +153,7 @@ export default function BookingConfirmPage() {
   const [submitting, setSubmitting] = useState(false);
   const [paymentOption, setPaymentOption] = useState("FULL");
 
-  // 🌟 STATE KIỂM TRA PHÒNG TRỐNG TỨC THÌ KHI ĐỔI GIỜ
+  // State kiểm tra phòng trống
   const [isSlotAvailable, setIsSlotAvailable] = useState(true);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
 
@@ -205,7 +206,27 @@ export default function BookingConfirmPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 🌟 TÍNH TOÁN THỜI GIAN VÀ CHỐNG LỖI CÙNG NGÀY CHO THUÊ THEO GIỜ
+  // 🌟 ĐỌC ĐỘNG GIỜ QUY ĐỊNH CỦA KHÁCH SẠN
+  const hotelPolicies = useMemo(() => {
+    return {
+      dailyIn: String(hotel?.checkin_time || "14:00").slice(0, 5),
+      dailyOut: String(hotel?.checkout_time || "12:00").slice(0, 5),
+      overnightIn: String(
+        hotel?.overnight_checkin_time || hotel?.overnight_checkin || "22:00",
+      ).slice(0, 5),
+      overnightOut: String(
+        hotel?.overnight_checkout_time || hotel?.overnight_checkout || "12:00",
+      ).slice(0, 5),
+      halfdayIn: String(
+        hotel?.halfday_checkin_time || hotel?.halfday_checkin || "12:00",
+      ).slice(0, 5),
+      halfdayOut: String(
+        hotel?.halfday_checkout_time || hotel?.halfday_checkout || "21:00",
+      ).slice(0, 5),
+    };
+  }, [hotel]);
+
+  // Tính toán thời gian nhận và trả
   const checkOutInfo = useMemo(() => {
     const [hStr, mStr] = checkInTime.split(":");
     const inHour = parseInt(hStr || "12", 10);
@@ -260,7 +281,211 @@ export default function BookingConfirmPage() {
     hoursCount,
   ]);
 
-  // 🌟 HÀM TỰ ĐỘNG KIỂM TRA PHÒNG TRỐNG MỖI KHI ĐỔI GIỜ TẠI TRANG NÀY
+  // 🌟 THUẬT TOÁN TÍNH TOÁN GIÁ & PHỤ THU NHẬN SỚM / TRẢ MUỘN THEO GIỜ QUY ĐỊNH
+  const pricingDetails = useMemo(() => {
+    if (!room) {
+      return { totalPrice: 0, breakdown: [], earlyHours: 0, lateHours: 0 };
+    }
+
+    const baseDailyPrice = Number(room.base_price || room.sell_price || 650000);
+    const firstHourPrice =
+      Number(room.hourly_price) > 0
+        ? Number(room.hourly_price)
+        : Math.round(baseDailyPrice * 0.25);
+
+    // Phụ phí theo giờ cấu hình
+    const earlyFixedRate =
+      Number(room.early_checkin_fee) > 0
+        ? Number(room.early_checkin_fee)
+        : Number(room.hourly_price) > 0
+          ? Number(room.hourly_price)
+          : 200000;
+
+    const lateFixedRate =
+      Number(room.late_checkout_fee) > 0
+        ? Number(room.late_checkout_fee)
+        : Number(room.hourly_price) > 0
+          ? Number(room.hourly_price)
+          : 200000;
+
+    const calcFee = (extraHours, type) => {
+      if (extraHours <= 0) return 0;
+      return extraHours * (type === "early" ? earlyFixedRate : lateFixedRate);
+    };
+
+    const breakdown = [];
+    let singleRoomTotal = 0;
+    let earlyHours = 0;
+    let lateHours = 0;
+
+    if (rentalType === "HOUR") {
+      let hTotal = 0;
+      for (let i = 0; i < hoursCount; i++) {
+        let curHPrice = firstHourPrice;
+        if (Array.isArray(room.hourly_tiers) && room.hourly_tiers.length > 0) {
+          const matchedTier = [...room.hourly_tiers]
+            .sort((a, b) => b.from_hour - a.from_hour)
+            .find((t) => i + 1 >= Number(t.from_hour));
+          if (matchedTier) curHPrice = Number(matchedTier.price);
+        }
+        hTotal += curHPrice;
+      }
+      breakdown.push({
+        label: `Tiền thuê ${hoursCount} giờ`,
+        price: hTotal,
+      });
+      singleRoomTotal = hTotal;
+    } else if (rentalType === "HALF_DAY") {
+      const baseHalfPrice = Number(
+        room.half_day_price || Math.round(baseDailyPrice * 0.8),
+      );
+      breakdown.push({
+        label: "Tiền thuê theo buổi",
+        price: baseHalfPrice,
+      });
+      singleRoomTotal = baseHalfPrice;
+
+      const stdHalfIn = parseInt(hotelPolicies.halfdayIn.slice(0, 2), 10);
+      const stdHalfOut = parseInt(hotelPolicies.halfdayOut.slice(0, 2), 10);
+      const actualInHour = parseInt(checkInTime.slice(0, 2), 10);
+      const actualOutHour = parseInt(checkOutTime.slice(0, 2), 10);
+
+      if (actualInHour < stdHalfIn) {
+        earlyHours = stdHalfIn - actualInHour;
+        const fee = calcFee(earlyHours, "early");
+        breakdown.push({
+          label: `Nhận sớm ${earlyHours} giờ (Quy định: ${hotelPolicies.halfdayIn})`,
+          price: fee,
+        });
+        singleRoomTotal += fee;
+      }
+
+      const diffDays = differenceInDays(
+        checkOutInfo.outDateTime,
+        checkOutInfo.inDateTime,
+      );
+      if (diffDays === 0) {
+        if (actualOutHour > stdHalfOut) {
+          lateHours = actualOutHour - stdHalfOut;
+        }
+      } else {
+        lateHours = 24 - stdHalfOut + actualOutHour + (diffDays - 1) * 24;
+      }
+
+      if (lateHours > 0) {
+        const fee = calcFee(lateHours, "late");
+        breakdown.push({
+          label: `Trả muộn ${lateHours} giờ (Quy định: ${hotelPolicies.halfdayOut})`,
+          price: fee,
+        });
+        singleRoomTotal += fee;
+      }
+    } else if (rentalType === "OVERNIGHT") {
+      const overnightPrice = Number(room.overnight_price || baseDailyPrice);
+      breakdown.push({
+        label: "Tiền thuê qua đêm",
+        price: overnightPrice,
+      });
+      singleRoomTotal = overnightPrice;
+
+      const stdInHour = parseInt(hotelPolicies.overnightIn.slice(0, 2), 10);
+      const stdOutHour = parseInt(hotelPolicies.overnightOut.slice(0, 2), 10);
+      const actualInHour = parseInt(checkInTime.slice(0, 2), 10);
+      const actualOutHour = parseInt(checkOutTime.slice(0, 2), 10);
+
+      if (actualInHour < stdInHour) {
+        earlyHours = stdInHour - actualInHour;
+        const fee = calcFee(earlyHours, "early");
+        breakdown.push({
+          label: `Nhận sớm ${earlyHours} giờ (Quy định: ${hotelPolicies.overnightIn})`,
+          price: fee,
+        });
+        singleRoomTotal += fee;
+      }
+
+      const diffDays = differenceInDays(
+        checkOutInfo.outDateTime,
+        checkOutInfo.inDateTime,
+      );
+      if (diffDays <= 1) {
+        if (actualOutHour > stdOutHour) {
+          lateHours = actualOutHour - stdOutHour;
+        }
+      } else {
+        lateHours = actualOutHour - stdOutHour + (diffDays - 1) * 24;
+      }
+
+      if (lateHours > 0) {
+        const fee = calcFee(lateHours, "late");
+        breakdown.push({
+          label: `Trả muộn ${lateHours} giờ (Quy định: ${hotelPolicies.overnightOut})`,
+          price: fee,
+        });
+        singleRoomTotal += fee;
+      }
+    } else {
+      // THEO NGÀY (DAY)
+      const stdDailyIn = parseInt(hotelPolicies.dailyIn.slice(0, 2), 10);
+      const stdDailyOut = parseInt(hotelPolicies.dailyOut.slice(0, 2), 10);
+      const actualInHour = parseInt(checkInTime.slice(0, 2), 10);
+      const actualOutHour = parseInt(checkOutTime.slice(0, 2), 10);
+
+      const totalDays = Math.max(
+        1,
+        differenceInDays(checkOutInfo.outDateTime, checkOutInfo.inDateTime),
+      );
+      const dayFee = baseDailyPrice * totalDays;
+      breakdown.push({
+        label: `Tiền thuê ${totalDays} ngày (${formatVND(baseDailyPrice)}/ngày)`,
+        price: dayFee,
+      });
+      singleRoomTotal = dayFee;
+
+      if (actualInHour < stdDailyIn) {
+        earlyHours = stdDailyIn - actualInHour;
+        const fee = calcFee(earlyHours, "early");
+        breakdown.push({
+          label: `Nhận sớm ${earlyHours} giờ (Quy định nhận từ: ${hotelPolicies.dailyIn})`,
+          price: fee,
+        });
+        singleRoomTotal += fee;
+      }
+
+      if (actualOutHour > stdDailyOut) {
+        lateHours = actualOutHour - stdDailyOut;
+        const fee = calcFee(lateHours, "late");
+        breakdown.push({
+          label: `Trả muộn ${lateHours} giờ (Quy định trả trước: ${hotelPolicies.dailyOut})`,
+          price: fee,
+        });
+        singleRoomTotal += fee;
+      }
+    }
+
+    return {
+      totalPrice: singleRoomTotal * quantity,
+      breakdown,
+      earlyHours,
+      lateHours,
+    };
+  }, [
+    room,
+    rentalType,
+    hoursCount,
+    checkInTime,
+    checkOutTime,
+    hotelPolicies,
+    checkOutInfo,
+    quantity,
+  ]);
+
+  const totalPrice = pricingDetails.totalPrice;
+  const depositAmount = Math.round(totalPrice * 0.3);
+  const remainingAmount = totalPrice - depositAmount;
+  const amountToPayNow =
+    paymentOption === "DEPOSIT_30" ? depositAmount : totalPrice;
+
+  // Kiểm tra phòng trống
   const verifyAvailability = useCallback(async () => {
     if (!hotelId || !roomId) return;
     setCheckingAvailability(true);
@@ -324,24 +549,16 @@ export default function BookingConfirmPage() {
       setHoursCount(2);
       setCheckOutDate(checkInDate);
     } else if (type === "DAY") {
-      setCheckInTime(String(hotel?.checkin_time || "14:00").slice(0, 5));
-      setCheckOutTime(String(hotel?.checkout_time || "12:00").slice(0, 5));
+      setCheckInTime(hotelPolicies.dailyIn);
+      setCheckOutTime(hotelPolicies.dailyOut);
       setCheckOutDate(addDays(checkInDate, 1));
     } else if (type === "OVERNIGHT") {
-      setCheckInTime(
-        String(hotel?.overnight_checkin_time || "22:00").slice(0, 5),
-      );
-      setCheckOutTime(
-        String(hotel?.overnight_checkout_time || "12:00").slice(0, 5),
-      );
+      setCheckInTime(hotelPolicies.overnightIn);
+      setCheckOutTime(hotelPolicies.overnightOut);
       setCheckOutDate(addDays(checkInDate, 1));
     } else if (type === "HALF_DAY") {
-      setCheckInTime(
-        String(hotel?.halfday_checkin_time || "12:00").slice(0, 5),
-      );
-      setCheckOutTime(
-        String(hotel?.halfday_checkout_time || "21:00").slice(0, 5),
-      );
+      setCheckInTime(hotelPolicies.halfdayIn);
+      setCheckOutTime(hotelPolicies.halfdayOut);
       setCheckOutDate(addDays(checkInDate, 1));
     }
   };
@@ -369,68 +586,6 @@ export default function BookingConfirmPage() {
     }
     setCalendarTarget(null);
   };
-
-  // Tính tiền
-  const baseDayPrice = Number(room?.sell_price || room?.base_price || 500000);
-  const firstHourPrice =
-    Number(room?.hourly_price) > 0
-      ? Number(room?.hourly_price)
-      : Math.round(baseDayPrice * 0.25);
-  const overnightUnitPrice =
-    Number(room?.overnight_price) > 0
-      ? Number(room?.overnight_price)
-      : baseDayPrice;
-  const halfDayUnitPrice =
-    Number(room?.half_day_price) > 0
-      ? Number(room?.half_day_price)
-      : Math.round(baseDayPrice * 0.8);
-
-  const totalPrice = useMemo(() => {
-    let unit = baseDayPrice;
-    if (rentalType === "HOUR") {
-      let hTotal = 0;
-      for (let i = 0; i < hoursCount; i++) {
-        let curHPrice = firstHourPrice;
-        if (
-          Array.isArray(room?.hourly_tiers) &&
-          room?.hourly_tiers.length > 0
-        ) {
-          const matchedTier = [...room.hourly_tiers]
-            .sort((a, b) => b.from_hour - a.from_hour)
-            .find((t) => i + 1 >= Number(t.from_hour));
-          if (matchedTier) curHPrice = Number(matchedTier.price);
-        }
-        hTotal += curHPrice;
-      }
-      unit = hTotal;
-    } else if (rentalType === "OVERNIGHT") {
-      unit = overnightUnitPrice;
-    } else if (rentalType === "HALF_DAY") {
-      unit = halfDayUnitPrice;
-    } else {
-      const nights = Math.max(
-        1,
-        differenceInDays(checkOutInfo.outDateTime, checkOutInfo.inDateTime),
-      );
-      unit = baseDayPrice * nights;
-    }
-    return Math.max(0, unit * quantity);
-  }, [
-    rentalType,
-    hoursCount,
-    checkOutInfo,
-    baseDayPrice,
-    firstHourPrice,
-    overnightUnitPrice,
-    halfDayUnitPrice,
-    room,
-    quantity,
-  ]);
-
-  const depositAmount = Math.round(totalPrice * 0.3);
-  const remainingAmount = totalPrice - depositAmount;
-  const amountToPayNow =
-    paymentOption === "DEPOSIT_30" ? depositAmount : totalPrice;
 
   // Render popup lịch
   const renderCalendar = () => {
@@ -854,9 +1009,25 @@ export default function BookingConfirmPage() {
 
               {/* Hàng Nhận phòng */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">
-                  Nhận phòng
-                </label>
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Nhận phòng
+                  </label>
+                  {rentalType !== "HOUR" && (
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      Quy định:{" "}
+                      <strong className="text-slate-800">
+                        Từ{" "}
+                        {rentalType === "DAY"
+                          ? hotelPolicies.dailyIn
+                          : rentalType === "OVERNIGHT"
+                            ? hotelPolicies.overnightIn
+                            : hotelPolicies.halfdayIn}
+                      </strong>
+                    </span>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-12 gap-2.5">
                   <div className="col-span-4">
                     <select
@@ -931,9 +1102,23 @@ export default function BookingConfirmPage() {
               ) : (
                 /* Tab Ngày / Đêm / Buổi */
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block">
-                    Trả phòng
-                  </label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      Trả phòng
+                    </label>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      Quy định:{" "}
+                      <strong className="text-slate-800">
+                        Trước{" "}
+                        {rentalType === "DAY"
+                          ? hotelPolicies.dailyOut
+                          : rentalType === "OVERNIGHT"
+                            ? hotelPolicies.overnightOut
+                            : hotelPolicies.halfdayOut}
+                      </strong>
+                    </span>
+                  </div>
+
                   <div className="grid grid-cols-12 gap-2.5">
                     <div className="col-span-4">
                       <select
@@ -971,6 +1156,31 @@ export default function BookingConfirmPage() {
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Thông báo nếu có nhận sớm hoặc trả muộn */}
+              {(pricingDetails.earlyHours > 0 ||
+                pricingDetails.lateHours > 0) && (
+                <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-[11px] text-blue-900 space-y-1">
+                  <div className="font-bold flex items-center gap-1">
+                    <Info size={14} className="text-[#006ce4]" />
+                    <span>Lưu ý về giờ nhận/trả phòng:</span>
+                  </div>
+                  {pricingDetails.earlyHours > 0 && (
+                    <p>
+                      • Quý khách nhận sớm hơn{" "}
+                      <strong>{pricingDetails.earlyHours} giờ</strong> so với
+                      giờ quy định của khách sạn.
+                    </p>
+                  )}
+                  {pricingDetails.lateHours > 0 && (
+                    <p>
+                      • Quý khách trả muộn hơn{" "}
+                      <strong>{pricingDetails.lateHours} giờ</strong> so với giờ
+                      quy định của khách sạn.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1108,37 +1318,31 @@ export default function BookingConfirmPage() {
               </div>
             </div>
 
-            {/* BẢNG CHI TIẾT GIÁ */}
+            {/* BẢNG CHI TIẾT GIÁ KÈM PHỤ THU RÕ RÀNG */}
             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <h3 className="font-black text-gray-900 text-base border-b border-gray-100 pb-3">
                 Chi tiết giá phòng
               </h3>
-              <div className="space-y-2.5 text-xs">
-                <div className="flex justify-between text-gray-700">
-                  <span>Đơn giá ({checkOutInfo.badge}):</span>
-                  <span>
-                    {formatVND(
-                      rentalType === "HOUR"
-                        ? firstHourPrice
-                        : rentalType === "OVERNIGHT"
-                          ? overnightUnitPrice
-                          : rentalType === "HALF_DAY"
-                            ? halfDayUnitPrice
-                            : baseDayPrice,
-                    )}
-                  </span>
-                </div>
+              <div className="space-y-2 text-xs">
+                {pricingDetails.breakdown.map((item, idx) => (
+                  <div key={idx} className="flex justify-between text-gray-700">
+                    <span>{item.label}:</span>
+                    <span className="font-semibold text-gray-900">
+                      {formatVND(item.price)}
+                    </span>
+                  </div>
+                ))}
 
-                <div className="flex justify-between text-gray-700">
+                <div className="flex justify-between text-gray-700 pt-1 border-t border-gray-100">
                   <span>Số lượng:</span>
-                  <span>
-                    {quantity} phòng × {checkOutInfo.badge}
-                  </span>
+                  <span>{quantity} phòng</span>
                 </div>
 
                 <div className="flex justify-between text-gray-900 font-bold pt-2 border-t border-gray-100">
                   <span>Tổng tiền phòng:</span>
-                  <span className="text-sm">{formatVND(totalPrice)}</span>
+                  <span className="text-sm text-[#003580]">
+                    {formatVND(totalPrice)}
+                  </span>
                 </div>
 
                 {paymentOption === "DEPOSIT_30" && (
