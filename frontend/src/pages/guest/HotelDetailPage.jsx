@@ -326,6 +326,7 @@ export default function HotelDetailPage() {
     [checkInDate, hotelPolicies],
   );
 
+  // 🌟 GỬI ĐẦY ĐỦ THAM SỐ GIỜ LÊN BACKEND ĐỂ CHECK PHÒNG TRỐNG CHÍNH XÁC
   const fetchRoomAvailability = useCallback(
     async (cIn, cOut, adCount) => {
       if (!id) return;
@@ -336,6 +337,10 @@ export default function HotelDetailPage() {
             checkIn: safeFormatDate(cIn, "yyyy-MM-dd"),
             checkOut: safeFormatDate(cOut, "yyyy-MM-dd"),
             adults: adCount,
+            checkInTime: checkInTime,
+            checkOutTime:
+              rentalType === "HOUR" ? checkOutInfo.outTimeStr : checkOutTime,
+            rentalType: rentalType,
           },
         });
         const raw = res?.data;
@@ -349,7 +354,7 @@ export default function HotelDetailPage() {
         setCheckingRooms(false);
       }
     },
-    [id],
+    [id, checkInTime, checkOutTime, rentalType, checkOutInfo],
   );
 
   const fetchAllData = useCallback(async () => {
@@ -389,6 +394,11 @@ export default function HotelDetailPage() {
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
+
+  // Tự động kiểm tra phòng trống khi tải trang lần đầu
+  useEffect(() => {
+    fetchRoomAvailability(appliedCheckIn, appliedCheckOut, adults);
+  }, [fetchRoomAvailability, appliedCheckIn, appliedCheckOut, adults]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -571,14 +581,12 @@ export default function HotelDetailPage() {
 
         let total = baseHalfPrice;
 
-        // Mốc chuẩn của buổi từ cấu hình khách sạn
         const stdHalfIn = parseInt(hotelPolicies.halfdayIn.slice(0, 2), 10);
         const stdHalfOut = parseInt(hotelPolicies.halfdayOut.slice(0, 2), 10);
 
         const actualInHour = parseInt(checkInTime.slice(0, 2), 10);
         const actualOutHour = parseInt(checkOutTime.slice(0, 2), 10);
 
-        // 🌟 KIỂM TRA NHẬN SỚM: nếu khách nhận trước giờ chuẩn (ví dụ chuẩn 12:00, khách nhận 11:00 => sớm 1 giờ)
         if (actualInHour < stdHalfIn) {
           const earlyHours = stdHalfIn - actualInHour;
           const earlyFee = calcFee(earlyHours, "early");
@@ -591,9 +599,6 @@ export default function HotelDetailPage() {
           }
         }
 
-        // 🌟 KIỂM TRA TRẢ MUỘN:
-        // Nếu cùng ngày mà trả sau giờ chuẩn (ví dụ chuẩn 21:00, trả 22:00)
-        // Hoặc trả vào ngày hôm sau (qua đêm)
         const diffDays = differenceInDays(
           checkOutInfo.outDateTime,
           checkOutInfo.inDateTime,
@@ -605,7 +610,6 @@ export default function HotelDetailPage() {
             lateHours = actualOutHour - stdHalfOut;
           }
         } else {
-          // Trả vào ngày hôm sau: (24 - stdHalfOut) + actualOutHour + (diffDays - 1) * 24
           lateHours = 24 - stdHalfOut + actualOutHour + (diffDays - 1) * 24;
         }
 
@@ -646,7 +650,6 @@ export default function HotelDetailPage() {
         const actualInHour = parseInt(checkInTime.slice(0, 2), 10);
         const actualOutHour = parseInt(checkOutTime.slice(0, 2), 10);
 
-        // Nhận sớm so với giờ chuẩn đêm (chuẩn 22:00, nhận 12:00 => sớm 10 tiếng)
         if (actualInHour < stdInHour) {
           const earlyHours = stdInHour - actualInHour;
           const earlyFee = calcFee(earlyHours, "early");
@@ -659,7 +662,6 @@ export default function HotelDetailPage() {
           }
         }
 
-        // Trả muộn so với giờ chuẩn đêm (chuẩn 12:00, trả 13:00 => muộn 1 tiếng)
         const diffDays = differenceInDays(
           checkOutInfo.outDateTime,
           checkOutInfo.inDateTime,
@@ -714,7 +716,6 @@ export default function HotelDetailPage() {
 
       let total = totalDaysPrice;
 
-      // Nhận sớm theo ngày (chuẩn 14:00, nhận 12:00 => sớm 2 giờ)
       if (actualInHour < stdDailyIn) {
         const earlyHours = stdDailyIn - actualInHour;
         const earlyFee = calcFee(earlyHours, "early");
@@ -727,7 +728,6 @@ export default function HotelDetailPage() {
         }
       }
 
-      // Trả muộn theo ngày (chuẩn 12:00, trả 13:00 => muộn 1 giờ)
       if (actualOutHour > stdDailyOut) {
         const lateHours = actualOutHour - stdDailyOut;
         const lateFee = calcFee(lateHours, "late");
@@ -1082,7 +1082,7 @@ export default function HotelDetailPage() {
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════════ */}
-        {/* 🌟 THANH TÌM KIẾM NGANG GỐC KÈM BẢNG CHỌN GIỜ THEO ĐÚNG HÌNH ẢNH 🌟 */}
+        {/* 🌟 THANH TÌM KIẾM NGANG KÈM BẢNG CHỌN GIỜ ĐỒNG BỘ 🌟 */}
         {/* ═══════════════════════════════════════════════════════════════════════ */}
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-md mb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
@@ -1134,7 +1134,7 @@ export default function HotelDetailPage() {
                 </div>
               </div>
 
-              {/* 🌟 POPUP CHỌN GIỜ THIẾT KẾ Y HỆT HÌNH ẢNH 1, 2, 3 🌟 */}
+              {/* POPUP CHỌN GIỜ */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
@@ -1242,7 +1242,6 @@ export default function HotelDetailPage() {
                     </div>
                   </div>
 
-                  {/* NẾU LÀ TAB THEO GIỜ: HIỂN THỊ HÀNG "+ 2 GIỜ -" */}
                   {rentalType === "HOUR" ? (
                     <div className="space-y-1.5 pt-1">
                       <label className="text-xs font-bold text-slate-800 block">
@@ -1275,7 +1274,6 @@ export default function HotelDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    /* NẾU LÀ TAB NGÀY / ĐÊM / BUỔI: CÓ THÊM HÀNG TRẢ PHÒNG & THANH THỜI LƯỢNG */
                     <>
                       <div className="space-y-1.5 pt-1">
                         <label className="text-xs font-bold text-slate-800 block">
@@ -1335,7 +1333,7 @@ export default function HotelDetailPage() {
                     </>
                   )}
 
-                  {/* POPUP LỊCH THÁNG CHỌN NGÀY */}
+                  {/* LỊCH THÁNG CHỌN NGÀY */}
                   {activeDatePicker && (
                     <div
                       ref={datePickerPopupRef}
@@ -1440,7 +1438,7 @@ export default function HotelDetailPage() {
                     </div>
                   )}
 
-                  {/* NGƯỜI LỚN */}
+                  {/* SỐ LƯỢNG KHÁCH */}
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-xs font-bold text-slate-800">
                       Người lớn
@@ -1468,7 +1466,6 @@ export default function HotelDetailPage() {
                     </div>
                   </div>
 
-                  {/* TRẺ EM */}
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-800">
                       Trẻ em
@@ -1511,7 +1508,7 @@ export default function HotelDetailPage() {
               )}
             </div>
 
-            {/* Ô 3: Nút Cập nhật */}
+            {/* Nút Cập nhật */}
             <div className="md:col-span-3">
               <button
                 type="button"
@@ -1525,7 +1522,7 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BẢNG GIÁ CÁC HẠNG PHÒNG (DẠNG NGANG GỐC KÈM TOOLTIP CHI TIẾT GIÁ VÀ TÍNH PHỤ THU) */}
+        {/* BẢNG GIÁ CÁC HẠNG PHÒNG */}
         <section ref={roomsRef} className="space-y-4 mb-10">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <div>
@@ -1577,7 +1574,6 @@ export default function HotelDetailPage() {
                 );
                 const isSoldOut = stock <= 0 || room.is_available === false;
 
-                // Tính toán giá và phụ thu theo cấu hình hạng phòng
                 const pricing = calculateRoomPricing(room);
                 const isHovered = hoveredPriceRoomId === (room.id || idx);
 
@@ -1615,8 +1611,8 @@ export default function HotelDetailPage() {
                           )}
                           {isSoldOut && (
                             <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex items-center justify-center">
-                              <span className="bg-pink-950 text-white font-black text-xs px-3 py-1.5 rounded-lg uppercase tracking-wider shadow">
-                                Hết phòng
+                              <span className="bg-rose-600 text-white font-black text-xs px-3 py-1.5 rounded-lg uppercase tracking-wider shadow">
+                                Hết phòng ngày này
                               </span>
                             </div>
                           )}
@@ -1723,7 +1719,7 @@ export default function HotelDetailPage() {
                               {formatNumberWithDots(pricing.totalPrice)} đ
                             </span>
 
-                            {/* 🌟 TOOLTIP CHI TIẾT GIÁ (HIỂN THỊ CẢ NHẬN SỚM VÀ TRẢ MUỘN) 🌟 */}
+                            {/* TOOLTIP CHI TIẾT GIÁ */}
                             <div
                               onMouseEnter={() =>
                                 setHoveredPriceRoomId(room.id || idx)
