@@ -16,6 +16,9 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { format } from "date-fns";
+import { vi } from "date-fns/locale";
+
 import apiClient from "@/services/apiClient";
 import { LoadingSpinner } from "@/components/common";
 
@@ -47,22 +50,24 @@ const formatDisplayDateTime = (dateStr) => {
   return `${day}/${month}/${year} ${hours}:${minutes}`;
 };
 
+const safeFormatDate = (dateVal) => {
+  if (!dateVal) return "";
+  try {
+    const d = new Date(dateVal);
+    return isNaN(d.getTime())
+      ? String(dateVal)
+      : format(d, "dd/MM/yyyy", { locale: vi });
+  } catch {
+    return String(dateVal || "");
+  }
+};
+
 // 🌟 HÀM ĐỒNG BỘ THỜI GIAN NHẬN - TRẢ CHUẨN XÁC THEO TỪNG HÌNH THỨC THUÊ 🌟
 const formatStayTimeRange = (b) => {
   if (!b) return "---";
 
-  const parseDateStr = (dateVal) => {
-    if (!dateVal) return "";
-    const d = new Date(dateVal);
-    if (isNaN(d.getTime())) return String(dateVal);
-    const day = String(d.getDate()).padStart(2, "0");
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
-
-  const inDate = parseDateStr(b.checkin_date);
-  const outDate = parseDateStr(b.checkout_date);
+  const inDate = safeFormatDate(b.checkin_date);
+  const outDate = safeFormatDate(b.checkout_date);
 
   const inTime = b.checkin_time
     ? String(b.checkin_time).slice(0, 5)
@@ -559,7 +564,7 @@ export default function ReceptionMapPage() {
       checkin_mode: "Hiện tại",
       checkin_time: toDatetimeLocal(now),
       checkout_time: toDatetimeLocal(defaultCheckout),
-      duration_label: activeRoomData.booking.duration_label || "1 đêm",
+      duration_label: "1 đêm",
     });
 
     setCheckInGuestCount({
@@ -583,7 +588,7 @@ export default function ReceptionMapPage() {
         id_number: "",
         stay_reason: "Du lịch",
         declaration_time: nowTimeStr,
-        stay_duration: activeRoomData.booking.duration_label || "1 ngày",
+        stay_duration: "1 ngày",
         note: "",
       },
     ]);
@@ -1138,7 +1143,7 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" ─── */}
+      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (ĐÃ FIX LỖI format is not defined) ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200">
@@ -1204,10 +1209,7 @@ export default function ReceptionMapPage() {
                       {assigningBooking.checkin_time
                         ? `${String(assigningBooking.checkin_time).slice(0, 5)} `
                         : ""}
-                      {format(
-                        new Date(assigningBooking.checkin_date),
-                        "dd/MM/yyyy",
-                      )}
+                      {safeFormatDate(assigningBooking.checkin_date)}
                     </span>
                   </div>
                 </div>
@@ -1231,10 +1233,7 @@ export default function ReceptionMapPage() {
                       {assigningBooking.checkout_time
                         ? `${String(assigningBooking.checkout_time).slice(0, 5)} `
                         : ""}
-                      {format(
-                        new Date(assigningBooking.checkout_date),
-                        "dd/MM/yyyy",
-                      )}
+                      {safeFormatDate(assigningBooking.checkout_date)}
                     </span>
                   </div>
                 </div>
