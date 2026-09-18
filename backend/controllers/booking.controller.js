@@ -82,7 +82,7 @@ async function cleanupExpiredLocks() {
   } catch (e) {}
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (LOẠI BỎ CHECKED_OUT VÀ CANCELLED) ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (ĐÃ SỬA LỖI ĐẶT THEO GIỜ / BUỔI CÙNG NGÀY) ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -98,6 +98,11 @@ async function createBooking(req, res, next) {
       discount = 0,
       checkin_date,
       checkout_date,
+      checkin_time = "12:00",
+      checkout_time = "14:00",
+      rental_type = "DAY",
+      rentalType,
+      hours,
       total_price,
       adults,
       adult_total,
@@ -119,6 +124,10 @@ async function createBooking(req, res, next) {
       customer_paid = 0,
     } = req.body;
 
+    const currentRentalType = String(
+      rental_type || rentalType || "DAY",
+    ).toUpperCase();
+
     if (!hotel_id || !checkin_date || !checkout_date) {
       client.release();
       return res.status(400).json({
@@ -127,12 +136,43 @@ async function createBooking(req, res, next) {
       });
     }
 
-    if (new Date(checkout_date) <= new Date(checkin_date)) {
-      client.release();
-      return res.status(400).json({
-        success: false,
-        message: "Ngày trả phòng phải sau ngày nhận phòng.",
-      });
+    const inDateStr = String(checkin_date).slice(0, 10);
+    let outDateStr = String(checkout_date).slice(0, 10);
+
+    // 🌟 XỬ LÝ CHUẨN XÁC LOGIC NGÀY/GIỜ ĐỂ KHÔNG BÁO LỖI KHI THUÊ THEO GIỜ/BUỔI
+    const inDateTime = new Date(
+      `${inDateStr}T${checkInTime.length === 5 ? `${checkInTime}:00` : checkInTime}`,
+    );
+    let outDateTime = new Date(
+      `${outDateStr}T${checkOutTime.length === 5 ? `${checkOutTime}:00` : checkOutTime}`,
+    );
+
+    // Nếu thuê theo giờ mà khách chọn qua đêm (hoặc giờ trả nhỏ hơn giờ nhận) => outDate tự động là ngày hôm sau
+    if (currentRentalType === "HOUR" || currentRentalType === "HALF_DAY") {
+      if (outDateTime <= inDateTime) {
+        // Tự động điều chỉnh mốc ngày trả phòng sang ngày kế tiếp
+        outDateTime = addDays(outDateTime, 1);
+        outDateStr = outDateTime.toISOString().slice(0, 10);
+      }
+    } else {
+      // Đối với thuê Ngày đêm (DAY) hoặc Qua đêm (OVERNIGHT)
+      if (new Date(outDateStr) < new Date(inDateStr)) {
+        client.release();
+        return res.status(400).json({
+          success: false,
+          message: "Ngày trả phòng phải sau ngày nhận phòng.",
+        });
+      }
+      if (
+        new Date(outDateStr).getTime() === new Date(inDateStr).getTime() &&
+        outDateTime <= inDateTime
+      ) {
+        client.release();
+        return res.status(400).json({
+          success: false,
+          message: "Giờ trả phòng phải sau giờ nhận phòng.",
+        });
+      }
     }
 
     const finalAdults = Math.max(
@@ -203,6 +243,14 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
+      // 🌟 TÍNH TOÁN XUNG ĐỘT PHÒNG HỖ TRỢ CẢ THUÊ THEO GIỜ CÙNG NGÀY
+      const conflictEndDate =
+        inDateStr === outDateStr
+          ? new Date(new Date(inDateStr).getTime() + 86400000)
+              .toISOString()
+              .slice(0, 10)
+          : outDateStr;
+
       const conflictCheckSql = `
         WITH days AS (
           SELECT generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval)::date AS day
@@ -250,8 +298,8 @@ async function createBooking(req, res, next) {
 
       const conflictRes = await client.query(conflictCheckSql, [
         room_id,
-        checkin_date,
-        checkout_date,
+        inDateStr,
+        conflictEndDate,
         bookingQty,
         maxStock,
       ]);
@@ -261,7 +309,7 @@ async function createBooking(req, res, next) {
         client.release();
         return res.status(400).json({
           success: false,
-          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đã có khách ở kín tất cả các phòng vật lý trong khoảng thời gian này. Hệ thống không thể nhận thêm đặt phòng!`,
+          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đã kín chỗ trong khoảng thời gian này. Hệ thống không thể nhận thêm đặt phòng!`,
         });
       }
     }
@@ -296,6 +344,14 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
+    // 🌟 LƯU ĐẦY ĐỦ CHECKIN_DATE, CHECKOUT_DATE (NẾU CÙNG NGÀY THÌ LƯU CHECKOUT_DATE LÀ NGÀY KẾ TIẾP ĐỂ KHÔNG XUNG ĐỘT LOGIC LƯU TRÚ)
+    const storedCheckoutDate =
+      inDateStr === outDateStr && currentRentalType === "HOUR"
+        ? new Date(new Date(inDateStr).getTime() + 86400000)
+            .toISOString()
+            .slice(0, 10)
+        : outDateStr;
+
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -319,8 +375,8 @@ async function createBooking(req, res, next) {
       userId,
       hotel_id,
       promotion_id || null,
-      checkin_date,
-      checkout_date,
+      inDateStr,
+      storedCheckoutDate,
       finalAdults,
       finalChildren,
       customer_name ||
@@ -355,7 +411,7 @@ async function createBooking(req, res, next) {
         ) VALUES (
           gen_random_uuid(), $1, $2, $3, $4::date, $5, $6, NOW()
         ) ON CONFLICT DO NOTHING`,
-        [newBooking.id, room_id, roomName, checkin_date, bookingQty, roomPrice],
+        [newBooking.id, room_id, roomName, inDateStr, bookingQty, roomPrice],
       );
 
       if (!isWalkInBooking) {
@@ -377,8 +433,8 @@ async function createBooking(req, res, next) {
               sessionId,
               bookingQty,
               newBooking.id,
-              checkin_date,
-              checkout_date,
+              inDateStr,
+              storedCheckoutDate,
             ],
           )
           .catch(() => {});
