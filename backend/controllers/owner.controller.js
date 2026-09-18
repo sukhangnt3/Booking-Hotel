@@ -98,7 +98,7 @@ function resolveDateRange(range) {
   );
 }
 
-// ─── 1. THỐNG KÊ DASHBOARD (ĐÃ ĐỒNG BỘ ĐẦY ĐỦ CHART DATA CHO CẢ 2 TAB) ───
+// ─── 1. THỐNG KÊ DASHBOARD (LỌC CHUẨN XÁC THEO TỪNG KHÁCH SẠN) ───
 async function getOwnerStats(req, res, next) {
   try {
     const ownerId =
@@ -170,7 +170,8 @@ async function getOwnerStats(req, res, next) {
           baseParams,
         )
         .catch(() => ({ rows: [{ occupied_dirty: 0 }] })),
-      // 🌟 LẤY DOANH THU THEO KÊNH BÁN (BAO GỒM CẢ CÁC ĐƠN ĐẶT ONLINE VỪA TẠO)
+
+      // 🌟 LẤY DOANH THU THEO KÊNH (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN)
       pool.query(
         `
         WITH booking_channels AS (
@@ -194,7 +195,8 @@ async function getOwnerStats(req, res, next) {
       `,
         revParams,
       ),
-      // 🌟 LẤY DOANH THU THEO NGÀY LƯU TRÚ (ĐẦY ĐỦ CÁC NGÀY TRONG KỲ)
+
+      // 🌟 LẤY DOANH THU THEO NGÀY (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN)
       pool.query(
         `
         WITH period_days AS (
@@ -205,34 +207,55 @@ async function getOwnerStats(req, res, next) {
                  COALESCE(SUM(b.total_price), 0)::bigint AS total_amount, 
                  COUNT(DISTINCT b.id)::int AS booking_count
           FROM period_days pd
-          LEFT JOIN public.booking b ON 
-            ((b.checkin_date::date <= pd.day_date AND b.checkout_date::date >= pd.day_date) 
-             OR (b.created_at::date = pd.day_date)) 
-            AND b.status != 'cancelled'
-          LEFT JOIN public.hotel h ON h.id = b.hotel_id AND ${hotelFilter}
+          LEFT JOIN (
+            SELECT b_sub.* 
+            FROM public.booking b_sub
+            JOIN public.hotel h ON h.id = b_sub.hotel_id
+            WHERE ${hotelFilter} AND b_sub.status != 'cancelled'
+          ) b ON ((b.checkin_date::date <= pd.day_date AND b.checkout_date::date >= pd.day_date) 
+                  OR (b.created_at::date = pd.day_date))
           GROUP BY pd.day_date
         ) 
         SELECT * FROM day_usage ORDER BY day_date ASC
       `,
         revParams,
       ),
+
       pool.query(
-        `SELECT COALESCE(SUM(b.total_price), 0)::bigint AS prev_revenue FROM public.booking b JOIN public.hotel h ON h.id = b.hotel_id WHERE ${hotelFilter} AND b.status != 'cancelled' AND ((b.created_at::date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date) OR (b.checkin_date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date))`,
+        `SELECT COALESCE(SUM(b.total_price), 0)::bigint AS prev_revenue 
+         FROM public.booking b 
+         JOIN public.hotel h ON h.id = b.hotel_id 
+         WHERE ${hotelFilter} AND b.status != 'cancelled' 
+           AND ((b.created_at::date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date) 
+                OR (b.checkin_date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date))`,
         prevParams,
       ),
+
+      // 🌟 TÍNH CÔNG SUẤT THEO NGÀY (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN)
       pool.query(
         `
-        WITH period_days AS (SELECT generate_series($${occParams.length - 1}::date, $${occParams.length}::date, '1 day'::interval)::date AS day_date),
+        WITH period_days AS (
+          SELECT generate_series($${occParams.length - 1}::date, $${occParams.length}::date, '1 day'::interval)::date AS day_date
+        ),
         day_usage AS (
-          SELECT pd.day_date, COUNT(DISTINCT COALESCE(b.room_number, b.id::text))::int AS occupied_on_day
+          SELECT pd.day_date, 
+                 COUNT(DISTINCT COALESCE(b.room_number, b.id::text))::int AS occupied_on_day
           FROM period_days pd
-          LEFT JOIN public.booking b ON ((b.checkin_date <= pd.day_date AND b.checkout_date > pd.day_date) OR (b.checkin_date = pd.day_date)) AND b.status IN ('checked_in', 'checked_out', 'confirmed')
-          LEFT JOIN public.hotel h ON h.id = b.hotel_id AND ${hotelFilter}
+          LEFT JOIN (
+            SELECT b_sub.* 
+            FROM public.booking b_sub
+            JOIN public.hotel h ON h.id = b_sub.hotel_id
+            WHERE ${hotelFilter} AND b_sub.status IN ('checked_in', 'checked_out', 'confirmed')
+          ) b ON ((b.checkin_date::date <= pd.day_date AND b.checkout_date::date > pd.day_date) 
+                  OR (b.checkin_date::date = pd.day_date))
           GROUP BY pd.day_date
-        ) SELECT day_date, occupied_on_day, EXTRACT(DOW FROM day_date)::int AS day_of_week FROM day_usage ORDER BY day_date ASC
+        ) 
+        SELECT day_date, occupied_on_day, EXTRACT(DOW FROM day_date)::int AS day_of_week 
+        FROM day_usage ORDER BY day_date ASC
       `,
         occParams,
       ),
+
       pool.query(
         `
         SELECT r.id, r.name, COALESCE(r.amount, 1)::int AS room_amount, COUNT(b.id)::int AS total_bookings
@@ -458,12 +481,22 @@ async function getOwnerStats(req, res, next) {
   }
 }
 
-// ─── 2. DANH SÁCH ĐƠN ĐẶT PHÒNG ───
+// ─── 2. DANH SÁCH ĐƠN ĐẶT PHÒNG (LỌC THEO HOTEL_ID NẾU CÓ TRUYỀN LÊN) ───
 async function getOwnerBookings(req, res) {
   try {
     const userId = req.user?.id || req.user?.userId || req.auth?.sub;
+    const hotelId = String(req.query.hotel_id || "").trim();
     if (!userId)
       return res.status(401).json({ message: "Vui lòng đăng nhập." });
+
+    let hotelFilter =
+      "(h.owner_id = $1 OR h.id IN (SELECT hotel_id FROM public.hotel_staff WHERE user_id = $1))";
+    const params = [userId];
+
+    if (hotelId && hotelId !== "all") {
+      params.push(hotelId);
+      hotelFilter += ` AND b.hotel_id::text = $${params.length}`;
+    }
 
     const result = await pool.query(
       `
@@ -478,10 +511,10 @@ async function getOwnerBookings(req, res) {
       FROM public.booking b 
       JOIN public.hotel h ON h.id = b.hotel_id 
       LEFT JOIN public.users u ON u.id = b.user_id
-      WHERE h.owner_id = $1 OR h.id IN (SELECT hotel_id FROM public.hotel_staff WHERE user_id = $1)
+      WHERE ${hotelFilter}
       ORDER BY b.created_at DESC
     `,
-      [userId],
+      params,
     );
 
     return res.json({
@@ -494,7 +527,7 @@ async function getOwnerBookings(req, res) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (CHỈ LẤY CỦA ĐÚNG HOTEL_ID ĐƯỢC CHỌN) ───
 async function getRoomMapData(req, res) {
   try {
     const { hotel_id: hotelId } = req.query;
@@ -610,10 +643,19 @@ async function getRoomMapData(req, res) {
   }
 }
 
-// ─── 4. ĐƠN ONLINE CHỜ XẾP PHÒNG & XÁC NHẬN ───
+// ─── 4. ĐƠN ONLINE CHỜ XẾP PHÒNG (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN) ───
 async function getPendingOnlineBookings(req, res) {
   try {
     const rawHotelId = String(req.query.hotel_id || "").trim();
+
+    let hotelFilter = "";
+    const params = [];
+
+    if (rawHotelId && rawHotelId !== "all") {
+      params.push(rawHotelId);
+      hotelFilter = `AND b.hotel_id::text = $${params.length}`;
+    }
+
     const result = await pool.query(
       `
       SELECT b.id, b.booking_code, b.customer_name, b.guest_phone, b.guest_email, 
@@ -631,10 +673,10 @@ async function getPendingOnlineBookings(req, res) {
       LEFT JOIN public.payment p ON p.booking_id = b.id
       WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled') 
         AND TRIM(COALESCE(b.room_number, '')) = ''
-        AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1 OR b.hotel_id IS NULL)
+        ${hotelFilter}
       ORDER BY b.created_at DESC LIMIT 50
     `,
-      [rawHotelId],
+      params,
     );
     return res.json({ success: true, data: result.rows || [] });
   } catch (err) {
