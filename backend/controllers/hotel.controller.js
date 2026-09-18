@@ -522,7 +522,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. CHECK PHÒNG TRỐNG (ĐÃ TỐI ƯU CHÍNH XÁC THỜI GIAN GIAO THOA VÀ DỌN PHÒNG) ───
+// ─── 3. CHECK PHÒNG TRỐNG (ÉP KIỂU NGÀY GIỜ CHUẨN XÁC TUYỆT ĐỐI) ───
 async function listHotelRoomAvailability(req, res) {
   const { id: hotelId } = req.params;
   const checkIn =
@@ -538,6 +538,11 @@ async function listHotelRoomAvailability(req, res) {
   const outTime = checkOutTime.length === 5 ? `${checkOutTime}:00` : "14:00:00";
 
   try {
+    // 🌟 LOG KIỂM TRA THỜI GIAN KHÁCH ĐANG TÌM KIẾM TRÊN TERMINAL
+    console.log(
+      `🔍 [AVAILABILITY CHECK] Khách tìm: Từ [${checkIn} ${inTime}] đến [${checkOut} ${outTime}]`,
+    );
+
     const query = `
       SELECT r.*,
         COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS total_stock,
@@ -548,7 +553,7 @@ async function listHotelRoomAvailability(req, res) {
         COALESCE((SELECT json_agg(a.name) FROM public.room_amenity ra JOIN public.amenity a ON a.id = ra.amenity_id WHERE ra.room_id = r.id), '[]'::json) AS amenities,
         COALESCE((SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) FROM public.image img WHERE img.room_id = r.id), '[]'::json) AS images,
         
-        -- 🌟 THUẬT TOÁN KIỂM TRA TRÙNG LẶP THỜI GIAN CHÍNH XÁC TUYỆT ĐỐI
+        -- 🌟 THUẬT TOÁN SO SÁNH GIAO THOA THỜI GIAN CHUẨN POSTGRESQL
         (
           SELECT COALESCE(SUM(br.quantity), 0)::int
           FROM public.booking b
@@ -563,26 +568,32 @@ async function listHotelRoomAvailability(req, res) {
               )
             )
             AND (
-              -- Kiểm tra giao thoa: StartA < EndB AND EndA > StartB
-              $2::timestamp < (b.checkout_date::timestamp + COALESCE(b.checkout_time, '12:00:00'::time) + INTERVAL '30 minutes')
-              AND $3::timestamp > (b.checkin_date::timestamp + COALESCE(b.checkin_time, '14:00:00'::time))
+              -- So sánh thời gian bắt đầu và kết thúc (Đã cộng 30 phút dọn phòng buffer)
+              ($1::date + $2::time) < (b.checkout_date::date + COALESCE(b.checkout_time, '12:00:00'::time) + INTERVAL '30 minutes')
+              AND ($3::date + $4::time) > (b.checkin_date::date + COALESCE(b.checkin_time, '14:00:00'::time))
             )
         ) AS booked_count
       FROM public.room r
-      WHERE r.hotel_id = $1 AND COALESCE(r.is_active, true)
+      WHERE r.hotel_id = $5 AND COALESCE(r.is_active, true)
       ORDER BY r.base_price ASC
     `;
 
     const result = await pool.query(query, [
-      hotelId,
-      `${checkIn}T${inTime}`,
-      `${checkOut}T${outTime}`,
+      checkIn, // $1
+      inTime, // $2
+      checkOut, // $3
+      outTime, // $4
+      hotelId, // $5
     ]);
 
     const rooms = result.rows.map((row) => {
       const total = Number(row.total_stock || 1);
       const booked = Number(row.booked_count || 0);
       const availableStock = Math.max(0, total - booked);
+
+      console.log(
+        `   - Phòng: ${row.name} | Tổng: ${total} | Đã đặt trong giờ này: ${booked} | Còn trống: ${availableStock}`,
+      );
 
       return {
         ...row,
@@ -602,6 +613,7 @@ async function listHotelRoomAvailability(req, res) {
       checkOut,
     });
   } catch (error) {
+    console.error("❌ LỖI AVAILABILITY:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 }
