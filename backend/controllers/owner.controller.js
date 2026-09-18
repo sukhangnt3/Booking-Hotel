@@ -98,7 +98,7 @@ function resolveDateRange(range) {
   );
 }
 
-// ─── 1. THỐNG KÊ DASHBOARD (LỌC CHUẨN XÁC THEO TỪNG KHÁCH SẠN) ───
+// ─── 1. THỐNG KÊ DASHBOARD (ĐỒNG BỘ DOANH THU ĐƠN PAID VỚI ADMIN) ───
 async function getOwnerStats(req, res, next) {
   try {
     const ownerId =
@@ -171,7 +171,7 @@ async function getOwnerStats(req, res, next) {
         )
         .catch(() => ({ rows: [{ occupied_dirty: 0 }] })),
 
-      // 🌟 LẤY DOANH THU THEO KÊNH (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN)
+      // 🌟 DOANH THU THEO KÊNH: CHỈ TÍNH ĐƠN ĐÃ THANH TOÁN (PAID) HOẶC ĐƠN TẠI QUẦY (DP)
       pool.query(
         `
         WITH booking_channels AS (
@@ -186,6 +186,8 @@ async function getOwnerStats(req, res, next) {
           JOIN public.hotel h ON h.id = b.hotel_id
           WHERE ${hotelFilter} 
             AND b.status != 'cancelled'
+            -- 🛑 ĐỒNG BỘ: ĐƠN ONLINE PHẢI ĐÃ THANH TOÁN MỚI GHI NHẬN DOANH THU
+            AND (b.booking_code LIKE 'DP%' OR b.payment_status = 'paid')
             AND ((b.created_at::date BETWEEN $${revParams.length - 1}::date AND $${revParams.length}::date) 
                  OR (b.checkin_date::date BETWEEN $${revParams.length - 1}::date AND $${revParams.length}::date))
         )
@@ -196,7 +198,7 @@ async function getOwnerStats(req, res, next) {
         revParams,
       ),
 
-      // 🌟 LẤY DOANH THU THEO NGÀY (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN)
+      // 🌟 DOANH THU THEO NGÀY: CHỈ TÍNH ĐƠN ĐÃ THANH TOÁN (PAID) HOẶC ĐƠN TẠI QUẦY (DP)
       pool.query(
         `
         WITH period_days AS (
@@ -211,7 +213,10 @@ async function getOwnerStats(req, res, next) {
             SELECT b_sub.* 
             FROM public.booking b_sub
             JOIN public.hotel h ON h.id = b_sub.hotel_id
-            WHERE ${hotelFilter} AND b_sub.status != 'cancelled'
+            WHERE ${hotelFilter} 
+              AND b_sub.status != 'cancelled'
+              -- 🛑 ĐỒNG BỘ: ĐƠN ONLINE PHẢI ĐÃ THANH TOÁN MỚI GHI NHẬN DOANH THU
+              AND (b_sub.booking_code LIKE 'DP%' OR b_sub.payment_status = 'paid')
           ) b ON ((b.checkin_date::date <= pd.day_date AND b.checkout_date::date >= pd.day_date) 
                   OR (b.created_at::date = pd.day_date))
           GROUP BY pd.day_date
@@ -225,13 +230,15 @@ async function getOwnerStats(req, res, next) {
         `SELECT COALESCE(SUM(b.total_price), 0)::bigint AS prev_revenue 
          FROM public.booking b 
          JOIN public.hotel h ON h.id = b.hotel_id 
-         WHERE ${hotelFilter} AND b.status != 'cancelled' 
+         WHERE ${hotelFilter} 
+           AND b.status != 'cancelled' 
+           AND (b.booking_code LIKE 'DP%' OR b.payment_status = 'paid')
            AND ((b.created_at::date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date) 
                 OR (b.checkin_date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date))`,
         prevParams,
       ),
 
-      // 🌟 TÍNH CÔNG SUẤT THEO NGÀY (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN)
+      // TÍNH CÔNG SUẤT THEO NGÀY
       pool.query(
         `
         WITH period_days AS (
@@ -481,7 +488,7 @@ async function getOwnerStats(req, res, next) {
   }
 }
 
-// ─── 2. DANH SÁCH ĐƠN ĐẶT PHÒNG (LỌC THEO HOTEL_ID NẾU CÓ TRUYỀN LÊN) ───
+// ─── 2. DANH SÁCH ĐƠN ĐẶT PHÒNG ───
 async function getOwnerBookings(req, res) {
   try {
     const userId = req.user?.id || req.user?.userId || req.auth?.sub;
@@ -527,7 +534,7 @@ async function getOwnerBookings(req, res) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (CHỈ LẤY CỦA ĐÚNG HOTEL_ID ĐƯỢC CHỌN) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN ───
 async function getRoomMapData(req, res) {
   try {
     const { hotel_id: hotelId } = req.query;
@@ -643,7 +650,7 @@ async function getRoomMapData(req, res) {
   }
 }
 
-// ─── 4. ĐƠN ONLINE CHỜ XẾP PHÒNG (CHỈ LẤY CỦA ĐÚNG KHÁCH SẠN ĐANG CHỌN) ───
+// ─── 4. ĐƠN ONLINE CHỜ XẾP PHÒNG ───
 async function getPendingOnlineBookings(req, res) {
   try {
     const rawHotelId = String(req.query.hotel_id || "").trim();
