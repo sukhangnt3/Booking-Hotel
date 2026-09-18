@@ -62,7 +62,6 @@ const safeFormatDate = (dateVal) => {
   }
 };
 
-// 🌟 HÀM ĐỒNG BỘ THỜI GIAN NHẬN - TRẢ CHUẨN XÁC THEO TỪNG HÌNH THỨC THUÊ 🌟
 const formatStayTimeRange = (b) => {
   if (!b) return "---";
 
@@ -360,25 +359,60 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // Danh sách các phòng trống khả dụng để xếp phòng
+  // 🌟 HÀM LỌC PHÒNG TRỐNG THÔNG MINH THEO KHUNG GIỜ CỦA ĐƠN ĐANG XÉT (HỖ TRỢ ĐẶT LỆCH GIỜ TRONG CÙNG NGÀY)
   const availableRoomsForAssign = useMemo(() => {
     if (!assigningBooking) return [];
 
-    const vacantRooms = rooms.filter(
-      (r) => r.status === "available" && !r.booking,
-    );
-
-    const sameTypeRooms = vacantRooms.filter(
-      (r) =>
-        !assigningBooking.room_type_id ||
+    const sameTypeRooms = rooms.filter((r) => {
+      if (!assigningBooking.room_type_id) return true;
+      return (
         String(r.room_type_id) === String(assigningBooking.room_type_id) ||
         (assigningBooking.room_type_name &&
           r.type_name
             ?.toLowerCase()
-            .includes(assigningBooking.room_type_name?.toLowerCase())),
+            .includes(assigningBooking.room_type_name?.toLowerCase()))
+      );
+    });
+
+    const targetRooms = sameTypeRooms.length > 0 ? sameTypeRooms : rooms;
+
+    const newInDate = String(assigningBooking.checkin_date).slice(0, 10);
+    const newOutDate = String(assigningBooking.checkout_date).slice(0, 10);
+    const newInTime = String(assigningBooking.checkin_time || "14:00").slice(
+      0,
+      5,
+    );
+    const newOutTime = String(assigningBooking.checkout_time || "12:00").slice(
+      0,
+      5,
     );
 
-    return sameTypeRooms.length > 0 ? sameTypeRooms : vacantRooms;
+    const newInTimestamp = new Date(`${newInDate}T${newInTime}:00`).getTime();
+    const newOutTimestamp = new Date(
+      `${newOutDate}T${newOutTime}:00`,
+    ).getTime();
+
+    const validRooms = targetRooms.filter((room) => {
+      const hasConflict = rooms.some((otherRoom) => {
+        if (otherRoom.room_number !== room.room_number) return false;
+        const b = otherRoom.booking;
+        if (!b || String(b.id) === String(assigningBooking.id)) return false;
+
+        const bInDate = String(b.checkin_date).slice(0, 10);
+        const bOutDate = String(b.checkout_date).slice(0, 10);
+        const bInTime = String(b.checkin_time || "14:00").slice(0, 5);
+        const bOutTime = String(b.checkout_time || "12:00").slice(0, 5);
+
+        const bInTimestamp = new Date(`${bInDate}T${bInTime}:00`).getTime();
+        const bOutTimestamp = new Date(`${bOutDate}T${bOutTime}:00`).getTime();
+
+        return newInTimestamp < bOutTimestamp && newOutTimestamp > bInTimestamp;
+      });
+
+      return !hasConflict;
+    });
+
+    return validRooms;
   }, [rooms, assigningBooking]);
 
   // Lễ tân xác nhận xếp phòng
@@ -1047,7 +1081,6 @@ export default function ReceptionMapPage() {
                           </div>
                         </td>
 
-                        {/* HIỂN THỊ LƯU TRÚ CHUẨN XÁC TỪNG GIỜ / NGÀY */}
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <div className="text-slate-800 font-normal text-xs">
                             {formatStayTimeRange(b)}
@@ -1143,7 +1176,7 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (ĐÃ FIX LỖI format is not defined) ─── */}
+      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (ĐÃ CÓ ĐỦ DANH SÁCH PHÒNG TRỐNG THEO KHUNG GIỜ) ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200">
@@ -1189,7 +1222,10 @@ export default function ReceptionMapPage() {
                     onChange={(e) => setSelectedAssignRoom(e.target.value)}
                     className="w-full bg-white border-2 border-[#003580] text-[#003580] font-bold rounded-xl p-2 text-xs outline-none shadow-xs cursor-pointer focus:ring-2 focus:ring-blue-200"
                   >
-                    <option value="">-- Chọn số phòng --</option>
+                    <option value="">
+                      -- Chọn số phòng ({availableRoomsForAssign.length} phòng
+                      trống) --
+                    </option>
                     {availableRoomsForAssign.map((r) => (
                       <option key={r.id} value={r.room_number}>
                         Phòng {r.room_number} ({r.area || "Tầng 1"} -{" "}
