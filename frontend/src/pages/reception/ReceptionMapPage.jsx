@@ -47,7 +47,7 @@ const formatDisplayDateTime = (dateStr) => {
   return `${day}/${month}/${year} ${hours}:${minutes}`;
 };
 
-// 🌟 HÀM ĐỒNG BỘ THỜI GIAN NHẬN - TRẢ CHUẨN XÁC THEO HÌNH 🌟
+// 🌟 HÀM ĐỒNG BỘ THỜI GIAN NHẬN - TRẢ CHUẨN XÁC THEO TỪNG HÌNH THỨC THUÊ 🌟
 const formatStayTimeRange = (b) => {
   if (!b) return "---";
 
@@ -79,13 +79,17 @@ const formatStayTimeRange = (b) => {
   return `${inDate}, ${inTime} - ${outDate}, ${outTime}`;
 };
 
-const getCheckinCountdownText = (checkinDateStr) => {
+const getCheckinCountdownText = (checkinDateStr, checkinTimeStr) => {
   if (!checkinDateStr) return "Sắp đến nhận phòng";
   const now = new Date();
   const checkin = new Date(checkinDateStr);
+  if (checkinTimeStr) {
+    const [h, m] = String(checkinTimeStr).split(":").map(Number);
+    checkin.setHours(h || 14, m || 0, 0, 0);
+  }
   const diffMs = checkin.getTime() - now.getTime();
 
-  if (diffMs <= 0) return "Sắp đến nhận phòng";
+  if (diffMs <= 0) return "Đến giờ nhận phòng";
 
   const diffMins = Math.round(diffMs / (1000 * 60));
   if (diffMins < 60) return `${diffMins} phút nữa nhận phòng`;
@@ -182,14 +186,20 @@ export default function ReceptionMapPage() {
     let durationLabel = "1 ngày";
     let price = Number(roomInfo.daily_price || 0);
 
-    if (rentalType === "Giờ") {
+    if (rentalType === "Giờ" || rentalType === "HOUR") {
       durationLabel = `${diffHours} giờ`;
       price = Number(roomInfo.hourly_price || 0) * diffHours;
-    } else if (rentalType === "Đêm") {
+    } else if (rentalType === "Đêm" || rentalType === "OVERNIGHT") {
       durationLabel = `${diffDays} đêm`;
       price =
         Number(roomInfo.overnight_price || roomInfo.daily_price || 0) *
         diffDays;
+    } else if (rentalType === "Buổi" || rentalType === "HALF_DAY") {
+      durationLabel = "1 buổi";
+      price = Number(
+        roomInfo.half_day_price ||
+          Math.round(Number(roomInfo.daily_price || 0) * 0.8),
+      );
     } else {
       durationLabel = `${diffDays} ngày`;
       price = Number(roomInfo.daily_price || 0) * diffDays;
@@ -549,7 +559,7 @@ export default function ReceptionMapPage() {
       checkin_mode: "Hiện tại",
       checkin_time: toDatetimeLocal(now),
       checkout_time: toDatetimeLocal(defaultCheckout),
-      duration_label: "1 đêm",
+      duration_label: activeRoomData.booking.duration_label || "1 đêm",
     });
 
     setCheckInGuestCount({
@@ -573,7 +583,7 @@ export default function ReceptionMapPage() {
         id_number: "",
         stay_reason: "Du lịch",
         declaration_time: nowTimeStr,
-        stay_duration: "1 ngày",
+        stay_duration: activeRoomData.booking.duration_label || "1 ngày",
         note: "",
       },
     ]);
@@ -928,6 +938,7 @@ export default function ReceptionMapPage() {
                         formatVND={formatVND}
                         countdownText={getCheckinCountdownText(
                           room.booking?.checkin_date,
+                          room.booking?.checkin_time,
                         )}
                         isDeposit={isDep}
                         remainingAmount={remAmount}
@@ -941,11 +952,10 @@ export default function ReceptionMapPage() {
         )}
       </main>
 
-      {/* ─── MODAL 1: "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" (THIẾT KẾ GỌN ĐẸP 100% NHƯ ẢNH) ─── */}
+      {/* ─── MODAL 1: "KHÁCH ĐẶT ONLINE - CHỜ XÁC NHẬN" ─── */}
       {isPendingModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <div className="bg-white rounded-2xl max-w-6xl w-full shadow-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
-            {/* Header Modal - Thanh thoát như ảnh */}
             <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-base text-slate-900">
@@ -963,7 +973,6 @@ export default function ReceptionMapPage() {
               </button>
             </div>
 
-            {/* Nút Import màu xanh lá / phong cách GoStay */}
             <div className="px-6 pt-3 pb-1 shrink-0 flex items-center justify-between">
               <button
                 type="button"
@@ -974,7 +983,6 @@ export default function ReceptionMapPage() {
               </button>
             </div>
 
-            {/* Bảng danh sách đơn - Gọn gàng thanh thoát như ảnh */}
             <div className="p-6 overflow-y-auto overflow-x-auto flex-1">
               {pendingBookings.length === 0 ? (
                 <div className="py-16 text-center space-y-2">
@@ -1011,7 +1019,6 @@ export default function ReceptionMapPage() {
                         key={b.id}
                         className="hover:bg-slate-50/80 transition"
                       >
-                        {/* 1. MÃ ĐẶT PHÒNG */}
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <span className="font-bold text-[#1b8755] text-xs block cursor-pointer hover:underline">
                             {b.booking_code ||
@@ -1022,12 +1029,10 @@ export default function ReceptionMapPage() {
                           </span>
                         </td>
 
-                        {/* 2. MÃ KÊNH BÁN */}
                         <td className="py-3.5 px-4 whitespace-nowrap text-slate-400 text-xs font-medium">
                           {b.channel_code || ""}
                         </td>
 
-                        {/* 3. KHÁCH ĐẶT */}
                         <td className="py-3.5 px-4">
                           <div className="font-bold text-slate-900 text-xs whitespace-nowrap">
                             {b.customer_name}
@@ -1037,7 +1042,7 @@ export default function ReceptionMapPage() {
                           </div>
                         </td>
 
-                        {/* 4. LƯU TRÚ (ĐỒNG BỘ CHUẨN XÁC THEO HÌNH BẠN GỬI) */}
+                        {/* HIỂN THỊ LƯU TRÚ CHUẨN XÁC TỪNG GIỜ / NGÀY */}
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <div className="text-slate-800 font-normal text-xs">
                             {formatStayTimeRange(b)}
@@ -1048,25 +1053,20 @@ export default function ReceptionMapPage() {
                           </div>
                         </td>
 
-                        {/* 5. PHÒNG ĐẶT */}
                         <td className="py-3.5 px-4 whitespace-nowrap font-bold text-slate-800 text-xs">
                           {b.quantity || 1} {b.room_type_name || "DELUXE"}
                         </td>
 
-                        {/* 6. TỔNG CỘNG */}
                         <td className="py-3.5 px-4 text-right font-bold text-slate-900 text-xs tabular-nums whitespace-nowrap">
                           {formatVND(b.total_price)}
                         </td>
 
-                        {/* 7. KHÁCH ĐÃ TRẢ */}
                         <td className="py-3.5 px-4 text-right font-bold text-slate-900 text-xs tabular-nums whitespace-nowrap">
                           {formatVND(b.paid_amount || 0)}
                         </td>
 
-                        {/* 8. BỘ 3 ICON THAO TÁC NHỎ GỌN Y HỆT NHƯ ẢNH */}
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-3">
-                            {/* Icon dấu tích: Xác nhận gán phòng */}
                             <button
                               type="button"
                               title="Xác nhận đặt phòng & chọn phòng"
@@ -1079,7 +1079,6 @@ export default function ReceptionMapPage() {
                               <Check size={16} strokeWidth={2.5} />
                             </button>
 
-                            {/* Icon cây bút: Chỉnh sửa */}
                             <button
                               type="button"
                               title="Chỉnh sửa đơn"
@@ -1092,7 +1091,6 @@ export default function ReceptionMapPage() {
                               <Edit2 size={15} />
                             </button>
 
-                            {/* Icon thùng rác: Hủy đơn */}
                             <button
                               type="button"
                               title="Hủy đơn đặt phòng này"
@@ -1126,7 +1124,6 @@ export default function ReceptionMapPage() {
               )}
             </div>
 
-            {/* Footer Modal */}
             <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-[11px] text-slate-500 shrink-0">
               <span>Hệ thống lễ tân GoStay tự động đồng bộ đơn 24/7.</span>
               <button
@@ -1141,11 +1138,10 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (ĐỒNG BỘ GIỜ NHẬN / TRẢ) ─── */}
+      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200">
-            {/* Header Modal 2 */}
             <div className="px-6 py-4 bg-[#003580] text-white flex items-center justify-between">
               <h3 className="font-bold text-base">
                 Xác nhận đặt phòng - #{assigningBooking.booking_code}
@@ -1159,7 +1155,6 @@ export default function ReceptionMapPage() {
             </div>
 
             <div className="p-6 space-y-5">
-              {/* Tên & SĐT khách */}
               <div className="text-slate-800 font-bold flex items-center gap-2 text-sm">
                 <span>👤 {assigningBooking.customer_name}</span>
                 <span className="text-slate-400 font-normal">
@@ -1170,7 +1165,6 @@ export default function ReceptionMapPage() {
                 </span>
               </div>
 
-              {/* Hộp chi tiết xếp phòng */}
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex items-center justify-between flex-wrap gap-4">
                 <div>
                   <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">
@@ -1181,7 +1175,6 @@ export default function ReceptionMapPage() {
                   </div>
                 </div>
 
-                {/* Ô CHỌN SỐ PHÒNG */}
                 <div className="min-w-[190px]">
                   <div className="text-[10px] text-slate-600 font-bold uppercase mb-1">
                     Phòng <span className="text-rose-500">*</span>
@@ -1209,7 +1202,7 @@ export default function ReceptionMapPage() {
                     <CalendarDays size={13} className="text-[#003580]" />
                     <span>
                       {assigningBooking.checkin_time
-                        ? `${assigningBooking.checkin_time.slice(0, 5)} `
+                        ? `${String(assigningBooking.checkin_time).slice(0, 5)} `
                         : ""}
                       {format(
                         new Date(assigningBooking.checkin_date),
@@ -1236,7 +1229,7 @@ export default function ReceptionMapPage() {
                     <CalendarDays size={13} className="text-[#003580]" />
                     <span>
                       {assigningBooking.checkout_time
-                        ? `${assigningBooking.checkout_time.slice(0, 5)} `
+                        ? `${String(assigningBooking.checkout_time).slice(0, 5)} `
                         : ""}
                       {format(
                         new Date(assigningBooking.checkout_date),
@@ -1253,7 +1246,6 @@ export default function ReceptionMapPage() {
               </p>
             </div>
 
-            {/* Footer Modal 2 */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
               <button
                 type="button"
@@ -1289,6 +1281,7 @@ export default function ReceptionMapPage() {
         formatDisplayDateTime={formatDisplayDateTime}
         countdownText={getCheckinCountdownText(
           activeRoomData?.booking?.checkin_date,
+          activeRoomData?.booking?.checkin_time,
         )}
         formatVND={formatVND}
       />
