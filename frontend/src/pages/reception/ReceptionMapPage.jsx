@@ -359,7 +359,7 @@ export default function ReceptionMapPage() {
     return groups;
   }, [rooms, statusFilters, searchQuery]);
 
-  // 🌟 HÀM LỌC PHÒNG TRỐNG THÔNG MINH THEO KHUNG GIỜ CỦA ĐƠN ĐANG XÉT (HỖ TRỢ ĐẶT LỆCH GIỜ TRONG CÙNG NGÀY)
+  // 🌟 LỌC PHÒNG TRỐNG THEO KHUNG GIỜ
   const availableRoomsForAssign = useMemo(() => {
     if (!assigningBooking) return [];
 
@@ -445,8 +445,45 @@ export default function ReceptionMapPage() {
     }
   };
 
+  // 🌟 ĐỒNG BỘ CLICK THẺ PHÒNG KÈM DỮ LIỆU CỌC 30% CHÍNH XÁC
   const handleRoomCardClick = (room) => {
-    setActiveRoomData(room);
+    const b = room.booking;
+    const totalP = Number(b?.total_price || room.daily_price || 0);
+
+    const isDep =
+      b?.payment_type === "DEPOSIT_30" ||
+      (Number(b?.deposit_amount) > 0 && Number(b?.deposit_amount) < totalP) ||
+      (Number(b?.paid_amount) > 0 && Number(b?.paid_amount) < totalP) ||
+      (Number(b?.customer_paid) > 0 && Number(b?.customer_paid) < totalP);
+
+    const paidP = isDep
+      ? Number(
+          b?.deposit_amount ||
+            b?.paid_amount ||
+            b?.customer_paid ||
+            Math.round(totalP * 0.3),
+        )
+      : totalP;
+
+    const remP = isDep ? Math.max(0, totalP - paidP) : 0;
+
+    const enrichedRoom = {
+      ...room,
+      is_deposit: isDep,
+      remaining_amount: remP,
+      booking: b
+        ? {
+            ...b,
+            is_deposit: isDep,
+            deposit_amount: paidP,
+            remaining_amount: remP,
+            customer_paid: paidP,
+          }
+        : null,
+    };
+
+    setActiveRoomData(enrichedRoom);
+
     if (room.status === "occupied" || room.status === "checkout_soon") {
       setActiveModalType("occupied");
     } else if (room.status === "incoming") {
@@ -525,7 +562,7 @@ export default function ReceptionMapPage() {
           customer_name: quickBookingData.customer_name.trim() || "Khách lẻ",
           guest_phone: quickBookingData.customer_phone.trim(),
           total_price: item.price,
-          customer_paid: Number(quickBookingData.customer_paid || 0),
+          customer_paid: Number(quickBookingData.customer_paid || item.price),
           checkin_date: item.checkin_date,
           checkout_date: item.checkout_date,
           is_check_in_now: isCheckInNow,
@@ -671,17 +708,22 @@ export default function ReceptionMapPage() {
     setActiveModalType("guest_stay");
   };
 
+  // 🌟 XỬ LÝ NHẬN PHÒNG & THU ĐỦ TIỀN CÒN THIẾU TẠI QUẦY
   const handleFinalExecuteCheckIn = async () => {
     if (!activeRoomData?.booking?.id) return;
     const b = activeRoomData.booking;
 
+    const totalP = Number(b.total_price || 0);
     const isDeposit =
       b.payment_type === "DEPOSIT_30" ||
-      Number(b.deposit_amount) > 0 ||
-      Number(b.remaining_amount) > 0;
-    const remainingToCollect = isDeposit
-      ? Number(b.remaining_amount) || Math.round(Number(b.total_price) * 0.7)
-      : 0;
+      Boolean(activeRoomData.is_deposit) ||
+      (Number(b.deposit_amount) > 0 && Number(b.deposit_amount) < totalP);
+
+    const paidP = isDeposit
+      ? Number(b.deposit_amount || b.paid_amount || Math.round(totalP * 0.3))
+      : totalP;
+
+    const remainingToCollect = isDeposit ? Math.max(0, totalP - paidP) : 0;
 
     try {
       await apiClient.post(`/owner/bookings/${b.id}/checkin`, {
@@ -698,7 +740,7 @@ export default function ReceptionMapPage() {
 
       alert(
         `✓ Đã nhận phòng ${activeRoomData.room_number} thành công!` +
-          (isDeposit
+          (isDeposit && remainingToCollect > 0
             ? ` (Đã thu nốt số tiền còn lại tại quầy: ${formatVND(
                 remainingToCollect,
               )} ₫)`
@@ -956,14 +998,29 @@ export default function ReceptionMapPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {roomList.map((room) => {
                     const b = room.booking;
+                    const totalP = Number(
+                      b?.total_price || room.daily_price || 0,
+                    );
+
                     const isDep =
                       b?.payment_type === "DEPOSIT_30" ||
-                      Number(b?.deposit_amount) > 0 ||
-                      Number(b?.remaining_amount) > 0;
-                    const remAmount = isDep
-                      ? Number(b?.remaining_amount) ||
-                        Math.round(Number(b?.total_price) * 0.7)
-                      : 0;
+                      (Number(b?.deposit_amount) > 0 &&
+                        Number(b?.deposit_amount) < totalP) ||
+                      (Number(b?.paid_amount) > 0 &&
+                        Number(b?.paid_amount) < totalP) ||
+                      (Number(b?.customer_paid) > 0 &&
+                        Number(b?.customer_paid) < totalP);
+
+                    const paidP = isDep
+                      ? Number(
+                          b?.deposit_amount ||
+                            b?.paid_amount ||
+                            b?.customer_paid ||
+                            Math.round(totalP * 0.3),
+                        )
+                      : totalP;
+
+                    const remAmount = isDep ? Math.max(0, totalP - paidP) : 0;
 
                     return (
                       <RoomCard
@@ -1176,7 +1233,7 @@ export default function ReceptionMapPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" (ĐÃ CÓ ĐỦ DANH SÁCH PHÒNG TRỐNG THEO KHUNG GIỜ) ─── */}
+      {/* ─── MODAL 2: "XÁC NHẬN ĐẶT PHÒNG & CHỌN PHÒNG" ─── */}
       {assigningBooking && (
         <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden border border-slate-200">

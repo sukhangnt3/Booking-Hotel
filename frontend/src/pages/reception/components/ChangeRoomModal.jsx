@@ -9,7 +9,7 @@ import {
   Calendar,
   Split,
   Layers,
-  ArrowUpDown,
+  Clock,
 } from "lucide-react";
 
 export default function ChangeRoomModal({
@@ -39,20 +39,48 @@ export default function ChangeRoomModal({
     return availableRooms.find((r) => r.room_number === selectedNewRoomNumber);
   }, [availableRooms, selectedNewRoomNumber]);
 
+  // 🌟 TÍNH TOÁN THỜI GIAN LƯU TRÚ (PHÂN BIỆT RÕ THEO GIỜ VS THEO NGÀY)
   const stayCalculations = useMemo(() => {
     if (!currentRoom?.booking) {
-      return { totalDays: 1, stayedDays: 1, remainingDays: 0 };
+      return {
+        isHourly: false,
+        totalUnits: 1,
+        stayedUnits: 1,
+        remainingUnits: 0,
+        unitLabel: "ngày",
+      };
     }
-    const checkin = new Date(currentRoom.booking.checkin_date || Date.now());
-    const checkout = new Date(currentRoom.booking.checkout_date || Date.now());
+    const b = currentRoom.booking;
+    const isHourly = b.rental_type === "HOUR";
+
+    const checkin = new Date(b.checkin_date || Date.now());
+    const checkout = new Date(b.checkout_date || Date.now());
     const now = new Date();
+
+    if (isHourly) {
+      const diffTotalMs = Math.max(0, checkout.getTime() - checkin.getTime());
+      const totalHours = Math.max(1, Math.ceil(diffTotalMs / (1000 * 60 * 60)));
+      const diffStayedMs = Math.max(0, now.getTime() - checkin.getTime());
+      const stayedHours = Math.max(
+        1,
+        Math.min(totalHours, Math.ceil(diffStayedMs / (1000 * 60 * 60))),
+      );
+      const remainingHours = Math.max(1, totalHours - stayedHours);
+
+      return {
+        isHourly: true,
+        totalUnits: totalHours,
+        stayedUnits: stayedHours,
+        remainingUnits: remainingHours,
+        unitLabel: "giờ",
+      };
+    }
 
     const diffTotalMs = Math.max(0, checkout.getTime() - checkin.getTime());
     const totalDays = Math.max(
       1,
       Math.ceil(diffTotalMs / (1000 * 60 * 60 * 24)),
     );
-
     let stayedDays = 1;
     if (currentRoom.status === "occupied") {
       const diffStayedMs = Math.max(0, now.getTime() - checkin.getTime());
@@ -63,53 +91,76 @@ export default function ChangeRoomModal({
     }
     const remainingDays = Math.max(1, totalDays - stayedDays);
 
-    return { totalDays, stayedDays, remainingDays };
+    return {
+      isHourly: false,
+      totalUnits: totalDays,
+      stayedUnits: stayedDays,
+      remainingUnits: remainingDays,
+      unitLabel: "ngày",
+    };
   }, [currentRoom]);
 
   if (!isOpen || !currentRoom) return null;
 
   const currentBooking = currentRoom.booking;
-  const oldDailyPrice = Number(currentRoom.daily_price || 0);
-  const newDailyPrice = Number(targetRoom?.daily_price || oldDailyPrice);
+  const isHourly = stayCalculations.isHourly;
+
+  // Giá phòng cũ theo giờ hoặc ngày
+  const oldRate = Number(
+    isHourly
+      ? currentRoom.hourly_price ||
+          Math.round((currentRoom.daily_price || 200000) * 0.25)
+      : currentRoom.daily_price || 0,
+  );
+
+  // Giá phòng mới theo giờ hoặc ngày
+  const newRate = Number(
+    targetRoom
+      ? isHourly
+        ? targetRoom.hourly_price ||
+          Math.round((targetRoom.daily_price || 200000) * 0.25)
+        : targetRoom.daily_price || oldRate
+      : oldRate,
+  );
 
   let calculatedLegs = [];
   let calculatedTotalPrice = 0;
 
   if (targetRoom) {
     if (switchMode === "split_stay" && currentRoom.status === "occupied") {
-      const leg1Amount = stayCalculations.stayedDays * oldDailyPrice;
-      const leg2Daily = applyNewPrice ? newDailyPrice : oldDailyPrice;
-      const leg2Amount = stayCalculations.remainingDays * leg2Daily;
+      const leg1Amount = stayCalculations.stayedUnits * oldRate;
+      const leg2Rate = applyNewPrice ? newRate : oldRate;
+      const leg2Amount = stayCalculations.remainingUnits * leg2Rate;
 
       calculatedLegs = [
         {
           room_number: currentRoom.room_number,
           type_name: currentRoom.type_name,
-          duration_text: `${stayCalculations.stayedDays} ngày (Đã ở)`,
-          unit_price: oldDailyPrice,
+          duration_text: `${stayCalculations.stayedUnits} ${stayCalculations.unitLabel} (Đã ở)`,
+          unit_price: oldRate,
           amount: leg1Amount,
           is_closed: true,
         },
         {
           room_number: targetRoom.room_number,
           type_name: targetRoom.type_name,
-          duration_text: `${stayCalculations.remainingDays} ngày (Chuyển sang)`,
-          unit_price: leg2Daily,
+          duration_text: `${stayCalculations.remainingUnits} ${stayCalculations.unitLabel} (Chuyển sang)`,
+          unit_price: leg2Rate,
           amount: leg2Amount,
           is_current: true,
         },
       ];
       calculatedTotalPrice = leg1Amount + leg2Amount;
     } else {
-      const finalDaily = applyNewPrice ? newDailyPrice : oldDailyPrice;
-      const totalAmount = stayCalculations.totalDays * finalDaily;
+      const finalRate = applyNewPrice ? newRate : oldRate;
+      const totalAmount = stayCalculations.totalUnits * finalRate;
 
       calculatedLegs = [
         {
           room_number: targetRoom.room_number,
           type_name: targetRoom.type_name,
-          duration_text: `${stayCalculations.totalDays} ngày (Toàn bộ)`,
-          unit_price: finalDaily,
+          duration_text: `${stayCalculations.totalUnits} ${stayCalculations.unitLabel} (Toàn bộ)`,
+          unit_price: finalRate,
           amount: totalAmount,
           is_current: true,
         },
@@ -134,7 +185,7 @@ export default function ChangeRoomModal({
       setSelectedNewRoomNumber("");
       onClose();
     } catch (err) {
-      // Đã bắt lỗi từ component cha
+      // Đã bắt lỗi
     } finally {
       setLoading(false);
     }
@@ -143,7 +194,7 @@ export default function ChangeRoomModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 animate-fadeIn backdrop-blur-xs font-sans">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-gray-200 text-xs text-gray-900 animate-scaleUp">
-        {/* ─── HEADER MODAL ĐỒNG BỘ MÀU XANH NAVY #003580 ─── */}
+        {/* HEADER MODAL */}
         <div className="flex items-center justify-between p-5 bg-[#003580] text-white shadow-xs">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
@@ -159,7 +210,8 @@ export default function ChangeRoomModal({
                 </span>
               </div>
               <p className="text-[11px] text-blue-100/80 font-medium mt-1 leading-none">
-                Tự động tính toán phân tách ngày ở và chênh lệch đơn giá
+                Tự động phân tách thời gian ở và tính chênh lệch đơn giá (áp
+                dụng cả thuê giờ & ngày)
               </p>
             </div>
           </div>
@@ -173,13 +225,14 @@ export default function ChangeRoomModal({
           </button>
         </div>
 
-        {/* ─── NỘI DUNG ─── */}
+        {/* NỘI DUNG */}
         <div className="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto bg-white">
           {/* Thông tin phòng hiện tại */}
           <div className="bg-blue-50/60 border border-blue-200/80 rounded-2xl p-4 flex items-center justify-between">
             <div>
               <div className="text-[10px] text-[#006ce4] font-black uppercase tracking-wider">
-                Phòng đang lưu trú
+                Phòng đang lưu trú (
+                {isHourly ? "Thuê theo giờ" : "Thuê theo ngày"})
               </div>
               <div className="text-lg font-black text-[#0a2540] mt-0.5">
                 Phòng {currentRoom.room_number} • {currentRoom.type_name}
@@ -196,7 +249,7 @@ export default function ChangeRoomModal({
                 Đơn giá phòng cũ
               </span>
               <span className="text-sm font-black text-[#003580] tabular-nums">
-                {oldDailyPrice.toLocaleString("vi-VN")} ₫/ngày
+                {oldRate.toLocaleString("vi-VN")} ₫/{stayCalculations.unitLabel}
               </span>
             </div>
           </div>
@@ -218,13 +271,20 @@ export default function ChangeRoomModal({
               </div>
             ) : (
               <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-2xl divide-y divide-gray-100 bg-white">
-                {availableRooms.map((room) => {
-                  const isSelected = selectedNewRoomNumber === room.room_number;
-                  const diff = Number(room.daily_price || 0) - oldDailyPrice;
+                {availableRooms.map((r) => {
+                  const isSelected = selectedNewRoomNumber === r.room_number;
+                  const rRate = isHourly
+                    ? Number(
+                        r.hourly_price ||
+                          Math.round((r.daily_price || 200000) * 0.25),
+                      )
+                    : Number(r.daily_price || 0);
+                  const diff = rRate - oldRate;
+
                   return (
                     <div
-                      key={room.id}
-                      onClick={() => setSelectedNewRoomNumber(room.room_number)}
+                      key={r.id}
+                      onClick={() => setSelectedNewRoomNumber(r.room_number)}
                       className={`p-3.5 flex items-center justify-between cursor-pointer transition ${
                         isSelected
                           ? "bg-blue-50/80 border-l-4 border-[#003580]"
@@ -238,19 +298,17 @@ export default function ChangeRoomModal({
                               isSelected ? "text-[#003580] font-black" : ""
                             }
                           >
-                            Phòng {room.room_number}
+                            Phòng {r.room_number}
                           </span>
                           <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md font-semibold">
-                            {room.area || "Tầng 1"}
+                            {r.area || "Tầng 1"}
                           </span>
                         </div>
                         <div className="text-gray-500 mt-0.5 text-xs">
-                          {room.type_name} •{" "}
+                          {r.type_name} •{" "}
                           <strong className="text-gray-900 tabular-nums">
-                            {Number(room.daily_price || 0).toLocaleString(
-                              "vi-VN",
-                            )}{" "}
-                            ₫/ngày
+                            {rRate.toLocaleString("vi-VN")} ₫/
+                            {stayCalculations.unitLabel}
                           </strong>
                         </div>
                       </div>
@@ -280,7 +338,7 @@ export default function ChangeRoomModal({
             )}
           </div>
 
-          {/* Hai tùy chọn tính thời gian & giá phòng */}
+          {/* Phương án phân tách */}
           {targetRoom && currentRoom.status === "occupied" && (
             <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-4 space-y-3">
               <div className="font-black text-[#0a2540] flex items-center gap-1.5 text-xs">
@@ -309,10 +367,17 @@ export default function ChangeRoomModal({
                       Tính thời gian sử dụng ở CẢ HAI PHÒNG (Khuyên dùng)
                     </span>
                     <span className="text-[11px] text-gray-500 block mt-0.5">
-                      Ở phòng cũ <b>{stayCalculations.stayedDays} ngày</b> (tính
-                      đơn giá cũ) + chuyển sang phòng mới ở tiếp{" "}
-                      <b>{stayCalculations.remainingDays} ngày</b> (tính đơn giá
-                      mới).
+                      Ở phòng cũ{" "}
+                      <b>
+                        {stayCalculations.stayedUnits}{" "}
+                        {stayCalculations.unitLabel}
+                      </b>{" "}
+                      (đơn giá cũ) + chuyển sang phòng mới ở tiếp{" "}
+                      <b>
+                        {stayCalculations.remainingUnits}{" "}
+                        {stayCalculations.unitLabel}
+                      </b>{" "}
+                      (đơn giá mới).
                     </span>
                   </div>
                 </label>
@@ -344,7 +409,7 @@ export default function ChangeRoomModal({
                 </label>
               </div>
 
-              {/* Chính sách đơn giá */}
+              {/* Chính sách giá */}
               <div className="pt-3 border-t border-gray-200 flex items-center justify-between flex-wrap gap-2">
                 <span className="font-bold text-gray-800">
                   Chính sách giá phòng mới:
@@ -403,7 +468,7 @@ export default function ChangeRoomModal({
           )}
         </div>
 
-        {/* ─── FOOTER NÚT THAO TÁC ─── */}
+        {/* FOOTER */}
         <div className="flex items-center justify-end gap-2.5 px-6 py-4 bg-gray-50 border-t border-gray-100">
           <button
             type="button"

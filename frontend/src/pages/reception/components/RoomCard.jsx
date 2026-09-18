@@ -1,6 +1,12 @@
 // src/pages/reception/components/RoomCard.jsx
 import React from "react";
-import { Sparkles, MoreVertical, Clock, AlertTriangle } from "lucide-react";
+import {
+  Sparkles,
+  MoreVertical,
+  Clock,
+  AlertTriangle,
+  AlertCircle,
+} from "lucide-react";
 
 export default function RoomCard({
   room,
@@ -12,12 +18,14 @@ export default function RoomCard({
   formatVND,
   countdownText,
   occupiedInfo,
+  isDeposit,
+  remainingAmount,
 }) {
   const isOccupied =
     room.status === "occupied" || room.status === "checkout_soon";
   const isIncoming = room.status === "incoming";
 
-  // 🌟 Nhận diện trạng thái bẩn/cần dọn kể cả khi phòng ĐANG CÓ KHÁCH Ở
+  // Nhận diện trạng thái bẩn/cần dọn kể cả khi phòng ĐANG CÓ KHÁCH Ở
   const isDirty =
     room.status === "dirty" ||
     room.unit_status === "dirty" ||
@@ -26,10 +34,27 @@ export default function RoomCard({
   const isOccupiedAndDirty = isOccupied && isDirty;
   const isOverdue = isOccupied && occupiedInfo?.isOverdue;
 
+  // 🌟 ĐỌC HÌNH THỨC THUÊ ĐỂ HIỂN THỊ ĐÚNG ĐƠN GIÁ (GIỜ, ĐÊM, BUỔI, NGÀY)
+  const b = room.booking;
+  const rentalType = b?.rental_type || "DAY";
+
+  const getPriceBadge = () => {
+    if (b) {
+      return formatVND(b.total_price);
+    }
+    if (rentalType === "HOUR") {
+      return `${formatVND(room.hourly_price || Math.round(room.daily_price * 0.25))} ₫/h`;
+    }
+    if (rentalType === "OVERNIGHT") {
+      return `${formatVND(room.overnight_price || room.daily_price)} ₫/đêm`;
+    }
+    return `${formatVND(room.daily_price)} ₫/ngày`;
+  };
+
   return (
     <div
       onClick={onClick}
-      className={`rounded-2xl border transition-all duration-200 hover:shadow-md relative select-none p-3.5 flex flex-col justify-between cursor-pointer min-h-[130px] font-sans text-xs ${
+      className={`rounded-2xl border transition-all duration-200 hover:shadow-md relative select-none p-3.5 flex flex-col justify-between cursor-pointer min-h-[135px] font-sans text-xs ${
         isIncoming
           ? "bg-amber-50/60 border-amber-300 shadow-2xs"
           : isOverdue
@@ -68,7 +93,7 @@ export default function RoomCard({
             </span>
           )}
 
-          {/* 🌟 Huy hiệu cảnh báo khi phòng Đang có khách mà yêu cầu dọn phòng */}
+          {/* Huy hiệu cảnh báo khi phòng Đang có khách mà yêu cầu dọn phòng */}
           {isOccupiedAndDirty && (
             <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-amber-500 text-white shadow-2xs animate-pulse">
               🧹 Cần dọn
@@ -152,25 +177,44 @@ export default function RoomCard({
       {/* ─── NỘI DUNG THẺ THEO TỪNG TRẠNG THÁI ─── */}
       {isIncoming ? (
         <div className="my-2 space-y-1">
-          <div className="font-black text-gray-900 text-xs truncate">
-            {room.booking?.customer_name || "Khách đặt trước"}
-          </div>
-          <div className="text-[11px] text-gray-500 font-mono">
-            {room.booking?.guest_phone || "---"}
-          </div>
-          <div className="pt-1">
-            <span className="inline-block px-2 py-0.5 bg-amber-100/80 border border-amber-200 rounded-md text-[10px] text-amber-900 font-bold">
-              ⏱️ {countdownText}
+          <div className="font-black text-gray-900 text-xs truncate flex items-center justify-between">
+            <span>{b?.customer_name || "Khách đặt trước"}</span>
+            <span className="text-[10px] text-[#003580] font-mono font-bold">
+              {getPriceBadge()}
             </span>
           </div>
+
+          <div className="text-[11px] text-gray-500 font-mono">
+            {b?.guest_phone || "---"}
+          </div>
+
+          {/* 🌟 CẢNH BÁO CỌC 30% ĐỂ LỄ TÂN KHÔNG BỊ QUÊN THU TIỀN */}
+          {isDeposit && Number(remainingAmount) > 0 ? (
+            <div className="pt-0.5 flex items-center justify-between gap-1 flex-wrap">
+              <span className="inline-block px-1.5 py-0.5 bg-rose-100 border border-rose-200 rounded text-[10px] text-rose-700 font-black">
+                Cọc 30% (Thu: {formatVND(remainingAmount)})
+              </span>
+              <span className="text-[10px] text-amber-900 font-bold">
+                ⏱️ {countdownText}
+              </span>
+            </div>
+          ) : (
+            <div className="pt-0.5">
+              <span className="inline-block px-2 py-0.5 bg-amber-100/80 border border-amber-200 rounded-md text-[10px] text-amber-900 font-bold">
+                ⏱️ {countdownText}
+              </span>
+            </div>
+          )}
         </div>
       ) : isOccupied ? (
         <div className="my-2 space-y-1">
-          <div className="font-black text-[#0a2540] text-xs truncate">
-            {room.booking?.customer_name || "Khách lẻ"}
+          <div className="font-black text-[#0a2540] text-xs truncate flex items-center justify-between">
+            <span>{b?.customer_name || "Khách lẻ"}</span>
+            <span className="text-[10px] text-[#003580] font-mono font-bold">
+              {getPriceBadge()}
+            </span>
           </div>
 
-          {/* Dòng hiển thị trạng thái đặc biệt khi khách đang ở gọi dọn phòng */}
           {isOccupiedAndDirty && (
             <div className="text-[10px] font-bold text-amber-800 bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-md flex items-center gap-1 w-fit">
               <span>🧹 Khách yêu cầu dọn phòng</span>
@@ -180,18 +224,16 @@ export default function RoomCard({
           {isOverdue ? (
             <div className="space-y-0.5 pt-0.5">
               <div className="text-[11px] font-black text-rose-600 flex items-center gap-1">
-                <Clock size={11} /> {occupiedInfo.overdueText}
+                <Clock size={11} /> {occupiedInfo?.overdueText || "Quá giờ trả"}
               </div>
               <div className="text-[10px] text-gray-500 font-medium">
-                Ở thực tế: {occupiedInfo.stayText}
+                Ở thực tế: {occupiedInfo?.stayText || "---"}
               </div>
             </div>
           ) : (
             <div className="text-[11px] font-bold text-[#003580] flex items-center gap-1 pt-0.5">
               <Clock size={11} className="text-[#006ce4]" /> Đã ở:{" "}
-              {occupiedInfo?.stayText ||
-                room.booking?.stay_duration ||
-                "1 ngày"}
+              {occupiedInfo?.stayText || b?.stay_duration || "1 ngày"}
             </div>
           )}
         </div>
@@ -210,7 +252,7 @@ export default function RoomCard({
             {room.type_name || "Tiêu chuẩn"}
           </div>
           <div className="text-xs font-black text-[#003580] tabular-nums">
-            {formatVND(room.daily_price)} ₫/ngày
+            {getPriceBadge()}
           </div>
         </div>
       )}
