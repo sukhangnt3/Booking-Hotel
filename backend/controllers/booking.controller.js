@@ -88,7 +88,7 @@ async function cleanupExpiredLocks() {
   } catch (e) {}
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (ĐÃ FIX LỖI checkInTime is not defined) ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (KIỂM TRA XUNG ĐỘT THEO KHUNG GIỜ CHÍNH XÁC) ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -132,13 +132,12 @@ async function createBooking(req, res, next) {
       customer_paid = 0,
     } = req.body;
 
-    // 🌟 KHAI BÁO AN TOÀN CHO CẢ 2 KIỂU ĐẶT TÊN (checkin_time và checkInTime)
-    const finalCheckInTime = String(
-      checkin_time || checkInTime || "12:00",
-    ).trim();
-    const finalCheckOutTime = String(
-      checkout_time || checkOutTime || "14:00",
-    ).trim();
+    const finalCheckInTime = String(checkin_time || checkInTime || "12:00")
+      .trim()
+      .slice(0, 5);
+    const finalCheckOutTime = String(checkout_time || checkOutTime || "14:00")
+      .trim()
+      .slice(0, 5);
     const currentRentalType = String(
       rental_type || rentalType || "DAY",
     ).toUpperCase();
@@ -155,25 +154,19 @@ async function createBooking(req, res, next) {
     let outDateStr = String(checkout_date).slice(0, 10);
 
     const formattedInTime =
-      finalCheckInTime.length === 5
-        ? `${finalCheckInTime}:00`
-        : finalCheckInTime;
+      finalCheckInTime.length === 5 ? `${finalCheckInTime}:00` : "12:00:00";
     const formattedOutTime =
-      finalCheckOutTime.length === 5
-        ? `${finalCheckOutTime}:00`
-        : finalCheckOutTime;
+      finalCheckOutTime.length === 5 ? `${finalCheckOutTime}:00` : "14:00:00";
 
-    const inDateTime = new Date(`${inDateStr}T${formattedInTime}`);
-    let outDateTime = new Date(`${outDateStr}T${formattedOutTime}`);
+    const inTimestamp = new Date(`${inDateStr}T${formattedInTime}`);
+    let outTimestamp = new Date(`${outDateStr}T${formattedOutTime}`);
 
-    // Xử lý thuê giờ / buổi
     if (currentRentalType === "HOUR" || currentRentalType === "HALF_DAY") {
-      if (outDateTime <= inDateTime) {
-        outDateTime = addDays(outDateTime, 1);
-        outDateStr = outDateTime.toISOString().slice(0, 10);
+      if (outTimestamp <= inTimestamp) {
+        outTimestamp = addDays(outTimestamp, 1);
+        outDateStr = outTimestamp.toISOString().slice(0, 10);
       }
     } else {
-      // Thuê ngày đêm hoặc qua đêm
       if (new Date(outDateStr) < new Date(inDateStr)) {
         client.release();
         return res.status(400).json({
@@ -183,7 +176,7 @@ async function createBooking(req, res, next) {
       }
       if (
         new Date(outDateStr).getTime() === new Date(inDateStr).getTime() &&
-        outDateTime <= inDateTime
+        outTimestamp <= inTimestamp
       ) {
         client.release();
         return res.status(400).json({
@@ -205,6 +198,18 @@ async function createBooking(req, res, next) {
     const bookingQty = Math.max(1, Number(quantity) || 1);
 
     await client.query("BEGIN");
+
+    // Đảm bảo bảng booking có đủ 2 cột checkin_time và checkout_time để lưu mốc giờ
+    await client
+      .query(
+        `
+      ALTER TABLE public.booking 
+      ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00',
+      ADD COLUMN IF NOT EXISTS checkout_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00',
+      ADD COLUMN IF NOT EXISTS rental_type VARCHAR(50) DEFAULT 'DAY';
+    `,
+      )
+      .catch(() => {});
 
     const hotelQueryRes = await client.query(
       `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder 
@@ -261,72 +266,42 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
-      const conflictEndDate =
-        inDateStr === outDateStr
-          ? new Date(new Date(inDateStr).getTime() + 86400000)
-              .toISOString()
-              .slice(0, 10)
-          : outDateStr;
-
+      // 🌟 KIỂM TRA XUNG ĐỘT PHÒNG THEO MỐC TIMESTAMP (NGÀY + GIỜ) CHÍNH XÁC:
+      // Khách A: 14:00 - 15:00. Khách B: 15:00 - 16:00 => KHÔNG XUNG ĐỘT VÌ 15:00 KHÔNG NHỎ HƠN 15:00
       const conflictCheckSql = `
-        WITH days AS (
-          SELECT generate_series($2::date, ($3::date - interval '1 day')::date, '1 day'::interval)::date AS day
-        ),
-        daily_locks AS (
-          SELECT lock_date, COALESCE(SUM(quantity), 0)::int AS locked_qty
-          FROM public.temporary_locks
-          WHERE room_id = $1 AND (
-            (lock_expires_at IS NOT NULL AND lock_expires_at > NOW())
-            OR (expires_at IS NOT NULL AND expires_at > NOW())
+        SELECT COUNT(DISTINCT b.id)::int AS booked_count
+        FROM public.booking b
+        JOIN public.booking_room br ON br.booking_id = b.id
+        WHERE br.room_id = $1
+          AND b.status NOT IN ('checked_out', 'cancelled')
+          AND (
+            b.status IN ('confirmed', 'checked_in')
+            OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
           )
-          GROUP BY lock_date
-        ),
-        daily_bookings AS (
-          SELECT days.day, COUNT(DISTINCT b.id)::int AS booked_qty
-          FROM days
-          JOIN public.booking b 
-            ON b.checkin_date <= days.day 
-           AND b.checkout_date > days.day
-           AND b.status NOT IN ('checked_out', 'cancelled')
-           AND (
-             b.status IN ('confirmed', 'checked_in')
-             OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
-           )
-           AND (
-             EXISTS (
-               SELECT 1 FROM public.booking_room br 
-               WHERE br.booking_id = b.id AND br.room_id = $1
-             )
-             OR b.room_number IN (
-               SELECT ru.room_number FROM public.room_unit ru WHERE ru.room_id = $1
-             )
-           )
-          GROUP BY days.day
-        )
-        SELECT days.day,
-               COALESCE(l.locked_qty, 0) AS locked_count,
-               COALESCE(b.booked_qty, 0) AS booked_count
-        FROM days
-        LEFT JOIN daily_locks l ON l.lock_date = days.day
-        LEFT JOIN daily_bookings b ON b.day = days.day
-        WHERE (COALESCE(l.locked_qty, 0) + COALESCE(b.booked_qty, 0) + $4) > $5
-        LIMIT 1;
+          AND (
+            -- Đơn đặt phòng khác giao thoa về thời gian với đơn đặt mới:
+            -- Thời điểm vào của đơn mới < Thời điểm ra của đơn cũ
+            -- VÀ Thời điểm ra của đơn mới > Thời điểm vào của đơn cũ
+            $2::timestamp < (b.checkout_date + COALESCE(b.checkout_time, '12:00:00'::time))
+            AND $3::timestamp > (b.checkin_date + COALESCE(b.checkin_time, '14:00:00'::time))
+          );
       `;
 
       const conflictRes = await client.query(conflictCheckSql, [
         room_id,
-        inDateStr,
-        conflictEndDate,
-        bookingQty,
-        maxStock,
+        inTimestamp.toISOString(),
+        outTimestamp.toISOString(),
       ]);
 
-      if (conflictRes.rows.length > 0) {
+      const currentlyBooked = Number(conflictRes.rows[0]?.booked_count || 0);
+
+      // Kiểm tra xem số lượng phòng đặt thêm có vượt quá tổng số phòng vật lý của hạng phòng này không
+      if (currentlyBooked + bookingQty > maxStock) {
         await client.query("ROLLBACK");
         client.release();
         return res.status(400).json({
           success: false,
-          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đã kín chỗ trong khoảng thời gian này. Hệ thống không thể nhận thêm đặt phòng!`,
+          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đã có khách đặt kín từ ${finalCheckInTime} đến ${finalCheckOutTime}. Vui lòng chọn khung giờ khác!`,
         });
       }
     }
@@ -361,27 +336,20 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
-    const storedCheckoutDate =
-      inDateStr === outDateStr && currentRentalType === "HOUR"
-        ? new Date(new Date(inDateStr).getTime() + 86400000)
-            .toISOString()
-            .slice(0, 10)
-        : outDateStr;
-
+    // 🌟 LƯU CẢ GIỜ CHECKIN VÀ CHECKOUT VÀO CƠ SỞ DỮ LIỆU
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
-        checkin_date, checkout_date, adult_total, children_total,
-        customer_name, guest_email, guest_phone, special_require,
+        checkin_date, checkout_date, checkin_time, checkout_time, rental_type,
+        adult_total, children_total, customer_name, guest_email, guest_phone, special_require,
         status, payment_status, subtotal, discount, service_total,
         total_price, hotel_payout, room_number, receptionist_assigned, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5,
-        $6::date, $7::date, $8, $9,
-        $10, $11, $12, $13,
-        $14, $15,
-        $16, $17, 0,
-        $18, $19, NULL, false, NOW(), NOW()
+        $6::date, $7::date, $8::time, $9::time, $10,
+        $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, 0,
+        $21, $22, NULL, false, NOW(), NOW()
       ) RETURNING *;
     `;
 
@@ -392,7 +360,10 @@ async function createBooking(req, res, next) {
       hotel_id,
       promotion_id || null,
       inDateStr,
-      storedCheckoutDate,
+      outDateStr,
+      formattedInTime,
+      formattedOutTime,
+      currentRentalType,
       finalAdults,
       finalChildren,
       customer_name ||
@@ -429,32 +400,6 @@ async function createBooking(req, res, next) {
         ) ON CONFLICT DO NOTHING`,
         [newBooking.id, room_id, roomName, inDateStr, bookingQty, roomPrice],
       );
-
-      if (!isWalkInBooking) {
-        const sessionId =
-          req.headers["x-session-id"] ||
-          req.sessionID ||
-          `sess_${crypto.randomBytes(8).toString("hex")}`;
-
-        await client
-          .query(
-            `INSERT INTO public.temporary_locks (
-            id, room_id, user_id, session_id, lock_date, quantity, booking_id, lock_expires_at, expires_at, created_at
-          )
-          SELECT gen_random_uuid(), $1, $2, $3, d::date, $4, $5, NOW() + INTERVAL '15 minutes', NOW() + INTERVAL '15 minutes', NOW()
-          FROM generate_series($6::date, ($7::date - interval '1 day')::date, '1 day'::interval) d`,
-            [
-              room_id,
-              userId,
-              sessionId,
-              bookingQty,
-              newBooking.id,
-              inDateStr,
-              storedCheckoutDate,
-            ],
-          )
-          .catch(() => {});
-      }
     }
 
     let qrUrl = null;
