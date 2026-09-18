@@ -24,6 +24,7 @@ import {
   Check,
   Loader2,
   CalendarDays,
+  History,
 } from "lucide-react";
 import {
   AreaChart,
@@ -56,6 +57,11 @@ export default function AdminDashboardPage() {
   const [trafficData, setTrafficData] = useState([]);
   const [pendingList, setPendingList] = useState([]);
   const [hotelRevenues, setHotelRevenues] = useState([]);
+
+  // 🌟 TAB CHUYỂN ĐỔI: "ACTIVE" (Cần quyết toán) HOẶC "HISTORY" (Lịch sử đã chuyển tiền)
+  const [payoutTab, setPayoutTab] = useState("active");
+  const [payoutHistoryList, setPayoutHistoryList] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Filter & Phân trang
   const [hotelSearch, setHotelSearch] = useState("");
@@ -133,11 +139,30 @@ export default function AdminDashboardPage() {
     }
   }, [timeRange]);
 
+  // 🌟 LẤY LỊCH SỬ CÁC ĐỢT QUYẾT TOÁN TRONG QUÁ KHỨ
+  const fetchPayoutHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await apiClient.get("/admin/payouts/history");
+      const list = res?.data?.history || res?.data || [];
+      setPayoutHistoryList(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.warn("Chưa lấy được lịch sử:", err.message);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // 🌟 XÁC NHẬN QUYẾT TOÁN ĐỊNH KỲ CHO CHỦ KHÁCH SẠN
+  useEffect(() => {
+    if (payoutTab === "history") {
+      fetchPayoutHistory();
+    }
+  }, [payoutTab, fetchPayoutHistory]);
+
   const handleConfirmPayout = async () => {
     if (!selectedPayoutHotel) return;
     setIsConfirming(true);
@@ -150,15 +175,15 @@ export default function AdminDashboardPage() {
       await apiClient.post("/admin/payouts/confirm", {
         hotel_id: hotelId,
         amount,
-        note: `Quyết toán chu kỳ tuần cho khách sạn [${hotelName}]`,
+        note: `Quyết toán chu kỳ tuần cho cơ sở [${hotelName}]`,
       });
 
       alert(
         `✓ THÀNH CÔNG! Đã hoàn tất quyết toán ${formatVND(amount)} cho cơ sở [${hotelName}]. Số tiền nợ kỳ này đã về 0 ₫!`,
       );
-
       setSelectedPayoutHotel(null);
       await fetchDashboardData();
+      if (payoutTab === "history") fetchPayoutHistory();
     } catch (e) {
       alert(
         "Lỗi khi lưu quyết toán: " + (e.response?.data?.message || e.message),
@@ -203,7 +228,6 @@ export default function AdminDashboardPage() {
 
   const processedHotelRevenues = useMemo(() => {
     let list = [...hotelRevenues];
-
     if (hotelSearch.trim()) {
       const q = hotelSearch.toLowerCase().trim();
       list = list.filter(
@@ -344,16 +368,13 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* 2. BẢNG DOANH THU & QUYẾT TOÁN CƠ SỞ */}
+          {/* 2. BẢNG QUYẾT TOÁN CƠ SỞ KÈM TAB LỊCH SỬ */}
           <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-4">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pb-4 border-b border-gray-100">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pb-3 border-b border-gray-100">
               <div>
                 <h3 className="font-black text-base text-[#0a2540] flex items-center gap-2">
                   <Building2 size={18} className="text-[#003580]" /> Quản Lý
                   Quyết Toán Định Kỳ Cho Đối Tác
-                  <span className="text-xs bg-blue-50 text-[#003580] px-2.5 py-0.5 rounded-full font-bold border border-blue-100">
-                    {processedHotelRevenues.length} khách sạn
-                  </span>
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
                   <CalendarDays size={13} className="text-[#006ce4]" />
@@ -364,206 +385,334 @@ export default function AdminDashboardPage() {
                 </p>
               </div>
 
-              {/* Tìm kiếm & Phân loại */}
-              <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-                <div className="relative flex-1 sm:w-56">
-                  <Search
-                    size={14}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    type="text"
-                    value={hotelSearch}
-                    onChange={(e) => {
-                      setHotelSearch(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    placeholder="Tìm khách sạn, tên chủ..."
-                    className="w-full h-9 pl-8 pr-3 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003580] focus:bg-white"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 h-9 text-xs">
-                  <ArrowUpDown size={13} className="text-gray-400" />
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="bg-transparent border-none outline-none font-bold text-gray-700 cursor-pointer text-xs"
-                  >
-                    <option value="payout_desc">
-                      Tiền cần trả Owner cao nhất
-                    </option>
-                    <option value="gmv_desc">
-                      Top Doanh thu (GMV) cao nhất
-                    </option>
-                    <option value="commission_desc">
-                      Top Hoa hồng cao nhất
-                    </option>
-                    <option value="name_asc">Tên khách sạn (A-Z)</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 h-9 text-xs">
-                  <span className="text-gray-400">Xem:</span>
-                  <select
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="bg-transparent border-none outline-none font-bold text-gray-700 cursor-pointer text-xs"
-                  >
-                    <option value={5}>5 cơ sở</option>
-                    <option value={10}>10 cơ sở</option>
-                    <option value={20}>20 cơ sở</option>
-                  </select>
-                </div>
+              {/* TAB NÚT CHUYỂN ĐỔI GIỮA CẦN QUYẾT TOÁN VÀ LỊCH SỬ */}
+              <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setPayoutTab("active")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    payoutTab === "active"
+                      ? "bg-white text-[#003580] shadow-xs"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Cần quyết toán (
+                  {
+                    processedHotelRevenues.filter(
+                      (h) => Number(h.owner_payout || 0) > 0,
+                    ).length
+                  }
+                  )
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPayoutTab("history")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    payoutTab === "history"
+                      ? "bg-white text-[#003580] shadow-xs"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <History size={14} />
+                  <span>Lịch sử đã chuyển tiền</span>
+                </button>
               </div>
             </div>
 
-            {/* BẢNG DỮ LIỆU */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
-                  <tr>
-                    <th className="py-3.5 px-3">Tên Khách Sạn</th>
-                    <th className="py-3.5 px-3">Chủ Cơ Sở (Owner)</th>
-                    <th className="py-3.5 px-3 text-center">Tỷ Lệ Sàn</th>
-                    <th className="py-3.5 px-3 text-right">
-                      Tổng Khách Đặt (GMV)
-                    </th>
-                    <th className="py-3.5 px-3 text-right">Hoa Hồng Sàn Thu</th>
-                    <th className="py-3.5 px-3 text-right">
-                      Tiền Cần Quyết Toán
-                    </th>
-                    <th className="py-3.5 px-3 text-center">Thao Tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 font-medium">
-                  {paginatedHotelRevenues.length > 0 ? (
-                    paginatedHotelRevenues.map((h) => {
-                      const isSettled = Number(h.owner_payout || 0) <= 0;
+            {payoutTab === "active" ? (
+              <>
+                {/* THANH TÌM KIẾM CƠ SỞ */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="relative flex-1 sm:w-64 max-w-sm">
+                    <Search
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                    <input
+                      type="text"
+                      value={hotelSearch}
+                      onChange={(e) => {
+                        setHotelSearch(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      placeholder="Tìm khách sạn, tên chủ..."
+                      className="w-full h-9 pl-8 pr-3 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-[#003580] focus:bg-white"
+                    />
+                  </div>
 
-                      return (
-                        <tr
-                          key={h.hotel_id}
-                          className="hover:bg-blue-50/40 transition"
-                        >
-                          <td className="py-3.5 px-3">
-                            <strong className="text-gray-900 block font-bold text-xs line-clamp-1">
-                              {h.hotel_name}
-                            </strong>
-                            <span className="text-[11px] text-gray-400 font-normal">
-                              {h.city || "Việt Nam"} • Đã hoàn thành:{" "}
-                              <b>{h.completed_bookings || 0}</b>/
-                              {h.total_bookings} đơn
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3">
-                            <p className="font-bold text-gray-800 line-clamp-1">
-                              {h.owner_name || "Chưa gán owner"}
-                            </p>
-                            <p className="text-[11px] text-gray-400 font-mono">
-                              {h.owner_phone || h.owner_email || "N/A"}
-                            </p>
-                          </td>
-                          <td className="py-3.5 px-3 text-center">
-                            <span className="px-2.5 py-0.5 bg-blue-50 text-[#003580] font-black rounded-lg border border-blue-100 text-[11px]">
-                              {h.commission_rate}%
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-bold text-gray-900 tabular-nums">
-                            {formatVND(h.total_gmv)}
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-black text-emerald-700 tabular-nums">
-                            +{formatVND(h.admin_commission)}
-                          </td>
-                          <td className="py-3.5 px-3 text-right font-black text-sm tabular-nums">
-                            {isSettled ? (
-                              <span className="text-gray-400 font-semibold">
-                                0 ₫
-                              </span>
-                            ) : (
-                              <span className="text-[#003580]">
-                                {formatVND(h.owner_payout)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-3 text-center">
-                            {isSettled ? (
-                              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold rounded-xl inline-flex items-center gap-1 text-[11px]">
-                                <CheckCircle2 size={13} /> Đã Quyết Toán
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedPayoutHotel(h)}
-                                className="px-3.5 py-1.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition active:scale-95"
-                              >
-                                <CreditCard size={13} /> Quyết Toán
-                              </button>
-                            )}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 h-9 text-xs">
+                      <ArrowUpDown size={13} className="text-gray-400" />
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="bg-transparent border-none outline-none font-bold text-gray-700 cursor-pointer text-xs"
+                      >
+                        <option value="payout_desc">
+                          Tiền cần trả Owner cao nhất
+                        </option>
+                        <option value="gmv_desc">
+                          Top Doanh thu (GMV) cao nhất
+                        </option>
+                        <option value="commission_desc">
+                          Top Hoa hồng cao nhất
+                        </option>
+                        <option value="name_asc">Tên khách sạn (A-Z)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 h-9 text-xs">
+                      <span className="text-gray-400">Xem:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="bg-transparent border-none outline-none font-bold text-gray-700 cursor-pointer text-xs"
+                      >
+                        <option value={5}>5 cơ sở</option>
+                        <option value={10}>10 cơ sở</option>
+                        <option value={20}>20 cơ sở</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BẢNG DỮ LIỆU CẦN QUYẾT TOÁN */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
+                      <tr>
+                        <th className="py-3.5 px-3">Tên Khách Sạn</th>
+                        <th className="py-3.5 px-3">Chủ Cơ Sở (Owner)</th>
+                        <th className="py-3.5 px-3 text-center">Tỷ Lệ Sàn</th>
+                        <th className="py-3.5 px-3 text-right">
+                          Tổng Khách Đặt (GMV)
+                        </th>
+                        <th className="py-3.5 px-3 text-right">
+                          Hoa Hồng Sàn Thu
+                        </th>
+                        <th className="py-3.5 px-3 text-right">
+                          Tiền Cần Quyết Toán
+                        </th>
+                        <th className="py-3.5 px-3 text-center">Thao Tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 font-medium">
+                      {paginatedHotelRevenues.length > 0 ? (
+                        paginatedHotelRevenues.map((h) => {
+                          const isSettled = Number(h.owner_payout || 0) <= 0;
+
+                          return (
+                            <tr
+                              key={h.hotel_id}
+                              className="hover:bg-blue-50/40 transition"
+                            >
+                              <td className="py-3.5 px-3">
+                                <strong className="text-gray-900 block font-bold text-xs line-clamp-1">
+                                  {h.hotel_name}
+                                </strong>
+                                <span className="text-[11px] text-gray-400 font-normal">
+                                  {h.city || "Việt Nam"} • Đã hoàn thành:{" "}
+                                  <b>{h.completed_bookings || 0}</b>/
+                                  {h.total_bookings} đơn
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-3">
+                                <p className="font-bold text-gray-800 line-clamp-1">
+                                  {h.owner_name || "Chưa gán owner"}
+                                </p>
+                                <p className="text-[11px] text-gray-400 font-mono">
+                                  {h.owner_phone || h.owner_email || "N/A"}
+                                </p>
+                              </td>
+                              <td className="py-3.5 px-3 text-center">
+                                <span className="px-2.5 py-0.5 bg-blue-50 text-[#003580] font-black rounded-lg border border-blue-100 text-[11px]">
+                                  {h.commission_rate}%
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-3 text-right font-bold text-gray-900 tabular-nums">
+                                {formatVND(h.total_gmv)}
+                              </td>
+                              <td className="py-3.5 px-3 text-right font-black text-emerald-700 tabular-nums">
+                                +{formatVND(h.admin_commission)}
+                              </td>
+                              <td className="py-3.5 px-3 text-right font-black text-sm tabular-nums">
+                                {isSettled ? (
+                                  <span className="text-gray-400 font-semibold">
+                                    0 ₫
+                                  </span>
+                                ) : (
+                                  <span className="text-[#003580]">
+                                    {formatVND(h.owner_payout)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3.5 px-3 text-center">
+                                {isSettled ? (
+                                  <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold rounded-xl inline-flex items-center gap-1 text-[11px]">
+                                    <CheckCircle2 size={13} /> Đã Quyết Toán
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedPayoutHotel(h)}
+                                    className="px-3.5 py-1.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition active:scale-95"
+                                  >
+                                    <CreditCard size={13} /> Quyết Toán
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td
+                            colSpan={7}
+                            className="py-12 text-center text-gray-400 italic"
+                          >
+                            Không tìm thấy khách sạn nào khớp với tìm kiếm.
                           </td>
                         </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="py-12 text-center text-gray-400 italic"
-                      >
-                        Không tìm thấy khách sạn nào khớp với tìm kiếm.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* PHÂN TRANG */}
-            {processedHotelRevenues.length > 0 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100 text-xs">
-                <span className="text-gray-500">
-                  Hiển thị{" "}
-                  <b>
-                    {(currentPage - 1) * pageSize + 1} -{" "}
-                    {Math.min(
-                      currentPage * pageSize,
-                      processedHotelRevenues.length,
-                    )}
-                  </b>{" "}
-                  trên tổng số <b>{processedHotelRevenues.length}</b> cơ sở
-                </span>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    className="p-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer text-gray-700"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <span className="px-3 py-1 font-bold bg-gray-100 rounded-xl text-gray-700">
-                    Trang {currentPage} / {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={currentPage === totalPages}
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages, p + 1))
-                    }
-                    className="p-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer text-gray-700"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
+
+                {/* PHÂN TRANG */}
+                {processedHotelRevenues.length > 0 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100 text-xs">
+                    <span className="text-gray-500">
+                      Hiển thị{" "}
+                      <b>
+                        {(currentPage - 1) * pageSize + 1} -{" "}
+                        {Math.min(
+                          currentPage * pageSize,
+                          processedHotelRevenues.length,
+                        )}
+                      </b>{" "}
+                      trên <b>{processedHotelRevenues.length}</b> cơ sở
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={currentPage === 1}
+                        onClick={() =>
+                          setCurrentPage((p) => Math.max(1, p - 1))
+                        }
+                        className="p-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer text-gray-700"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <span className="px-3 py-1 font-bold bg-gray-100 rounded-xl text-gray-700">
+                        Trang {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={currentPage === totalPages}
+                        onClick={() =>
+                          setCurrentPage((p) => Math.min(totalPages, p + 1))
+                        }
+                        className="p-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer text-gray-700"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* ─── 🌟 BẢNG LỊCH SỬ CÁC ĐỢT ĐÃ CHUYỂN TIỀN QUYẾT TOÁN TRONG DATABASE ─── */
+              <div className="overflow-x-auto">
+                {loadingHistory ? (
+                  <div className="py-12 flex justify-center text-gray-400">
+                    <Loader2
+                      size={24}
+                      className="animate-spin text-[#003580]"
+                    />
+                  </div>
+                ) : payoutHistoryList.length > 0 ? (
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
+                      <tr>
+                        <th className="py-3 px-3">Thời Gian Chuyển</th>
+                        <th className="py-3 px-3">Khách Sạn</th>
+                        <th className="py-3 px-3">Người Thụ Hưởng</th>
+                        <th className="py-3 px-3">Tài Khoản Nhận</th>
+                        <th className="py-3 px-3 text-right">
+                          Số Tiền Đã Giải Ngân
+                        </th>
+                        <th className="py-3 px-3">Nội Dung / Ghi Chú</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 font-medium">
+                      {payoutHistoryList.map((item) => (
+                        <tr
+                          key={item.id}
+                          className="hover:bg-gray-50/80 transition"
+                        >
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <span className="font-bold text-gray-900 block">
+                              {new Date(item.created_at).toLocaleDateString(
+                                "vi-VN",
+                              )}
+                            </span>
+                            <span className="text-[11px] text-gray-400 font-mono">
+                              {new Date(item.created_at).toLocaleTimeString(
+                                "vi-VN",
+                                { hour: "2-digit", minute: "2-digit" },
+                              )}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <strong className="text-gray-900 font-bold block">
+                              {item.hotel_name || "---"}
+                            </strong>
+                            <span className="text-[11px] text-gray-400">
+                              {item.hotel_city || "Việt Nam"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className="font-bold text-gray-800 block">
+                              {item.bank_account_holder ||
+                                item.owner_name ||
+                                "---"}
+                            </span>
+                            <span className="text-[11px] text-gray-400">
+                              {item.owner_phone || "N/A"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-mono">
+                            <span className="font-bold text-[#003580]">
+                              {item.bank_account || "N/A"}
+                            </span>
+                            <span className="text-[11px] text-gray-400 block font-sans">
+                              {item.bank_name || "Ngân hàng"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-right font-black text-emerald-700 text-sm tabular-nums whitespace-nowrap">
+                            {formatVND(item.amount)}
+                          </td>
+                          <td className="py-3 px-3 text-gray-600 italic">
+                            {item.note || "Quyết toán định kỳ"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="py-12 text-center text-gray-400 italic">
+                    Chưa có giao dịch quyết toán nào được ghi nhận trong lịch
+                    sử.
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* 3. BIỂU ĐỒ GIÁM SÁT LƯU LƯỢNG */}
+          {/* 3. BIỂU ĐỒ LƯU LƯỢNG */}
           <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-5">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b pb-4 border-gray-100">
               <div>

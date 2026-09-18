@@ -55,9 +55,12 @@ if (adminController) {
   // Thống kê & Báo cáo Dashboard
   router.get("/stats", adminController.getStats);
 
-  // 🌟 ROUTE QUYẾT TOÁN CHO OWNER (LƯU VÀO DATABASE)
+  // 🌟 ROUTE QUYẾT TOÁN CHO OWNER
   if (typeof adminController.confirmPayout === "function") {
     router.post("/payouts/confirm", adminController.confirmPayout);
+  }
+  if (typeof adminController.getPayoutHistory === "function") {
+    router.get("/payouts/history", adminController.getPayoutHistory);
   }
 
   // Quản lý Users

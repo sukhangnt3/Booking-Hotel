@@ -2,7 +2,7 @@
 const pool = require("../config/database");
 const bcrypt = require("bcryptjs");
 
-// 🌟 ĐẢM BẢO BẢNG LỊCH SỬ QUYẾT TOÁN TỒN TẠI
+// 🌟 TỰ ĐỘNG ĐẢM BẢO BẢNG QUYẾT TOÁN TỒN TẠI ĐỂ ĐỐI SOÁT TRỪ NỢ & XEM LỊCH SỬ
 pool
   .query(
     `
@@ -17,7 +17,7 @@ pool
   )
   .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
 
-// ─── 1. THỐNG KÊ DASHBOARD & QUYẾT TOÁN ĐỊNH KỲ (ĐỒNG BỘ 100% SỐ LIỆU) ───
+// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & DOANH THU TỪNG KHÁCH SẠN ───
 async function getStats(req, res, next) {
   try {
     const dbStart = Date.now();
@@ -29,7 +29,7 @@ async function getStats(req, res, next) {
     const minutes = Math.floor((uptimeSeconds % 3600) / 60);
     const uptimeFormatted = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-    const range = (req.query.range || "today").toLowerCase();
+    const range = (req.query.range || "today").toLowerCase(); // 'today' | '7days' | '30days'
 
     let trafficQuery = "";
     let timeBookingFilter = "";
@@ -94,7 +94,9 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN CHI TIẾT TỪNG CƠ SỞ: CHỈ TÍNH ĐƠN CHECK-OUT VÀO TIỀN TRẢ OWNER
+    // 🌟 TRUY VẤN CHI TIẾT DOANH THU:
+    // 🛑 CHỈ LẤY ĐƠN ONLINE (BK), BỎ QUA ĐƠN TẠI QUẦY (DP)
+    // 🛑 CHỈ TÍNH TIỀN TRẢ OWNER KHI KHÁCH ĐÃ CHECK-OUT (TRẢ PHÒNG)
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -122,6 +124,7 @@ async function getStats(req, res, next) {
           ), 
           0
         )::bigint AS admin_commission,
+        -- TIỀN SẴN SÀNG QUYẾT TOÁN CHO OWNER (ĐÃ CHECK-OUT VÀ TRỪ ĐI TIỀN ĐÃ CHUYỂN TRƯỚC ĐÓ)
         GREATEST(
           0,
           COALESCE(
@@ -176,7 +179,7 @@ async function getStats(req, res, next) {
 
     const hotelRows = hotelRevenuesResult.rows || [];
 
-    // 🌟 ĐỒNG BỘ 100%: TỔNG GMV, HOA HỒNG VÀ CÔNG NỢ PHẢI BẰNG TỔNG CỦA CÁC CƠ SỞ CỘNG LẠI
+    // 🌟 ĐỒNG BỘ 100% GIỮA THẺ TỔNG VÀ BẢNG DANH SÁCH CƠ SỞ
     const totalGMV = hotelRows.reduce(
       (sum, h) => sum + Number(h.total_gmv || 0),
       0,
@@ -215,7 +218,7 @@ async function getStats(req, res, next) {
   }
 }
 
-// ─── 2. XÁC NHẬN CHUYỂN TIỀN QUYẾT TOÁN ───
+// ─── 2. XÁC NHẬN CHUYỂN TIỀN QUYẾT TOÁN CHO CHỦ CƠ SỞ ───
 async function confirmPayout(req, res) {
   try {
     const { hotel_id, hotelId, amount, note } = req.body;
@@ -234,11 +237,7 @@ async function confirmPayout(req, res) {
     await pool.query(
       `INSERT INTO public.payout_settlement (hotel_id, amount, note, created_at)
        VALUES ($1, $2, $3, NOW())`,
-      [
-        String(targetHotelId),
-        payoutAmount,
-        note || "Quyết toán định kỳ GoStay",
-      ],
+      [String(targetHotelId), payoutAmount, note || "Quyết toán chu kỳ GoStay"],
     );
 
     return res.json({
@@ -251,7 +250,42 @@ async function confirmPayout(req, res) {
   }
 }
 
-// ─── 3. DANH SÁCH NGƯỜI DÙNG ───
+// ─── 3. LỊCH SỬ CÁC ĐỢT ĐÃ CHUYỂN TIỀN QUYẾT TOÁN ───
+async function getPayoutHistory(req, res, next) {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        ps.id,
+        ps.hotel_id,
+        ps.amount,
+        ps.note,
+        ps.created_at,
+        h.name AS hotel_name,
+        h.city AS hotel_city,
+        h.bank_name,
+        h.bank_account,
+        h.bank_account_holder,
+        u.full_name AS owner_name,
+        u.phone AS owner_phone
+      FROM public.payout_settlement ps
+      LEFT JOIN public.hotel h ON h.id::text = ps.hotel_id::text
+      LEFT JOIN public.users u ON u.id = h.owner_id
+      ORDER BY ps.created_at DESC
+      LIMIT 100;
+    `);
+
+    return res.json({
+      success: true,
+      data: result.rows || [],
+      history: result.rows || [],
+    });
+  } catch (error) {
+    console.error("❌ LỖI GET_PAYOUT_HISTORY:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// ─── 4. DANH SÁCH NGƯỜI DÙNG ───
 async function listUsers(req, res, next) {
   try {
     let search = (req.query.search || "").toString().trim();
@@ -299,7 +333,7 @@ async function listUsers(req, res, next) {
   }
 }
 
-// ─── 4. TẠO TÀI KHOẢN MỚI ───
+// ─── 5. TẠO TÀI KHOẢN MỚI ───
 async function createUser(req, res, next) {
   const { full_name, email, phone, password, role } = req.body;
 
@@ -374,7 +408,7 @@ async function createUser(req, res, next) {
   }
 }
 
-// ─── 5. CẬP NHẬT ROLE ───
+// ─── 6. CẬP NHẬT ROLE ───
 async function updateUserRole(req, res, next) {
   const userId = req.params.id;
   let newRole = (req.body.role || "").toString().trim().toUpperCase();
@@ -426,7 +460,7 @@ async function updateUserRole(req, res, next) {
   }
 }
 
-// ─── 6. KHÓA / MỞ KHÓA TÀI KHOẢN ───
+// ─── 7. KHÓA / MỞ KHÓA TÀI KHOẢN ───
 async function toggleUserStatus(req, res, next) {
   const userId = req.params.id;
   try {
@@ -454,7 +488,7 @@ async function toggleUserStatus(req, res, next) {
   }
 }
 
-// ─── 7. DUYỆT & CẬP NHẬT TRẠNG THÁI KHÁCH SẠN ───
+// ─── 8. DUYỆT & CẬP NHẬT TRẠNG THÁI KHÁCH SẠN ───
 async function listAdminHotels(req, res, next) {
   try {
     let status = (req.query.status || "").toString().trim();
@@ -534,7 +568,7 @@ async function updateHotelStatus(req, res, next) {
   }
 }
 
-// ─── 8. GIÁM SÁT ĐƠN ĐẶT PHÒNG TOÀN SÀN ───
+// ─── 9. GIÁM SÁT ĐƠN ĐẶT PHÒNG TOÀN SÀN ───
 async function listAllBookings(req, res, next) {
   try {
     const status = (req.query.status || "").toString().trim();
@@ -612,7 +646,7 @@ async function updateBookingStatusAdmin(req, res, next) {
   }
 }
 
-// ─── 9. PROMOTIONS & REVIEWS ───
+// ─── 10. PROMOTIONS & REVIEWS DÀNH CHO ADMIN ───
 async function listPromotions(req, res, next) {
   try {
     const result = await pool.query(
@@ -656,6 +690,7 @@ async function deleteReview(req, res, next) {
 module.exports = {
   getStats,
   confirmPayout,
+  getPayoutHistory, // 🌟 Export hàm xem lịch sử các đợt quyết toán
   listUsers,
   createUser,
   updateUserRole,
