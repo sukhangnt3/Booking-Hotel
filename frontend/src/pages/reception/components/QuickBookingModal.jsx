@@ -1,5 +1,5 @@
 // src/pages/reception/components/QuickBookingModal.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   Search,
   Plus,
@@ -30,7 +30,7 @@ const formatToLocalISO = (date) => {
   )}:${pad(d.getMinutes())}`;
 };
 
-// Định dạng hiển thị chuẩn: "15 Thg 09, 16:16"
+// Định dạng hiển thị: "15 Thg 09, 16:16"
 const formatDisplayDateTime = (isoStr) => {
   if (!isoStr) return "";
   const d = new Date(isoStr);
@@ -51,7 +51,7 @@ const isDateInFuture = (dateStr) => {
   return checkin.getTime() > today.getTime();
 };
 
-// 🌟 BỘ CHỌN GIỜ SIÊU GỌN - ĐÃ CỐ ĐỊNH KÍCH THƯỚC ĐỀU NHAU (W-[178PX])
+// 🌟 BỘ CHỌN GIỜ SIÊU GỌN W-[178PX]
 function SlimDateTimePicker({ value, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -188,7 +188,7 @@ export default function QuickBookingModal({
       ? propFormatVND(num)
       : Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
-  // 1. STATE KHÁCH HÀNG (ĐẦY ĐỦ 100% CỦA FILE GỐC)
+  // 1. STATE KHÁCH HÀNG
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState({
     name: "",
@@ -204,7 +204,7 @@ export default function QuickBookingModal({
     note: "",
   });
 
-  // 2. STATE SỐ KHÁCH (MẶC ĐỊNH 2 LỚN, 0 TRẺ NHƯ CODE GỐC)
+  // 2. STATE SỐ KHÁCH (MẶC ĐỊNH 2 LỚN, 0 TRẺ)
   const [isGuestStayOpen, setIsGuestStayOpen] = useState(false);
   const [tempGuestCount, setTempGuestCount] = useState({
     adult: 2,
@@ -212,7 +212,7 @@ export default function QuickBookingModal({
   });
   const [guestStayList, setGuestStayList] = useState([]);
 
-  // 3. STATE KHAI BÁO CCCD (ĐẦY ĐỦ 100% CỦA FILE GỐC)
+  // 3. STATE KHAI BÁO CCCD
   const [isAddGuestDocOpen, setIsAddGuestDocOpen] = useState(false);
   const initialGuestDocForm = {
     room_number: "",
@@ -233,6 +233,33 @@ export default function QuickBookingModal({
     isDateInFuture(r.checkin_date),
   );
 
+  // 🌟 GIỜ QUY ĐỊNH CỦA KHÁCH SẠN
+  const hotelPolicies = useMemo(() => {
+    const firstRoom = rooms[0] || {};
+    return {
+      dailyIn: String(firstRoom.checkin_time || "14:00").slice(0, 5),
+      dailyOut: String(firstRoom.checkout_time || "12:00").slice(0, 5),
+      overnightIn: String(
+        firstRoom.overnight_checkin_time ||
+          firstRoom.overnight_checkin ||
+          "22:00",
+      ).slice(0, 5),
+      overnightOut: String(
+        firstRoom.overnight_checkout_time ||
+          firstRoom.overnight_checkout ||
+          "12:00",
+      ).slice(0, 5),
+      halfdayIn: String(
+        firstRoom.halfday_checkin_time || firstRoom.halfday_checkin || "12:00",
+      ).slice(0, 5),
+      halfdayOut: String(
+        firstRoom.halfday_checkout_time ||
+          firstRoom.halfday_checkout ||
+          "21:00",
+      ).slice(0, 5),
+    };
+  }, [rooms]);
+
   // TẠO THỜI GIAN THEO TỪNG HÌNH THỨC
   const getDefaultDatesForType = (rentalType, checkinMode = "Quy định") => {
     const now = new Date();
@@ -250,13 +277,15 @@ export default function QuickBookingModal({
     if (rentalType === "Đêm") {
       const start = new Date(now);
       if (checkinMode !== "Hiện tại") {
-        start.setHours(22, 0, 0, 0);
+        const [h, m] = hotelPolicies.overnightIn.split(":").map(Number);
+        start.setHours(h || 22, m || 0, 0, 0);
       }
       const end = new Date(start);
-      if (start.getHours() >= 22) {
+      if (start.getHours() >= 20) {
         end.setDate(end.getDate() + 1);
       }
-      end.setHours(12, 0, 0, 0);
+      const [outH, outM] = hotelPolicies.overnightOut.split(":").map(Number);
+      end.setHours(outH || 12, outM || 0, 0, 0);
       return {
         checkin: toDatetimeLocal(start),
         checkout: toDatetimeLocal(end),
@@ -266,10 +295,12 @@ export default function QuickBookingModal({
     if (rentalType === "Buổi") {
       const start = new Date(now);
       if (checkinMode !== "Hiện tại") {
-        start.setHours(12, 0, 0, 0);
+        const [h, m] = hotelPolicies.halfdayIn.split(":").map(Number);
+        start.setHours(h || 12, m || 0, 0, 0);
       }
       const end = new Date(start);
-      end.setHours(21, 0, 0, 0);
+      const [outH, outM] = hotelPolicies.halfdayOut.split(":").map(Number);
+      end.setHours(outH || 21, outM || 0, 0, 0);
       return {
         checkin: toDatetimeLocal(start),
         checkout: toDatetimeLocal(end),
@@ -279,18 +310,20 @@ export default function QuickBookingModal({
     // THEO NGÀY: 14h hôm nay -> 12h hôm sau
     const start = new Date(now);
     if (checkinMode !== "Hiện tại") {
-      start.setHours(14, 0, 0, 0);
+      const [h, m] = hotelPolicies.dailyIn.split(":").map(Number);
+      start.setHours(h || 14, m || 0, 0, 0);
     }
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
-    end.setHours(12, 0, 0, 0);
+    const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
+    end.setHours(outH || 12, outM || 0, 0, 0);
     return {
       checkin: toDatetimeLocal(start),
       checkout: toDatetimeLocal(end),
     };
   };
 
-  // 🌟 TÍNH TOÁN GIÁ & GỌN NHẸ "DỰ KIẾN" (1 ĐÊM, 1 BUỔI, 1 NGÀY)
+  // 🌟 TÍNH TOÁN GIÁ & PHỤ THU NHẬN SỚM / TRẢ MUỘN THEO GIỜ QUY ĐỊNH
   const calculateDurationAndPriceLogic = (
     checkinStr,
     checkoutStr,
@@ -311,7 +344,9 @@ export default function QuickBookingModal({
     const checkin = new Date(checkinStr);
     const checkout = new Date(checkoutStr);
 
-    const basePrice = Number(roomInfo?.base_price || 200000);
+    const basePrice = Number(
+      roomInfo?.base_price || roomInfo?.daily_price || 200000,
+    );
     const overnightPrice =
       Number(roomInfo?.overnight_price) > 0
         ? Number(roomInfo.overnight_price)
@@ -327,8 +362,8 @@ export default function QuickBookingModal({
 
     const autoSurcharge = roomInfo?.auto_surcharge !== false;
     const surchargeType = roomInfo?.surcharge_type || "tiered";
-    const earlyCheckinFee = Number(roomInfo?.early_checkin_fee || 0);
-    const lateCheckoutFee = Number(roomInfo?.late_checkout_fee || 0);
+    const earlyCheckinFee = Number(roomInfo?.early_checkin_fee || hourlyPrice);
+    const lateCheckoutFee = Number(roomInfo?.late_checkout_fee || hourlyPrice);
     const earlyTiers = roomInfo?.early_surcharge_tiers || [
       { hours: 1, percent: 10 },
       { hours: 2, percent: 30 },
@@ -369,7 +404,7 @@ export default function QuickBookingModal({
     const diffHours = Math.floor(totalMinutes / 60);
     const remainMins = totalMinutes % 60;
 
-    // 1. THEO GIỜ (Giữ nguyên hiển thị số giờ thực tế)
+    // 1. THEO GIỜ
     if (rentalType === "Giờ") {
       const billedHours = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60)));
       roomPrice = billedHours * hourlyPrice;
@@ -390,18 +425,20 @@ export default function QuickBookingModal({
       };
     }
 
-    // 2. QUA ĐÊM (🌟 Chỉ hiển thị "1 đêm")
+    // 2. QUA ĐÊM
     if (rentalType === "Đêm") {
       roomPrice = overnightPrice;
+      const [stdH, stdM] = hotelPolicies.overnightIn.split(":").map(Number);
       const stdCheckin = new Date(checkin);
-      stdCheckin.setHours(22, 0, 0, 0);
+      stdCheckin.setHours(stdH || 22, stdM || 0, 0, 0);
 
       if (checkin < stdCheckin) {
         earlyHours = Math.ceil((stdCheckin - checkin) / (1000 * 60 * 60));
       }
 
+      const [outH, outM] = hotelPolicies.overnightOut.split(":").map(Number);
       const stdCheckout = new Date(checkout);
-      stdCheckout.setHours(12, 0, 0, 0);
+      stdCheckout.setHours(outH || 12, outM || 0, 0, 0);
       if (checkout > stdCheckout) {
         lateHours = Math.ceil((checkout - stdCheckout) / (1000 * 60 * 60));
       }
@@ -422,13 +459,13 @@ export default function QuickBookingModal({
       }
 
       if (earlyHours >= 2) {
-        earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước 22h)`;
+        earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước ${hotelPolicies.overnightIn})`;
       } else if (earlyHours > 0) {
         earlyWarning = `Nhận sớm ${earlyHours}h`;
       }
 
       if (lateHours >= 2) {
-        lateWarning = `⚠️ Trả muộn ${lateHours}h (sau 12h)`;
+        lateWarning = `⚠️ Trả muộn ${lateHours}h (sau ${hotelPolicies.overnightOut})`;
       } else if (lateHours > 0) {
         lateWarning = `Trả muộn ${lateHours}h`;
       }
@@ -445,18 +482,20 @@ export default function QuickBookingModal({
       };
     }
 
-    // 3. THEO BUỔI (🌟 Chỉ hiển thị "1 buổi")
+    // 3. THEO BUỔI
     if (rentalType === "Buổi") {
       roomPrice = halfDayPrice;
+      const [stdH, stdM] = hotelPolicies.halfdayIn.split(":").map(Number);
       const stdCheckin = new Date(checkin);
-      stdCheckin.setHours(12, 0, 0, 0);
+      stdCheckin.setHours(stdH || 12, stdM || 0, 0, 0);
 
       if (checkin < stdCheckin) {
         earlyHours = Math.ceil((stdCheckin - checkin) / (1000 * 60 * 60));
       }
 
+      const [outH, outM] = hotelPolicies.halfdayOut.split(":").map(Number);
       const stdCheckout = new Date(checkout);
-      stdCheckout.setHours(21, 0, 0, 0);
+      stdCheckout.setHours(outH || 21, outM || 0, 0, 0);
       if (checkout > stdCheckout) {
         lateHours = Math.ceil((checkout - stdCheckout) / (1000 * 60 * 60));
       }
@@ -477,13 +516,13 @@ export default function QuickBookingModal({
       }
 
       if (earlyHours >= 2) {
-        earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước 12h)`;
+        earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước ${hotelPolicies.halfdayIn})`;
       } else if (earlyHours > 0) {
         earlyWarning = `Nhận sớm ${earlyHours}h`;
       }
 
       if (lateHours >= 2) {
-        lateWarning = `⚠️ Trả muộn ${lateHours}h (sau 21h)`;
+        lateWarning = `⚠️ Trả muộn ${lateHours}h (sau ${hotelPolicies.halfdayOut})`;
       } else if (lateHours > 0) {
         lateWarning = `Trả muộn ${lateHours}h`;
       }
@@ -500,19 +539,21 @@ export default function QuickBookingModal({
       };
     }
 
-    // 4. THEO NGÀY (🌟 Hiển thị "1 ngày")
+    // 4. THEO NGÀY
     const days = Math.max(1, Math.round(totalMinutes / (24 * 60)) || 1);
     roomPrice = days * basePrice;
 
+    const [stdH, stdM] = hotelPolicies.dailyIn.split(":").map(Number);
     const stdCheckin = new Date(checkin);
-    stdCheckin.setHours(14, 0, 0, 0);
+    stdCheckin.setHours(stdH || 14, stdM || 0, 0, 0);
 
     if (checkin < stdCheckin) {
       earlyHours = Math.ceil((stdCheckin - checkin) / (1000 * 60 * 60));
     }
 
+    const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     const stdCheckout = new Date(checkout);
-    stdCheckout.setHours(12, 0, 0, 0);
+    stdCheckout.setHours(outH || 12, outM || 0, 0, 0);
     if (checkout > stdCheckout) {
       lateHours = Math.ceil((checkout - stdCheckout) / (1000 * 60 * 60));
     }
@@ -533,13 +574,13 @@ export default function QuickBookingModal({
     }
 
     if (earlyHours >= 2) {
-      earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước 14:00)`;
+      earlyWarning = `⚠️ Nhận sớm ${earlyHours}h (trước ${hotelPolicies.dailyIn})`;
     } else if (earlyHours > 0) {
       earlyWarning = `Nhận sớm ${earlyHours}h`;
     }
 
     if (lateHours >= 2) {
-      lateWarning = `⚠️ Trả muộn ${lateHours}h (sau 12:00)`;
+      lateWarning = `⚠️ Trả muộn ${lateHours}h (sau ${hotelPolicies.dailyOut})`;
     } else if (lateHours > 0) {
       lateWarning = `Trả muộn ${lateHours}h`;
     }
@@ -569,7 +610,7 @@ export default function QuickBookingModal({
     0,
   );
 
-  // ĐỒNG BỘ MẶC ĐỊNH 2 LỚN, 0 TRẺ NHƯ CODE GỐC
+  // ĐỒNG BỘ MẶC ĐỊNH 2 LỚN, 0 TRẺ
   useEffect(() => {
     if (isOpen) {
       const currentAdults = Number(
@@ -599,7 +640,7 @@ export default function QuickBookingModal({
     }
   }, [isOpen]);
 
-  // ĐỒNG BỘ THU ĐỦ 100% TIỀN PHÒNG NHƯ CODE GỐC
+  // THU ĐỦ 100% TIỀN PHÒNG KHI ĐẶT TẠI QUẦY
   useEffect(() => {
     if (isOpen && totalAmount > 0) {
       setBookingData((prev) => ({
@@ -746,7 +787,7 @@ export default function QuickBookingModal({
       {/* ─── MODAL CONTAINER CHÍNH ─── */}
       <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
         <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[95vh] flex flex-col shadow-2xl border border-gray-200 overflow-visible text-xs text-gray-900 animate-scaleUp my-auto">
-          {/* 1. HEADER XANH GOSTAY GỐC */}
+          {/* 1. HEADER XANH GOSTAY */}
           <div className="flex justify-between items-center px-6 py-4 bg-[#003580] text-white shadow-xs shrink-0 rounded-t-3xl">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
@@ -762,7 +803,8 @@ export default function QuickBookingModal({
                   </span>
                 </div>
                 <p className="text-[11px] text-blue-100/80 font-medium mt-1 leading-none">
-                  0% hoa hồng sàn • Tự động phụ thu nhận sớm & trả muộn
+                  0% hoa hồng sàn • Tự động phụ thu nhận sớm & trả muộn theo cấu
+                  hình khách sạn
                 </p>
               </div>
             </div>
@@ -776,7 +818,7 @@ export default function QuickBookingModal({
             </button>
           </div>
 
-          {/* 2. BODY KHÔNG BỊ CLIP */}
+          {/* 2. BODY */}
           <div className="p-6 space-y-4 overflow-y-auto flex-1 bg-white">
             {/* TÌM KIẾM KHÁCH & SỐ KHÁCH */}
             <div className="flex items-center gap-3 flex-wrap">
@@ -848,7 +890,7 @@ export default function QuickBookingModal({
               )}
             </div>
 
-            {/* BẢNG DANH SÁCH PHÒNG CHỌN (TẤT CẢ CÁC CỘT ĐỀU CĂN ALIGN-MIDDLE PHẲNG PHIU) */}
+            {/* BẢNG DANH SÁCH PHÒNG CHỌN */}
             <div className="border border-gray-200 rounded-2xl bg-white shadow-2xs overflow-visible">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -895,7 +937,7 @@ export default function QuickBookingModal({
                       </div>
                     </th>
 
-                    {/* CỘT TRẢ PHÒNG CÂN ĐỐI */}
+                    {/* CỘT TRẢ PHÒNG */}
                     <th className="py-3.5 px-3.5 w-[200px] align-middle">
                       Trả phòng
                     </th>
@@ -950,7 +992,7 @@ export default function QuickBookingModal({
                         </select>
                       </td>
 
-                      {/* 4. Nhận phòng & Cảnh báo (Align-middle phẳng phiu) */}
+                      {/* 4. Nhận phòng & Cảnh báo */}
                       <td className="py-3 px-3.5 align-middle">
                         <div className="flex flex-col items-start gap-1">
                           <SlimDateTimePicker
@@ -969,7 +1011,7 @@ export default function QuickBookingModal({
                         </div>
                       </td>
 
-                      {/* 5. Trả phòng & Cảnh báo (Align-middle phẳng phiu) */}
+                      {/* 5. Trả phòng & Cảnh báo */}
                       <td className="py-3 px-3.5 align-middle">
                         <div className="flex flex-col items-start gap-1">
                           <SlimDateTimePicker
@@ -988,7 +1030,7 @@ export default function QuickBookingModal({
                         </div>
                       </td>
 
-                      {/* 6. Dự kiến (Gọn gàng 1 đêm, 1 buổi, 1 ngày) */}
+                      {/* 6. Dự kiến */}
                       <td className="py-3 px-3.5 text-center align-middle whitespace-nowrap">
                         <span className="px-2.5 py-1 rounded-md bg-blue-50 text-[#003580] font-bold border border-blue-100 whitespace-nowrap">
                           {item.duration_label}
@@ -1030,7 +1072,7 @@ export default function QuickBookingModal({
               </table>
             </div>
 
-            {/* GHI CHÚ & BẢNG THU TIỀN TONE GỐC */}
+            {/* GHI CHÚ & BẢNG THU TIỀN */}
             <div className="flex items-start justify-between gap-6 pt-2 flex-wrap">
               <div className="space-y-3 flex-1 min-w-[280px]">
                 <button
@@ -1057,7 +1099,7 @@ export default function QuickBookingModal({
                 </div>
               </div>
 
-              {/* BẢNG THU TIỀN CHUẨN MÀU CODE GỐC */}
+              {/* BẢNG THU TIỀN */}
               <div className="w-84 space-y-2.5 text-right bg-blue-50/60 p-4 rounded-2xl border border-blue-200">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-bold text-gray-700">
@@ -1123,7 +1165,7 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* 3. FOOTER CỐ ĐỊNH CHUẨN TONE GOSTAY */}
+          {/* 3. FOOTER */}
           <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/70 flex items-center justify-between shrink-0 rounded-b-3xl">
             <button
               type="button"
@@ -1140,7 +1182,7 @@ export default function QuickBookingModal({
                 </div>
               )}
 
-              {/* NÚT ĐẶT TRƯỚC (CAM HỔ PHÁCH NHƯ GỐC) */}
+              {/* NÚT ĐẶT TRƯỚC */}
               <button
                 type="button"
                 onClick={() => handleExecuteConfirm(false)}
@@ -1153,7 +1195,7 @@ export default function QuickBookingModal({
                 Đặt trước
               </button>
 
-              {/* NÚT NHẬN PHÒNG NGAY (XANH NAVY #003580 NHƯ GỐC, KHÓA NẾU NGÀY MAI) */}
+              {/* NÚT NHẬN PHÒNG NGAY */}
               <button
                 type="button"
                 disabled={hasFutureCheckin}
@@ -1177,7 +1219,7 @@ export default function QuickBookingModal({
         </div>
       </div>
 
-      {/* ─── MODAL 1: THÊM KHÁCH HÀNG (100% CỦA CODE GỐC) ─── */}
+      {/* ─── MODAL 1: THÊM KHÁCH HÀNG ─── */}
       {isAddCustomerOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
@@ -1422,7 +1464,7 @@ export default function QuickBookingModal({
         </div>
       )}
 
-      {/* ─── MODAL 2: KHÁCH LƯU TRÚ (100% CỦA CODE GỐC) ─── */}
+      {/* ─── MODAL 2: KHÁCH LƯU TRÚ ─── */}
       {isGuestStayOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
@@ -1444,7 +1486,6 @@ export default function QuickBookingModal({
             </div>
 
             <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-white">
-              {/* TĂNG GIẢM SỐ LƯỢNG */}
               <div className="flex items-center justify-between p-4 bg-gray-50/70 border border-gray-200 rounded-2xl flex-wrap gap-4">
                 <span className="font-black text-[#0a2540] text-xs uppercase tracking-wider">
                   Số lượng khách
@@ -1538,7 +1579,6 @@ export default function QuickBookingModal({
                 </div>
               </div>
 
-              {/* BẢNG KHÁCH LƯU TRÚ */}
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <span className="font-black text-[#0a2540] text-xs uppercase tracking-wider block">
@@ -1661,7 +1701,7 @@ export default function QuickBookingModal({
         </div>
       )}
 
-      {/* ─── MODAL 3: KHAI BÁO CCCD (100% CỦA CODE GỐC) ─── */}
+      {/* ─── MODAL 3: KHAI BÁO CCCD ─── */}
       {isAddGuestDocOpen && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
           <div className="bg-white rounded-3xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">

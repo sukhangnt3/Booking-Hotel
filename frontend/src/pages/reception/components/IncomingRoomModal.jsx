@@ -14,6 +14,7 @@ import {
   Edit3,
   CalendarCheck,
   CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 export default function IncomingRoomModal({
@@ -35,10 +36,38 @@ export default function IncomingRoomModal({
     String(b.code || b.booking_code || "").startsWith("BK") ||
     !String(b.code || b.booking_code || "").startsWith("DP");
 
+  // 🌟 XỬ LÝ CHÍNH XÁC ĐƠN CỌC 30% VS ĐƠN TRẢ ĐỦ 100%
+  const totalPrice = Number(b.total_price || room.daily_price || 0);
+
+  const isDeposit =
+    b.payment_type === "DEPOSIT_30" ||
+    (Number(b.deposit_amount) > 0 && Number(b.deposit_amount) < totalPrice) ||
+    (Number(b.paid_amount) > 0 && Number(b.paid_amount) < totalPrice) ||
+    (Number(b.customer_paid) > 0 && Number(b.customer_paid) < totalPrice);
+
+  // Số tiền khách thực tế đã trả (Cọc 30% hoặc 100%)
+  const paidAmount = isDeposit
+    ? Number(
+        b.deposit_amount ||
+          b.paid_amount ||
+          b.customer_paid ||
+          Math.round(totalPrice * 0.3),
+      )
+    : Number(
+        b.paid_amount !== undefined
+          ? b.paid_amount
+          : b.customer_paid !== undefined
+            ? b.customer_paid
+            : totalPrice,
+      );
+
+  // Số tiền còn lại cần thu tại quầy
+  const remainingAmount = Math.max(0, totalPrice - paidAmount);
+
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
       <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-gray-100 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
-        {/* ─── 1. HEADER (THEO ẢNH 3) ─── */}
+        {/* ─── 1. HEADER ─── */}
         <div className="px-6 py-4 bg-white border-b border-gray-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h3 className="font-black text-lg text-gray-900 tracking-tight">
@@ -55,6 +84,11 @@ export default function IncomingRoomModal({
               <span className="px-2.5 py-0.5 rounded-md bg-blue-50 text-[#003580] font-bold text-[11px] border border-blue-200 flex items-center gap-1">
                 <Globe size={12} className="text-[#006ce4]" />
                 Đặt phòng online
+              </span>
+            )}
+            {isDeposit && (
+              <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200">
+                Đã cọc 30%
               </span>
             )}
           </div>
@@ -87,7 +121,7 @@ export default function IncomingRoomModal({
           </div>
         </div>
 
-        {/* ─── 2. THÂN CHI TIẾT (LƯỚI THÔNG TIN CHUẨN ẢNH 3) ─── */}
+        {/* ─── 2. THÂN CHI TIẾT ─── */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-white">
           {/* Lưới 2 cột thông tin */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-xs">
@@ -154,7 +188,11 @@ export default function IncomingRoomModal({
                 Thời gian lưu trú
               </span>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className="font-bold text-gray-900">1 đêm</span>
+                <span className="font-bold text-gray-900">
+                  {b.rental_type === "HOUR"
+                    ? `${b.stay_duration || 1} giờ`
+                    : "1 đêm"}
+                </span>
                 <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-200 flex items-center gap-1">
                   <Clock size={12} className="text-amber-600" />
                   {countdownText || "Sắp đến nhận phòng"}
@@ -173,29 +211,44 @@ export default function IncomingRoomModal({
             </span>
           </div>
 
-          {/* Hộp quyết toán tài chính */}
+          {/* 🌟 HỘP QUYẾT TOÁN TÀI CHÍNH (ĐÃ TÁCH RÕ TIỀN CỌC 30% VÀ SỐ TIỀN CẦN THU TẠI QUẦY) */}
           <div className="bg-gray-50/80 border border-gray-200 rounded-2xl p-4 space-y-2.5">
             <div className="flex justify-between items-center text-xs">
               <span className="text-gray-600 font-bold">
-                Phòng {room.room_number}:
+                Tổng tiền phòng ({room.room_number}):
               </span>
               <span className="font-black text-[#003580] text-sm tabular-nums">
-                {formatVND(b.total_price || room.daily_price || 200000)}
+                {formatVND(totalPrice)}
               </span>
             </div>
 
             <div className="flex justify-between items-center text-xs pt-2 border-t border-gray-200">
-              <span className="text-gray-600 font-bold">Khách đã trả:</span>
+              <span className="text-gray-600 font-bold">
+                {isDeposit
+                  ? "Khách đã cọc trước (30%):"
+                  : "Khách đã trả (100%):"}
+              </span>
               <span className="font-black text-emerald-700 text-sm tabular-nums">
-                {formatVND(
-                  b.customer_paid || b.paid_amount || b.total_price || 200000,
-                )}
+                {formatVND(paidAmount)}
               </span>
             </div>
+
+            {/* Hiển thị rõ số tiền còn thiếu phải thu tại quầy nếu là đơn cọc 30% */}
+            {isDeposit && remainingAmount > 0 && (
+              <div className="flex justify-between items-center text-xs pt-2 border-t border-dashed border-rose-200 bg-rose-50/60 -mx-4 -mb-4 p-3 rounded-b-2xl">
+                <span className="text-rose-700 font-extrabold flex items-center gap-1.5">
+                  <AlertCircle size={14} />
+                  Còn lại cần thu tại quầy:
+                </span>
+                <span className="font-black text-rose-600 text-sm tabular-nums">
+                  {formatVND(remainingAmount)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ─── 3. FOOTER NÚT THAO TÁC (CHUẨN ẢNH 3) ─── */}
+        {/* ─── 3. FOOTER NÚT THAO TÁC ─── */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/50 shrink-0">
           <button
             type="button"
@@ -222,7 +275,11 @@ export default function IncomingRoomModal({
             className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 text-xs flex items-center gap-1.5"
           >
             <CheckCircle2 size={15} />
-            <span>Nhận phòng</span>
+            <span>
+              {isDeposit && remainingAmount > 0
+                ? `Thu ${formatVND(remainingAmount)} & Nhận phòng`
+                : "Nhận phòng"}
+            </span>
           </button>
         </div>
       </div>

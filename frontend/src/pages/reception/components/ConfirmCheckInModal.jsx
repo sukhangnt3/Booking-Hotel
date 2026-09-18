@@ -1,6 +1,6 @@
 // src/pages/reception/components/ConfirmCheckInModal.jsx
 import React from "react";
-import { User, Users, X, CheckCircle2, Key } from "lucide-react";
+import { User, Users, X, CheckCircle2, Key, AlertCircle } from "lucide-react";
 
 export default function ConfirmCheckInModal({
   isOpen,
@@ -16,10 +16,24 @@ export default function ConfirmCheckInModal({
 }) {
   if (!isOpen || !room) return null;
 
+  const b = room.booking || {};
+  const totalPrice = Number(b.total_price || room.daily_price || 0);
+
+  const isDeposit =
+    b.payment_type === "DEPOSIT_30" ||
+    (Number(b.deposit_amount) > 0 && Number(b.deposit_amount) < totalPrice) ||
+    (Number(b.paid_amount) > 0 && Number(b.paid_amount) < totalPrice);
+
+  const paidAmount = isDeposit
+    ? Number(b.deposit_amount || b.paid_amount || Math.round(totalPrice * 0.3))
+    : totalPrice;
+
+  const remainingToCollect = Math.max(0, totalPrice - paidAmount);
+
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
       <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
-        {/* 1. HEADER CỐ ĐỊNH (SHRINK-0) */}
+        {/* 1. HEADER CỐ ĐỊNH */}
         <div className="bg-[#003580] text-white p-5 flex items-center justify-between shadow-xs shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
@@ -31,7 +45,7 @@ export default function ConfirmCheckInModal({
                   Xác Nhận Nhận Phòng
                 </h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/20 text-white font-bold">
-                  #{room.booking?.code || "DP000008"}
+                  #{b.code || b.booking_code || "DP000008"}
                 </span>
               </div>
               <p className="text-[11px] text-blue-100/80 font-medium mt-1 leading-none">
@@ -49,7 +63,7 @@ export default function ConfirmCheckInModal({
           </button>
         </div>
 
-        {/* 2. THÂN FORM CÓ THANH CUỘN (FLEX-1 OVERFLOW-Y-AUTO) */}
+        {/* 2. THÂN FORM CÓ THANH CUỘN */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1 bg-white">
           {/* THÔNG TIN KHÁCH HÀNG */}
           <div className="flex items-center justify-between text-gray-800 bg-blue-50/60 p-3.5 rounded-2xl border border-blue-200/80 flex-wrap gap-2">
@@ -59,10 +73,10 @@ export default function ConfirmCheckInModal({
               </div>
               <div>
                 <span className="font-black text-[#003580] text-xs block">
-                  {room.booking?.customer_name || "Khách lẻ"}
+                  {b.customer_name || "Khách lẻ"}
                 </span>
                 <span className="text-[11px] text-gray-500 font-mono">
-                  {room.booking?.guest_phone || "Chưa có số điện thoại"}
+                  {b.guest_phone || "Chưa có số điện thoại"}
                 </span>
               </div>
             </div>
@@ -75,6 +89,19 @@ export default function ConfirmCheckInModal({
               </span>
             </div>
           </div>
+
+          {/* CẢNH BÁO THU NỐT TIỀN TẠI QUẦY NẾU CỌC 30% */}
+          {isDeposit && remainingToCollect > 0 && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                <span>Lưu ý: Khách mới cọc 30%. Cần thu nốt tại quầy:</span>
+              </div>
+              <span className="font-black text-rose-600 text-sm tabular-nums">
+                {Number(remainingToCollect).toLocaleString("vi-VN")} ₫
+              </span>
+            </div>
+          )}
 
           {/* BẢNG GIỜ NHẬN / TRẢ */}
           <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
@@ -107,9 +134,7 @@ export default function ConfirmCheckInModal({
                       <button
                         type="button"
                         onClick={() => {
-                          const orig = new Date(
-                            room.booking?.checkin_date || new Date(),
-                          );
+                          const orig = new Date(b.checkin_date || new Date());
                           setConfirmData((prev) => ({
                             ...prev,
                             checkin_mode: "Giờ đặt",
@@ -174,7 +199,7 @@ export default function ConfirmCheckInModal({
           </div>
         </div>
 
-        {/* 3. FOOTER CỐ ĐỊNH (SHRINK-0) */}
+        {/* 3. FOOTER CỐ ĐỊNH */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/70 shrink-0">
           <button
             type="button"
@@ -190,7 +215,11 @@ export default function ConfirmCheckInModal({
             className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 text-xs flex items-center gap-2"
           >
             <CheckCircle2 size={16} />
-            <span>Xác nhận giao phòng</span>
+            <span>
+              {isDeposit && remainingToCollect > 0
+                ? `Đã thu ${Number(remainingToCollect).toLocaleString("vi-VN")} ₫ & Giao phòng`
+                : "Xác nhận giao phòng"}
+            </span>
           </button>
         </div>
       </div>

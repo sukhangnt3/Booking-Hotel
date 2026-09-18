@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   X,
   Receipt,
+  AlertCircle,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 
@@ -83,7 +84,7 @@ export default function OccupiedRoomModal({
 
   const now = new Date();
 
-  // 🌟 THUẬT TOÁN TÍNH THỜI GIAN ĐÃ Ở THỰC TẾ (KHÔNG BAO GIỜ BỊ CỐ ĐỊNH 1 NGÀY)
+  // 🌟 TÍNH TOÁN THỜI GIAN ĐÃ Ở THỰC TẾ
   const actualStayDuration = useMemo(() => {
     const b = bookingDetail || room.booking;
     const checkinSource =
@@ -121,14 +122,29 @@ export default function OccupiedRoomModal({
     return `${days} ngày ${remainingHours > 0 ? `${remainingHours} giờ` : ""}`.trim();
   }, [bookingDetail, room.booking, now]);
 
-  const scheduledCheckout = new Date(
-    bookingDetail?.checkout_date || room.booking?.checkout_date || now,
-  );
-  const [defHour, defMin] = String(defaultCheckoutTime)
-    .slice(0, 5)
-    .split(":")
-    .map(Number);
-  scheduledCheckout.setHours(defHour || 12, defMin || 0, 0, 0);
+  // 🌟 TÍNH CHÍNH XÁC GIỜ TRẢ DỰ KIẾN (THEO GIỜ HOẶC THEO NGÀY)
+  const scheduledCheckout = useMemo(() => {
+    const b = bookingDetail || room.booking;
+    const outDateStr = b?.checkout_date
+      ? String(b.checkout_date).slice(0, 10)
+      : "";
+    const outTimeStr = b?.checkout_time
+      ? String(b.checkout_time).slice(0, 5)
+      : String(defaultCheckoutTime).slice(0, 5);
+
+    if (outDateStr && outTimeStr) {
+      const d = new Date(`${outDateStr}T${outTimeStr}:00`);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    const dFallback = new Date(b?.checkout_date || now);
+    const [defH, defM] = String(defaultCheckoutTime)
+      .slice(0, 5)
+      .split(":")
+      .map(Number);
+    dFallback.setHours(defH || 12, defM || 0, 0, 0);
+    return dFallback;
+  }, [bookingDetail, room.booking, defaultCheckoutTime, now]);
 
   const diffLateMs = now.getTime() - scheduledCheckout.getTime();
   let lateMinutes = Math.max(0, Math.floor(diffLateMs / (1000 * 60)));
@@ -182,7 +198,7 @@ export default function OccupiedRoomModal({
   );
   const totalBill = baseRoomPrice + overtimeFee;
 
-  // ─── XỬ LÝ CHUẨN XÁC NGUỒN KHÁCH VÀ TIỀN PHÒNG ───
+  // ─── 🌟 XỬ LÝ CHUẨN XÁC NGUỒN KHÁCH VÀ TIỀN PHÒNG (KHÔNG BỊ THẤT THOÁT 70%) ───
   const b = bookingDetail || room.booking;
 
   const isWalkInGuest =
@@ -190,40 +206,45 @@ export default function OccupiedRoomModal({
     b?.booking_type === "counter" ||
     b?.source === "counter" ||
     b?.source === "walk_in" ||
-    String(b?.booking_code || b?.code || "").startsWith("DP") ||
-    !b?.payment_type;
+    String(b?.booking_code || b?.code || "").startsWith("DP");
 
   const isDepositOnline =
     !isWalkInGuest &&
     (b?.payment_type === "DEPOSIT_30" ||
       (Number(b?.deposit_amount) > 0 &&
-        Number(b?.deposit_amount) < baseRoomPrice));
+        Number(b?.deposit_amount) < baseRoomPrice) ||
+      (Number(b?.paid_amount) > 0 && Number(b?.paid_amount) < baseRoomPrice) ||
+      (Number(b?.customer_paid) > 0 &&
+        Number(b?.customer_paid) < baseRoomPrice));
 
-  const isPaidFullOnline =
-    !isWalkInGuest &&
-    (b?.payment_status === "paid" || b?.status === "confirmed") &&
-    !isDepositOnline;
+  const isPaidFullOnline = !isWalkInGuest && !isDepositOnline;
 
   let customerPaid = 0;
   let paymentLabel = "Đã thanh toán trước:";
   let paymentSubLabel = "";
 
   if (isWalkInGuest) {
-    customerPaid = baseRoomPrice;
+    customerPaid = Number(b?.customer_paid || baseRoomPrice);
     paymentLabel = "Đã thanh toán lúc nhận phòng:";
-    paymentSubLabel = "(Đã thu đủ 100% tiền phòng)";
+    paymentSubLabel = "(Khách thanh toán trực tiếp tại quầy)";
   } else if (isDepositOnline) {
-    customerPaid = Number(b?.deposit_amount ?? Math.round(baseRoomPrice * 0.3));
-    paymentLabel = "Khách cọc online qua sàn:";
-    paymentSubLabel = "(Đã cọc 30% qua GoStay)";
+    customerPaid = Number(
+      b?.deposit_amount ||
+        b?.paid_amount ||
+        b?.customer_paid ||
+        Math.round(baseRoomPrice * 0.3),
+    );
+    paymentLabel = "Khách đã cọc online qua sàn:";
+    paymentSubLabel = "(Đã cọc trước 30% qua GoStay)";
   } else if (isPaidFullOnline) {
     customerPaid = baseRoomPrice;
     paymentLabel = "Đã thanh toán online qua sàn:";
-    paymentSubLabel = "(Đã trả 100% qua GoStay)";
+    paymentSubLabel = "(Đã trả đủ 100% qua GoStay)";
   } else {
     customerPaid = baseRoomPrice;
   }
 
+  // Số tiền còn thiếu thực tế cần thu tại quầy
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
@@ -337,7 +358,6 @@ export default function OccupiedRoomModal({
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 border-b border-gray-200 text-xs font-bold uppercase tracking-wider">
                     <th className="py-3 px-4">Thông tin phòng / Dịch vụ</th>
-                    {/* 🌟 CỘT THỜI GIAN ĐÃ Ở THỰC TẾ */}
                     <th className="py-3 px-4 text-center">Thời gian đã ở</th>
                     <th className="py-3 px-4 text-right">Đơn giá</th>
                     <th className="py-3 px-4 text-right">Thành tiền</th>
@@ -399,7 +419,6 @@ export default function OccupiedRoomModal({
                           </span>
                         </div>
                       </td>
-                      {/* 🌟 ĐÃ THAY BẰNG THỜI GIAN THỰC TẾ (PHÚT / GIỜ / NGÀY) */}
                       <td className="py-3 px-4 text-center font-bold text-[#003580]">
                         {actualStayDuration}
                       </td>
@@ -412,7 +431,7 @@ export default function OccupiedRoomModal({
                     </tr>
                   )}
 
-                  {/* PHỤ THU TRẢ MUỘN NẾU CÓ */}
+                  {/* PHỤ THU TRẢ MUỘN */}
                   {overtimeFee > 0 && (
                     <tr className="bg-amber-50/60 hover:bg-amber-50 text-amber-950 border-t border-amber-200">
                       <td className="py-3 px-4">
@@ -494,7 +513,7 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* SỐ TIỀN CÒN CẦN THU */}
+              {/* SỐ TIỀN CÒN CẦN THU (CẢNH BÁO RÕ RÀNG NẾU LÀ CỌC 30%) */}
               <div className="flex justify-between items-center pt-2.5 border-t border-gray-200 bg-amber-50/70 p-3 rounded-2xl border border-amber-200">
                 <div>
                   <span className="font-black text-gray-900 text-xs block uppercase tracking-wider">
@@ -503,9 +522,9 @@ export default function OccupiedRoomModal({
                   <span className="text-[10px] text-amber-800 font-medium">
                     {remainingAmount === 0
                       ? "(Hóa đơn đã thanh toán đủ 100%)"
-                      : overtimeFee > 0 && customerPaid >= baseRoomPrice
-                        ? "(Chỉ thu tiền phụ phí quá giờ)"
-                        : "(Khách thanh toán nốt tiền phòng)"}
+                      : isDepositOnline
+                        ? `(Thu 70% còn lại: ${formatVND(baseRoomPrice - customerPaid)}${overtimeFee > 0 ? ` + Phụ thu: ${formatVND(overtimeFee)}` : ""})`
+                        : "(Khách thanh toán nốt phụ phí / tiền phòng)"}
                   </span>
                 </div>
                 <span className="font-black text-base text-rose-600 tabular-nums">
@@ -529,7 +548,7 @@ export default function OccupiedRoomModal({
                 <div className="space-y-2.5 pt-2">
                   <div className="flex justify-between items-center">
                     <span className="font-black text-[#0a2540] flex items-center gap-1.5">
-                      Lễ tân thu phụ phí phát sinh:
+                      Lễ tân thu số tiền còn lại:
                       <CreditCard size={14} className="text-[#006ce4]" />
                     </span>
                     <input
