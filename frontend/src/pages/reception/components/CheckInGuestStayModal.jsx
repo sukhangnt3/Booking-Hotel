@@ -26,20 +26,20 @@ export default function CheckInGuestStayModal({
   if (!isOpen || !room) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-      <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp">
-        {/* ─── HEADER MODAL ĐỒNG BỘ MÀU XANH NAVY #003580 ─── */}
-        <div className="bg-[#003580] text-white p-5 flex items-center justify-between shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
-              <Users size={20} />
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-5 bg-black/65 backdrop-blur-xs animate-fadeIn font-sans">
+      <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
+        {/* HEADER MODAL */}
+        <div className="bg-[#003580] text-white px-7 py-4.5 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
+              <Users size={22} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-black text-base tracking-tight leading-none text-white">
+                <h3 className="font-black text-lg tracking-tight leading-none text-white">
                   Danh Sách Khách Lưu Trú
                 </h3>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/20 text-white font-bold">
+                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-white/20 text-white font-bold border border-white/15">
                   #{room.booking?.code || "DP000008"}
                 </span>
               </div>
@@ -54,25 +54,24 @@ export default function CheckInGuestStayModal({
             onClick={onClose}
             className="p-1.5 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
-        {/* ─── BODY MODAL ─── */}
-        <div className="p-6 space-y-5 bg-white">
-          {/* Dòng 1: Số lượng khách */}
-          <div className="flex items-center justify-between p-4 bg-gray-50/70 border border-gray-200 rounded-2xl flex-wrap gap-4">
+        {/* BODY MODAL */}
+        <div className="p-7 space-y-5 bg-white">
+          {/* Dòng 1: Bộ đếm số khách */}
+          <div className="flex items-center justify-between p-4.5 bg-gray-50/70 border border-gray-200 rounded-2xl flex-wrap gap-4">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#006ce4]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4]" />
               <span className="font-black text-[#0a2540] text-xs uppercase tracking-wider">
                 Số lượng khách thực tế
               </span>
             </div>
 
             <div className="flex items-center gap-6 flex-wrap">
-              {/* Người lớn */}
               <div className="flex items-center gap-2.5">
-                <span className="text-gray-600 font-bold text-xs">
+                <span className="text-gray-700 font-bold text-xs">
                   Người lớn
                 </span>
                 <div className="flex items-center border border-gray-200 rounded-xl bg-white overflow-hidden shadow-2xs">
@@ -97,7 +96,7 @@ export default function CheckInGuestStayModal({
                         adult: Math.max(1, Number(e.target.value)),
                       })
                     }
-                    className="w-10 text-center font-black text-[#003580] outline-none tabular-nums"
+                    className="w-11 text-center font-black text-[#003580] outline-none tabular-nums"
                   />
                   <button
                     type="button"
@@ -114,9 +113,8 @@ export default function CheckInGuestStayModal({
                 </div>
               </div>
 
-              {/* Trẻ em */}
               <div className="flex items-center gap-2.5">
-                <span className="text-gray-600 font-bold text-xs">Trẻ em</span>
+                <span className="text-gray-700 font-bold text-xs">Trẻ em</span>
                 <div className="flex items-center border border-gray-200 rounded-xl bg-white overflow-hidden shadow-2xs">
                   <button
                     type="button"
@@ -139,7 +137,7 @@ export default function CheckInGuestStayModal({
                         children: Math.max(0, Number(e.target.value)),
                       })
                     }
-                    className="w-10 text-center font-black text-gray-800 outline-none tabular-nums"
+                    className="w-11 text-center font-black text-gray-800 outline-none tabular-nums"
                   />
                   <button
                     type="button"
@@ -162,9 +160,9 @@ export default function CheckInGuestStayModal({
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <span className="font-black text-[#0a2540] text-xs uppercase tracking-wider block">
-                Hồ sơ định danh khách
+                Hồ sơ định danh khách lưu trú
               </span>
-              <span className="text-[11px] text-gray-400">
+              <span className="text-[11px] text-gray-500">
                 Đã khai báo {guestList.length} người lưu trú
               </span>
             </div>
@@ -176,31 +174,30 @@ export default function CheckInGuestStayModal({
                 className="p-2 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-100 hover:text-rose-600 cursor-pointer transition"
                 title="Làm mới danh sách"
               >
-                <RotateCw size={14} />
+                <RotateCw size={15} />
               </button>
 
               <button
                 type="button"
                 onClick={() => onOpenGuestDocForm(null, null)}
-                className="px-3.5 py-2 border border-gray-200 hover:border-[#003580] text-gray-800 font-bold rounded-xl hover:bg-blue-50/50 cursor-pointer flex items-center gap-1.5 transition shadow-2xs"
-                title="Thêm người đi cùng"
+                className="px-4 py-2 border border-gray-300 hover:border-[#003580] text-gray-800 font-bold rounded-xl hover:bg-blue-50/50 cursor-pointer flex items-center gap-1.5 transition shadow-2xs"
               >
-                <Plus size={14} />
+                <Plus size={15} />
                 <span>Thêm khách</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => onOpenGuestDocForm(null, null)}
-                className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl cursor-pointer flex items-center gap-1.5 shadow-xs transition active:scale-95"
+                className="px-5 py-2 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl cursor-pointer flex items-center gap-2 shadow-xs transition active:scale-95"
               >
-                <CreditCard size={14} />
+                <CreditCard size={15} />
                 <span>Khai báo CCCD</span>
               </button>
             </div>
           </div>
 
-          {/* Bảng danh sách khách */}
+          {/* Bảng danh sách khách rộng rãi */}
           <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
@@ -218,9 +215,9 @@ export default function CheckInGuestStayModal({
                   <tr>
                     <td
                       colSpan={6}
-                      className="py-10 text-center text-gray-400 font-medium"
+                      className="py-12 text-center text-gray-400 font-medium"
                     >
-                      <p className="mb-2.5">
+                      <p className="mb-2">
                         Chưa có thông tin định danh khách lưu trú
                       </p>
                       <button
@@ -235,36 +232,33 @@ export default function CheckInGuestStayModal({
                 ) : (
                   guestList.map((g, idx) => (
                     <tr key={idx} className="hover:bg-blue-50/40 transition">
-                      <td className="py-3 px-4 font-bold text-gray-900">
+                      <td className="py-3.5 px-4 font-bold text-gray-900">
                         {g.full_name}
                       </td>
-                      <td className="py-3 px-4 text-gray-600">
+                      <td className="py-3.5 px-4 text-gray-600">
                         {g.gender === "male" ? "Nam" : "Nữ"} • {g.id_type}:{" "}
                         <b className="text-[#003580] font-mono font-bold">
-                          {g.id_number ? (
-                            g.id_number
-                          ) : (
+                          {g.id_number || (
                             <span className="text-amber-600 font-normal italic">
-                              Chưa nhập số CCCD
+                              Chưa nhập
                             </span>
                           )}
                         </b>
                       </td>
-                      <td className="py-3 px-4 font-black text-[#003580]">
+                      <td className="py-3.5 px-4 font-black text-[#003580]">
                         P.{g.room_number}
                       </td>
-                      <td className="py-3 px-4 text-gray-500 font-mono">
+                      <td className="py-3.5 px-4 text-gray-500 font-mono">
                         {g.declaration_time}
                       </td>
-                      <td className="py-3 px-4 text-gray-700 font-medium">
+                      <td className="py-3.5 px-4 text-gray-700 font-medium">
                         {g.stay_duration}
                       </td>
-                      <td className="py-3 px-2 text-center">
+                      <td className="py-3.5 px-2 text-center">
                         <button
                           type="button"
                           onClick={() => onOpenGuestDocForm(g, idx)}
                           className="p-1.5 text-[#006ce4] hover:text-[#003580] hover:bg-blue-50 rounded-lg font-bold transition cursor-pointer"
-                          title="Sửa thông tin CCCD"
                         >
                           <Edit size={14} />
                         </button>
@@ -276,12 +270,12 @@ export default function CheckInGuestStayModal({
             </table>
           </div>
 
-          {/* ─── FOOTER NÚT THAO TÁC ─── */}
+          {/* FOOTER */}
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
             <button
               type="button"
               onClick={onSaveGuestInfoOnly}
-              className="px-5 py-2.5 border border-gray-200 text-gray-700 hover:bg-gray-50 font-bold rounded-xl cursor-pointer transition shadow-2xs"
+              className="px-6 py-2.5 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 font-bold rounded-xl cursor-pointer transition shadow-2xs"
             >
               Lưu thông tin
             </button>
@@ -289,7 +283,7 @@ export default function CheckInGuestStayModal({
             <button
               type="button"
               onClick={onFinalExecuteCheckIn}
-              className="px-6 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 flex items-center gap-2"
+              className="px-7 py-2.5 bg-[#003580] hover:bg-blue-900 text-white font-black rounded-xl shadow-md cursor-pointer transition active:scale-95 flex items-center gap-2"
             >
               <CheckCircle2 size={16} />
               <span>Nhận phòng ngay</span>

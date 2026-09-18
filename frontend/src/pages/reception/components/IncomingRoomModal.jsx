@@ -17,13 +17,52 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+// Hàm format ngày giờ tiếng Việt chuẩn xác (Chống lỗi Sat Sep 19)
+const formatFullDateTimeVN = (dateVal, timeVal) => {
+  if (!dateVal) return "---";
+  let d = null;
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
+    d = dateVal;
+  } else {
+    const s = String(dateVal).trim();
+    const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const timeStr = timeVal ? String(timeVal).slice(0, 5) : "14:00";
+      return `${match[3]}/${match[2]}/${match[1]} ${timeStr}`;
+    }
+    d = new Date(s);
+  }
+
+  if (!d || isNaN(d.getTime())) return String(dateVal);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  const timeStr = timeVal
+    ? String(timeVal).slice(0, 5)
+    : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+  return `${day}/${month}/${year} ${timeStr}`;
+};
+
+// Hàm trích xuất ngày ISO an toàn
+const extractSafeISO = (val) => {
+  if (!val) return "";
+  const s = String(val).trim();
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  return "";
+};
+
 export default function IncomingRoomModal({
   isOpen,
   room,
   onClose,
   onOpenConfirmCheckIn,
   onOpenChangeRoom,
-  formatDisplayDateTime,
   countdownText,
   formatVND,
 }) {
@@ -55,35 +94,42 @@ export default function IncomingRoomModal({
 
   const remainingAmount = Math.max(0, totalPrice - paidAmount);
 
-  // 🌟 TÍNH THỜI GIAN LƯU TRÚ CHUẨN XÁC (KHÔNG BỊ LỖI "0 PHÚT GIỜ")
+  // 🌟 TÍNH TOÁN THỜI GIAN LƯU TRÚ (CHỐNG LỖI NaN GIỜ)
   const durationDisplay = useMemo(() => {
-    const inDate = String(b.checkin_date || "").slice(0, 10);
-    const outDate = String(b.checkout_date || inDate).slice(0, 10);
-    const inTime = String(b.checkin_time || "14:00").slice(0, 5);
-    const outTime = String(b.checkout_time || "12:00").slice(0, 5);
+    const inDate = extractSafeISO(b.checkin_date);
+    const outDate = extractSafeISO(b.checkout_date) || inDate;
+    const inTime = b.checkin_time
+      ? String(b.checkin_time).slice(0, 5)
+      : "14:00";
+    const outTime = b.checkout_time
+      ? String(b.checkout_time).slice(0, 5)
+      : "12:00";
 
     if (inDate && outDate) {
       const startMs = new Date(`${inDate}T${inTime}:00`).getTime();
       const endMs = new Date(`${outDate}T${outTime}:00`).getTime();
-      const diffMs = Math.max(0, endMs - startMs);
 
-      if (b.rental_type === "HOUR") {
-        const hours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
-        return `${hours} giờ`;
+      if (!isNaN(startMs) && !isNaN(endMs)) {
+        const diffMs = Math.max(0, endMs - startMs);
+
+        if (b.rental_type === "HOUR" || diffMs <= 24 * 60 * 60 * 1000) {
+          const hours = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)));
+          if (hours < 24) return `${hours} giờ`;
+        }
+        if (b.rental_type === "OVERNIGHT") return "1 đêm";
+        const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        return `${days} ngày`;
       }
-      if (b.rental_type === "OVERNIGHT") return "1 đêm";
-      const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
-      return `${days} ngày`;
     }
 
     return b.rental_type === "HOUR" ? "2 giờ" : "1 đêm";
   }, [b]);
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-      <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-gray-100 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-5 bg-black/65 backdrop-blur-xs animate-fadeIn font-sans">
+      <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl border border-gray-100 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
         {/* ─── 1. HEADER ─── */}
-        <div className="px-6 py-4 bg-white border-b border-gray-100 flex items-center justify-between shrink-0">
+        <div className="px-7 py-4.5 bg-white border-b border-gray-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h3 className="font-black text-lg text-gray-900 tracking-tight">
               Chi tiết {room.room_number}
@@ -137,11 +183,11 @@ export default function IncomingRoomModal({
         </div>
 
         {/* ─── 2. THÂN CHI TIẾT ─── */}
-        <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-white">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-xs">
+        <div className="p-7 space-y-5 overflow-y-auto flex-1 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-xs bg-gray-50/60 p-5 rounded-2xl border border-gray-200">
             <div className="space-y-3">
               <div>
-                <span className="text-[11px] text-gray-400 font-semibold block">
+                <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">
                   Khách hàng
                 </span>
                 <span className="font-bold text-gray-900 text-sm block mt-0.5">
@@ -149,43 +195,43 @@ export default function IncomingRoomModal({
                 </span>
                 {b.guest_phone && (
                   <span className="text-gray-500 font-mono text-[11px]">
-                    {b.guest_phone}
+                    Điện thoại: {b.guest_phone}
                   </span>
                 )}
               </div>
 
               <div>
-                <span className="text-[11px] text-gray-400 font-semibold block">
+                <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">
                   Nhận phòng
                 </span>
-                <strong className="text-gray-900 font-bold block mt-0.5">
-                  {formatDisplayDateTime(b.checkin_date, b.checkin_time)}
+                <strong className="text-gray-900 font-bold text-sm block mt-0.5">
+                  {formatFullDateTimeVN(b.checkin_date, b.checkin_time)}
                 </strong>
               </div>
             </div>
 
             <div className="space-y-3">
               <div>
-                <span className="text-[11px] text-gray-400 font-semibold block">
+                <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">
                   Khách lưu trú
                 </span>
-                <strong className="text-gray-800 font-bold block mt-0.5">
+                <strong className="text-gray-800 font-bold text-sm block mt-0.5">
                   {b.adult_total || 1} người lớn, {b.children_total || 0} trẻ em
                 </strong>
               </div>
 
               <div>
-                <span className="text-[11px] text-gray-400 font-semibold block">
+                <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider block">
                   Trả phòng
                 </span>
-                <strong className="text-gray-900 font-bold block mt-0.5">
-                  {formatDisplayDateTime(b.checkout_date, b.checkout_time)}
+                <strong className="text-gray-900 font-bold text-sm block mt-0.5">
+                  {formatFullDateTimeVN(b.checkout_date, b.checkout_time)}
                 </strong>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 pt-3 border-t border-gray-100">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 pt-2">
             <div>
               <span className="text-[11px] text-gray-400 font-semibold block">
                 Mã đặt phòng
@@ -203,7 +249,7 @@ export default function IncomingRoomModal({
                 <span className="font-bold text-gray-900 text-sm">
                   {durationDisplay}
                 </span>
-                <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-200 flex items-center gap-1">
+                <span className="px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-200 flex items-center gap-1">
                   <Clock size={12} className="text-amber-600" />
                   {countdownText || "Sắp đến nhận phòng"}
                 </span>
@@ -220,7 +266,7 @@ export default function IncomingRoomModal({
             </span>
           </div>
 
-          <div className="bg-gray-50/80 border border-gray-200 rounded-2xl p-4 space-y-2.5">
+          <div className="bg-gray-50/80 border border-gray-200 rounded-2xl p-4.5 space-y-2.5">
             <div className="flex justify-between items-center text-xs">
               <span className="text-gray-600 font-bold">
                 Tổng tiền phòng ({room.room_number}):
@@ -242,7 +288,7 @@ export default function IncomingRoomModal({
             </div>
 
             {isDeposit && remainingAmount > 0 && (
-              <div className="flex justify-between items-center text-xs pt-2 border-t border-dashed border-rose-200 bg-rose-50/70 -mx-4 -mb-4 p-3 rounded-b-2xl">
+              <div className="flex justify-between items-center text-xs pt-2 border-t border-dashed border-rose-200 bg-rose-50/70 -mx-4.5 -mb-4.5 p-3.5 rounded-b-2xl">
                 <div>
                   <span className="text-rose-700 font-extrabold flex items-center gap-1.5">
                     <AlertCircle size={14} />
@@ -261,13 +307,13 @@ export default function IncomingRoomModal({
         </div>
 
         {/* ─── 3. FOOTER ─── */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/50 shrink-0">
+        <div className="px-7 py-4.5 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/50 shrink-0">
           <button
             type="button"
             onClick={() => {
               if (onOpenChangeRoom) onOpenChangeRoom(room);
             }}
-            className="px-4 py-2.5 border border-gray-200 hover:bg-white text-gray-700 font-bold rounded-xl cursor-pointer transition text-xs flex items-center gap-1.5 shadow-2xs"
+            className="px-4.5 py-2.5 border border-gray-200 hover:bg-white text-gray-700 font-bold rounded-xl cursor-pointer transition text-xs flex items-center gap-1.5 shadow-2xs"
           >
             <ArrowRightLeft size={13} />
             <span>Đổi phòng</span>

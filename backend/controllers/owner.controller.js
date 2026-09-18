@@ -829,7 +829,7 @@ async function confirmAndAssignRoom(req, res) {
   }
 }
 
-// ─── 5. ĐẶT PHÒNG TẠI QUẦY (WALK-IN) ───
+// ─── 5. ĐẶT PHÒNG TẠI QUẦY (TỰ ĐỘNG TÁCH GIỜ TỪ DATETIME & LƯU ĐÚNG HÌNH THỨC THUÊ GIỜ/NGÀY) ───
 async function createWalkInBooking(req, res) {
   const client = await pool.connect();
   try {
@@ -842,10 +842,14 @@ async function createWalkInBooking(req, res) {
       customer_paid = 0,
       checkin_date,
       checkout_date,
-      checkin_time = "14:00:00",
-      checkout_time = "12:00:00",
+      checkin_time,
+      checkout_time,
       rental_type = "DAY",
       is_check_in_now = true,
+      adult_total = 2,
+      children_total = 0,
+      adults,
+      children,
     } = req.body;
     await client.query("BEGIN");
 
@@ -855,10 +859,41 @@ async function createWalkInBooking(req, res) {
     );
     const roomNumber = unitRes.rows[0]?.room_number || "P.101";
 
-    const inTime =
-      checkin_time.length === 5 ? `${checkin_time}:00` : checkin_time;
-    const outTime =
-      checkout_time.length === 5 ? `${checkout_time}:00` : checkout_time;
+    // 🌟 1. Tự động trích xuất ngày và giờ chuẩn xác từ chuỗi datetime-local
+    let inDate = checkin_date
+      ? String(checkin_date).slice(0, 10)
+      : toDateStr(new Date());
+    let inTime = "14:00:00";
+    if (checkin_date && String(checkin_date).includes("T")) {
+      inTime = String(checkin_date).split("T")[1].slice(0, 5) + ":00";
+    } else if (checkin_time) {
+      inTime = checkin_time.length === 5 ? `${checkin_time}:00` : checkin_time;
+    }
+
+    let outDate = checkout_date
+      ? String(checkout_date).slice(0, 10)
+      : toDateStr(new Date(Date.now() + 864e5));
+    let outTime = "12:00:00";
+    if (checkout_date && String(checkout_date).includes("T")) {
+      outTime = String(checkout_date).split("T")[1].slice(0, 5) + ":00";
+    } else if (checkout_time) {
+      outTime =
+        checkout_time.length === 5 ? `${checkout_time}:00` : checkout_time;
+    }
+
+    // 🌟 2. Chuẩn hóa hình thức thuê (Giờ -> HOUR, Đêm -> OVERNIGHT, Ngày -> DAY)
+    let finalRentalType = "DAY";
+    if (rental_type === "Giờ" || rental_type === "HOUR") {
+      finalRentalType = "HOUR";
+    } else if (rental_type === "Đêm" || rental_type === "OVERNIGHT") {
+      finalRentalType = "OVERNIGHT";
+    } else if (rental_type === "Buổi" || rental_type === "HALF_DAY") {
+      finalRentalType = "HALF_DAY";
+    }
+
+    // 🌟 3. Chuẩn hóa số khách thực tế
+    const finalAdults = Number(adult_total ?? adults ?? 2);
+    const finalChildren = Number(children_total ?? children ?? 0);
 
     const insertBooking = await client.query(
       `
@@ -866,11 +901,14 @@ async function createWalkInBooking(req, res) {
         id, booking_code, hotel_id, status, payment_status, total_price, 
         checkin_date, checkout_date, checkin_time, checkout_time, rental_type,
         adult_total, children_total, customer_name, guest_email, guest_phone, room_number, subtotal,
+        deposit_amount, payment_type,
         receptionist_assigned, confirmed_at, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4::public.booking_status_enum, 'paid'::public.booking_payment_status_enum, $5,
         $6::date, $7::date, $8::time, $9::time, $10,
-        1, 0, $11, 'walkin@hotel.internal', $12, $13, $14, true, NOW(), NOW(), NOW()
+        $11, $12, $13, 'walkin@hotel.internal', $14, $15, $16,
+        $16, 'FULL',
+        true, NOW(), NOW(), NOW()
       ) RETURNING *;
     `,
       [
@@ -879,17 +917,33 @@ async function createWalkInBooking(req, res) {
         hotel_id,
         is_check_in_now ? "checked_in" : "confirmed",
         Number(total_price || 0),
-        checkin_date || toDateStr(new Date()),
-        checkout_date || toDateStr(new Date(Date.now() + 864e5)),
+        inDate,
+        outDate,
         inTime,
         outTime,
-        rental_type,
+        finalRentalType,
+        finalAdults,
+        finalChildren,
         customer_name || "Khách lẻ",
         guest_phone || "",
         roomNumber,
-        Number(customer_paid || 0),
+        Number(customer_paid || total_price || 0),
       ],
     );
+
+    const savedBooking = insertBooking.rows[0];
+
+    // Ghi nhận vào bảng payment để tính vào doanh thu tức thì
+    await client
+      .query(
+        `
+      INSERT INTO public.payment (id, booking_id, amount, paid_amount, status, paid_at, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $2, $2, 'paid', NOW(), NOW(), NOW())
+      ON CONFLICT (booking_id) DO NOTHING
+    `,
+        [savedBooking.id, Number(customer_paid || total_price || 0)],
+      )
+      .catch(() => {});
 
     if (is_check_in_now) {
       await client
@@ -901,11 +955,10 @@ async function createWalkInBooking(req, res) {
     }
 
     await client.query("COMMIT");
-    return res
-      .status(201)
-      .json({ success: true, booking: insertBooking.rows[0] });
+    return res.status(201).json({ success: true, booking: savedBooking });
   } catch (err) {
     await client.query("ROLLBACK");
+    console.error("❌ Lỗi createWalkInBooking:", err);
     return res.status(500).json({ success: false, message: err.message });
   } finally {
     client.release();
