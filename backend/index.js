@@ -125,24 +125,35 @@ app.use((req, res, next) => {
 });
 
 // ============================================================
-// 6. TỰ ĐỘNG DỌN DẸP KHÓA PHÒNG HẾT HẠN (MỖI 10 PHÚT)
+// 6. TỰ ĐỘNG DỌN DẸP KHÓA PHÒNG & LOG CŨ (MỖI 10 PHÚT)
 // ============================================================
 setInterval(
   async () => {
     try {
-      const res = await pool.query(
+      // 1. Dọn dẹp phòng khóa tạm thời đã hết hạn
+      const resLock = await pool.query(
         `DELETE FROM public.temporary_locks WHERE expires_at < NOW()`,
       );
-      if (res.rowCount > 0) {
+      if (resLock.rowCount > 0) {
         console.log(
-          `🧹 [CRON] Đã dọn dẹp ${res.rowCount} khóa phòng tạm thời hết hạn.`,
+          `🧹 [CRON] Đã dọn dẹp ${resLock.rowCount} khóa phòng tạm thời hết hạn.`,
+        );
+      }
+
+      // 2. 🌟 Tự động xóa log truy cập cũ quá 30 ngày để tránh phình dung lượng Database
+      const resLogs = await pool.query(
+        `DELETE FROM public.request_logs WHERE created_at < NOW() - INTERVAL '30 days'`,
+      );
+      if (resLogs.rowCount > 0) {
+        console.log(
+          `🧹 [CRON] Đã dọn dẹp ${resLogs.rowCount} dòng request_logs cũ quá 30 ngày.`,
         );
       }
     } catch (err) {
-      console.warn("⚠️ Cron temporary_locks error:", err.message);
+      console.warn("⚠️ Cron cleanup error:", err.message);
     }
   },
-  10 * 60 * 1000,
+  10 * 60 * 1000, // Định kỳ 10 phút chạy một lần
 );
 
 // ============================================================
