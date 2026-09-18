@@ -37,8 +37,16 @@ const TIME_OPTIONS = [
   { id: "last_month", label: "Tháng trước" },
 ];
 
+// 🌟 TÍNH TOÁN TRỤC Y CO GIÃN THÔNG MINH THEO SỐ TIỀN THỰC TẾ (KHÔNG CỐ ĐỊNH 500K)
 function calculateSmartTicks(maxVal) {
-  const target = Math.max(maxVal || 0, 500000);
+  let target = maxVal || 0;
+  if (target <= 0) target = 100000;
+  else if (target <= 50000) target = 60000;
+  else if (target <= 100000) target = 120000;
+  else if (target <= 250000) target = 300000;
+  else if (target <= 500000) target = 600000;
+  else target = Math.ceil(target * 1.25);
+
   const rawStep = target / 4;
   const power = Math.pow(10, Math.floor(Math.log10(rawStep))) || 1;
   const frac = rawStep / power;
@@ -122,7 +130,7 @@ export default function OwnerDashboardPage() {
   const [revenueTimeRange, setRevenueTimeRange] = useState("this_month");
   const [occupancyTimeRange, setOccupancyTimeRange] = useState("this_month");
 
-  const [bookingValueTab, setBookingValueTab] = useState("stay_date");
+  const [bookingValueTab, setBookingValueTab] = useState("channel");
   const [occupancyLeftTab, setOccupancyLeftTab] = useState("day");
   const [occupancyRightTab, setOccupancyRightTab] = useState("room_type");
 
@@ -202,7 +210,6 @@ export default function OwnerDashboardPage() {
 
       const totalOccupied = res.occupancyCurrent?.occupied || 0;
 
-      // 🌟 ĐẢM BẢO LUÔN CÓ DỮ LIỆU ĐỂ VẼ BIỂU ĐỒ KÊNH BÁN
       const chStats = res.channelStats || {};
       const directAmt = Number(chStats.directAmount || 0);
       const onlineAmt = Number(chStats.onlineAmount || 0);
@@ -223,7 +230,6 @@ export default function OwnerDashboardPage() {
               },
             ];
 
-      // 🌟 ĐẢM BẢO BIỂU ĐỒ THEO NGÀY CÓ MẢNG HỢP LỆ
       const sDateStats = res.stayDateStats || {};
       const resolvedStayChartData = Array.isArray(sDateStats.chartData)
         ? sDateStats.chartData
@@ -288,14 +294,15 @@ export default function OwnerDashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
-  // Tính toán Ticks thông minh cho trục Y
+  // 🌟 LẤY GIÁ TRỊ DOANH THU LỚN NHẤT THỰC TẾ ĐỂ TÍNH TRỤC Y VỪA VẶN
   const maxBookingVal = Math.max(
     Number(stats.channelStats.directAmount || 0),
     Number(stats.channelStats.onlineAmount || 0),
     Number(stats.stayDateStats.totalAmount || 0),
     ...(stats.stayDateStats.chartData || []).map((d) => Number(d.amount || 0)),
-    500000,
+    0,
   );
+
   const { maxDomain: channelMaxDomain, ticks: channelTicks } =
     calculateSmartTicks(maxBookingVal);
 
@@ -438,7 +445,7 @@ export default function OwnerDashboardPage() {
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* 🌟 BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG 🌟 */}
+          {/* 🌟 BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG (CỘT CO GIÃN THEO DOANH THU THỰC TẾ) 🌟 */}
           {/* ═══════════════════════════════════════════════════════════════════════ */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
@@ -451,19 +458,7 @@ export default function OwnerDashboardPage() {
               />
             </div>
 
-            {/* TAB: THEO KÊNH BÁN & THEO NGÀY LƯU TRÚ */}
             <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold pt-1">
-              <button
-                type="button"
-                onClick={() => setBookingValueTab("stay_date")}
-                className={`pb-2.5 transition relative cursor-pointer ${
-                  bookingValueTab === "stay_date"
-                    ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#006ce4]"
-                    : "text-gray-500 hover:text-gray-800"
-                }`}
-              >
-                Theo ngày lưu trú
-              </button>
               <button
                 type="button"
                 onClick={() => setBookingValueTab("channel")}
@@ -475,10 +470,140 @@ export default function OwnerDashboardPage() {
               >
                 Theo kênh bán
               </button>
+              <button
+                type="button"
+                onClick={() => setBookingValueTab("stay_date")}
+                className={`pb-2.5 transition relative cursor-pointer ${
+                  bookingValueTab === "stay_date"
+                    ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#006ce4]"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                Theo ngày lưu trú
+              </button>
             </div>
 
-            {/* TAB 1: THEO NGÀY LƯU TRÚ */}
-            {bookingValueTab === "stay_date" ? (
+            {/* TAB 1: THEO KÊNH BÁN */}
+            {bookingValueTab === "channel" ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
+                    <div className="text-xs text-gray-600 font-bold">
+                      Khách đến trực tiếp
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">
+                        {Number(
+                          stats.channelStats.directAmount || 0,
+                        ).toLocaleString("vi-VN")}{" "}
+                        đ
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                        {stats.channelStats.directPercent || 0}%
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      {stats.channelStats.directCount || 0} đặt phòng
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
+                    <div className="text-xs text-gray-600 font-bold">
+                      Khách đặt online
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">
+                        {Number(
+                          stats.channelStats.onlineAmount || 0,
+                        ).toLocaleString("vi-VN")}{" "}
+                        đ
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200">
+                        {stats.channelStats.onlinePercent || 0}%
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      {stats.channelStats.onlineCount || 0} đặt phòng
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-64 w-full pt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={stats.channelStats.chartData}
+                      barCategoryGap="45%"
+                      margin={{ top: 15, right: 30, left: 10, bottom: 5 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#edf2f7"
+                      />
+                      <XAxis
+                        dataKey="name"
+                        stroke="#94a3b8"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={{ stroke: "#e2e8f0" }}
+                      />
+                      <YAxis
+                        stroke="#94a3b8"
+                        fontSize={11}
+                        ticks={channelTicks}
+                        domain={[0, channelMaxDomain]}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => {
+                          if (v === 0) return "0";
+                          if (v >= 1000000) return `${v / 1000000}tr`;
+                          if (v >= 1000) return `${v / 1000}k`;
+                          return v;
+                        }}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "rgba(0, 108, 228, 0.04)" }}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const d = payload[0].payload;
+                            return (
+                              <div className="bg-white text-gray-800 border border-gray-200 px-3 py-2 rounded-xl text-xs shadow-xl space-y-1">
+                                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1">
+                                  {d.name}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-[#006ce4]" />
+                                  <span className="text-gray-600">
+                                    Giá trị:
+                                  </span>
+                                  <span className="font-black text-[#003580]">
+                                    {Number(d.booked || 0).toLocaleString(
+                                      "vi-VN",
+                                    )}{" "}
+                                    đ
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-gray-500">
+                                  {d.count || 0} lượt đặt
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar
+                        dataKey="booked"
+                        fill="#006ce4"
+                        radius={[8, 8, 0, 0]}
+                        maxBarSize={48}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : (
+              /* TAB 2: THEO NGÀY LƯU TRÚ */
               <div className="space-y-4">
                 <div className="w-fit min-w-[240px] p-4 bg-white border border-gray-200 rounded-2xl space-y-1.5 shadow-2xs">
                   <div className="text-xs text-gray-700 font-bold">
@@ -575,131 +700,11 @@ export default function OwnerDashboardPage() {
                   </ResponsiveContainer>
                 </div>
               </div>
-            ) : (
-              /* TAB 2: THEO KÊNH BÁN */
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
-                    <div className="text-xs text-gray-600 font-bold">
-                      Khách đến trực tiếp
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">
-                        {Number(
-                          stats.channelStats.directAmount || 0,
-                        ).toLocaleString("vi-VN")}{" "}
-                        đ
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
-                        {stats.channelStats.directPercent || 0}%
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-gray-500">
-                      {stats.channelStats.directCount || 0} đặt phòng
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
-                    <div className="text-xs text-gray-600 font-bold">
-                      Khách đặt online
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">
-                        {Number(
-                          stats.channelStats.onlineAmount || 0,
-                        ).toLocaleString("vi-VN")}{" "}
-                        đ
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200">
-                        {stats.channelStats.onlinePercent || 0}%
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-gray-500">
-                      {stats.channelStats.onlineCount || 0} đặt phòng
-                    </div>
-                  </div>
-                </div>
-
-                <div className="h-64 w-full pt-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={stats.channelStats.chartData}
-                      barCategoryGap="45%"
-                      margin={{ top: 15, right: 30, left: 10, bottom: 5 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#edf2f7"
-                      />
-                      <XAxis
-                        dataKey="name"
-                        stroke="#94a3b8"
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={{ stroke: "#e2e8f0" }}
-                      />
-                      <YAxis
-                        stroke="#94a3b8"
-                        fontSize={11}
-                        ticks={channelTicks}
-                        domain={[0, channelMaxDomain]}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(v) =>
-                          v >= 1000000
-                            ? `${v / 1000000}tr`
-                            : v >= 1000
-                              ? `${v / 1000}k`
-                              : v
-                        }
-                      />
-                      <Tooltip
-                        cursor={{ fill: "rgba(0, 108, 228, 0.04)" }}
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const d = payload[0].payload;
-                            return (
-                              <div className="bg-white text-gray-800 border border-gray-200 px-3 py-2 rounded-xl text-xs shadow-xl space-y-1">
-                                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1">
-                                  {d.name}
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-[#006ce4]" />
-                                  <span className="text-gray-600">
-                                    Giá trị:
-                                  </span>
-                                  <span className="font-black text-[#003580]">
-                                    {Number(d.booked || 0).toLocaleString(
-                                      "vi-VN",
-                                    )}{" "}
-                                    đ
-                                  </span>
-                                </div>
-                                <div className="text-[11px] text-gray-500">
-                                  {d.count || 0} lượt đặt
-                                </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      <Bar
-                        dataKey="booked"
-                        fill="#006ce4"
-                        radius={[8, 8, 0, 0]}
-                        maxBarSize={36}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
             )}
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* 🌟 BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG 🌟 */}
+          {/* BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG */}
           {/* ═══════════════════════════════════════════════════════════════════════ */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">

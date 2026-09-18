@@ -17,7 +17,7 @@ pool
   )
   .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
 
-// ─── 1. THỐNG KÊ DASHBOARD & QUYẾT TOÁN ĐỊNH KỲ (CHUẨN CHECKED_OUT) ───
+// ─── 1. THỐNG KÊ DASHBOARD & QUYẾT TOÁN ĐỊNH KỲ (ĐỒNG BỘ 100% SỐ LIỆU) ───
 async function getStats(req, res, next) {
   try {
     const dbStart = Date.now();
@@ -94,8 +94,7 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN BẢNG QUYẾT TOÁN CƠ SỞ:
-    // Chỉ các đơn ĐÃ CHECK-OUT (checked_out) mới đủ điều kiện chuyển tiền trả Owner.
+    // 🌟 TRUY VẤN CHI TIẾT TỪNG CƠ SỞ: CHỈ TÍNH ĐƠN CHECK-OUT VÀO TIỀN TRẢ OWNER
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -112,10 +111,8 @@ async function getStats(req, res, next) {
         u.email AS owner_email,
         u.phone AS owner_phone,
         COUNT(b.id)::int AS total_bookings,
-        -- Đếm số đơn đã check-out hoàn tất kỳ nghỉ
         COUNT(CASE WHEN b.status = 'checked_out' THEN 1 END)::int AS completed_bookings,
         COALESCE(SUM(b.total_price), 0)::bigint AS total_gmv,
-        -- Hoa hồng sàn thu
         COALESCE(
           SUM(
             CASE 
@@ -125,7 +122,6 @@ async function getStats(req, res, next) {
           ), 
           0
         )::bigint AS admin_commission,
-        -- 🌟 TIỀN SẴN SÀNG QUYẾT TOÁN CHO OWNER: CHỈ TÍNH CÁC ĐƠN ĐÃ CHECK-OUT VÀ TRỪ ĐI TIỀN ĐÃ CHUYỂN
         GREATEST(
           0,
           COALESCE(
@@ -154,7 +150,6 @@ async function getStats(req, res, next) {
       userCount,
       bookingCount,
       hotelCount,
-      revenueResult,
       pendingHotelCount,
       trafficResult,
       hotelRevenuesResult,
@@ -173,55 +168,38 @@ async function getStats(req, res, next) {
         `SELECT COUNT(*)::int AS count FROM public.hotel WHERE status = 'active'`,
       ),
       pool.query(
-        `SELECT 
-           COALESCE(SUM(b.total_price), 0)::bigint AS gmv,
-           COALESCE(
-             SUM(
-               CASE 
-                 WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
-                 ELSE (b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)
-               END
-             ), 
-             0
-           )::bigint AS commission_revenue,
-           -- Tổng công nợ sàn cần trả cho các owner từ các đơn check-out
-           GREATEST(
-             0,
-             COALESCE(
-               SUM(
-                 CASE 
-                   WHEN b.status = 'checked_out' THEN 
-                     COALESCE(b.hotel_payout, (b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0)))
-                   ELSE 0
-                 END
-               ), 
-               0
-             ) - COALESCE((SELECT SUM(amount) FROM public.payout_settlement), 0)
-           )::bigint AS owner_payout
-         FROM public.booking b
-         JOIN public.hotel h ON h.id = b.hotel_id
-         WHERE b.payment_status = 'paid'
-           AND b.status IN ('confirmed', 'checked_in', 'checked_out')
-           AND b.booking_code LIKE 'BK%'
-           ${timeBookingFilter}`,
-      ),
-      pool.query(
         `SELECT COUNT(*)::int AS count FROM public.hotel WHERE status = 'pending'`,
       ),
       pool.query(trafficQuery),
       pool.query(hotelRevenueQuery),
     ]);
 
+    const hotelRows = hotelRevenuesResult.rows || [];
+
+    // 🌟 ĐỒNG BỘ 100%: TỔNG GMV, HOA HỒNG VÀ CÔNG NỢ PHẢI BẰNG TỔNG CỦA CÁC CƠ SỞ CỘNG LẠI
+    const totalGMV = hotelRows.reduce(
+      (sum, h) => sum + Number(h.total_gmv || 0),
+      0,
+    );
+    const totalCommission = hotelRows.reduce(
+      (sum, h) => sum + Number(h.admin_commission || 0),
+      0,
+    );
+    const totalOwnerPayout = hotelRows.reduce(
+      (sum, h) => sum + Number(h.owner_payout || 0),
+      0,
+    );
+
     const statsData = {
       totalUsers: userCount.rows[0]?.count || 0,
       totalBookings: bookingCount.rows[0]?.count || 0,
       totalHotels: hotelCount.rows[0]?.count || 0,
-      totalGMV: Number(revenueResult.rows[0]?.gmv || 0),
-      totalRevenue: Number(revenueResult.rows[0]?.commission_revenue || 0),
-      totalOwnerPayout: Number(revenueResult.rows[0]?.owner_payout || 0),
+      totalGMV: totalGMV,
+      totalRevenue: totalCommission,
+      totalOwnerPayout: totalOwnerPayout,
       pendingHotels: pendingHotelCount.rows[0]?.count || 0,
       hourlyTraffic: trafficResult.rows || [],
-      hotelRevenues: hotelRevenuesResult.rows || [],
+      hotelRevenues: hotelRows,
       dbLatency: `${dbLatency}ms`,
       serverUptime: uptimeFormatted,
     };
@@ -237,7 +215,7 @@ async function getStats(req, res, next) {
   }
 }
 
-// 🌟 2. XÁC NHẬN CHUYỂN TIỀN QUYẾT TOÁN (LƯU VÀO DATABASE ĐỂ TRỪ TIỀN VĨNH VIỄN)
+// ─── 2. XÁC NHẬN CHUYỂN TIỀN QUYẾT TOÁN ───
 async function confirmPayout(req, res) {
   try {
     const { hotel_id, hotelId, amount, note } = req.body;
