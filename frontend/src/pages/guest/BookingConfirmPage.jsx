@@ -21,6 +21,7 @@ import {
   Hourglass,
   Minus,
   Plus,
+  AlertCircle,
 } from "lucide-react";
 import {
   format,
@@ -131,7 +132,7 @@ export default function BookingConfirmPage() {
   );
 
   // Lịch popup
-  const [calendarTarget, setCalendarTarget] = useState(null); // 'checkIn' | 'checkOut' | null
+  const [calendarTarget, setCalendarTarget] = useState(null);
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
   const calendarRef = useRef(null);
 
@@ -150,6 +151,10 @@ export default function BookingConfirmPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [paymentOption, setPaymentOption] = useState("FULL");
+
+  // 🌟 STATE KIỂM TRA PHÒNG TRỐNG TỨC THÌ KHI ĐỔI GIỜ
+  const [isSlotAvailable, setIsSlotAvailable] = useState(true);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -255,6 +260,61 @@ export default function BookingConfirmPage() {
     hoursCount,
   ]);
 
+  // 🌟 HÀM TỰ ĐỘNG KIỂM TRA PHÒNG TRỐNG MỖI KHI ĐỔI GIỜ TẠI TRANG NÀY
+  const verifyAvailability = useCallback(async () => {
+    if (!hotelId || !roomId) return;
+    setCheckingAvailability(true);
+    try {
+      const finalInDateStr = safeFormatDate(checkInDate, "yyyy-MM-dd");
+      const finalOutDateStr =
+        rentalType === "HOUR"
+          ? safeFormatDate(checkOutInfo.outDateTime, "yyyy-MM-dd")
+          : safeFormatDate(checkOutDate, "yyyy-MM-dd");
+
+      const res = await apiClient.get(`/hotels/${hotelId}/availability`, {
+        params: {
+          checkIn: finalInDateStr,
+          checkOut: finalOutDateStr,
+          checkInTime: checkInTime,
+          checkOutTime:
+            rentalType === "HOUR" ? checkOutInfo.outTimeStr : checkOutTime,
+          rentalType: rentalType,
+          adults,
+        },
+      });
+
+      const list = res?.data?.rooms || res?.data || [];
+      const currentRoom = list.find((r) => String(r.id) === String(roomId));
+      if (currentRoom) {
+        const availableStock = Number(
+          currentRoom.amount ?? currentRoom.remaining_rooms ?? 1,
+        );
+        setIsSlotAvailable(availableStock >= quantity);
+      } else {
+        setIsSlotAvailable(true);
+      }
+    } catch {
+      setIsSlotAvailable(true);
+    } finally {
+      setCheckingAvailability(false);
+    }
+  }, [
+    hotelId,
+    roomId,
+    checkInDate,
+    checkOutDate,
+    checkInTime,
+    checkOutTime,
+    rentalType,
+    checkOutInfo,
+    quantity,
+    adults,
+  ]);
+
+  useEffect(() => {
+    verifyAvailability();
+  }, [verifyAvailability]);
+
   // Đổi hình thức thuê
   const handleTabChange = (type) => {
     setRentalType(type);
@@ -310,7 +370,7 @@ export default function BookingConfirmPage() {
     setCalendarTarget(null);
   };
 
-  // 🌟 TÍNH TIỀN CHUẨN XÁC KÈM ĐƠN GIÁ THEO CẤU HÌNH PHÒNG
+  // Tính tiền
   const baseDayPrice = Number(room?.sell_price || room?.base_price || 500000);
   const firstHourPrice =
     Number(room?.hourly_price) > 0
@@ -431,18 +491,22 @@ export default function BookingConfirmPage() {
     );
   };
 
-  // 🌟 GỬI ĐƠN HÀNG: CHUẨN HÓA DỮ LIỆU ĐỂ BACKEND KHÔNG BÁO LỖI NGÀY TRẢ
+  // Gửi đơn hàng
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!checkInDate) return alert("Vui lòng chọn ngày nhận phòng hợp lệ!");
+    if (!isSlotAvailable) {
+      return alert(
+        "Rất tiếc! Khung giờ bạn vừa chọn đã có khách đặt kín phòng. Vui lòng chọn khung giờ khác!",
+      );
+    }
+
     setSubmitting(true);
 
-    // Chuẩn hóa ngày trả phòng
     const finalInDateStr = safeFormatDate(checkInDate, "yyyy-MM-dd");
     let finalOutDateStr = safeFormatDate(checkOutDate, "yyyy-MM-dd");
 
     if (rentalType === "HOUR") {
-      // Tính chính xác ngày trả phòng theo số giờ
       finalOutDateStr = safeFormatDate(checkOutInfo.outDateTime, "yyyy-MM-dd");
     }
 
@@ -718,7 +782,6 @@ export default function BookingConfirmPage() {
 
           {/* CỘT PHẢI: BỘ CHỌN HÌNH THỨC THUÊ & CHI TIẾT GIÁ */}
           <div className="lg:col-span-5 space-y-6">
-            {/* THẺ TÓM TẮT KHÁCH SẠN */}
             <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
               <div className="flex gap-4 pb-4 border-b border-gray-100">
                 <img
@@ -761,9 +824,8 @@ export default function BookingConfirmPage() {
               </div>
             </div>
 
-            {/* 🌟 BỘ CHỌN HÌNH THỨC THUÊ ĐƯỢC ĐỒNG BỘ ĐÚNG THEO GIỜ & THEO NGÀY 🌟 */}
+            {/* BỘ CHỌN HÌNH THỨC THUÊ */}
             <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 space-y-4 relative">
-              {/* 4 TABS: Giờ / Ngày / Đêm / Buổi */}
               <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl">
                 {[
                   { id: "HOUR", label: "Giờ", icon: Clock },
@@ -834,7 +896,7 @@ export default function BookingConfirmPage() {
                 </div>
               </div>
 
-              {/* Nếu là Tab Giờ: Có hàng "+ 2 Giờ -" */}
+              {/* Nếu là Tab Giờ */}
               {rentalType === "HOUR" ? (
                 <div className="space-y-1.5 pt-1">
                   <label className="text-xs font-bold text-slate-800 block">
@@ -867,7 +929,7 @@ export default function BookingConfirmPage() {
                   </div>
                 </div>
               ) : (
-                /* Nếu là Tab Ngày / Đêm / Buổi: Có hàng Trả phòng */
+                /* Tab Ngày / Đêm / Buổi */
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 block">
                     Trả phòng
@@ -912,12 +974,11 @@ export default function BookingConfirmPage() {
                 </div>
               )}
 
-              {/* Thanh hiển thị thời lượng */}
               <div className="w-full py-2.5 bg-blue-50/90 text-[#006ce4] border border-blue-100 rounded-xl font-black text-center text-sm shadow-2xs">
                 {checkOutInfo.badge}
               </div>
 
-              {/* Bộ đếm người lớn, trẻ em, phòng */}
+              {/* BỘ ĐẾM */}
               <div className="space-y-2 pt-2 border-t border-gray-100">
                 <NumberCounter
                   label="Người lớn"
@@ -989,6 +1050,17 @@ export default function BookingConfirmPage() {
                       Xong
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* CẢNH BÁO NẾU KHUNG GIỜ VỪA ĐỔI BỊ HẾT PHÒNG */}
+              {!isSlotAvailable && !checkingAvailability && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <AlertCircle size={16} className="shrink-0 text-rose-600" />
+                  <span>
+                    Rất tiếc! Khung giờ bạn vừa chọn đã hết phòng trống. Vui
+                    lòng chọn lại giờ khác!
+                  </span>
                 </div>
               )}
 
@@ -1105,10 +1177,19 @@ export default function BookingConfirmPage() {
 
               <Button
                 type="submit"
+                disabled={
+                  !isSlotAvailable || checkingAvailability || submitting
+                }
                 isLoading={submitting}
-                className="w-full h-14 text-base font-black rounded-xl shadow-lg mt-2 bg-[#003580] hover:bg-blue-900 text-white cursor-pointer"
+                className={`w-full h-14 text-base font-black rounded-xl shadow-lg mt-2 cursor-pointer transition ${
+                  !isSlotAvailable
+                    ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                    : "bg-[#003580] hover:bg-blue-900 text-white"
+                }`}
               >
-                Tiến hành thanh toán &rarr;
+                {!isSlotAvailable
+                  ? "Hết phòng trong khung giờ này"
+                  : "Tiến hành thanh toán →"}
               </Button>
             </div>
           </div>
