@@ -17,6 +17,9 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
     await pool.query(`
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS room_legs jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS receptionist_assigned boolean DEFAULT false;
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00';
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS checkout_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00';
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS rental_type VARCHAR(50) DEFAULT 'DAY';
     `);
   } catch (err) {
     console.warn("⚠️ Cảnh báo migration owner columns:", err.message);
@@ -439,9 +442,17 @@ async function getOwnerBookings(req, res) {
 
     const result = await pool.query(
       `
-      SELECT b.*, h.name AS hotel_name, COALESCE(u.full_name, b.customer_name) AS customer_name, COALESCE(u.phone, b.guest_phone) AS guest_phone,
+      SELECT b.*, 
+             COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
+             COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
+             COALESCE(b.rental_type, 'DAY') AS rental_type,
+             h.name AS hotel_name, 
+             COALESCE(u.full_name, b.customer_name) AS customer_name, 
+             COALESCE(u.phone, b.guest_phone) AS guest_phone,
              COALESCE((SELECT br.room_name FROM public.booking_room br WHERE br.booking_id = b.id LIMIT 1), 'Phòng tiêu chuẩn') AS room_name
-      FROM public.booking b JOIN public.hotel h ON h.id = b.hotel_id LEFT JOIN public.users u ON u.id = b.user_id
+      FROM public.booking b 
+      JOIN public.hotel h ON h.id = b.hotel_id 
+      LEFT JOIN public.users u ON u.id = b.user_id
       WHERE h.owner_id = $1 OR h.id IN (SELECT hotel_id FROM public.hotel_staff WHERE user_id = $1)
       ORDER BY b.created_at DESC
     `,
@@ -458,7 +469,7 @@ async function getOwnerBookings(req, res) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (ĐỒNG BỘ CẢ CHECKIN_TIME VÀ CHECKOUT_TIME) ───
 async function getRoomMapData(req, res) {
   try {
     const { hotel_id: hotelId } = req.query;
@@ -473,6 +484,7 @@ async function getRoomMapData(req, res) {
         SELECT r.id AS room_type_id, r.name AS room_type_name, r.code AS room_code, r.base_price AS daily_price, r.hourly_tiers,
                COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
                COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
+               COALESCE(r.half_day_price, ROUND(r.base_price * 0.8)) AS half_day_price,
                ru.id AS unit_id, ru.room_number, COALESCE(ru.status, 'available') AS unit_status, COALESCE(ru.area, 'Tầng 1') AS area
         FROM public.room r LEFT JOIN public.room_unit ru ON ru.room_id = r.id
         WHERE r.hotel_id::text = $1 AND COALESCE(r.is_active, true) ORDER BY ru.area ASC, ru.room_number ASC
@@ -482,7 +494,11 @@ async function getRoomMapData(req, res) {
       pool
         .query(
           `
-        SELECT b.* FROM public.booking b
+        SELECT b.*,
+               COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
+               COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
+               COALESCE(b.rental_type, 'DAY') AS rental_type
+        FROM public.booking b
         WHERE b.hotel_id::text = $1 AND b.status IN ('confirmed', 'checked_in') AND TRIM(COALESCE(b.room_number, '')) <> ''
         ORDER BY b.created_at DESC
       `,
@@ -512,6 +528,7 @@ async function getRoomMapData(req, res) {
         hourly_price: Number(row.hourly_price || 0),
         daily_price: Number(row.daily_price || 0),
         overnight_price: Number(row.overnight_price || 0),
+        half_day_price: Number(row.half_day_price || 0),
         status: isDirty ? "dirty" : "available",
         unit_status: row.unit_status || "available",
         is_dirty: isDirty,
@@ -548,6 +565,10 @@ async function getRoomMapData(req, res) {
               : `${diffHours} giờ`,
           checkin_date: match.checkin_date,
           checkout_date: match.checkout_date,
+          // 🌟 TRUYỀN GIỜ NHẬN TRẢ ĐẦY ĐỦ VÀO SƠ ĐỒ PHÒNG
+          checkin_time: match.checkin_time,
+          checkout_time: match.checkout_time,
+          rental_type: match.rental_type,
           total_price: Number(match.total_price || room.daily_price || 0),
           customer_paid: Number(match.subtotal || match.total_price || 0),
           adult_total: Number(match.adult_total || 1),
@@ -565,21 +586,28 @@ async function getRoomMapData(req, res) {
   }
 }
 
-// ─── 4. ĐƠN ONLINE CHỜ XẾP PHÒNG & XÁC NHẬN ───
+// ─── 4. ĐƠN ONLINE CHỜ XẾP PHÒNG & XÁC NHẬN (ĐÃ SELECT ĐỦ CÁC CỘT GIỜ) ───
 async function getPendingOnlineBookings(req, res) {
   try {
     const rawHotelId = String(req.query.hotel_id || "").trim();
     const result = await pool.query(
       `
-      SELECT b.id, b.booking_code, b.customer_name, b.guest_phone, b.guest_email, b.checkin_date, b.checkout_date,
+      SELECT b.id, b.booking_code, b.customer_name, b.guest_phone, b.guest_email, 
+             b.checkin_date, b.checkout_date,
+             -- 🌟 BỔ SUNG ĐẦY ĐỦ CÁC CỘT GIỜ ĐỂ FRONTEND KHÔNG BỊ 00:00 - 00:00:
+             COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
+             COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
+             COALESCE(b.rental_type, 'DAY') AS rental_type,
              b.adult_total, b.children_total, b.total_price, b.created_at, b.payment_status, b.status, b.room_number, b.hotel_id,
-             COALESCE(p.paid_amount, b.total_price) AS paid_amount, COALESCE(br.room_name, r.name, 'Phòng tiêu chuẩn') AS room_type_name,
+             COALESCE(p.paid_amount, b.total_price) AS paid_amount, 
+             COALESCE(br.room_name, r.name, 'Phòng tiêu chuẩn') AS room_type_name,
              COALESCE(br.room_id, r.id) AS room_type_id
       FROM public.booking b
       LEFT JOIN public.booking_room br ON br.booking_id = b.id
       LEFT JOIN public.room r ON r.id = br.room_id
       LEFT JOIN public.payment p ON p.booking_id = b.id
-      WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled') AND TRIM(COALESCE(b.room_number, '')) = ''
+      WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled') 
+        AND TRIM(COALESCE(b.room_number, '')) = ''
         AND ($1 = '' OR $1 = 'all' OR b.hotel_id::text = $1 OR b.hotel_id IS NULL)
       ORDER BY b.created_at DESC LIMIT 50
     `,
@@ -649,6 +677,9 @@ async function createWalkInBooking(req, res) {
       customer_paid = 0,
       checkin_date,
       checkout_date,
+      checkin_time = "14:00:00",
+      checkout_time = "12:00:00",
+      rental_type = "DAY",
       is_check_in_now = true,
     } = req.body;
     await client.query("BEGIN");
@@ -659,15 +690,22 @@ async function createWalkInBooking(req, res) {
     );
     const roomNumber = unitRes.rows[0]?.room_number || "P.101";
 
+    const inTime =
+      checkin_time.length === 5 ? `${checkin_time}:00` : checkin_time;
+    const outTime =
+      checkout_time.length === 5 ? `${checkout_time}:00` : checkout_time;
+
     const insertBooking = await client.query(
       `
       INSERT INTO public.booking (
-        id, booking_code, hotel_id, status, payment_status, total_price, checkin_date, checkout_date,
+        id, booking_code, hotel_id, status, payment_status, total_price, 
+        checkin_date, checkout_date, checkin_time, checkout_time, rental_type,
         adult_total, children_total, customer_name, guest_email, guest_phone, room_number, subtotal,
         receptionist_assigned, confirmed_at, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4::public.booking_status_enum, 'paid'::public.booking_payment_status_enum, $5,
-        $6::date, $7::date, 1, 0, $8, 'walkin@hotel.internal', $9, $10, $11, true, NOW(), NOW(), NOW()
+        $6::date, $7::date, $8::time, $9::time, $10,
+        1, 0, $11, 'walkin@hotel.internal', $12, $13, $14, true, NOW(), NOW(), NOW()
       ) RETURNING *;
     `,
       [
@@ -678,6 +716,9 @@ async function createWalkInBooking(req, res) {
         Number(total_price || 0),
         checkin_date || toDateStr(new Date()),
         checkout_date || toDateStr(new Date(Date.now() + 864e5)),
+        inTime,
+        outTime,
+        rental_type,
         customer_name || "Khách lẻ",
         guest_phone || "",
         roomNumber,
@@ -918,12 +959,10 @@ async function createOwnerStaff(req, res) {
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Lỗi tạo tài khoản nhân viên.",
-      });
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Lỗi tạo tài khoản nhân viên.",
+    });
   } finally {
     client.release();
   }
@@ -941,11 +980,9 @@ async function deleteOwnerStaff(req, res) {
 
     if (!deleteRes.rowCount) {
       await client.query("ROLLBACK");
-      return res
-        .status(404)
-        .json({
-          message: "Không tìm thấy nhân viên lễ tân này trong cơ sở của bạn.",
-        });
+      return res.status(404).json({
+        message: "Không tìm thấy nhân viên lễ tân này trong cơ sở của bạn.",
+      });
     }
     await client.query("COMMIT");
     return res.json({

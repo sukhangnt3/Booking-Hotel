@@ -88,7 +88,7 @@ async function cleanupExpiredLocks() {
   } catch (e) {}
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (CÓ TÍNH THỜI GIAN ĐỆM DỌN PHÒNG 15-30 PHÚT) ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (CHẶN TRIỆT ĐỂ OVERBOOKING KHI HẾT PHÒNG) ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -247,6 +247,7 @@ async function createBooking(req, res, next) {
       : Number(hotelData.commission_rate ?? 18.0);
 
     if (room_id) {
+      // 🌟 LẤY CHÍNH XÁC TỔNG SỐ LƯỢNG PHÒNG VẬT LÝ CỦA HẠNG PHÒNG NÀY
       const roomStockRes = await client.query(
         `SELECT r.id, r.name, r.base_price,
                 COALESCE(
@@ -272,21 +273,26 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
-      // 🌟 KIỂM TRA XUNG ĐỘT PHÒNG CỘNG THÊM THỜI GIAN DỌN PHÒNG ($4 = cleaningBufferMinutes)
+      // 🌟 THUẬT TOÁN ĐẾM TẤT CẢ CÁC ĐƠN ĐANG CHIẾM PHÒNG (BẤT KỂ LỄ TÂN ĐÃ CHỌN SỐ PHÒNG HAY CHƯA):
+      // Bao gồm:
+      // 1. Đơn đang chờ lễ tân gán phòng (status = 'pending' có thanh toán hoặc đang giữ chỗ 15p)
+      // 2. Đơn đã xác nhận (status = 'confirmed')
+      // 3. Đơn đang lưu trú (status = 'checked_in')
       const conflictCheckSql = `
-        SELECT COUNT(DISTINCT b.id)::int AS booked_count
+        SELECT COALESCE(SUM(br.quantity), 0)::int AS booked_count
         FROM public.booking b
         JOIN public.booking_room br ON br.booking_id = b.id
         WHERE br.room_id = $1
           AND b.status NOT IN ('checked_out', 'cancelled')
           AND (
             b.status IN ('confirmed', 'checked_in')
-            OR (b.status = 'pending' AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes'))
+            OR (
+              b.status = 'pending' 
+              AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
+            )
           )
           AND (
-            -- Đơn mới bắt đầu trước khi đơn cũ dọn phòng xong:
-            -- Thời điểm vào của đơn mới < (Thời điểm trả phòng đơn cũ + $4 phút dọn phòng)
-            -- VÀ Thời điểm ra của đơn mới > Thời điểm vào của đơn cũ
+            -- Khoảng thời gian giao thoa có tính thêm thời gian dọn phòng:
             $2::timestamp < (b.checkout_date + COALESCE(b.checkout_time, '12:00:00'::time) + ($4 || ' minutes')::interval)
             AND $3::timestamp > (b.checkin_date + COALESCE(b.checkin_time, '14:00:00'::time))
           );
@@ -301,12 +307,13 @@ async function createBooking(req, res, next) {
 
       const currentlyBooked = Number(conflictRes.rows[0]?.booked_count || 0);
 
+      // 🌟 NẾU SỐ LƯỢNG ĐÃ ĐẶT + SỐ LƯỢNG KHÁCH MỚI MUỐN ĐẶT > TỔNG PHÒNG VẬT LÝ => CHẶN NGAY!
       if (currentlyBooked + bookingQty > maxStock) {
         await client.query("ROLLBACK");
         client.release();
         return res.status(400).json({
           success: false,
-          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đang có khách ở hoặc đang trong ${cleaningBufferMinutes} phút vệ sinh dọn phòng. Vui lòng chọn khung giờ khác!`,
+          message: `Rất tiếc! Hạng phòng "${roomData.name}" hiện đã có khách đặt kín từ ${finalCheckInTime} đến ${finalCheckOutTime} (kèm ${cleaningBufferMinutes} phút vệ sinh dọn phòng). Vui lòng chọn khung giờ khác!`,
         });
       }
     }
@@ -466,7 +473,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. XÁC NHẬN THANH TOÁN XONG ───
+// ─── 2. XÁC NHẬN THANH TOÁN (TỰ PHỤC HỒI ĐƠN NẾU LỠ BỊ HỦY) ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -511,6 +518,7 @@ async function confirmPayment(req, res, next) {
       `UPDATE public.booking
        SET payment_status = 'paid',
            status = 'pending'::public.booking_status_enum,
+           cancelled_at = NULL,
            receptionist_assigned = false,
            room_number = NULL,
            confirmed_at = NULL,
@@ -555,13 +563,16 @@ async function confirmPayment(req, res, next) {
   }
 }
 
-// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO MÃ ───
+// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO MÃ (SELECT ĐỦ CẢ GIỜ VÀ HÌNH THỨC) ───
 async function getBookingByCode(req, res, next) {
   try {
     const { code } = req.params;
     const result = await pool.query(
       `SELECT 
          b.*, 
+         COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
+         COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
+         COALESCE(b.rental_type, 'DAY') AS rental_type,
          h.name AS hotel_name, 
          h.address AS hotel_address, 
          h.city AS hotel_city,
@@ -638,7 +649,7 @@ async function getBookingByCode(req, res, next) {
   }
 }
 
-// ─── 4. LỊCH SỬ ĐẶT PHÒNG ───
+// ─── 4. LỊCH SỬ ĐẶT PHÒNG (TRẢ VỀ ĐỦ CHECKIN_TIME VÀ CHECKOUT_TIME) ───
 async function getMyBookings(req, res, next) {
   try {
     const userId =
@@ -652,6 +663,9 @@ async function getMyBookings(req, res, next) {
     const result = await pool.query(
       `SELECT 
          b.*, 
+         COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
+         COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
+         COALESCE(b.rental_type, 'DAY') AS rental_type,
          h.name AS hotel_name, 
          h.address AS hotel_address, 
          h.city AS hotel_city,
