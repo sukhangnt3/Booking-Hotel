@@ -79,7 +79,9 @@ export default function OccupiedRoomModal({
 
   const hourlyTiers = room.hourly_tiers || [];
   const firstHourRate = Number(
-    hourlyTiers[0]?.price || room.hourly_price || room.daily_price || 100000,
+    hourlyTiers[0]?.price ||
+      room.hourly_price ||
+      Math.round((room.daily_price || 100000) * 0.25),
   );
 
   const now = new Date();
@@ -122,7 +124,7 @@ export default function OccupiedRoomModal({
     return `${days} ngày ${remainingHours > 0 ? `${remainingHours} giờ` : ""}`.trim();
   }, [bookingDetail, room.booking, now]);
 
-  // 🌟 TÍNH CHÍNH XÁC GIỜ TRẢ DỰ KIẾN (THEO GIỜ HOẶC THEO NGÀY)
+  // 🌟 TÍNH CHÍNH XÁC GIỜ TRẢ DỰ KIẾN
   const scheduledCheckout = useMemo(() => {
     const b = bookingDetail || room.booking;
     const outDateStr = b?.checkout_date
@@ -159,28 +161,30 @@ export default function OccupiedRoomModal({
     const remMins = lateMinutes % 60;
     overtimeHours = rawHours + (remMins >= graceMinutes ? 1 : 0);
 
-    if (hourlyTiers.length > 0) {
-      const sortedTiers = [...hourlyTiers].sort(
-        (a, b) => Number(a.from_hour) - Number(b.from_hour),
-      );
-      let totalTierFee = 0;
-      for (let h = 1; h <= overtimeHours; h++) {
-        let applied = sortedTiers[0];
-        for (let i = sortedTiers.length - 1; i >= 0; i--) {
-          if (h >= Number(sortedTiers[i].from_hour)) {
-            applied = sortedTiers[i];
-            break;
+    if (overtimeHours > 0) {
+      if (hourlyTiers.length > 0) {
+        const sortedTiers = [...hourlyTiers].sort(
+          (a, b) => Number(a.from_hour) - Number(b.from_hour),
+        );
+        let totalTierFee = 0;
+        for (let h = 1; h <= overtimeHours; h++) {
+          let applied = sortedTiers[0];
+          for (let i = sortedTiers.length - 1; i >= 0; i--) {
+            if (h >= Number(sortedTiers[i].from_hour)) {
+              applied = sortedTiers[i];
+              break;
+            }
           }
+          totalTierFee += Number(applied.price || 0);
         }
-        totalTierFee += Number(applied.price || 0);
+        overtimeFee = totalTierFee;
+        overtimeDisplayTime = `${overtimeHours} giờ`;
+        overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ)`;
+      } else {
+        overtimeFee = overtimeHours * firstHourRate;
+        overtimeDisplayTime = `${overtimeHours} giờ`;
+        overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ x ${formatVND(firstHourRate)})`;
       }
-      overtimeFee = totalTierFee;
-      overtimeDisplayTime = `${overtimeHours} giờ`;
-      overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ)`;
-    } else {
-      overtimeFee = overtimeHours * firstHourRate;
-      overtimeDisplayTime = `${overtimeHours} giờ`;
-      overtimeLabel = `Quá ${rawHours}h${remMins}p (${overtimeHours} giờ x ${formatVND(firstHourRate)})`;
     }
   }
 
@@ -198,7 +202,6 @@ export default function OccupiedRoomModal({
   );
   const totalBill = baseRoomPrice + overtimeFee;
 
-  // ─── 🌟 XỬ LÝ CHUẨN XÁC NGUỒN KHÁCH VÀ TIỀN PHÒNG (KHÔNG BỊ THẤT THOÁT 70%) ───
   const b = bookingDetail || room.booking;
 
   const isWalkInGuest =
@@ -211,11 +214,10 @@ export default function OccupiedRoomModal({
   const isDepositOnline =
     !isWalkInGuest &&
     (b?.payment_type === "DEPOSIT_30" ||
+      Boolean(room.is_deposit) ||
       (Number(b?.deposit_amount) > 0 &&
         Number(b?.deposit_amount) < baseRoomPrice) ||
-      (Number(b?.paid_amount) > 0 && Number(b?.paid_amount) < baseRoomPrice) ||
-      (Number(b?.customer_paid) > 0 &&
-        Number(b?.customer_paid) < baseRoomPrice));
+      (Number(b?.paid_amount) > 0 && Number(b?.paid_amount) < baseRoomPrice));
 
   const isPaidFullOnline = !isWalkInGuest && !isDepositOnline;
 
@@ -244,7 +246,6 @@ export default function OccupiedRoomModal({
     customerPaid = baseRoomPrice;
   }
 
-  // Số tiền còn thiếu thực tế cần thu tại quầy
   const remainingAmount = Math.max(0, totalBill - customerPaid);
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
@@ -289,7 +290,7 @@ export default function OccupiedRoomModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
       <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl border border-gray-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col text-gray-900">
-        {/* ─── HEADER MODAL ─── */}
+        {/* HEADER MODAL */}
         <div className="flex justify-between items-center px-6 py-4 bg-[#003580] text-white shadow-xs shrink-0 flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="w-10 h-10 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-white shadow-inner">
@@ -309,7 +310,6 @@ export default function OccupiedRoomModal({
               </p>
             </div>
 
-            {/* BADGE PHÂN LOẠI NGUỒN ĐẶT */}
             {isWalkInGuest ? (
               <span className="px-3 py-1 rounded-full bg-white/20 text-white font-black text-[10px] border border-white/30 flex items-center gap-1">
                 <Banknote size={12} />
@@ -327,7 +327,6 @@ export default function OccupiedRoomModal({
               </span>
             )}
 
-            {/* NÚT ĐỔI PHÒNG */}
             <button
               type="button"
               onClick={() => {
@@ -349,7 +348,7 @@ export default function OccupiedRoomModal({
           </button>
         </div>
 
-        {/* ─── NỘI DUNG TÍNH TIỀN CHI TIẾT ─── */}
+        {/* NỘI DUNG TÍNH TIỀN */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1 bg-white">
           {/* CỘT TRÁI: BẢNG TIỀN PHÒNG & PHỤ PHÍ */}
           <div className="lg:col-span-7 space-y-4">
@@ -496,7 +495,6 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* TIỀN ĐÃ THU TRƯỚC */}
               <div className="flex justify-between items-center text-gray-700">
                 <div>
                   <span className="block font-medium text-gray-800">
@@ -513,7 +511,6 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* SỐ TIỀN CÒN CẦN THU (CẢNH BÁO RÕ RÀNG NẾU LÀ CỌC 30%) */}
               <div className="flex justify-between items-center pt-2.5 border-t border-gray-200 bg-amber-50/70 p-3 rounded-2xl border border-amber-200">
                 <div>
                   <span className="font-black text-gray-900 text-xs block uppercase tracking-wider">
@@ -532,7 +529,6 @@ export default function OccupiedRoomModal({
                 </span>
               </div>
 
-              {/* TRẠNG THÁI THANH TOÁN */}
               {remainingAmount === 0 ? (
                 <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-center space-y-1 mt-2 shadow-2xs">
                   <div className="font-black text-xs flex items-center justify-center gap-1.5 text-emerald-800">
@@ -540,8 +536,8 @@ export default function OccupiedRoomModal({
                     <span>Hóa đơn đã thanh toán đủ 100%</span>
                   </div>
                   <p className="text-[11px] text-emerald-700 font-medium">
-                    Không phát sinh phụ phí. Bấm nút bên dưới để nhận lại chìa
-                    khóa và hoàn tất trả phòng!
+                    Không phát sinh phụ phí. Bấm nút bên dưới để hoàn tất trả
+                    phòng!
                   </p>
                 </div>
               ) : (
@@ -607,7 +603,6 @@ export default function OccupiedRoomModal({
               )}
             </div>
 
-            {/* GHI CHÚ */}
             <div className="pt-2">
               <input
                 type="text"
@@ -618,12 +613,13 @@ export default function OccupiedRoomModal({
               />
             </div>
 
-            {/* NÚT HOÀN THÀNH TRẢ PHÒNG */}
             <div className="pt-3 flex items-center gap-3">
               <button
                 type="button"
                 onClick={() =>
                   onCheckOut(currentBookingCode, {
+                    overtimeFee: overtimeFee,
+                    totalBill: totalBill,
                     paidAmount: remainingAmount === 0 ? 0 : guestPayment,
                     paymentMethod: paymentMethod,
                     note: note,

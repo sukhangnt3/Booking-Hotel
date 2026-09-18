@@ -19,7 +19,6 @@ const { formatRoom } = require("../utils/formatters");
   }
 })();
 
-// Helper chuẩn hóa format giá và các cấu hình bậc thang
 const normalizeRoomPrices = (row) => {
   const formatted = formatRoom ? formatRoom(row) : {};
   const base = Number(row.base_price || 0);
@@ -59,7 +58,6 @@ const ROOM_QUERY_FIELDS = `
   LEFT JOIN public.amenity a ON a.id = ra.amenity_id
 `;
 
-// Helper batch sync ảnh & tiện nghi
 async function syncRoomImagesAndAmenities(
   client,
   roomId,
@@ -152,11 +150,9 @@ async function createRoom(req, res, next) {
   try {
     const b = req.body;
     if (!b.hotel_id || !b.name || !b.base_price) {
-      return res
-        .status(400)
-        .json({
-          message: "hotel_id, tên phòng và giá phòng (base_price) là bắt buộc.",
-        });
+      return res.status(400).json({
+        message: "hotel_id, tên phòng và giá phòng (base_price) là bắt buộc.",
+      });
     }
 
     await client.query("BEGIN");
@@ -216,7 +212,6 @@ async function createRoom(req, res, next) {
 
     const newRoom = result.rows[0];
 
-    // Đồng bộ sang toàn bộ phòng khác nếu chọn
     if (b.apply_to_all_rooms) {
       await client.query(
         `UPDATE public.room SET auto_surcharge = $1, surcharge_type = $2, early_checkin_fee = $3, late_checkout_fee = $4,
@@ -235,7 +230,6 @@ async function createRoom(req, res, next) {
       );
     }
 
-    // Tạo room_units
     if (Array.isArray(b.room_units) && b.room_units.length) {
       for (const u of b.room_units) {
         if (u.name?.trim()) {
@@ -257,7 +251,6 @@ async function createRoom(req, res, next) {
       );
     }
 
-    // Sync ảnh & tiện nghi
     await syncRoomImagesAndAmenities(
       client,
       newRoomId,
@@ -266,13 +259,11 @@ async function createRoom(req, res, next) {
     );
 
     await client.query("COMMIT");
-    return res
-      .status(201)
-      .json({
-        success: true,
-        message: "Tạo hạng phòng thành công!",
-        room: newRoom,
-      });
+    return res.status(201).json({
+      success: true,
+      message: "Tạo hạng phòng thành công!",
+      room: newRoom,
+    });
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("❌ LỖI CREATE_ROOM:", error);
@@ -386,7 +377,6 @@ async function updateRoom(req, res, next) {
       );
     }
 
-    // Sync room_units
     if (Array.isArray(b.room_units)) {
       const activeNames = b.room_units
         .map((u) => u.name?.trim())
@@ -410,7 +400,6 @@ async function updateRoom(req, res, next) {
       }
     }
 
-    // Sync ảnh & amenities
     const imgs =
       Array.isArray(b.images) && b.images.length
         ? b.images
@@ -433,12 +422,11 @@ async function updateRoom(req, res, next) {
     await client.query("COMMIT");
     return res.json({
       success: true,
-      message: "Cập nhật giá và cấu hình phụ thu bậc thang thành công!",
+      message: "Cập nhật thành công!",
       room: result.rows[0],
     });
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("❌ LỖI UPDATE_ROOM:", error);
     return next(error);
   } finally {
     client.release();
@@ -596,7 +584,7 @@ async function updateRoomInventory(req, res) {
   }
 }
 
-// ─── 8. KHÓA GIỮ PHÒNG TẠM THỜI ───
+// ─── 8. KHÓA GIỮ PHÒNG TẠM THỜI (TỰ ĐỘNG DỌN DẸP TRƯỚC KHI KHÓA) ───
 async function createTemporaryLock(req, res) {
   const { roomId, checkIn, checkOut, quantity = 1 } = req.body;
   if (!roomId || !checkIn || !checkOut)
@@ -605,6 +593,12 @@ async function createTemporaryLock(req, res) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // 🛡️ DỌN SẠCH LOCK HẾT HẠN NGAY TRONG GIAO DỊCH
+    await client
+      .query(`DELETE FROM public.temporary_locks WHERE expires_at < NOW()`)
+      .catch(() => {});
+
     const checkQuery = `
       WITH StayNights AS (SELECT generate_series($2::date, ($3::date - INTERVAL '1 day')::date, INTERVAL '1 day')::date AS night_date)
       SELECT sn.night_date,
@@ -627,12 +621,10 @@ async function createTemporaryLock(req, res) {
       )
     ) {
       await client.query("ROLLBACK");
-      return res
-        .status(409)
-        .json({
-          success: false,
-          message: "Phòng vừa có người khác giữ chỗ trước.",
-        });
+      return res.status(409).json({
+        success: false,
+        message: "Phòng vừa có người khác giữ chỗ trước.",
+      });
     }
 
     const lockSessionId = crypto.randomUUID();
@@ -651,13 +643,11 @@ async function createTemporaryLock(req, res) {
     );
 
     await client.query("COMMIT");
-    return res
-      .status(201)
-      .json({
-        success: true,
-        message: "Giữ phòng thành công!",
-        lockId: lockSessionId,
-      });
+    return res.status(201).json({
+      success: true,
+      message: "Giữ phòng thành công!",
+      lockId: lockSessionId,
+    });
   } catch (error) {
     await client.query("ROLLBACK");
     return res.status(500).json({ success: false, message: error.message });

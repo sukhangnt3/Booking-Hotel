@@ -1,4 +1,3 @@
-// backend/controllers/hotel.controller.js
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -60,7 +59,6 @@ const parseAmenityArray = (raw) => {
     : [];
 };
 
-// 🌟 HÀM LƯU BASE64 DÙNG MD5 HASH (ĐẢM BẢO ẢNH TRÙNG SẼ CÙNG TÊN FILE, KHÔNG BỊ NHÂN ĐÔI)
 const base64Cache = new Map();
 
 const saveBase64ToFile = (rawString) => {
@@ -522,7 +520,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. CHECK PHÒNG TRỐNG (ÉP KIỂU NGÀY GIỜ CHUẨN XÁC TUYỆT ĐỐI) ───
+// ─── 3. CHECK PHÒNG TRỐNG (CHỐNG SPAM / TỰ ĐỘNG THU HỒI LOCK 15 PHÚT) ───
 async function listHotelRoomAvailability(req, res) {
   const { id: hotelId } = req.params;
   const checkIn =
@@ -538,10 +536,21 @@ async function listHotelRoomAvailability(req, res) {
   const outTime = checkOutTime.length === 5 ? `${checkOutTime}:00` : "14:00:00";
 
   try {
-    // 🌟 LOG KIỂM TRA THỜI GIAN KHÁCH ĐANG TÌM KIẾM TRÊN TERMINAL
-    console.log(
-      `🔍 [AVAILABILITY CHECK] Khách tìm: Từ [${checkIn} ${inTime}] đến [${checkOut} ${outTime}]`,
-    );
+    // 🛡️ DỌN DẸP TOÀN BỘ LOCK VÀ ĐƠN PENDING CHƯA TRẢ TIỀN QUÁ 15 PHÚT
+    await pool
+      .query(`DELETE FROM public.temporary_locks WHERE expires_at < NOW()`)
+      .catch(() => {});
+    await pool
+      .query(
+        `
+      UPDATE public.booking 
+      SET status = 'cancelled'::public.booking_status_enum 
+      WHERE status = 'pending' 
+        AND (payment_status IS NULL OR payment_status != 'paid') 
+        AND created_at < NOW() - INTERVAL '15 minutes'
+    `,
+      )
+      .catch(() => {});
 
     const query = `
       SELECT r.*,
@@ -553,25 +562,35 @@ async function listHotelRoomAvailability(req, res) {
         COALESCE((SELECT json_agg(a.name) FROM public.room_amenity ra JOIN public.amenity a ON a.id = ra.amenity_id WHERE ra.room_id = r.id), '[]'::json) AS amenities,
         COALESCE((SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) FROM public.image img WHERE img.room_id = r.id), '[]'::json) AS images,
         
-        -- 🌟 THUẬT TOÁN SO SÁNH GIAO THOA THỜI GIAN CHUẨN POSTGRESQL
+        -- 🌟 TÍNH TỔNG PHÒNG ĐÃ BÁN + TẠM GIỮ CÒN HẠN
         (
-          SELECT COALESCE(SUM(br.quantity), 0)::int
-          FROM public.booking b
-          JOIN public.booking_room br ON br.booking_id = b.id
-          WHERE br.room_id = r.id
-            AND b.status NOT IN ('checked_out', 'cancelled')
-            AND (
-              b.status IN ('confirmed', 'checked_in')
-              OR (
-                b.status = 'pending' 
-                AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
+          COALESCE((
+            SELECT SUM(br.quantity)::int
+            FROM public.booking b
+            JOIN public.booking_room br ON br.booking_id = b.id
+            WHERE br.room_id = r.id
+              AND b.status NOT IN ('checked_out', 'cancelled')
+              AND (
+                b.status IN ('confirmed', 'checked_in')
+                OR (
+                  b.status = 'pending' 
+                  AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
+                )
               )
-            )
-            AND (
-              -- So sánh thời gian bắt đầu và kết thúc (Đã cộng 30 phút dọn phòng buffer)
-              ($1::date + $2::time) < (b.checkout_date::date + COALESCE(b.checkout_time, '12:00:00'::time) + INTERVAL '30 minutes')
-              AND ($3::date + $4::time) > (b.checkin_date::date + COALESCE(b.checkin_time, '14:00:00'::time))
-            )
+              AND (
+                ($1::date + $2::time) < (b.checkout_date::date + COALESCE(b.checkout_time, '12:00:00'::time))
+                AND ($3::date + $4::time) > (b.checkin_date::date + COALESCE(b.checkin_time, '14:00:00'::time))
+              )
+          ), 0)
+          +
+          COALESCE((
+            SELECT SUM(tl.quantity)::int 
+            FROM public.temporary_locks tl 
+            WHERE tl.room_id = r.id 
+              AND tl.expires_at > NOW()
+              AND tl.lock_date >= $1::date 
+              AND tl.lock_date < $3::date
+          ), 0)
         ) AS booked_count
       FROM public.room r
       WHERE r.hotel_id = $5 AND COALESCE(r.is_active, true)
@@ -579,21 +598,17 @@ async function listHotelRoomAvailability(req, res) {
     `;
 
     const result = await pool.query(query, [
-      checkIn, // $1
-      inTime, // $2
-      checkOut, // $3
-      outTime, // $4
-      hotelId, // $5
+      checkIn,
+      inTime,
+      checkOut,
+      outTime,
+      hotelId,
     ]);
 
     const rooms = result.rows.map((row) => {
       const total = Number(row.total_stock || 1);
       const booked = Number(row.booked_count || 0);
       const availableStock = Math.max(0, total - booked);
-
-      console.log(
-        `   - Phòng: ${row.name} | Tổng: ${total} | Đã đặt trong giờ này: ${booked} | Còn trống: ${availableStock}`,
-      );
 
       return {
         ...row,
@@ -613,7 +628,6 @@ async function listHotelRoomAvailability(req, res) {
       checkOut,
     });
   } catch (error) {
-    console.error("❌ LỖI AVAILABILITY:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 }
@@ -1104,7 +1118,6 @@ async function listHotelRooms(req, res, next) {
   }
 }
 
-// ─── 10. PLACEHOLDERS ───
 const searchHotels = listHotels;
 const listPropertyTypes = (req, res) => res.json({ success: true, data: [] });
 const listDiscoverVietnam = (req, res) => res.json({ success: true, data: [] });

@@ -38,7 +38,7 @@ import OccupiedRoomModal from "./components/OccupiedRoomModal";
 import QuickBookingModal from "./components/QuickBookingModal";
 import ChangeRoomModal from "./components/ChangeRoomModal";
 
-// 🌟 HÀM PHÁT ÂM THANH CHUÔNG THÔNG BÁO BẰNG WEB AUDIO API (KHÔNG CẦN FILE MP3 NGOÀI)
+// 🌟 HÀM PHÁT ÂM THANH CHUÔNG THÔNG BÁO BẰNG WEB AUDIO API
 const playNotificationSound = () => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -51,12 +51,12 @@ const playNotificationSound = () => {
     const gain = ctx.createGain();
 
     osc1.type = "sine";
-    osc1.frequency.setValueAtTime(587.33, now); // Nốt D5
-    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12); // Lên nốt A5
+    osc1.frequency.setValueAtTime(587.33, now);
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12);
 
     osc2.type = "triangle";
     osc2.frequency.setValueAtTime(880, now + 0.15);
-    osc2.frequency.exponentialRampToValueAtTime(1174.66, now + 0.35); // Lên nốt D6
+    osc2.frequency.exponentialRampToValueAtTime(1174.66, now + 0.35);
 
     gain.gain.setValueAtTime(0.3, now);
     gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
@@ -77,24 +77,39 @@ const playNotificationSound = () => {
 const toDatetimeLocal = (date) => {
   const d = new Date(date);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
 };
 
-const formatDisplayDateTime = (dateStr) => {
+// 🌟 HÀM FORMAT THỜI GIAN CHỐNG LỖI MÚI GIỜ 07:00 AM (GHÉP DATE + TIME CHUẨN XÁC)
+const formatDisplayDateTime = (dateStr, timeStr) => {
   if (!dateStr) return "---";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return String(dateStr);
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  return `${day}/${month}/${year} ${hours}:${minutes}`;
+  const rawDate = String(dateStr).includes("T")
+    ? String(dateStr).split("T")[0]
+    : String(dateStr).slice(0, 10);
+  const parts = rawDate.split("-");
+  if (parts.length < 3) return String(dateStr);
+  const [year, month, day] = parts;
+
+  let timePart = "14:00";
+  if (timeStr) {
+    timePart = String(timeStr).slice(0, 5);
+  } else if (String(dateStr).includes("T")) {
+    timePart = String(dateStr).split("T")[1].slice(0, 5);
+  }
+
+  return `${day}/${month}/${year} ${timePart}`;
 };
 
 const safeFormatDate = (dateVal) => {
   if (!dateVal) return "";
   try {
+    const raw = String(dateVal).slice(0, 10);
+    const parts = raw.split("-");
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
     const d = new Date(dateVal);
     return isNaN(d.getTime())
       ? String(dateVal)
@@ -108,27 +123,22 @@ const formatStayTimeRange = (b) => {
   if (!b) return "---";
   const inDate = safeFormatDate(b.checkin_date);
   const outDate = safeFormatDate(b.checkout_date);
-  const inTime = b.checkin_time
-    ? String(b.checkin_time).slice(0, 5)
-    : b.checkin_date && String(b.checkin_date).includes("T")
-      ? String(b.checkin_date).split("T")[1].slice(0, 5)
-      : "14:00";
+  const inTime = b.checkin_time ? String(b.checkin_time).slice(0, 5) : "14:00";
   const outTime = b.checkout_time
     ? String(b.checkout_time).slice(0, 5)
-    : b.checkout_date && String(b.checkout_date).includes("T")
-      ? String(b.checkout_date).split("T")[1].slice(0, 5)
-      : "12:00";
+    : "12:00";
   return `${inDate}, ${inTime} - ${outDate}, ${outTime}`;
 };
 
 const getCheckinCountdownText = (checkinDateStr, checkinTimeStr) => {
   if (!checkinDateStr) return "Sắp đến nhận phòng";
   const now = new Date();
-  const checkin = new Date(checkinDateStr);
-  if (checkinTimeStr) {
-    const [h, m] = String(checkinTimeStr).split(":").map(Number);
-    checkin.setHours(h || 14, m || 0, 0, 0);
-  }
+  const rawDate = String(checkinDateStr).slice(0, 10);
+  const rawTime = String(checkinTimeStr || "14:00").slice(0, 5);
+
+  const checkin = new Date(`${rawDate}T${rawTime}:00`);
+  if (isNaN(checkin.getTime())) return "Sắp đến nhận phòng";
+
   const diffMs = checkin.getTime() - now.getTime();
   if (diffMs <= 0) return "Đến giờ nhận phòng";
   const diffMins = Math.round(diffMs / (1000 * 60));
@@ -158,19 +168,18 @@ export default function ReceptionMapPage() {
   const [activeRoomData, setActiveRoomData] = useState(null);
   const [changeRoomTarget, setChangeRoomTarget] = useState(null);
 
-  // STATE ĐƠN CHỜ XÁC NHẬN
+  // Đơn chờ xác nhận
   const [pendingBookings, setPendingBookings] = useState([]);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [assigningBooking, setAssigningBooking] = useState(null);
   const [selectedAssignRoom, setSelectedAssignRoom] = useState("");
   const [isSubmittingAssign, setIsSubmittingAssign] = useState(false);
 
-  // 🌟 REF ĐẾM SỐ LƯỢNG ĐƠN ĐỂ KÍCH HOẠT CHUÔNG BÁO
   const prevPendingCountRef = useRef(0);
 
   // Dữ liệu luồng Check-in
   const [confirmCheckInData, setConfirmCheckInData] = useState({
-    checkin_mode: "Hiện tại",
+    checkin_mode: "Giờ đặt",
     checkin_time: "",
     checkout_time: "",
     duration_label: "1 đêm",
@@ -181,7 +190,7 @@ export default function ReceptionMapPage() {
   });
   const [checkInGuestList, setCheckInGuestList] = useState([]);
 
-  // Form nhập CCCD
+  // Form CCCD
   const [editingGuestIndex, setEditingGuestIndex] = useState(null);
   const initialGuestDocForm = {
     room_number: "",
@@ -307,7 +316,6 @@ export default function ReceptionMapPage() {
     }
   }, [selectedHotelId]);
 
-  // 🌟 LẤY ĐƠN CHỜ VÀ PHÁT CHUÔNG BÁO NẾU CÓ ĐƠN MỚI
   const fetchPendingBookings = useCallback(async () => {
     try {
       const url = selectedHotelId
@@ -321,7 +329,6 @@ export default function ReceptionMapPage() {
       else if (Array.isArray(res?.data?.data)) list = res.data.data;
       else if (Array.isArray(res?.bookings)) list = res.bookings;
 
-      // 🌟 NẾU SỐ LƯỢNG ĐƠN TĂNG LÊN SO VỚI LẦN TRƯỚC -> PHÁT CHUÔNG TING TING!
       if (list.length > prevPendingCountRef.current) {
         playNotificationSound();
       }
@@ -472,9 +479,9 @@ export default function ReceptionMapPage() {
 
     const isDep =
       b?.payment_type === "DEPOSIT_30" ||
+      Boolean(room.is_deposit) ||
       (Number(b?.deposit_amount) > 0 && Number(b?.deposit_amount) < totalP) ||
-      (Number(b?.paid_amount) > 0 && Number(b?.paid_amount) < totalP) ||
-      (Number(b?.customer_paid) > 0 && Number(b?.customer_paid) < totalP);
+      (Number(b?.paid_amount) > 0 && Number(b?.paid_amount) < totalP);
 
     const paidP = isDep
       ? Number(
@@ -636,34 +643,58 @@ export default function ReceptionMapPage() {
     }
   };
 
+  // 🌟 MỞ MODAL NHẬN PHÒNG (TÍNH ĐÚNG SỐ GIỜ NẾU THUÊ GIỜ, VÍ DỤ 12H - 14H LÀ 2 GIỜ)
   const handleOpenConfirmCheckIn = () => {
     if (!activeRoomData?.booking) return;
-    const now = new Date();
-    const defaultCheckout = new Date(
-      activeRoomData.booking.checkout_date || now,
+    const b = activeRoomData.booking;
+
+    const inDate = String(b.checkin_date || "").slice(0, 10);
+    const outDate = String(b.checkout_date || inDate).slice(0, 10);
+    const inTime = String(b.checkin_time || "14:00").slice(0, 5);
+    const outTime = String(b.checkout_time || "12:00").slice(0, 5);
+
+    const startIso = `${inDate}T${inTime}`;
+    const endIso = `${outDate}T${outTime}`;
+
+    const startMs = new Date(startIso).getTime();
+    const endMs = new Date(endIso).getTime();
+    const diffHours = Math.max(
+      1,
+      Math.round((endMs - startMs) / (1000 * 60 * 60)),
     );
-    if (isNaN(defaultCheckout.getTime())) {
-      defaultCheckout.setDate(now.getDate() + 1);
-      defaultCheckout.setHours(12, 0, 0, 0);
+
+    let durationLabel = "1 đêm";
+    if (b.rental_type === "HOUR") {
+      durationLabel = `${diffHours} giờ`;
+    } else if (b.rental_type === "OVERNIGHT") {
+      durationLabel = "1 đêm";
+    } else {
+      const days = Math.max(1, Math.round(diffHours / 24));
+      durationLabel = `${days} ngày`;
     }
 
     setConfirmCheckInData({
-      checkin_mode: "Hiện tại",
-      checkin_time: toDatetimeLocal(now),
-      checkout_time: toDatetimeLocal(defaultCheckout),
-      duration_label: "1 đêm",
+      checkin_mode: "Giờ đặt",
+      checkin_time: startIso,
+      checkout_time: endIso,
+      duration_label: durationLabel,
     });
 
     setCheckInGuestCount({
-      adult: Number(activeRoomData.booking.adult_total || 1),
-      children: Number(activeRoomData.booking.children_total || 0),
+      adult: Number(b.adult_total || 1),
+      children: Number(b.children_total || 0),
     });
 
-    const nowTimeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
+    const now = new Date();
+    const nowTimeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(
+      2,
+      "0",
+    )} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
+
     setCheckInGuestList([
       {
         room_number: activeRoomData.room_number,
-        full_name: activeRoomData.booking.customer_name || "Khách lưu trú",
+        full_name: b.customer_name || "Khách lưu trú",
         gender: "male",
         birthday: "",
         nationality: "Việt Nam",
@@ -672,7 +703,7 @@ export default function ReceptionMapPage() {
         id_number: "",
         stay_reason: "Du lịch",
         declaration_time: nowTimeStr,
-        stay_duration: "1 ngày",
+        stay_duration: durationLabel,
         note: "",
       },
     ]);
@@ -702,7 +733,10 @@ export default function ReceptionMapPage() {
     const now = new Date();
     const newGuestItem = {
       ...guestDocForm,
-      declaration_time: `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`,
+      declaration_time: `${now.getHours()}:${String(now.getMinutes()).padStart(
+        2,
+        "0",
+      )} ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`,
       stay_duration: "1 ngày",
     };
 
@@ -749,7 +783,9 @@ export default function ReceptionMapPage() {
       alert(
         `✓ Đã nhận phòng ${activeRoomData.room_number} thành công!` +
           (isDeposit && remainingToCollect > 0
-            ? ` (Đã thu nốt số tiền còn lại tại quầy: ${formatVND(remainingToCollect)} ₫)`
+            ? ` (Đã thu nốt số tiền còn lại tại quầy: ${formatVND(
+                remainingToCollect,
+              )} ₫)`
             : ""),
       );
       setActiveModalType(null);
@@ -765,19 +801,21 @@ export default function ReceptionMapPage() {
     setActiveModalType("confirm_checkin");
   };
 
-  const handleCompleteCheckOut = async (bookingCode) => {
+  // 🌟 HOÀN TẤT TRẢ PHÒNG: TRUYỀN PHỤ THU ĐỂ GHI NHẬN ĐẦY ĐỦ VÀO DOANH THU
+  const handleCompleteCheckOut = async (bookingCode, checkoutData = {}) => {
     const code = bookingCode || activeRoomData?.booking?.code;
     const room = rooms.find((r) => r.booking?.code === code) || activeRoomData;
     if (!room?.booking?.id) return;
 
     try {
       await apiClient.post(`/owner/bookings/${room.booking.id}/checkout`, {
-        late_fee: 0,
-        minibar_fee: 0,
-        other_fee: 0,
+        late_fee: checkoutData.overtimeFee || 0,
+        total_price: checkoutData.totalBill,
+        paid_amount: checkoutData.paidAmount,
+        note: checkoutData.note,
       });
       alert(
-        `✓ Đã trả phòng ${room.room_number}! Phòng chuyển sang trạng thái Chưa dọn.`,
+        `✓ Đã trả phòng ${room.room_number}! Doanh thu phụ thu đã được ghi nhận tự động vào hệ thống.`,
       );
       setActiveModalType(null);
       setActiveRoomData(null);
@@ -875,7 +913,7 @@ export default function ReceptionMapPage() {
           </div>
         </div>
 
-        {/* NÚT CHỜ XÁC NHẬN (CÓ HUY HIỆU & CHUÔNG BÁO TỰ ĐỘNG) */}
+        {/* NÚT CHỜ XÁC NHẬN */}
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -1008,12 +1046,11 @@ export default function ReceptionMapPage() {
 
                     const isDep =
                       b?.payment_type === "DEPOSIT_30" ||
+                      Boolean(room.is_deposit) ||
                       (Number(b?.deposit_amount) > 0 &&
                         Number(b?.deposit_amount) < totalP) ||
                       (Number(b?.paid_amount) > 0 &&
-                        Number(b?.paid_amount) < totalP) ||
-                      (Number(b?.customer_paid) > 0 &&
-                        Number(b?.customer_paid) < totalP);
+                        Number(b?.paid_amount) < totalP);
 
                     const paidP = isDep
                       ? Number(
@@ -1073,16 +1110,6 @@ export default function ReceptionMapPage() {
               </button>
             </div>
 
-            <div className="px-6 pt-3 pb-1 shrink-0 flex items-center justify-between">
-              <button
-                type="button"
-                className="px-3.5 py-1.5 bg-[#1b8755] hover:bg-[#156d44] text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
-              >
-                <Upload size={14} />
-                <span>Import</span>
-              </button>
-            </div>
-
             <div className="p-6 overflow-y-auto overflow-x-auto flex-1">
               {pendingBookings.length === 0 ? (
                 <div className="py-16 text-center space-y-2">
@@ -1091,10 +1118,6 @@ export default function ReceptionMapPage() {
                   </div>
                   <div className="text-slate-600 font-bold text-sm">
                     Hiện không có đơn đặt phòng nào đang chờ xác nhận
-                  </div>
-                  <div className="text-slate-400 text-xs">
-                    Khi khách đặt phòng thành công, đơn đặt phòng sẽ tự động
-                    xuất hiện tại đây.
                   </div>
                 </div>
               ) : (
@@ -1121,15 +1144,14 @@ export default function ReceptionMapPage() {
                       >
                         <td className="py-3.5 px-4 whitespace-nowrap">
                           <span className="font-bold text-[#1b8755] text-xs block cursor-pointer hover:underline">
-                            {b.booking_code ||
-                              `BK${String(b.id).slice(0, 7).toUpperCase()}`}
+                            {b.booking_code}
                           </span>
                           <span className="text-[11px] text-slate-400 font-normal block mt-0.5">
                             {formatDisplayDateTime(b.created_at)}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 whitespace-nowrap text-slate-400 text-xs font-medium">
-                          {b.channel_code || ""}
+                          {b.channel_code || "GoStay Online"}
                         </td>
                         <td className="py-3.5 px-4">
                           <div className="font-bold text-slate-900 text-xs whitespace-nowrap">
@@ -1158,54 +1180,17 @@ export default function ReceptionMapPage() {
                           {formatVND(b.paid_amount || 0)}
                         </td>
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-3">
-                            <button
-                              type="button"
-                              title="Xác nhận đặt phòng & chọn phòng"
-                              onClick={() => {
-                                setAssigningBooking(b);
-                                setSelectedAssignRoom("");
-                              }}
-                              className="text-slate-500 hover:text-[#003580] cursor-pointer transition p-1 hover:bg-slate-100 rounded"
-                            >
-                              <Check size={16} strokeWidth={2.5} />
-                            </button>
-                            <button
-                              type="button"
-                              title="Chỉnh sửa đơn"
-                              onClick={() => {
-                                setAssigningBooking(b);
-                                setSelectedAssignRoom("");
-                              }}
-                              className="text-slate-500 hover:text-blue-600 cursor-pointer transition p-1 hover:bg-slate-100 rounded"
-                            >
-                              <Edit2 size={15} />
-                            </button>
-                            <button
-                              type="button"
-                              title="Hủy đơn đặt phòng này"
-                              onClick={async () => {
-                                if (
-                                  window.confirm(
-                                    `Bạn có chắc chắn muốn hủy đơn #${b.booking_code}?`,
-                                  )
-                                ) {
-                                  try {
-                                    await apiClient.post(
-                                      `/owner/bookings/${b.id}/cancel`,
-                                    );
-                                    fetchPendingBookings();
-                                    fetchRoomMap();
-                                  } catch (e) {
-                                    alert("Lỗi hủy đơn: " + e.message);
-                                  }
-                                }
-                              }}
-                              className="text-slate-400 hover:text-rose-600 cursor-pointer transition p-1 hover:bg-slate-100 rounded"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            title="Xác nhận đặt phòng & chọn phòng"
+                            onClick={() => {
+                              setAssigningBooking(b);
+                              setSelectedAssignRoom("");
+                            }}
+                            className="text-slate-500 hover:text-[#003580] cursor-pointer transition p-1 hover:bg-slate-100 rounded"
+                          >
+                            <Check size={16} strokeWidth={2.5} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1214,8 +1199,7 @@ export default function ReceptionMapPage() {
               )}
             </div>
 
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-[11px] text-slate-500 shrink-0">
-              <span>Hệ thống lễ tân GoStay tự động đồng bộ đơn 24/7.</span>
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
                 onClick={() => setIsPendingModalOpen(false)}
@@ -1248,10 +1232,7 @@ export default function ReceptionMapPage() {
               <div className="text-slate-800 font-bold flex items-center gap-2 text-sm">
                 <span>👤 {assigningBooking.customer_name}</span>
                 <span className="text-slate-400 font-normal">
-                  -{" "}
-                  {assigningBooking.guest_phone ||
-                    assigningBooking.guest_email ||
-                    "Chưa có SĐT"}
+                  - {assigningBooking.guest_phone || "Chưa có SĐT"}
                 </span>
               </div>
 
@@ -1294,9 +1275,10 @@ export default function ReceptionMapPage() {
                   <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                     <CalendarDays size={13} className="text-[#003580]" />
                     <span>
-                      {assigningBooking.checkin_time
-                        ? `${String(assigningBooking.checkin_time).slice(0, 5)} `
-                        : ""}
+                      {String(assigningBooking.checkin_time || "14:00").slice(
+                        0,
+                        5,
+                      )}{" "}
                       {safeFormatDate(assigningBooking.checkin_date)}
                     </span>
                   </div>
@@ -1304,10 +1286,9 @@ export default function ReceptionMapPage() {
 
                 <div className="text-center">
                   <span className="px-2.5 py-1 rounded-md bg-blue-50 text-[#003580] font-bold text-xs border border-blue-200">
-                    {assigningBooking.duration_label ||
-                      (assigningBooking.rental_type === "HOUR"
-                        ? `${assigningBooking.stay_duration || 1} Giờ`
-                        : "1 đêm")}
+                    {assigningBooking.rental_type === "HOUR"
+                      ? `${assigningBooking.stay_duration || 2} giờ`
+                      : "1 đêm"}
                   </span>
                 </div>
 
@@ -1318,19 +1299,15 @@ export default function ReceptionMapPage() {
                   <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                     <CalendarDays size={13} className="text-[#003580]" />
                     <span>
-                      {assigningBooking.checkout_time
-                        ? `${String(assigningBooking.checkout_time).slice(0, 5)} `
-                        : ""}
+                      {String(assigningBooking.checkout_time || "12:00").slice(
+                        0,
+                        5,
+                      )}{" "}
                       {safeFormatDate(assigningBooking.checkout_date)}
                     </span>
                   </div>
                 </div>
               </div>
-
-              <p className="text-xs text-slate-500 italic">
-                Sau khi xác nhận, phòng sẽ tự động chuyển sang trạng thái đặt
-                trước (Màu vàng trên sơ đồ phòng).
-              </p>
             </div>
 
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
