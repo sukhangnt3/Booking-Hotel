@@ -20,6 +20,9 @@ import {
   Star,
   Send,
   Building2,
+  Sun,
+  Moon,
+  Hourglass,
 } from "lucide-react";
 
 import { hotelService } from "@/services";
@@ -67,6 +70,32 @@ const resolveBookingPaymentInfo = (b) => {
     : 0;
 
   return { total, paidMoney, deposit, remaining, isDeposit };
+};
+
+// 🌟 HELPER ĐỊNH DẠNG GIỜ + NGÀY LƯU TRÚ DỰA VÀO CSDL THAY VÌ GÁN CỨNG 14:00
+const formatStayDateTime = (dateStr, timeStr, defaultHour = "14:00") => {
+  if (!dateStr) return "---";
+  let hourPart = defaultHour;
+
+  if (timeStr) {
+    hourPart = String(timeStr).slice(0, 5);
+  } else if (String(dateStr).includes("T")) {
+    const parts = String(dateStr).split("T");
+    if (parts[1] && parts[1].length >= 5) {
+      hourPart = parts[1].slice(0, 5);
+    }
+  }
+
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return `${hourPart} • ${dateStr}`;
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const year = date.getFullYear();
+    return `${hourPart} • ${day}/${month}/${year}`;
+  } catch {
+    return `${hourPart} • ${dateStr}`;
+  }
 };
 
 export default function UserProfilePage() {
@@ -134,22 +163,6 @@ export default function UserProfilePage() {
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
     setSearchParams({ tab: tabId });
-  };
-
-  const formatStayDateTime = (dateStr, defaultHour = "14:00") => {
-    if (!dateStr) return "N/A";
-    try {
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) return dateStr;
-      return `${defaultHour} • ${new Intl.DateTimeFormat("vi-VN", {
-        timeZone: "Asia/Ho_Chi_Minh",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      }).format(date)}`;
-    } catch {
-      return dateStr;
-    }
   };
 
   const formatBookingCreatedTime = (dateStr) => {
@@ -341,6 +354,39 @@ export default function UserProfilePage() {
   const displayAvatarUrl =
     resolveAvatarUrl(user?.avatar || "") || fallbackAvatarUrl;
 
+  // Render nhãn hình thức thuê phòng
+  const renderRentalTypeBadge = (b) => {
+    const type = String(b.rental_type || "").toUpperCase();
+    const duration = b.duration_label || "";
+
+    if (type === "HOUR") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[#006ce4] border border-blue-200 text-[11px] font-bold">
+          <Clock size={12} /> {duration || "Theo giờ"}
+        </span>
+      );
+    }
+    if (type === "OVERNIGHT") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold">
+          <Moon size={12} /> {duration || "Qua đêm"}
+        </span>
+      );
+    }
+    if (type === "HALF_DAY") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">
+          <Hourglass size={12} /> {duration || "Theo buổi"}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-bold">
+        <Sun size={12} /> {duration || "Theo ngày"}
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans pb-24">
       {toast && (
@@ -486,13 +532,17 @@ export default function UserProfilePage() {
                           className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4 hover:border-blue-300 transition"
                         >
                           <div className="flex flex-wrap justify-between items-center gap-2 pb-3 border-b border-slate-100 text-xs">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-slate-500">
                                 Mã đơn:{" "}
                                 <strong className="text-[#003580] font-mono font-bold text-sm">
                                   #{bookingCode}
                                 </strong>
                               </span>
+
+                              {/* Huy hiệu hình thức thuê phòng */}
+                              {renderRentalTypeBadge(b)}
+
                               <span className="text-slate-400 text-[11px]">
                                 (Đặt: {formatBookingCreatedTime(b.created_at)})
                               </span>
@@ -549,6 +599,7 @@ export default function UserProfilePage() {
                                     <strong className="text-slate-800">
                                       {formatStayDateTime(
                                         b.checkin_date,
+                                        b.checkin_time,
                                         "14:00",
                                       )}
                                     </strong>
@@ -564,6 +615,7 @@ export default function UserProfilePage() {
                                     <strong className="text-slate-800">
                                       {formatStayDateTime(
                                         b.checkout_date,
+                                        b.checkout_time,
                                         "12:00",
                                       )}
                                     </strong>
@@ -678,7 +730,7 @@ export default function UserProfilePage() {
                       );
                     })
                   ) : (
-                    <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 space-y-3">
+                    <div className="bg-white p-12 rounded-2xl border border-slate-200 space-y-3">
                       <Receipt size={36} className="mx-auto text-slate-300" />
                       <p className="text-sm font-semibold text-slate-600">
                         Chưa có chuyến đi nào trong mục này
@@ -959,7 +1011,7 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      {/* MODAL PHIẾU ĐẶT PHÒNG (VOUCHER) */}
+      {/* MODAL PHIẾU ĐẶT PHÒNG (VOUCHER ĐIỆN TỬ ĐỒNG BỘ MỐC GIỜ THẬT) */}
       {selectedTicket &&
         (() => {
           const { total, deposit, remaining, isDeposit } =
@@ -1006,6 +1058,7 @@ export default function UserProfilePage() {
                     </div>
                   </div>
 
+                  {/* Đồng bộ giờ nhận / trả thực tế trên Voucher */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100">
                       <span className="text-slate-500 block font-medium">
@@ -1014,6 +1067,7 @@ export default function UserProfilePage() {
                       <strong className="text-slate-900 text-xs block mt-0.5">
                         {formatStayDateTime(
                           selectedTicket.checkin_date,
+                          selectedTicket.checkin_time,
                           "14:00",
                         )}
                       </strong>
@@ -1025,6 +1079,7 @@ export default function UserProfilePage() {
                       <strong className="text-slate-900 text-xs block mt-0.5">
                         {formatStayDateTime(
                           selectedTicket.checkout_date,
+                          selectedTicket.checkout_time,
                           "12:00",
                         )}
                       </strong>
@@ -1038,6 +1093,12 @@ export default function UserProfilePage() {
                         {selectedTicket.room_name || "Phòng tiêu chuẩn"}
                       </strong>
                     </div>
+
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Hình thức thuê:</span>
+                      <strong>{renderRentalTypeBadge(selectedTicket)}</strong>
+                    </div>
+
                     {selectedTicket.room_number && (
                       <div className="flex justify-between">
                         <span className="text-slate-500">
