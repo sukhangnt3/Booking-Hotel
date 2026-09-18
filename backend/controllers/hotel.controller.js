@@ -85,7 +85,6 @@ const saveBase64ToFile = (rawString) => {
     const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
     const buffer = Buffer.from(matches[2], "base64");
 
-    // Tạo mã băm từ buffer để nếu cùng 1 ảnh thì sẽ có cùng 1 tên file duy nhất
     const fileHash = crypto.createHash("md5").update(buffer).digest("hex");
     const fileName = `hotel_${fileHash}.${ext}`;
     const uploadsDir = path.resolve("uploads");
@@ -108,7 +107,6 @@ const saveBase64ToFile = (rawString) => {
   }
 };
 
-// 🌟 Hàm trích xuất và khử trùng lặp URL
 const extractImageUrls = (raw) => {
   const list = [];
   const seen = new Set();
@@ -489,7 +487,6 @@ async function getHotelById(req, res, next) {
         `SELECT h.*, COALESCE(h.is_beachfront, false) AS is_beachfront, COALESCE(h.distance_to_center, 1.2) AS distance_to_center FROM public.hotel h WHERE h.id::text = $1 LIMIT 1`,
         [rawId],
       ),
-      // 🌟 CHỈ LẤY ẢNH CƠ SỞ (room_id IS NULL)
       pool
         .query(
           `SELECT id, path, is_thumbnail, display_order FROM public.image WHERE hotel_id = $1 AND room_id IS NULL ORDER BY is_thumbnail DESC, display_order ASC, created_at ASC`,
@@ -525,7 +522,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. CHECK PHÒNG TRỐNG ───
+// ─── 3. CHECK PHÒNG TRỐNG (CẬP NHẬT TRỪ SỐ LƯỢNG ĐÃ ĐẶT THEO KHUNG GIỜ) ───
 async function listHotelRoomAvailability(req, res) {
   const { id: hotelId } = req.params;
   const checkIn =
@@ -534,16 +531,71 @@ async function listHotelRoomAvailability(req, res) {
     new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now() + 864e5).toISOString().split("T")[0];
   const checkOut = req.query.checkOut || req.query.checkout_date || tomorrow;
+  const checkInTime = req.query.checkInTime || "12:00";
+  const checkOutTime = req.query.checkOutTime || "14:00";
+
+  const inTime = checkInTime.length === 5 ? `${checkInTime}:00` : "12:00:00";
+  const outTime = checkOutTime.length === 5 ? `${checkOutTime}:00` : "14:00:00";
 
   try {
-    const result = await pool.query(
-      `${ROOM_BASE_SELECT} WHERE r.hotel_id = $1 ORDER BY r.base_price ASC`,
-      [hotelId],
-    );
+    const query = `
+      SELECT r.*,
+        COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS total_stock,
+        r.base_price::int AS total_price,
+        r.base_price::int AS avg_price_per_night,
+        COALESCE((SELECT img.path FROM public.image img WHERE img.room_id = r.id ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1), '') AS image,
+        COALESCE((SELECT img.path FROM public.image img WHERE img.room_id = r.id ORDER BY img.is_thumbnail DESC, img.display_order ASC LIMIT 1), '') AS thumbnail,
+        COALESCE((SELECT json_agg(a.name) FROM public.room_amenity ra JOIN public.amenity a ON a.id = ra.amenity_id WHERE ra.room_id = r.id), '[]'::json) AS amenities,
+        COALESCE((SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) FROM public.image img WHERE img.room_id = r.id), '[]'::json) AS images,
+        -- 🌟 TÍNH SỐ LƯỢNG PHÒNG ĐÃ BỊ ĐẶT TRONG KHOẢNG THỜI GIAN NÀY (KÈM 30P BUFFER VỆ SINH)
+        (
+          SELECT COALESCE(SUM(br.quantity), 0)::int
+          FROM public.booking b
+          JOIN public.booking_room br ON br.booking_id = b.id
+          WHERE br.room_id = r.id
+            AND b.status NOT IN ('checked_out', 'cancelled')
+            AND (
+              b.status IN ('confirmed', 'checked_in')
+              OR (
+                b.status = 'pending' 
+                AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
+              )
+            )
+            AND (
+              $2::timestamp < (b.checkout_date + COALESCE(b.checkout_time, '12:00:00'::time) + INTERVAL '30 minutes')
+              AND $3::timestamp > (b.checkin_date + COALESCE(b.checkin_time, '14:00:00'::time))
+            )
+        ) AS booked_count
+      FROM public.room r
+      WHERE r.hotel_id = $1 AND COALESCE(r.is_active, true)
+      ORDER BY r.base_price ASC
+    `;
+
+    const result = await pool.query(query, [
+      hotelId,
+      `${checkIn}T${inTime}`,
+      `${checkOut}T${outTime}`,
+    ]);
+
+    const rooms = result.rows.map((row) => {
+      const total = Number(row.total_stock || 1);
+      const booked = Number(row.booked_count || 0);
+      const availableStock = Math.max(0, total - booked);
+
+      return {
+        ...row,
+        amount: availableStock, // Số lượng phòng trống thực tế
+        remaining_rooms: availableStock,
+        total_rooms: total,
+        booked_count: booked,
+        is_available: availableStock > 0,
+      };
+    });
+
     return res.json({
       success: true,
-      data: result.rows,
-      rooms: result.rows,
+      data: rooms,
+      rooms: rooms,
       checkIn,
       checkOut,
     });
@@ -581,7 +633,7 @@ async function listDestinationSuggestions(req, res) {
   }
 }
 
-// ─── 5. ĐĂNG KÝ KHÁCH SẠN (ĐÃ FIX LỖI TẠO 8 HÌNH) ───
+// ─── 5. ĐĂNG KÝ KHÁCH SẠN ───
 async function registerHotel(req, res) {
   const client = await pool.connect();
   try {
@@ -638,7 +690,6 @@ async function registerHotel(req, res) {
 
     await client.query("BEGIN");
 
-    // Gán role HOTEL_OWNER
     const roleRes = await client.query(
       `INSERT INTO public.roles (id, name) VALUES (gen_random_uuid(), 'HOTEL_OWNER') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
     );
@@ -697,14 +748,13 @@ async function registerHotel(req, res) {
         b.bank_name || b.bankName || "Vietcombank",
         b.bank_account || b.bankAccount || null,
         b.bank_account_holder || b.bankAccountHolder || null,
-        b.tax_code || b.taxCode || null,
+        b.tax_code || null,
         b.business_license_url || b.businessLicenseUrl || null,
         metrics.is_beachfront,
         metrics.distance_to_center,
       ],
     );
 
-    // ── 1. BÓC TÁCH ẢNH PHÒNG TRƯỚC ──
     const rooms = Array.isArray(b.rooms || b.roomList || b.room_data)
       ? b.rooms || b.roomList || b.room_data
       : [];
@@ -724,13 +774,11 @@ async function registerHotel(req, res) {
       roomPhotosMap.set(idx, [...new Set(roomUrls)]);
     });
 
-    // ── 2. LƯU ẢNH CƠ SỞ (ĐÃ KHỬ TRÙNG & LOẠI HOÀN TOÀN ẢNH PHÒNG) ──
     const rawFacilitySources = b.hotelImages || b.images || [];
     const facilityUrls = extractImageUrls(rawFacilitySources).filter(
       (url) => !allRoomImageSet.has(url),
     );
 
-    // Bổ sung ảnh bìa chính nếu chưa có trong danh sách
     if (b.image) {
       const coverUrl = extractImageUrls(b.image)[0];
       if (
@@ -756,7 +804,6 @@ async function registerHotel(req, res) {
         .catch((e) => console.error("Lỗi lưu ảnh KS:", e.message));
     }
 
-    // Lưu tiện nghi khách sạn
     const hotelAms = parseAmenityArray(
       b.propertyAmenities || b.property_amenities || b.amenities,
     );
@@ -771,7 +818,6 @@ async function registerHotel(req, res) {
           .catch(() => {});
     }
 
-    // ── 3. LƯU DANH SÁCH PHÒNG & ẢNH PHÒNG ──
     for (let rIdx = 0; rIdx < rooms.length; rIdx++) {
       const r = rooms[rIdx];
       const newRoomId = crypto.randomUUID();
@@ -802,7 +848,6 @@ async function registerHotel(req, res) {
         ],
       );
 
-      // 🌟 Batch Insert ảnh phòng (BẮT BUỘC: hotel_id = NULL, room_id = newRoomId)
       const rImages = roomPhotosMap.get(rIdx) || [];
       if (rImages.length) {
         const rImgValues = rImages
@@ -818,7 +863,6 @@ async function registerHotel(req, res) {
           .catch((e) => console.error("Lỗi lưu ảnh phòng:", e.message));
       }
 
-      // Tiện nghi phòng
       for (const am of parseAmenityArray(
         r.roomAmenities || r.amenities || r.room_amenities,
       )) {
@@ -832,7 +876,6 @@ async function registerHotel(req, res) {
             .catch(() => {});
       }
 
-      // Batch Insert Room Units
       const roomNumbers =
         Array.isArray(r.room_numbers) && r.room_numbers.length
           ? r.room_numbers
