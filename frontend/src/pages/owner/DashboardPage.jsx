@@ -119,13 +119,10 @@ export default function OwnerDashboardPage() {
   const [myHotels, setMyHotels] = useState([]);
   const [selectedHotelId, setSelectedHotelId] = useState("all");
 
-  // 🌟 TÁCH ĐỘC LẬP BỘ LỌC THỜI GIAN: ĐỔI Ở TRÊN KHÔNG LÀM NHẢY Ở DƯỚI!
-  const [revenueTimeRange, setRevenueTimeRange] = useState("yesterday");
+  const [revenueTimeRange, setRevenueTimeRange] = useState("this_month");
   const [occupancyTimeRange, setOccupancyTimeRange] = useState("this_month");
 
-  // TAB CỦA GIÁ TRỊ ĐẶT PHÒNG ("channel" | "stay_date")
   const [bookingValueTab, setBookingValueTab] = useState("stay_date");
-
   const [occupancyLeftTab, setOccupancyLeftTab] = useState("day");
   const [occupancyRightTab, setOccupancyRightTab] = useState("room_type");
 
@@ -172,8 +169,8 @@ export default function OwnerDashboardPage() {
     stayDateStats: {
       totalAmount: 0,
       totalCount: 0,
-      growthRate: 300,
-      growthLabel: "so với ngày hôm kia",
+      growthRate: 0,
+      growthLabel: "so với kỳ trước",
       chartData: [],
     },
     occupancyAnalytics: {
@@ -199,12 +196,38 @@ export default function OwnerDashboardPage() {
   const fetchStats = useCallback(async () => {
     setApiError("");
     try {
-      // 🌟 GỬI 2 QUERY ĐỘC LẬP LÊN SERVER
       const res = await apiClient.get(
         `/owner/stats?hotel_id=${selectedHotelId}&revenue_range=${revenueTimeRange}&occupancy_range=${occupancyTimeRange}`,
       );
 
       const totalOccupied = res.occupancyCurrent?.occupied || 0;
+
+      // 🌟 ĐẢM BẢO LUÔN CÓ DỮ LIỆU ĐỂ VẼ BIỂU ĐỒ KÊNH BÁN
+      const chStats = res.channelStats || {};
+      const directAmt = Number(chStats.directAmount || 0);
+      const onlineAmt = Number(chStats.onlineAmount || 0);
+
+      const resolvedChannelChartData =
+        Array.isArray(chStats.chartData) && chStats.chartData.length > 0
+          ? chStats.chartData
+          : [
+              {
+                name: "Khách trực tiếp",
+                booked: directAmt,
+                count: chStats.directCount || 0,
+              },
+              {
+                name: "Khách đặt online",
+                booked: onlineAmt,
+                count: chStats.onlineCount || 0,
+              },
+            ];
+
+      // 🌟 ĐẢM BẢO BIỂU ĐỒ THEO NGÀY CÓ MẢNG HỢP LỆ
+      const sDateStats = res.stayDateStats || {};
+      const resolvedStayChartData = Array.isArray(sDateStats.chartData)
+        ? sDateStats.chartData
+        : [];
 
       setStats({
         occupancyCurrent: res.occupancyCurrent || {
@@ -231,23 +254,15 @@ export default function OwnerDashboardPage() {
           totalUnpaidAmount: 0,
           potentialLeakTotal: 0,
         },
-        channelStats: res.channelStats || {
-          directAmount: 0,
-          directCount: 0,
-          directPercent: 0,
-          onlineAmount: 0,
-          onlineCount: 0,
-          onlinePercent: 0,
-          cancelledAmount: 0,
-          cancelledCount: 0,
-          chartData: [],
+        channelStats: {
+          ...chStats,
+          directAmount: directAmt,
+          onlineAmount: onlineAmt,
+          chartData: resolvedChannelChartData,
         },
-        stayDateStats: res.stayDateStats || {
-          totalAmount: 0,
-          totalCount: 0,
-          growthRate: 300,
-          growthLabel: "so với ngày hôm kia",
-          chartData: [],
+        stayDateStats: {
+          ...sDateStats,
+          chartData: resolvedStayChartData,
         },
         occupancyAnalytics: res.occupancyAnalytics || {
           hasData: false,
@@ -273,10 +288,12 @@ export default function OwnerDashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
+  // Tính toán Ticks thông minh cho trục Y
   const maxBookingVal = Math.max(
     Number(stats.channelStats.directAmount || 0),
     Number(stats.channelStats.onlineAmount || 0),
     Number(stats.stayDateStats.totalAmount || 0),
+    ...(stats.stayDateStats.chartData || []).map((d) => Number(d.amount || 0)),
     500000,
   );
   const { maxDomain: channelMaxDomain, ticks: channelTicks } =
@@ -292,31 +309,6 @@ export default function OwnerDashboardPage() {
       ? stats.occupancyAnalytics.byRoomType
       : stats.occupancyAnalytics.byArea;
 
-  const handleSettleBooking = async (item) => {
-    setActionStatus(item.id);
-    try {
-      if (modalType === "leak") {
-        await apiClient.post(`/owner/bookings/${item.id}/checkout`, {
-          late_fee: item.amount,
-        });
-      } else {
-        await apiClient.patch(`/owner/bookings/${item.id}/status`, {
-          payment_status: "paid",
-        });
-      }
-      await fetchStats();
-    } catch (e) {
-      alert("Lỗi: " + (e?.response?.data?.message || e.message));
-    } finally {
-      setActionStatus("");
-    }
-  };
-
-  const activeModalList =
-    modalType === "leak"
-      ? stats.automationSummary.leakAlerts
-      : stats.automationSummary.paymentAlerts;
-
   const selectedHotelName =
     selectedHotelId === "all"
       ? "Chi nhánh trung tâm"
@@ -325,7 +317,7 @@ export default function OwnerDashboardPage() {
 
   return (
     <div className="w-full pb-24 bg-[#f4f6f9] font-sans text-gray-900 min-h-screen p-4 sm:p-6 lg:p-7 space-y-4">
-      {/* ─── HEADER: CHI NHÁNH & BÁO CÁO ─── */}
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 sm:p-5 rounded-2xl border border-gray-200/80 shadow-xs">
         <div>
           <div className="text-xs font-black text-[#006ce4] uppercase tracking-wider mb-0.5">
@@ -371,18 +363,14 @@ export default function OwnerDashboardPage() {
         </div>
       ) : (
         <>
-          {/* ─── 1. HÀNG 3 THẺ CÔNG SUẤT - LƯU TRÚ - BUỒNG PHÒNG ─── */}
+          {/* HÀNG 3 THẺ TỔNG QUAN */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* CÔNG SUẤT */}
             <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-bold text-gray-900">
                     Công suất
                   </div>
-                  <button className="text-xs font-medium text-[#006ce4] hover:underline cursor-pointer">
-                    Chi tiết
-                  </button>
                 </div>
                 <div className="mt-2.5">
                   <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
@@ -394,23 +382,16 @@ export default function OwnerDashboardPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium">
+              <div className="flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium border-t border-gray-100">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4] shrink-0" />
                 <span>Tổng: {stats.occupancyCurrent.total} phòng</span>
               </div>
             </div>
 
-            {/* LƯU TRÚ */}
             <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
-                    <span>Lưu trú</span>
-                    <Info size={14} className="text-gray-400 cursor-pointer" />
-                  </div>
-                  <button className="text-xs font-medium text-[#006ce4] hover:underline cursor-pointer">
-                    Chi tiết
-                  </button>
+                  <div className="text-sm font-bold text-gray-900">Lưu trú</div>
                 </div>
                 <div className="mt-2.5">
                   <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
@@ -421,7 +402,7 @@ export default function OwnerDashboardPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium">
+              <div className="flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium border-t border-gray-100">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4] shrink-0" />
                 <span>
                   Người lớn: {stats.staying.adults}, Trẻ em:{" "}
@@ -430,16 +411,12 @@ export default function OwnerDashboardPage() {
               </div>
             </div>
 
-            {/* BUỒNG PHÒNG */}
-            <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs flex flex-col justify-between relative overflow-hidden">
-              <div className="relative z-10">
+            <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs flex flex-col justify-between">
+              <div>
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-bold text-gray-900">
                     Buồng phòng
                   </div>
-                  <button className="text-xs font-medium text-[#006ce4] hover:underline cursor-pointer">
-                    Chi tiết
-                  </button>
                 </div>
                 <div className="mt-2.5">
                   <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
@@ -450,115 +427,32 @@ export default function OwnerDashboardPage() {
                   </div>
                 </div>
               </div>
-              <div className="relative z-10 flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium">
+              <div className="flex items-center gap-2 mt-4 pt-3 text-xs text-gray-700 font-medium border-t border-gray-100">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4] shrink-0" />
                 <span>
-                  Đang có khách & chờ dọn:{" "}
+                  Khách ở & chờ dọn:{" "}
                   {stats.housekeeping.occupiedAndWaitingClean} phòng
                 </span>
               </div>
             </div>
           </div>
 
-          {/* ─── CỤM CẢNH BÁO TÀI CHÍNH ─── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs flex items-center justify-between">
-              <div>
-                <div className="text-[11px] font-black text-gray-500 uppercase tracking-wider">
-                  Trạng thái kinh doanh
-                </div>
-                <div className="text-sm font-black text-gray-900 mt-1">
-                  {stats.occupancyCurrent.rate >= 75
-                    ? "Rất Tốt"
-                    : stats.occupancyCurrent.rate >= 50
-                      ? "Ổn Định"
-                      : "Cần Thúc Đẩy Bán Phòng"}
-                </div>
-              </div>
-              <div className="text-xs font-black px-3 py-1 bg-blue-50 text-[#006ce4] rounded-full border border-blue-100">
-                {stats.occupancyCurrent.rate}% LẤP ĐẦY
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setModalType("payment");
-                setShowModal(true);
-              }}
-              className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-[#006ce4] hover:shadow-md flex items-center justify-between text-left transition-all cursor-pointer group"
-            >
-              <div>
-                <div className="text-[11px] font-black text-orange-600 uppercase tracking-wider flex items-center gap-1.5">
-                  <CreditCard size={14} />
-                  <span>Cảnh báo thanh toán</span>
-                </div>
-                <div className="text-xs text-gray-600 mt-1 font-semibold">
-                  {stats.automationSummary.paymentAlerts.length} phòng chưa tất
-                  toán
-                </div>
-              </div>
-              <span className="text-xs font-bold text-[#006ce4] group-hover:underline flex items-center">
-                Chi tiết &rarr;
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setModalType("leak");
-                setShowModal(true);
-              }}
-              className="p-4 rounded-2xl bg-white border border-gray-200/80 shadow-xs hover:border-rose-400 hover:shadow-md flex items-center justify-between text-left transition-all cursor-pointer group"
-            >
-              <div>
-                <div className="text-[11px] font-black text-rose-600 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldAlert size={14} />
-                  <span>Kiểm toán trễ check-out</span>
-                </div>
-                <div className="text-xs text-gray-600 mt-1 font-semibold">
-                  {stats.automationSummary.leakAlerts.length} phòng quá hạn lưu
-                  trú
-                </div>
-              </div>
-              <span className="text-xs font-black text-rose-600 tabular-nums">
-                +
-                {Number(
-                  stats.automationSummary.potentialLeakTotal || 0,
-                ).toLocaleString("vi-VN")}{" "}
-                đ
-              </span>
-            </button>
-          </div>
-
           {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* 🌟 2. BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG (THEO KÊNH BÁN & THEO NGÀY LƯU TRÚ) 🌟 */}
+          {/* 🌟 BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG 🌟 */}
           {/* ═══════════════════════════════════════════════════════════════════════ */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-gray-900 tracking-tight">
                 Giá trị đặt phòng
               </h2>
-              {/* 🌟 DROPDOWN RIÊNG: ĐỔI Ở ĐÂY KHÔNG ẢNH HƯỞNG ĐẾN CÔNG SUẤT PHÒNG Ở DƯỚI */}
               <TimeRangeDropdown
                 value={revenueTimeRange}
                 onChange={setRevenueTimeRange}
               />
             </div>
 
-            {/* 🌟 2 TAB: THEO KÊNH BÁN & THEO NGÀY LƯU TRÚ */}
+            {/* TAB: THEO KÊNH BÁN & THEO NGÀY LƯU TRÚ */}
             <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold pt-1">
-              <button
-                type="button"
-                onClick={() => setBookingValueTab("channel")}
-                className={`pb-2.5 transition relative cursor-pointer ${
-                  bookingValueTab === "channel"
-                    ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#006ce4]"
-                    : "text-gray-500 hover:text-gray-800"
-                }`}
-              >
-                Theo kênh bán
-              </button>
               <button
                 type="button"
                 onClick={() => setBookingValueTab("stay_date")}
@@ -570,34 +464,137 @@ export default function OwnerDashboardPage() {
               >
                 Theo ngày lưu trú
               </button>
+              <button
+                type="button"
+                onClick={() => setBookingValueTab("channel")}
+                className={`pb-2.5 transition relative cursor-pointer ${
+                  bookingValueTab === "channel"
+                    ? "text-[#006ce4] font-bold after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2.5px] after:bg-[#006ce4]"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                Theo kênh bán
+              </button>
             </div>
 
-            {/* ─── NỘI DUNG TAB 1: THEO KÊNH BÁN ─── */}
-            {bookingValueTab === "channel" ? (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
-                    <div className="flex items-center gap-1 text-xs text-gray-600 font-bold">
-                      <span>Khách đến trực tiếp</span>
-                      <Info
-                        size={13}
-                        className="text-gray-400 cursor-pointer"
+            {/* TAB 1: THEO NGÀY LƯU TRÚ */}
+            {bookingValueTab === "stay_date" ? (
+              <div className="space-y-4">
+                <div className="w-fit min-w-[240px] p-4 bg-white border border-gray-200 rounded-2xl space-y-1.5 shadow-2xs">
+                  <div className="text-xs text-gray-700 font-bold">
+                    Tổng tiền phòng
+                  </div>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight tabular-nums">
+                      {Number(
+                        stats.stayDateStats.totalAmount || 0,
+                      ).toLocaleString("vi-VN")}{" "}
+                      đ
+                    </span>
+                    <span className="text-xs font-bold text-emerald-600">
+                      ↗ {stats.stayDateStats.growthRate || 0}%{" "}
+                      {stats.stayDateStats.growthLabel || ""}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium">
+                    {stats.stayDateStats.totalCount || 0} lượt đặt phòng
+                  </div>
+                </div>
+
+                <div className="h-64 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={stats.stayDateStats.chartData}
+                      barCategoryGap="35%"
+                      margin={{ top: 15, right: 20, left: 10, bottom: 5 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#edf2f7"
                       />
+                      <XAxis
+                        dataKey="label"
+                        stroke="#94a3b8"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={{ stroke: "#e2e8f0" }}
+                      />
+                      <YAxis
+                        stroke="#94a3b8"
+                        fontSize={11}
+                        ticks={channelTicks}
+                        domain={[0, channelMaxDomain]}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => {
+                          if (v === 0) return "0";
+                          if (v >= 1000000) return `${v / 1000000}tr`;
+                          if (v >= 1000) return `${v / 1000}k`;
+                          return v;
+                        }}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "rgba(0, 108, 228, 0.04)" }}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const d = payload[0].payload;
+                            return (
+                              <div className="bg-white text-gray-800 border border-gray-200 px-3 py-2 rounded-xl text-xs shadow-xl space-y-1">
+                                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1">
+                                  Ngày {d.label}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-[#006ce4]" />
+                                  <span className="text-gray-600">
+                                    Doanh thu:
+                                  </span>
+                                  <span className="font-black text-[#003580]">
+                                    {Number(d.amount || 0).toLocaleString(
+                                      "vi-VN",
+                                    )}{" "}
+                                    đ
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-gray-500">
+                                  {d.booking_count || 0} lượt đặt
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar
+                        dataKey="amount"
+                        fill="#006ce4"
+                        radius={[8, 8, 0, 0]}
+                        maxBarSize={36}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : (
+              /* TAB 2: THEO KÊNH BÁN */
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
+                    <div className="text-xs text-gray-600 font-bold">
+                      Khách đến trực tiếp
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
+                      <span className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">
                         {Number(
                           stats.channelStats.directAmount || 0,
-                        ).toLocaleString("vi-VN")}
+                        ).toLocaleString("vi-VN")}{" "}
+                        đ
                       </span>
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
                         {stats.channelStats.directPercent || 0}%
                       </span>
-                      <span className="text-[11px] text-gray-500 font-medium">
-                        Tổng giá trị đặt
-                      </span>
                     </div>
-                    <div className="text-[11px] text-gray-500 font-medium">
+                    <div className="text-[11px] text-gray-500">
                       {stats.channelStats.directCount || 0} đặt phòng
                     </div>
                   </div>
@@ -607,34 +604,18 @@ export default function OwnerDashboardPage() {
                       Khách đặt online
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
+                      <span className="text-xl sm:text-2xl font-black text-gray-900 tabular-nums">
                         {Number(
                           stats.channelStats.onlineAmount || 0,
-                        ).toLocaleString("vi-VN")}
+                        ).toLocaleString("vi-VN")}{" "}
+                        đ
                       </span>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200">
                         {stats.channelStats.onlinePercent || 0}%
                       </span>
-                      <span className="text-[11px] text-gray-500 font-medium">
-                        Tổng giá trị đặt
-                      </span>
                     </div>
-                    <div className="text-[11px] text-gray-500 font-medium">
+                    <div className="text-[11px] text-gray-500">
                       {stats.channelStats.onlineCount || 0} đặt phòng
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-white border border-gray-200 rounded-2xl space-y-2 shadow-2xs">
-                    <div className="text-xs text-gray-600 font-bold">
-                      Đã hủy
-                    </div>
-                    <div className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight tabular-nums">
-                      {Number(
-                        stats.channelStats.cancelledAmount || 0,
-                      ).toLocaleString("vi-VN")}
-                    </div>
-                    <div className="text-[11px] text-gray-500 font-medium">
-                      {stats.channelStats.cancelledCount || 0} đặt phòng
                     </div>
                   </div>
                 </div>
@@ -665,16 +646,16 @@ export default function OwnerDashboardPage() {
                         domain={[0, channelMaxDomain]}
                         tickLine={false}
                         axisLine={false}
-                        tickFormatter={(v) => {
-                          if (v === 0) return "0";
-                          if (v >= 1000000) return `${v / 1000000}tr`;
-                          if (v >= 1000) return `${v / 1000}k`;
-                          return v;
-                        }}
+                        tickFormatter={(v) =>
+                          v >= 1000000
+                            ? `${v / 1000000}tr`
+                            : v >= 1000
+                              ? `${v / 1000}k`
+                              : v
+                        }
                       />
                       <Tooltip
-                        cursor={false}
-                        wrapperStyle={{ zIndex: 1000 }}
+                        cursor={{ fill: "rgba(0, 108, 228, 0.04)" }}
                         content={({ active, payload }) => {
                           if (active && payload && payload.length) {
                             const d = payload[0].payload;
@@ -686,7 +667,7 @@ export default function OwnerDashboardPage() {
                                 <div className="flex items-center gap-1.5">
                                   <span className="w-2 h-2 rounded-full bg-[#006ce4]" />
                                   <span className="text-gray-600">
-                                    Giá trị đặt:
+                                    Giá trị:
                                   </span>
                                   <span className="font-black text-[#003580]">
                                     {Number(d.booked || 0).toLocaleString(
@@ -694,6 +675,9 @@ export default function OwnerDashboardPage() {
                                     )}{" "}
                                     đ
                                   </span>
+                                </div>
+                                <div className="text-[11px] text-gray-500">
+                                  {d.count || 0} lượt đặt
                                 </div>
                               </div>
                             );
@@ -704,129 +688,18 @@ export default function OwnerDashboardPage() {
                       <Bar
                         dataKey="booked"
                         fill="#006ce4"
-                        background={{ fill: "#f8fafc", radius: [10, 10, 0, 0] }}
-                        radius={[10, 10, 0, 0]}
-                        maxBarSize={28}
+                        radius={[8, 8, 0, 0]}
+                        maxBarSize={36}
                       />
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
-              </>
-            ) : (
-              /* ─── 🌟 NỘI DUNG TAB 2: THEO NGÀY LƯU TRÚ (CHUẨN 100% THEO ẢNH BẠN GỬI) ─── */
-              <div className="space-y-4">
-                {/* THẺ TỔNG TIỀN PHÒNG & TĂNG TRƯỞNG */}
-                <div className="w-fit min-w-[240px] p-4 bg-white border border-gray-200 rounded-2xl space-y-1.5 shadow-2xs">
-                  <div className="flex items-center gap-1.5 text-xs text-gray-700 font-bold">
-                    <span>Tổng tiền phòng</span>
-                    <Info size={13} className="text-gray-400 cursor-pointer" />
-                  </div>
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight tabular-nums">
-                      {Number(
-                        stats.stayDateStats.totalAmount || 0,
-                      ).toLocaleString("vi-VN")}
-                    </span>
-                    <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-600">
-                      <span>↗ {stats.stayDateStats.growthRate}%</span>
-                      <span className="text-gray-500 font-normal">
-                        {stats.stayDateStats.growthLabel} &gt;
-                      </span>
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-500 font-medium">
-                    {stats.stayDateStats.totalCount || 0} đặt phòng
-                  </div>
-                </div>
-
-                {/* BIỂU ĐỒ CỘT DOANH THU THEO NGÀY */}
-                <div className="h-64 w-full pt-2">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={stats.stayDateStats.chartData}
-                      barCategoryGap="45%"
-                      margin={{ top: 15, right: 30, left: 10, bottom: 5 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#edf2f7"
-                      />
-                      <XAxis
-                        dataKey="label"
-                        stroke="#94a3b8"
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={{ stroke: "#e2e8f0" }}
-                      />
-                      <YAxis
-                        stroke="#94a3b8"
-                        fontSize={11}
-                        ticks={channelTicks}
-                        domain={[0, channelMaxDomain]}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(v) => {
-                          if (v === 0) return "0";
-                          if (v >= 1000000) return `${v / 1000000}tr`;
-                          if (v >= 1000) return `${v / 1000}n`;
-                          return v;
-                        }}
-                      />
-                      <Tooltip
-                        cursor={false}
-                        wrapperStyle={{ zIndex: 1000 }}
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const d = payload[0].payload;
-                            return (
-                              <div className="bg-white text-gray-800 border border-gray-200 px-3 py-2 rounded-xl text-xs shadow-xl space-y-1">
-                                <div className="font-bold text-gray-900 border-b border-gray-100 pb-1">
-                                  Ngày {d.label} ({selectedHotelName})
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-[#006ce4]" />
-                                  <span className="text-gray-600">
-                                    Tổng tiền:
-                                  </span>
-                                  <span className="font-black text-[#003580]">
-                                    {Number(d.amount || 0).toLocaleString(
-                                      "vi-VN",
-                                    )}{" "}
-                                    đ
-                                  </span>
-                                </div>
-                                <div className="text-[11px] text-gray-500">
-                                  {d.booking_count} đặt phòng
-                                </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      <Bar
-                        dataKey="amount"
-                        fill="#006ce4"
-                        background={{ fill: "#f8fafc", radius: [10, 10, 0, 0] }}
-                        radius={[10, 10, 0, 0]}
-                        maxBarSize={32}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* CHÚ THÍCH DƯỚI BIỂU ĐỒ (ĐÚNG ẢNH BẠN GỬI) */}
-                <div className="flex items-center justify-center gap-2 pt-1 text-xs font-semibold text-gray-700">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#006ce4]" />
-                  <span>{selectedHotelName}</span>
                 </div>
               </div>
             )}
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* 🌟 3. BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG (BỘ LỌC ĐỘC LẬP HOÀN TOÀN) 🌟 */}
+          {/* 🌟 BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG 🌟 */}
           {/* ═══════════════════════════════════════════════════════════════════════ */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
@@ -834,16 +707,13 @@ export default function OwnerDashboardPage() {
                 <h2 className="text-sm font-bold text-gray-900 tracking-tight">
                   Công suất phòng
                 </h2>
-                <Info size={14} className="text-gray-400 cursor-pointer" />
               </div>
-              {/* 🌟 BỘ LỌC ĐỘC LẬP: ĐỔI Ở ĐÂY KHÔNG LÀM NHẢY BIỂU ĐỒ GIÁ TRỊ ĐẶT PHÒNG */}
               <TimeRangeDropdown
                 value={occupancyTimeRange}
                 onChange={setOccupancyTimeRange}
               />
             </div>
 
-            {/* Thẻ con: Trung bình công suất */}
             <div className="w-fit min-w-[170px] p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl space-y-1">
               <div className="text-xs text-gray-600 font-medium">
                 Trung bình
@@ -855,9 +725,7 @@ export default function OwnerDashboardPage() {
               </div>
             </div>
 
-            {/* Bố cục 2 Cột */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
-              {/* CỘT TRÁI: THEO NGÀY / THEO THỨ */}
               <div className="lg:col-span-7 space-y-3 border-r border-gray-100 pr-0 lg:pr-6">
                 <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold">
                   <button
@@ -928,8 +796,7 @@ export default function OwnerDashboardPage() {
                           stroke="#94a3b8"
                           fontSize={11}
                           domain={[0, 100]}
-                          ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
-                          interval={0}
+                          ticks={[0, 20, 40, 60, 80, 100]}
                           axisLine={false}
                           tickLine={false}
                         />
@@ -968,7 +835,6 @@ export default function OwnerDashboardPage() {
                 </div>
               </div>
 
-              {/* CỘT PHẢI: THEO HẠNG PHÒNG / THEO KHU VỰC */}
               <div className="lg:col-span-5 space-y-4 pl-0 lg:pl-2">
                 <div className="flex items-center gap-6 border-b border-gray-100 text-xs font-semibold">
                   <button
@@ -1033,16 +899,16 @@ export default function OwnerDashboardPage() {
         </>
       )}
 
-      {/* ─── MODAL XỬ LÝ THANH TOÁN & KIỂM TOÁN ─── */}
+      {/* MODAL CẢNH BÁO */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden border border-gray-200 animate-in zoom-in-95">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-[#003580] text-white">
               <div className="flex items-center gap-2.5">
                 {modalType === "leak" ? (
-                  <ShieldAlert size={20} className="text-white" />
+                  <ShieldAlert size={20} />
                 ) : (
-                  <CreditCard size={20} className="text-white" />
+                  <CreditCard size={20} />
                 )}
                 <h3 className="text-sm font-black uppercase tracking-wider">
                   {modalType === "leak"
@@ -1060,7 +926,10 @@ export default function OwnerDashboardPage() {
             </div>
 
             <div className="p-5 space-y-3 max-h-[65vh] overflow-y-auto">
-              {activeModalList.map((item) => (
+              {(modalType === "leak"
+                ? stats.automationSummary.leakAlerts
+                : stats.automationSummary.paymentAlerts
+              ).map((item) => (
                 <div
                   key={item.id}
                   className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-2.5"
@@ -1070,7 +939,7 @@ export default function OwnerDashboardPage() {
                       <div className="text-xs font-black text-gray-900">
                         Phòng {item.room} - Mã: {item.booking_code}
                       </div>
-                      <div className="text-[11px] text-gray-600 font-medium">
+                      <div className="text-[11px] text-gray-600">
                         Khách: {item.guest}
                       </div>
                     </div>
@@ -1080,34 +949,8 @@ export default function OwnerDashboardPage() {
                       </div>
                     </div>
                   </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => handleSettleBooking(item)}
-                      disabled={actionStatus === item.id}
-                      className="px-3.5 py-1.5 bg-[#003580] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-                    >
-                      <CheckCircle2 size={14} />
-                      <span>
-                        {actionStatus === item.id
-                          ? "Đang cập nhật..."
-                          : "Xác nhận đã thanh toán"}
-                      </span>
-                    </button>
-                  </div>
                 </div>
               ))}
-
-              {activeModalList.length === 0 && (
-                <div className="py-10 text-center text-xs font-bold text-emerald-600 space-y-2">
-                  <CheckCircle2
-                    size={36}
-                    className="mx-auto text-emerald-500"
-                  />
-                  <div>Dữ liệu đều đã được xử lý hoàn tất!</div>
-                </div>
-              )}
             </div>
 
             <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
