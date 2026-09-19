@@ -532,11 +532,11 @@ export default function HotelListPage() {
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* THANH TÌM KIẾM NGANG */}
+        {/* 🌟 THANH TÌM KIẾM NGANG: HIỂN THỊ ĐẦY ĐỦ CẢ NHẬN VÀ TRẢ 🌟 */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6 relative">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
             {/* Ô 1: Điểm đến */}
-            <div ref={destRef} className="md:col-span-4 relative">
+            <div ref={destRef} className="md:col-span-3 relative">
               <div
                 onClick={() => setIsDestDropdownOpen(true)}
                 className="flex items-center bg-slate-50 rounded-xl px-3.5 h-12 border border-gray-200 focus-within:border-blue-600 focus-within:bg-white transition-colors cursor-pointer"
@@ -544,7 +544,7 @@ export default function HotelListPage() {
                 <Search size={18} className="text-gray-400 shrink-0 mr-2.5" />
                 <input
                   type="text"
-                  placeholder="Bạn muốn đi đâu? (Tên khách sạn, TP...)"
+                  placeholder="Bạn muốn đi đâu? (Tên KS, TP...)"
                   value={destInput}
                   onFocus={() => setIsDestDropdownOpen(true)}
                   onChange={(e) => {
@@ -600,37 +600,60 @@ export default function HotelListPage() {
               )}
             </div>
 
-            {/* Ô 2: Ô Lịch mở Popup */}
-            <div ref={calendarRef} className="relative md:col-span-5">
+            {/* Ô 2: Ô Lịch mở Popup (HIỂN THỊ RÕ CẢ NHẬN VÀ TRẢ) */}
+            <div ref={calendarRef} className="relative md:col-span-7">
               <div
                 onClick={() => setIsCalendarOpen(!isCalendarOpen)}
-                className="bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-gray-200 p-2.5 h-12 cursor-pointer flex items-center justify-between hover:border-[#006ce4] transition select-none"
+                className="bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-gray-200 px-3 py-2 h-12 cursor-pointer flex items-center justify-between hover:border-[#006ce4] transition select-none gap-2 flex-wrap sm:flex-nowrap"
               >
-                <div className="flex items-center gap-2">
-                  <CalendarIcon size={16} className="text-gray-400" />
+                {/* KHỐI 1: NHẬN PHÒNG */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <CalendarIcon size={16} className="text-[#003580] shrink-0" />
                   <div>
                     <span className="text-[10px] font-black text-slate-500 block leading-tight">
                       {rentalType === "HOUR"
-                        ? `Giờ (${checkInTime})`
+                        ? `Bắt đầu (${checkInTime})`
                         : `Nhận (${checkInTime})`}
                     </span>
-                    <span className="text-xs font-bold text-gray-800 leading-none">
+                    <span className="text-xs font-black text-gray-900 leading-none">
                       {safeFormatDate(checkInDate, "dd/MM/yyyy")}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
-                  <span>{durationSummary.badge}</span>
+                {/* KHỐI 2: HUY HIỆU THỜI LƯỢNG */}
+                <div className="text-[11px] font-black text-[#003580] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full shrink-0">
+                  {durationSummary.badge}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Users size={16} className="text-gray-400" />
+                {/* KHỐI 3: TRẢ PHÒNG (ĐÃ BỔ SUNG ĐẦY ĐỦ RÕ RÀNG) */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <CalendarIcon size={16} className="text-[#003580] shrink-0" />
                   <div>
                     <span className="text-[10px] font-black text-slate-500 block leading-tight">
-                      Khách
+                      {rentalType === "HOUR"
+                        ? `Kết thúc (${durationSummary.outTimeStr})`
+                        : `Trả (${checkOutTime})`}
                     </span>
-                    <span className="text-xs font-bold text-slate-800 leading-none">
+                    <span className="text-xs font-black text-gray-900 leading-none">
+                      {safeFormatDate(
+                        rentalType === "HOUR"
+                          ? durationSummary.outDateTime
+                          : checkOutDate,
+                        "dd/MM/yyyy",
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* KHỐI 4: KHÁCH & PHÒNG */}
+                <div className="flex items-center gap-2 shrink-0 border-l border-gray-200 pl-2">
+                  <Users size={16} className="text-[#003580] shrink-0" />
+                  <div>
+                    <span className="text-[10px] font-black text-gray-500 block leading-tight">
+                      Khách & Phòng
+                    </span>
+                    <span className="text-xs font-black text-gray-900 leading-none truncate">
                       {adults} Lớn{children > 0 ? `, ${children} Trẻ` : ""} ·{" "}
                       {rooms} P
                     </span>
@@ -997,7 +1020,7 @@ export default function HotelListPage() {
                     </div>
                   </div>
 
-                  {/* 🌟 BỔ SUNG BỘ ĐẾM SỐ PHÒNG 🌟 */}
+                  {/* SỐ PHÒNG */}
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-800">
                       Số phòng
@@ -1047,7 +1070,7 @@ export default function HotelListPage() {
             <button
               type="button"
               onClick={handleSearchSubmit}
-              className="md:col-span-3 h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-md transition active:scale-[0.98] flex items-center justify-center cursor-pointer"
+              className="md:col-span-2 h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-md transition active:scale-[0.98] flex items-center justify-center cursor-pointer"
             >
               Tìm kiếm
             </button>

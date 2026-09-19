@@ -164,7 +164,7 @@ export default function HomePage() {
   const [activeDatePicker, setActiveDatePicker] = useState(null);
   const [calendarMonth, setCalendarMonth] = useState(today);
 
-  // 🌟 GUESTS & ROOMS
+  // GUESTS & ROOMS
   const [rooms, setRooms] = useState(1);
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
@@ -528,38 +528,67 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* HÀNG BỘ LỌC NGÀY VÀ GIỜ KÈM POPUP ĐỒNG BỘ */}
+                {/* 🌟 HÀNG BỘ LỌC NGÀY VÀ GIỜ: HIỂN THỊ ĐẦY ĐỦ CẢ NHẬN VÀ TRẢ RÕ RÀNG 🌟 */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
                   <div ref={calendarRef} className="relative md:col-span-9">
                     <div
                       onClick={() => setIsCalendarOpen(!isCalendarOpen)}
-                      className="bg-white rounded-xl shadow-lg border border-gray-200 p-2.5 h-12 cursor-pointer flex items-center justify-between hover:border-blue-600 transition select-none"
+                      className="bg-white rounded-xl shadow-lg border border-gray-200 px-3 py-2 h-13 cursor-pointer flex items-center justify-between hover:border-blue-600 transition select-none gap-2 flex-wrap sm:flex-nowrap"
                     >
-                      <div className="flex items-center gap-2">
-                        <CalendarIcon size={18} className="text-gray-400" />
+                      {/* KHỐI 1: NHẬN PHÒNG */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <CalendarIcon
+                          size={17}
+                          className="text-[#003580] shrink-0"
+                        />
                         <div>
                           <span className="text-[10px] font-black text-slate-500 block leading-tight">
                             {rentalType === "HOUR"
-                              ? `Giờ (${checkInTime})`
+                              ? `Bắt đầu (${checkInTime})`
                               : `Nhận (${checkInTime})`}
                           </span>
-                          <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
-                            {safeFormatDate(checkInDate, "dd-MM-yyyy")}
+                          <span className="text-xs font-black text-gray-900 leading-none">
+                            {safeFormatDate(checkInDate, "dd/MM/yyyy")}
                           </span>
                         </div>
                       </div>
 
-                      <div className="text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                      {/* KHỐI 2: HUY HIỆU THỜI LƯỢNG */}
+                      <div className="text-[11px] font-black text-[#003580] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full shrink-0">
                         {durationSummary.badge}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <Users size={18} className="text-gray-400" />
+                      {/* KHỐI 3: TRẢ PHÒNG (ĐÃ BỔ SUNG ĐẦY ĐỦ RÕ RÀNG) */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <CalendarIcon
+                          size={17}
+                          className="text-[#003580] shrink-0"
+                        />
+                        <div>
+                          <span className="text-[10px] font-black text-slate-500 block leading-tight">
+                            {rentalType === "HOUR"
+                              ? `Kết thúc (${durationSummary.outTimeStr})`
+                              : `Trả (${checkOutTime})`}
+                          </span>
+                          <span className="text-xs font-black text-gray-900 leading-none">
+                            {safeFormatDate(
+                              rentalType === "HOUR"
+                                ? durationSummary.outDateTime
+                                : checkOutDate,
+                              "dd/MM/yyyy",
+                            )}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* KHỐI 4: KHÁCH & PHÒNG */}
+                      <div className="flex items-center gap-2 shrink-0 border-l border-gray-200 pl-2">
+                        <Users size={17} className="text-[#003580] shrink-0" />
                         <div>
                           <span className="text-[10px] font-black text-gray-500 block leading-tight">
                             Khách & Phòng
                           </span>
-                          <span className="text-xs md:text-sm font-black text-gray-900 leading-none">
+                          <span className="text-xs font-black text-gray-900 leading-none truncate">
                             {adults} Lớn
                             {children > 0 ? `, ${children} Trẻ` : ""} · {rooms}{" "}
                             P
@@ -942,7 +971,7 @@ export default function HomePage() {
                           </div>
                         </div>
 
-                        {/* 🌟 THÊM HÀNG CHỌN SỐ PHÒNG 🌟 */}
+                        {/* SỐ PHÒNG */}
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-800">
                             Số phòng
@@ -970,7 +999,7 @@ export default function HomePage() {
                           </div>
                         </div>
 
-                        {/* NÚT TÌM PHÒNG */}
+                        {/* NÚT TÌM PHÒNG TRONG POPUP */}
                         <div className="pt-2">
                           <button
                             type="button"

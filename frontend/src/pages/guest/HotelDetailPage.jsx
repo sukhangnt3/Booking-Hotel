@@ -303,7 +303,6 @@ export default function HotelDetailPage() {
     hoursCount,
   ]);
 
-  // 🌟 GÁN durationSummary = checkOutInfo ĐỂ ĐẢM BẢO KHÔNG BAO GIỜ BỊ LỖI UNDEFINED
   const durationSummary = checkOutInfo;
 
   const handleTabChange = useCallback(
@@ -1085,51 +1084,75 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* THANH TÌM KIẾM NGANG KÈM BẢNG CHỌN GIỜ & PHÒNG */}
+        {/* 🌟 THANH TÌM KIẾM NGANG ĐÃ ĐƯỢC MỞ RỘNG BỀ NGANG THÊNH THANG: md:col-span-7 🌟 */}
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-md mb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-            <div className="md:col-span-4 relative flex items-center gap-2.5 px-3.5 h-12 bg-slate-50 rounded-xl border border-slate-200">
-              <MapPin size={18} className="text-[#006ce4] shrink-0" />
+            {/* Ô 1: Nhập tên chỗ nghỉ (Gọn gàng md:col-span-3) */}
+            <div className="md:col-span-3 relative flex items-center gap-2.5 px-3.5 h-12 bg-slate-50 rounded-xl border border-slate-200">
+              <MapPin size={18} className="text-[#003580] shrink-0" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Nhập tên khách sạn..."
-                className="w-full text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
+                className="w-full text-xs font-bold text-slate-800 bg-transparent focus:outline-none truncate"
               />
             </div>
 
-            {/* Ô MỞ POPUP BẢNG CHỌN THỜI GIAN & PHÒNG */}
-            <div ref={calendarRef} className="relative md:col-span-5">
+            {/* Ô 2: Ô LỊCH MỞ RỘNG RÃI md:col-span-7 (HIỂN THỊ ĐỦ CẢ NHẬN VÀ TRẢ) */}
+            <div ref={calendarRef} className="relative md:col-span-7">
               <div
                 onClick={() => setIsCalendarOpen(!isCalendarOpen)}
-                className="bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 p-2.5 h-12 cursor-pointer flex items-center justify-between hover:border-[#006ce4] transition select-none"
+                className="bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 px-3 py-2 h-12 cursor-pointer flex items-center justify-between hover:border-[#003580] transition select-none gap-2"
               >
-                <div className="flex items-center gap-2">
-                  <CalendarIcon size={16} className="text-slate-400" />
+                {/* 1. KHỐI NHẬN */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <CalendarIcon size={16} className="text-[#003580] shrink-0" />
                   <div>
-                    <span className="text-[10px] font-black text-slate-500 block leading-tight">
+                    <span className="text-[10px] font-black text-slate-500 block leading-tight whitespace-nowrap">
                       {rentalType === "HOUR"
-                        ? `Giờ (${checkInTime})`
+                        ? `Bắt đầu (${checkInTime})`
                         : `Nhận (${checkInTime})`}
                     </span>
-                    <span className="text-xs font-bold text-slate-800 leading-none">
+                    <span className="text-xs font-black text-slate-900 leading-none whitespace-nowrap">
                       {safeFormatDate(checkInDate, "dd/MM/yyyy")}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
-                  <span>{checkOutInfo.badge}</span>
+                {/* 2. HUY HIỆU THỜI LƯỢNG */}
+                <div className="text-[11px] font-black text-[#003580] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">
+                  {checkOutInfo.badge}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Users size={16} className="text-slate-400" />
+                {/* 3. KHỐI TRẢ (HIỆN RÕ RÀNG KHÔNG BỊ CẮT CHỮ NỮA) */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <CalendarIcon size={16} className="text-[#003580] shrink-0" />
                   <div>
-                    <span className="text-[10px] font-black text-slate-500 block leading-tight">
+                    <span className="text-[10px] font-black text-slate-500 block leading-tight whitespace-nowrap">
+                      {rentalType === "HOUR"
+                        ? `Kết thúc (${checkOutInfo.outTimeStr})`
+                        : `Trả (${checkOutTime})`}
+                    </span>
+                    <span className="text-xs font-black text-slate-900 leading-none whitespace-nowrap">
+                      {safeFormatDate(
+                        rentalType === "HOUR"
+                          ? checkOutInfo.outDateTime
+                          : checkOutDate,
+                        "dd/MM/yyyy",
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. KHỐI KHÁCH & PHÒNG */}
+                <div className="flex items-center gap-2 shrink-0 border-l border-slate-200 pl-2">
+                  <Users size={16} className="text-[#003580] shrink-0" />
+                  <div>
+                    <span className="text-[10px] font-black text-gray-500 block leading-tight whitespace-nowrap">
                       Khách & Phòng
                     </span>
-                    <span className="text-xs font-bold text-slate-800 leading-none">
+                    <span className="text-xs font-black text-slate-900 leading-none whitespace-nowrap truncate">
                       {adults} Lớn{children > 0 ? `, ${children} Trẻ` : ""} ·{" "}
                       {rooms} P
                     </span>
@@ -1329,7 +1352,6 @@ export default function HotelDetailPage() {
                         </div>
                       </div>
 
-                      {/* 🌟 ĐÃ SỬA CHUẨN: {checkOutInfo.badge} KHÔNG CÒN BỊ LỖI durationSummary IS NOT DEFINED */}
                       <div className="w-full py-2.5 bg-[#eef5ff] text-[#006ce4] font-black text-xs text-center rounded-xl select-none">
                         {checkOutInfo.badge}
                       </div>
@@ -1529,7 +1551,10 @@ export default function HotelDetailPage() {
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={handleApplySearch}
+                      onClick={() => {
+                        setIsCalendarOpen(false);
+                        handleApplySearch();
+                      }}
                       className="w-full h-11 bg-[#006ce4] hover:bg-blue-600 text-white font-black text-sm rounded-xl shadow-md transition active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Search size={16} strokeWidth={2.5} />
@@ -1540,13 +1565,13 @@ export default function HotelDetailPage() {
               )}
             </div>
 
-            {/* Ô Cập nhật */}
-            <div className="md:col-span-3">
+            {/* Ô 3: Nút Cập nhật (Gọn gàng md:col-span-2) */}
+            <div className="md:col-span-2">
               <button
                 type="button"
                 onClick={handleApplySearch}
                 disabled={checkingRooms}
-                className="w-full h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-md transition active:scale-95 flex items-center justify-center cursor-pointer disabled:opacity-50"
+                className="w-full h-12 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-xl shadow-md transition active:scale-95 flex items-center justify-center cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
                 {checkingRooms ? "Đang kiểm tra..." : "Cập nhật"}
               </button>

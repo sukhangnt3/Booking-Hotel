@@ -73,6 +73,22 @@ const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
 
 const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN") + " ₫";
 
+// Hàm kiểm tra định dạng Số điện thoại Việt Nam chuẩn
+const isValidPhone = (phone) => {
+  const cleanPhone = String(phone || "")
+    .replace(/[\s.-]/g, "")
+    .trim();
+  return (
+    /^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(cleanPhone) ||
+    /^0[0-9]{9}$/.test(cleanPhone)
+  );
+};
+
+// Hàm kiểm tra định dạng Email chuẩn
+const isValidEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+};
+
 const NumberCounter = ({ label, value, min = 0, max = 99, onChange }) => (
   <div className="flex justify-between items-center">
     <span className="text-xs font-bold text-slate-700">{label}</span>
@@ -136,6 +152,7 @@ export default function BookingConfirmPage() {
   const [calendarTarget, setCalendarTarget] = useState(null);
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState(today);
   const calendarRef = useRef(null);
+  const contactFormRef = useRef(null);
 
   // Số lượng khách & phòng
   const [adults, setAdults] = useState(Number(searchParams.get("adults")) || 1);
@@ -157,11 +174,18 @@ export default function BookingConfirmPage() {
   const [isSlotAvailable, setIsSlotAvailable] = useState(true);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
 
+  // 🌟 STATE THÔNG TIN LIÊN HỆ & BÁO LỖI BẮT BUỘC NHẬP
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
     phone: "",
     specialRequest: "",
+  });
+
+  const [formErrors, setFormErrors] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
   });
 
   useEffect(() => {
@@ -206,7 +230,7 @@ export default function BookingConfirmPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // 🌟 ĐỌC ĐỘNG GIỜ QUY ĐỊNH CỦA KHÁCH SẠN
+  // ĐỌC ĐỘNG GIỜ QUY ĐỊNH CỦA KHÁCH SẠN
   const hotelPolicies = useMemo(() => {
     return {
       dailyIn: String(hotel?.checkin_time || "14:00").slice(0, 5),
@@ -281,7 +305,7 @@ export default function BookingConfirmPage() {
     hoursCount,
   ]);
 
-  // 🌟 THUẬT TOÁN TÍNH TOÁN GIÁ & PHỤ THU NHẬN SỚM / TRẢ MUỘN THEO GIỜ QUY ĐỊNH
+  // THUẬT TOÁN TÍNH TOÁN GIÁ & PHỤ THU
   const pricingDetails = useMemo(() => {
     if (!room) {
       return { totalPrice: 0, breakdown: [], earlyHours: 0, lateHours: 0 };
@@ -293,7 +317,6 @@ export default function BookingConfirmPage() {
         ? Number(room.hourly_price)
         : Math.round(baseDailyPrice * 0.25);
 
-    // Phụ phí theo giờ cấu hình
     const earlyFixedRate =
       Number(room.early_checkin_fee) > 0
         ? Number(room.early_checkin_fee)
@@ -646,9 +669,49 @@ export default function BookingConfirmPage() {
     );
   };
 
-  // Gửi đơn hàng
+  // 🌟 HÀM SUBMIT VỚI VALIDATION BẮT BUỘC NHẬP HỌ TÊN, SĐT, EMAIL CHẶT CHẼ
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const errors = {};
+
+    // 1. Kiểm tra Họ và tên
+    if (!formData.fullName.trim()) {
+      errors.fullName = "Vui lòng nhập họ và tên người nhận phòng!";
+    } else if (formData.fullName.trim().length < 2) {
+      errors.fullName = "Họ và tên người đặt phòng phải có ít nhất 2 ký tự!";
+    }
+
+    // 2. Kiểm tra Số điện thoại
+    if (!formData.phone.trim()) {
+      errors.phone = "Vui lòng nhập số điện thoại để khách sạn liên hệ!";
+    } else if (!isValidPhone(formData.phone)) {
+      errors.phone =
+        "Số điện thoại không hợp lệ (Ví dụ: 0912345678 hoặc +84912345678)!";
+    }
+
+    // 3. Kiểm tra Email
+    if (!formData.email.trim()) {
+      errors.email =
+        "Vui lòng nhập email để nhận thông tin xác nhận đặt phòng!";
+    } else if (!isValidEmail(formData.email)) {
+      errors.email =
+        "Địa chỉ email không đúng định dạng (Ví dụ: example@gmail.com)!";
+    }
+
+    // Nếu có lỗi thì dừng lại, báo lỗi và cuộn lên ô nhập
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      contactFormRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      return;
+    }
+
+    // Xóa lỗi nếu form hợp lệ
+    setFormErrors({ fullName: "", email: "", phone: "" });
+
     if (!checkInDate) return alert("Vui lòng chọn ngày nhận phòng hợp lệ!");
     if (!isSlotAvailable) {
       return alert(
@@ -742,11 +805,15 @@ export default function BookingConfirmPage() {
 
         <form
           onSubmit={handleSubmit}
+          noValidate
           className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-6"
         >
           {/* CỘT TRÁI: THÔNG TIN LIÊN HỆ & PHƯƠNG THỨC THANH TOÁN */}
           <div className="lg:col-span-7 space-y-6">
-            <div className="bg-white p-6 md:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6">
+            <div
+              ref={contactFormRef}
+              className="bg-white p-6 md:p-8 rounded-2xl border border-gray-200 shadow-sm space-y-6"
+            >
               <div className="flex justify-between items-center pb-4 border-b border-gray-100">
                 <h2 className="text-xl font-black text-gray-900 tracking-tight">
                   Thông tin liên hệ
@@ -758,38 +825,96 @@ export default function BookingConfirmPage() {
                 )}
               </div>
 
+              {/* KHỐI NHẬP LIỆU BẮT BUỘC CÓ BÁO ĐỎ KHI THIẾU HOẶC SAI ĐỊNH DẠNG */}
               <div className="space-y-4">
-                <Input
-                  label="Họ và tên người đặt *"
-                  required
-                  placeholder="Nhập tên như trên CCCD / Hộ chiếu"
-                  value={formData.fullName}
-                  onChange={(e) =>
-                    setFormData({ ...formData, fullName: e.target.value })
-                  }
-                />
+                <div>
+                  <label className="text-sm font-bold text-gray-800 block mb-1">
+                    Họ và tên người đặt <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nhập họ và tên như trên CCCD / Hộ chiếu"
+                    value={formData.fullName}
+                    onChange={(e) => {
+                      setFormData({ ...formData, fullName: e.target.value });
+                      if (formErrors.fullName) {
+                        setFormErrors((prev) => ({ ...prev, fullName: "" }));
+                      }
+                    }}
+                    className={`w-full h-11 px-3.5 border rounded-xl text-sm font-semibold outline-none transition bg-white ${
+                      formErrors.fullName
+                        ? "border-rose-500 bg-rose-50/20 focus:border-rose-600"
+                        : "border-gray-300 focus:border-[#003580]"
+                    }`}
+                  />
+                  {formErrors.fullName && (
+                    <span className="text-xs text-rose-600 font-bold mt-1.5 flex items-center gap-1">
+                      <AlertCircle size={13} className="shrink-0" />
+                      {formErrors.fullName}
+                    </span>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label="Địa chỉ Email *"
-                    type="email"
-                    required
-                    placeholder="email@example.com"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                  />
-                  <Input
-                    label="Số điện thoại liên hệ *"
-                    type="tel"
-                    required
-                    placeholder="Ví dụ: 0912 345 678"
-                    value={formData.phone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phone: e.target.value })
-                    }
-                  />
+                  <div>
+                    <label className="text-sm font-bold text-gray-800 block mb-1">
+                      Địa chỉ Email <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="email@example.com"
+                      value={formData.email}
+                      onChange={(e) => {
+                        setFormData({ ...formData, email: e.target.value });
+                        if (formErrors.email) {
+                          setFormErrors((prev) => ({ ...prev, email: "" }));
+                        }
+                      }}
+                      className={`w-full h-11 px-3.5 border rounded-xl text-sm font-semibold outline-none transition bg-white ${
+                        formErrors.email
+                          ? "border-rose-500 bg-rose-50/20 focus:border-rose-600"
+                          : "border-gray-300 focus:border-[#003580]"
+                      }`}
+                    />
+                    {formErrors.email && (
+                      <span className="text-xs text-rose-600 font-bold mt-1.5 flex items-center gap-1">
+                        <AlertCircle size={13} className="shrink-0" />
+                        {formErrors.email}
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-bold text-gray-800 block mb-1">
+                      Số điện thoại liên hệ{" "}
+                      <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="Ví dụ: 0912345678"
+                      value={formData.phone}
+                      onChange={(e) => {
+                        setFormData({ ...formData, phone: e.target.value });
+                        if (formErrors.phone) {
+                          setFormErrors((prev) => ({ ...prev, phone: "" }));
+                        }
+                      }}
+                      className={`w-full h-11 px-3.5 border rounded-xl text-sm font-semibold outline-none transition bg-white font-mono ${
+                        formErrors.phone
+                          ? "border-rose-500 bg-rose-50/20 focus:border-rose-600"
+                          : "border-gray-300 focus:border-[#003580]"
+                      }`}
+                    />
+                    {formErrors.phone && (
+                      <span className="text-xs text-rose-600 font-bold mt-1.5 flex items-center gap-1">
+                        <AlertCircle size={13} className="shrink-0" />
+                        {formErrors.phone}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-1.5 pt-2">
