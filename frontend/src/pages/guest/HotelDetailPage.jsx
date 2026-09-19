@@ -188,7 +188,7 @@ export default function HotelDetailPage() {
   const [checkInDate, setCheckInDate] = useState(appliedCheckIn);
   const [checkOutDate, setCheckOutDate] = useState(appliedCheckOut);
 
-  // 🌟 GUESTS & ROOMS
+  // GUESTS & ROOMS
   const [rooms, setRooms] = useState(Number(searchParams.get("rooms")) || 1);
   const [adults, setAdults] = useState(Number(searchParams.get("adults")) || 1);
   const [children, setChildren] = useState(
@@ -303,6 +303,9 @@ export default function HotelDetailPage() {
     hoursCount,
   ]);
 
+  // 🌟 GÁN durationSummary = checkOutInfo ĐỂ ĐẢM BẢO KHÔNG BAO GIỜ BỊ LỖI UNDEFINED
+  const durationSummary = checkOutInfo;
+
   const handleTabChange = useCallback(
     (type) => {
       setRentalType(type);
@@ -311,16 +314,16 @@ export default function HotelDetailPage() {
         setHoursCount(2);
         setCheckOutDate(checkInDate);
       } else if (type === "DAY") {
-        setCheckInTime(hotelPolicies.dailyIn);
-        setCheckOutTime(hotelPolicies.dailyOut);
+        setCheckInTime(hotelPolicies.dailyIn || "14:00");
+        setCheckOutTime(hotelPolicies.dailyOut || "12:00");
         setCheckOutDate(addDays(checkInDate, 1));
       } else if (type === "OVERNIGHT") {
-        setCheckInTime(hotelPolicies.overnightIn);
-        setCheckOutTime(hotelPolicies.overnightOut);
+        setCheckInTime(hotelPolicies.overnightIn || "22:00");
+        setCheckOutTime(hotelPolicies.overnightOut || "12:00");
         setCheckOutDate(addDays(checkInDate, 1));
       } else if (type === "HALF_DAY") {
-        setCheckInTime(hotelPolicies.halfdayIn);
-        setCheckOutTime(hotelPolicies.halfdayOut);
+        setCheckInTime(hotelPolicies.halfdayIn || "12:00");
+        setCheckOutTime(hotelPolicies.halfdayOut || "21:00");
         setCheckOutDate(addDays(checkInDate, 1));
       }
     },
@@ -447,7 +450,7 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // 🌟 TÍNH GIÁ PHÒNG VÀ NHÂN THEO SỐ LƯỢNG PHÒNG ĐẶT
+  // TÍNH GIÁ PHÒNG
   const calculateRoomPricing = useCallback(
     (room) => {
       const baseDailyPrice = Number(
@@ -1326,8 +1329,9 @@ export default function HotelDetailPage() {
                         </div>
                       </div>
 
+                      {/* 🌟 ĐÃ SỬA CHUẨN: {checkOutInfo.badge} KHÔNG CÒN BỊ LỖI durationSummary IS NOT DEFINED */}
                       <div className="w-full py-2.5 bg-[#eef5ff] text-[#006ce4] font-black text-xs text-center rounded-xl select-none">
-                        {durationSummary.badge}
+                        {checkOutInfo.badge}
                       </div>
                     </>
                   )}
@@ -1493,7 +1497,7 @@ export default function HotelDetailPage() {
                     </div>
                   </div>
 
-                  {/* 🌟 BỔ SUNG BỘ ĐẾM SỐ PHÒNG 🌟 */}
+                  {/* SỐ PHÒNG */}
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-800">
                       Số phòng
@@ -1536,7 +1540,7 @@ export default function HotelDetailPage() {
               )}
             </div>
 
-            {/* Ô 3: Nút Cập nhật */}
+            {/* Ô Cập nhật */}
             <div className="md:col-span-3">
               <button
                 type="button"
@@ -1602,7 +1606,6 @@ export default function HotelDetailPage() {
                     room.room_count ??
                     4,
                 );
-                // 🌟 Kiểm tra nếu số phòng trống ít hơn số phòng khách cần đặt
                 const isSoldOut = stock < rooms || room.is_available === false;
 
                 const pricing = calculateRoomPricing(room);
@@ -1831,7 +1834,7 @@ export default function HotelDetailPage() {
           )}
         </section>
 
-        {/* TIỆN NGHI CHỖ NGHỈ NGUYÊN BẢN */}
+        {/* TIỆN NGHI CHỖ NGHỈ */}
         {(() => {
           const hotelAmenities = parseAmenities(hotel.amenities);
           return (
@@ -1863,7 +1866,7 @@ export default function HotelDetailPage() {
           );
         })()}
 
-        {/* THÔNG TIN CHỖ NGHỈ NGUYÊN BẢN */}
+        {/* THÔNG TIN CHỖ NGHỈ */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-3.5 mb-8">
           <div className="flex items-center gap-2">
             <Building2 className="text-slate-700" size={20} />
@@ -1885,7 +1888,7 @@ export default function HotelDetailPage() {
           </div>
         </section>
 
-        {/* QUY ĐỊNH CHỖ NGHỈ NGUYÊN BẢN */}
+        {/* QUY ĐỊNH CHỖ NGHỈ */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 mb-8">
           <div className="flex items-center gap-2">
             <ClipboardList className="text-slate-700" size={20} />
@@ -1917,10 +1920,10 @@ export default function HotelDetailPage() {
           </div>
         </section>
 
-        {/* SLIDER KHÁCH SẠN GỢI Ý NGUYÊN BẢN */}
+        {/* SLIDER KHÁCH SẠN GỢI Ý */}
         <NewestHotelsSlider excludeHotelId={hotel.id} />
 
-        {/* KHU VỰC ĐÁNH GIÁ NGUYÊN BẢN */}
+        {/* KHU VỰC ĐÁNH GIÁ */}
         <section id="reviews-section" className="space-y-6 pt-2">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             <div className="lg:col-span-7 xl:col-span-8">
