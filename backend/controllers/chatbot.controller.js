@@ -16,6 +16,11 @@ const CITY_ALIASES = [
   ["vũng tàu", "vung tau"],
 ];
 
+/**
+ * 1. Unicode NFD Text Normalization Pipeline
+ * Converts to lowercase, strips accents using Unicode NFD decomposition,
+ * unifies 'đ' into 'd', and collapses redundant whitespaces.
+ */
 function normalizeText(value) {
   return String(value || "")
     .toLowerCase()
@@ -26,6 +31,10 @@ function normalizeText(value) {
     .trim();
 }
 
+/**
+ * 2. Deterministic Date Parsing
+ * Parses date formats dd/mm or dd/mm/yyyy.
+ */
 function parseDate(value) {
   const match = value.match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?/);
   if (!match) return null;
@@ -36,9 +45,12 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
+/**
+ * Calculates current upcoming weekend (Saturday to Sunday)
+ */
 function getThisWeekend() {
   const today = new Date();
-  const day = today.getDay();
+  const day = today.getDay(); // 0: Sunday, 6: Saturday
   const daysUntilSaturday = (6 - day + 7) % 7 || 7;
   const checkIn = new Date(today);
   checkIn.setDate(today.getDate() + daysUntilSaturday);
@@ -50,12 +62,18 @@ function getThisWeekend() {
   };
 }
 
+/**
+ * Relative date offset generator
+ */
 function getRelativeDate(daysFromToday) {
   const date = new Date();
   date.setDate(date.getDate() + daysFromToday);
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Financial Currency Unit Normalizer (VND)
+ */
 function parseMoney(rawValue, unit = "") {
   const normalizedValue = String(rawValue).replace(",", ".");
   const value = Number(normalizedValue);
@@ -66,11 +84,23 @@ function parseMoney(rawValue, unit = "") {
   return Math.round(Number(String(rawValue).replace(/[.,]/g, "")));
 }
 
+/**
+ * 3. Semantic Slot-Filling & Intent Classification Engine
+ */
 function extractFilters(text) {
-  const filter = {};
   const normalizedText = normalizeText(text);
 
-  // 1. Nhận diện Thành phố
+  // Default Intent Classification
+  let intent = "SEARCH_HOTEL";
+  if (/^(chao|xin chao|hello|hi|helo|alo|hey)\b/.test(normalizedText)) {
+    intent = "GREETING";
+  } else if (/^(tro giup|help|huong dan|ban la ai)\b/.test(normalizedText)) {
+    intent = "HELP";
+  }
+
+  const filter = { intent };
+
+  // Slot: City / Destination
   for (const [displayName, queryName] of CITY_ALIASES) {
     if (
       normalizedText.includes(normalizeText(displayName)) ||
@@ -87,7 +117,7 @@ function extractFilters(text) {
     }
   }
 
-  // 2. Nhận diện Sát biển / Giáp biển
+  // Slot: Beachfront / Sea view
   if (
     normalizedText.includes("sat bien") ||
     normalizedText.includes("giap bien") ||
@@ -99,7 +129,7 @@ function extractFilters(text) {
     filter.is_beachfront = true;
   }
 
-  // 3. Nhận diện Gần trung tâm
+  // Slot: Near Center
   if (
     normalizedText.includes("gan trung tam") ||
     normalizedText.includes("trung tam") ||
@@ -108,7 +138,7 @@ function extractFilters(text) {
     filter.near_center = true;
   }
 
-  // 4. Nhận diện Giá tối đa
+  // Slot: Price Range & Maximum Budget
   const rangeMatch = normalizedText.match(
     /([\d.,]+)\s*(trieu|tr|k|nghin)?\s*(?:den|toi)\s*([\d.,]+)\s*(trieu|tr|k|nghin)?/,
   );
@@ -122,14 +152,14 @@ function extractFilters(text) {
     if (priceMatch) filter.maxPrice = parseMoney(priceMatch[1], priceMatch[2]);
   }
 
+  // Slang & Common Price Patterns
   if (
     normalizedText.includes("1.5 trieu") ||
     normalizedText.includes("1,5 trieu") ||
     normalizedText.includes("1tr5") ||
-    normalizedText.includes("1.5tr")
+    normalizedText.includes("1.5tr") ||
+    normalizedText.includes("trieu ruoi")
   ) {
-    filter.maxPrice = 1500000;
-  } else if (normalizedText.includes("trieu ruoi")) {
     filter.maxPrice = 1500000;
   } else if (
     normalizedText.includes("2 trieu") ||
@@ -143,7 +173,7 @@ function extractFilters(text) {
     filter.maxPrice = 1000000;
   }
 
-  // 5. Nhận diện Thời gian
+  // Slot: Temporal Stay Dates (Check-in & Check-out)
   const checkIn = parseDate(normalizedText);
   if (checkIn) {
     const date = new Date(`${checkIn}T00:00:00`);
@@ -170,26 +200,94 @@ function extractFilters(text) {
   return filter;
 }
 
-// ─── HÀM XỬ LÝ CHATBOT VÀ TRẢ VỀ ĐẦU DÒNG CHUẨN BOOKING.COM ───
+/**
+ * 4. Multi-Turn Context Memory Restoration
+ * Queries previous turn's extracted_filter for the same session
+ * and merges it with current turn slots.
+ */
+async function getMergedContext(sessionId, currentFilter) {
+  try {
+    const historyRes = await pool.query(
+      `SELECT extracted_filter 
+       FROM public.chatbot_log 
+       WHERE session_id = $1 AND role = 'user' AND extracted_filter IS NOT NULL 
+       ORDER BY created_at DESC 
+       LIMIT 1`,
+      [sessionId],
+    );
+
+    if (historyRes.rows.length === 0 || !historyRes.rows[0].extracted_filter) {
+      return currentFilter;
+    }
+
+    const previousFilter =
+      typeof historyRes.rows[0].extracted_filter === "string"
+        ? JSON.parse(historyRes.rows[0].extracted_filter)
+        : historyRes.rows[0].extracted_filter;
+
+    // Merge: Current turn properties override previous turn properties
+    return {
+      ...previousFilter,
+      ...currentFilter,
+      intent: currentFilter.intent || previousFilter.intent || "SEARCH_HOTEL",
+    };
+  } catch (err) {
+    console.warn("Context merge warning:", err.message);
+    return currentFilter;
+  }
+}
+
+/**
+ * 5. Main Chat Controller (Slot Parsing, Querying, Fallback, Logging)
+ */
 async function handleChatMessage(req, res, next) {
   const userId = req.user?.id || req.auth?.sub || null;
   const { message, session_id = "session_default" } = req.body || {};
 
+  // Exception 3a: Message validation
   if (!message || !message.trim()) {
     return res
       .status(400)
-      .json({ message: "Nội dung tin nhắn không được để trống." });
+      .json({
+        success: false,
+        message: "Nội dung tin nhắn không được để trống.",
+      });
   }
 
   try {
-    const extractedFilter = extractFilters(message.trim());
+    const rawFilter = extractFilters(message.trim());
+    const extractedFilter = await getMergedContext(session_id, rawFilter);
+
+    // Short-circuit greeting intent
+    if (
+      extractedFilter.intent === "GREETING" &&
+      !extractedFilter.city &&
+      !extractedFilter.maxPrice
+    ) {
+      const greetingReply =
+        "Xin chào! Tôi là trợ lý du lịch ảo GoStay. Tôi có thể giúp bạn tìm phòng khách sạn giá tốt, view biển hoặc gợi ý điểm đến phù hợp ngân sách. Bạn dự định đi đâu?";
+      await logTurn(
+        userId,
+        session_id,
+        message.trim(),
+        extractedFilter,
+        greetingReply,
+      );
+      return res.json({
+        success: true,
+        reply: greetingReply,
+        suggestions: [],
+        filter: extractedFilter,
+      });
+    }
+
     const checkIn =
       extractedFilter.checkIn || new Date().toISOString().slice(0, 10);
     const checkOut =
       extractedFilter.checkOut ||
       new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 
-    // Điều kiện Sát biển linh hoạt: cột is_beachfront hoặc các từ khóa thông dụng
+    // Flexible Beachfront SQL condition
     const isBeachfrontCondition = `
       (
         COALESCE(h.is_beachfront, false) = true
@@ -206,6 +304,9 @@ async function handleChatMessage(req, res, next) {
       )
     `;
 
+    /**
+     * Parameterized Query Builder with Real-time Nightly Availability CTE
+     */
     const queryRooms = async (withBeachfront = true, withNearCenter = true) => {
       const params = [checkIn, checkOut];
       let paramIdx = 3;
@@ -265,7 +366,7 @@ async function handleChatMessage(req, res, next) {
         WHERE h.status::text IN ('active', 'approved')
       `;
 
-      if (extractedFilter.city) {
+      if (extractedFilter.city && extractedFilter.cityQuery) {
         params.push(`%${extractedFilter.cityQuery[0]}%`);
         params.push(`%${extractedFilter.cityQuery[1]}%`);
         roomQuery += ` AND (
@@ -305,29 +406,32 @@ async function handleChatMessage(req, res, next) {
       return qRes.rows;
     };
 
-    // 1. Chạy truy vấn với đầy đủ tiêu chí
+    // ── Exception 5a: Cascading Relaxation Execution ──
+    // Step 1: Strict matching with all slots
     let matchedRooms = await queryRooms(true, true);
 
-    // 2. Fallback thông minh: nếu chưa tìm thấy, nới lỏng tiêu chí biển để luôn gợi ý được khách sạn cho khách
+    // Step 2: Relax beachfront constraint if strict yields empty
     if (matchedRooms.length === 0 && extractedFilter.is_beachfront) {
       matchedRooms = await queryRooms(false, true);
     }
+
+    // Step 3: Relax center distance if still empty
     if (matchedRooms.length === 0) {
       matchedRooms = await queryRooms(false, false);
     }
 
-    // ── TẠO CÂU TRẢ LỜI CHUẨN ĐẦU DÒNG NHƯ BOOKING.COM ──
+    // Response construction
     let botReply = "";
     if (matchedRooms.length > 0) {
       const cityName = extractedFilter.city
         ? extractedFilter.city.charAt(0).toUpperCase() +
           extractedFilter.city.slice(1)
-        : "Vũng Tàu";
+        : "khu vực bạn yêu cầu";
       const priceText = extractedFilter.maxPrice
         ? `với giá dưới ${(extractedFilter.maxPrice / 1000000).toLocaleString("vi-VN")} triệu`
         : "hợp lý";
 
-      botReply = `Tôi đã tìm thấy một số lựa chọn tuyệt vời cho bạn ở ${cityName} ${priceText} cho cuối tuần này. Tất cả các khách sạn này đều nằm trong ngân sách của bạn:\n\n`;
+      botReply = `Tôi đã tìm thấy một số lựa chọn tuyệt vời cho bạn ở ${cityName} ${priceText} cho chuyến đi này. Tất cả các khách sạn này đều nằm trong ngân sách của bạn:\n\n`;
 
       matchedRooms.forEach((r, index) => {
         const ratingScore = Number(r.average_rating).toFixed(1);
@@ -349,28 +453,18 @@ async function handleChatMessage(req, res, next) {
         botReply += `   • ${comment}\n\n`;
       });
 
-      botReply += `Tất cả các khách sạn này đều nằm trong ngân sách của bạn và có thể là những lựa chọn tuyệt vời cho chuyến đi của bạn. Bạn có muốn biết thêm thông tin chi tiết về một trong số chúng không?`;
+      botReply += `Tất cả các khách sạn này đều đang sẵn sàng đón khách. Bạn có muốn biết thêm thông tin chi tiết về một trong số chúng không?`;
     } else {
-      botReply = `Tôi chưa tìm thấy khách sạn nào ở ${extractedFilter.city || "khu vực này"} thỏa mãn mức giá dưới ${(extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}k cho cuối tuần này. Bạn có muốn thử nâng ngân sách lên một chút không?`;
+      botReply = `Tôi chưa tìm thấy khách sạn nào ở ${extractedFilter.city || "khu vực này"} thỏa mãn mức giá dưới ${(extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}k cho thời gian yêu cầu. Bạn có muốn thử nâng ngân sách lên một chút không?`;
     }
 
-    // Ghi vết vào bảng chatbot_log
-    await pool.query(
-      `INSERT INTO public.chatbot_log (
-         id, user_id, session_id, role, message, extracted_filter, created_at
-       ) VALUES (
-         gen_random_uuid(), $1, $2, 'user', $3, $4, NOW()
-       )`,
-      [userId, session_id, message.trim(), JSON.stringify(extractedFilter)],
-    );
-
-    await pool.query(
-      `INSERT INTO public.chatbot_log (
-         id, user_id, session_id, role, message, extracted_filter, created_at
-       ) VALUES (
-         gen_random_uuid(), $1, $2, 'assistant', $3, NULL, NOW()
-       )`,
-      [userId, session_id, botReply],
+    // Save audit log to database
+    await logTurn(
+      userId,
+      session_id,
+      message.trim(),
+      extractedFilter,
+      botReply,
     );
 
     return res.json({
@@ -384,8 +478,32 @@ async function handleChatMessage(req, res, next) {
       },
     });
   } catch (error) {
-    console.error("❌ LỖI CHATBOT:", error);
+    console.error("❌ CHATBOT ERROR:", error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+async function logTurn(userId, sessionId, userMsg, filterObj, botMsg) {
+  try {
+    await pool.query(
+      `INSERT INTO public.chatbot_log (
+         id, user_id, session_id, role, message, extracted_filter, created_at
+       ) VALUES (
+         gen_random_uuid(), $1, $2, 'user', $3, $4, NOW()
+       )`,
+      [userId, sessionId, userMsg, JSON.stringify(filterObj)],
+    );
+
+    await pool.query(
+      `INSERT INTO public.chatbot_log (
+         id, user_id, session_id, role, message, extracted_filter, created_at
+       ) VALUES (
+         gen_random_uuid(), $1, $2, 'assistant', $3, NULL, NOW()
+       )`,
+      [userId, sessionId, botMsg],
+    );
+  } catch (e) {
+    console.warn("Could not log chat turn:", e.message);
   }
 }
 
