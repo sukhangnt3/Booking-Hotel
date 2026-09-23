@@ -161,9 +161,20 @@ async function createBooking(req, res, next) {
     const inTimestamp = new Date(`${inDateStr}T${formattedInTime}`);
     let outTimestamp = new Date(`${outDateStr}T${formattedOutTime}`);
 
+    // ĐỒNG BỘ: Thuê giờ / buổi / đêm vắt qua ngày
+    const inHourNum = parseInt(finalCheckInTime.slice(0, 2), 10);
     if (currentRentalType === "HOUR" || currentRentalType === "HALF_DAY") {
       if (outTimestamp <= inTimestamp) {
         outTimestamp = addDays(outTimestamp, 1);
+        outDateStr = outTimestamp.toISOString().slice(0, 10);
+      }
+    } else if (currentRentalType === "OVERNIGHT") {
+      // Nếu check-in lúc rạng sáng (0h - 5h) thì cùng ngày hôm đó trả phòng lúc 11h
+      if (inHourNum >= 0 && inHourNum <= 5) {
+        outDateStr = inDateStr;
+        outTimestamp = new Date(`${outDateStr}T${formattedOutTime}`);
+      } else if (outTimestamp <= inTimestamp) {
+        outTimestamp = addDays(new Date(inDateStr), 1);
         outDateStr = outTimestamp.toISOString().slice(0, 10);
       }
     } else {
@@ -199,19 +210,21 @@ async function createBooking(req, res, next) {
 
     await client.query("BEGIN");
 
-    // Đảm bảo bảng booking có đủ các cột cần thiết
+    // Đảm bảo bảng booking có đủ các cột cần thiết kể cả cọc
     await client
       .query(
         `
       ALTER TABLE public.booking 
       ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00',
       ADD COLUMN IF NOT EXISTS checkout_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00',
-      ADD COLUMN IF NOT EXISTS rental_type VARCHAR(50) DEFAULT 'DAY';
+      ADD COLUMN IF NOT EXISTS rental_type VARCHAR(50) DEFAULT 'DAY',
+      ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) DEFAULT 'FULL',
+      ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
     `,
       )
       .catch(() => {});
 
-    // Lấy thông tin khách sạn và thời gian dọn phòng quy định (buffer minutes)
+    // Lấy thông tin khách sạn và buffer dọn phòng
     const hotelQueryRes = await client.query(
       `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder,
               COALESCE(hourly_grace_minutes, 30) AS cleaning_buffer_minutes
@@ -247,7 +260,6 @@ async function createBooking(req, res, next) {
       : Number(hotelData.commission_rate ?? 18.0);
 
     if (room_id) {
-      // 🌟 LẤY CHÍNH XÁC TỔNG SỐ LƯỢNG PHÒNG VẬT LÝ CỦA HẠNG PHÒNG NÀY
       const roomStockRes = await client.query(
         `SELECT r.id, r.name, r.base_price,
                 COALESCE(
@@ -273,11 +285,7 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
-      // 🌟 THUẬT TOÁN ĐẾM TẤT CẢ CÁC ĐƠN ĐANG CHIẾM PHÒNG (BẤT KỂ LỄ TÂN ĐÃ CHỌN SỐ PHÒNG HAY CHƯA):
-      // Bao gồm:
-      // 1. Đơn đang chờ lễ tân gán phòng (status = 'pending' có thanh toán hoặc đang giữ chỗ 15p)
-      // 2. Đơn đã xác nhận (status = 'confirmed')
-      // 3. Đơn đang lưu trú (status = 'checked_in')
+      // ĐỒNG BỘ: Đếm chính xác cả đơn thanh toán cọc lẫn thanh toán full
       const conflictCheckSql = `
         SELECT COALESCE(SUM(br.quantity), 0)::int AS booked_count
         FROM public.booking b
@@ -288,11 +296,10 @@ async function createBooking(req, res, next) {
             b.status IN ('confirmed', 'checked_in')
             OR (
               b.status = 'pending' 
-              AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
+              AND (b.payment_status IN ('paid', 'partially_paid') OR COALESCE(b.deposit_amount, 0) > 0 OR b.created_at >= NOW() - INTERVAL '15 minutes')
             )
           )
           AND (
-            -- Khoảng thời gian giao thoa có tính thêm thời gian dọn phòng:
             $2::timestamp < (b.checkout_date + COALESCE(b.checkout_time, '12:00:00'::time) + ($4 || ' minutes')::interval)
             AND $3::timestamp > (b.checkin_date + COALESCE(b.checkin_time, '14:00:00'::time))
           );
@@ -307,7 +314,6 @@ async function createBooking(req, res, next) {
 
       const currentlyBooked = Number(conflictRes.rows[0]?.booked_count || 0);
 
-      // 🌟 NẾU SỐ LƯỢNG ĐÃ ĐẶT + SỐ LƯỢNG KHÁCH MỚI MUỐN ĐẶT > TỔNG PHÒNG VẬT LÝ => CHẶN NGAY!
       if (currentlyBooked + bookingQty > maxStock) {
         await client.query("ROLLBACK");
         client.release();
@@ -335,9 +341,11 @@ async function createBooking(req, res, next) {
     const isDeposit = payment_type === "DEPOSIT_30";
     const depAmount = isDeposit
       ? Math.round(Number(deposit_amount) || finalPrice * 0.3)
-      : finalPrice;
+      : 0;
     const remAmount = isDeposit ? finalPrice - depAmount : 0;
-    const amountToPayNow = Math.round(Number(expected_amount) || depAmount);
+    const amountToPayNow = Math.round(
+      Number(expected_amount) || (isDeposit ? depAmount : finalPrice),
+    );
 
     let initialStatus = "pending";
     let initialPaymentStatus = "unpaid";
@@ -348,19 +356,22 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
+    // ĐỒNG BỘ: Lưu thêm payment_type và deposit_amount vào public.booking
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
         checkin_date, checkout_date, checkin_time, checkout_time, rental_type,
         adult_total, children_total, customer_name, guest_email, guest_phone, special_require,
         status, payment_status, subtotal, discount, service_total,
-        total_price, hotel_payout, room_number, receptionist_assigned, created_at, updated_at
+        total_price, hotel_payout, payment_type, deposit_amount,
+        room_number, receptionist_assigned, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6::date, $7::date, $8::time, $9::time, $10,
         $11, $12, $13, $14, $15, $16,
         $17, $18, $19, $20, 0,
-        $21, $22, NULL, false, NOW(), NOW()
+        $21, $22, $23, $24,
+        NULL, false, NOW(), NOW()
       ) RETURNING *;
     `;
 
@@ -390,6 +401,8 @@ async function createBooking(req, res, next) {
       discountVal,
       finalPrice,
       hotelPayout,
+      payment_type,
+      depAmount,
     ]);
 
     const newBooking = insertRes.rows[0];
@@ -514,17 +527,26 @@ async function confirmPayment(req, res, next) {
         ? paidAmountReq
         : Number(booking.expected_amount || booking.total_price);
 
+    const isDeposit = booking.payment_type === "DEPOSIT_30";
+    const isPaidFull = actualPaid >= Number(booking.total_price);
+    const newPayStatus = isPaidFull
+      ? "paid"
+      : isDeposit
+        ? "partially_paid"
+        : "paid";
+
     await client.query(
       `UPDATE public.booking
-       SET payment_status = 'paid',
+       SET payment_status = $1,
+           deposit_amount = CASE WHEN $2 THEN $3 ELSE deposit_amount END,
            status = 'pending'::public.booking_status_enum,
            cancelled_at = NULL,
            receptionist_assigned = false,
            room_number = NULL,
            confirmed_at = NULL,
            updated_at = NOW()
-       WHERE id = $1`,
-      [booking.id],
+       WHERE id = $4`,
+      [newPayStatus, isDeposit, actualPaid, booking.id],
     );
 
     let paymentId = booking.payment_id;
@@ -554,7 +576,7 @@ async function confirmPayment(req, res, next) {
       message: "✓ Xác nhận thanh toán thành công!",
       bookingCode: booking.booking_code,
       paidAmount: actualPaid,
-      status: "paid",
+      status: newPayStatus,
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -573,6 +595,8 @@ async function getBookingByCode(req, res, next) {
          COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
          COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
          COALESCE(b.rental_type, 'DAY') AS rental_type,
+         COALESCE(b.payment_type, 'FULL') AS payment_type,
+         COALESCE(b.deposit_amount, 0) AS deposit_amount,
          h.name AS hotel_name, 
          h.address AS hotel_address, 
          h.city AS hotel_city,
@@ -611,14 +635,17 @@ async function getBookingByCode(req, res, next) {
       String(row.booking_code).startsWith("DP");
 
     const isDep =
-      !isWalkIn &&
-      ((expAmount > 0 && expAmount < total) ||
-        (paidMoney > 0 && paidMoney < total));
+      row.payment_type === "DEPOSIT_30" ||
+      (!isWalkIn &&
+        ((expAmount > 0 && expAmount < total) ||
+          (paidMoney > 0 && paidMoney < total)));
 
     const dep = isDep
-      ? paidMoney > 0
-        ? paidMoney
-        : expAmount
+      ? Number(row.deposit_amount) > 0
+        ? Number(row.deposit_amount)
+        : paidMoney > 0
+          ? paidMoney
+          : expAmount
       : isWalkIn
         ? paidMoney
         : total;
@@ -666,6 +693,8 @@ async function getMyBookings(req, res, next) {
          COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
          COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
          COALESCE(b.rental_type, 'DAY') AS rental_type,
+         COALESCE(b.payment_type, 'FULL') AS payment_type,
+         COALESCE(b.deposit_amount, 0) AS deposit_amount,
          h.name AS hotel_name, 
          h.address AS hotel_address, 
          h.city AS hotel_city,

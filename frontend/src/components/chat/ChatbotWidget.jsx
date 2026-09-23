@@ -17,6 +17,11 @@ import {
   Plus,
   Loader2,
   Bot,
+  Clock,
+  Moon,
+  Sun,
+  Hourglass,
+  Zap,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import apiClient from "@/services/apiClient";
@@ -42,6 +47,21 @@ const parseImageUrl = (img) => {
   return `${BACKEND_BASE_URL}${cleanPath}`;
 };
 
+const QUICK_SUGGESTIONS = [
+  { label: "⚡ Thuê phòng theo giờ", text: "Tìm phòng thuê theo giờ giá tốt" },
+  { label: "🌊 Khách sạn gần biển", text: "Tìm khách sạn gần biển view đẹp" },
+  { label: "💰 Phòng dưới 500k", text: "Tìm khách sạn giá dưới 500k" },
+  { label: "🌙 Thuê phòng qua đêm", text: "Tìm khách sạn thuê qua đêm" },
+  {
+    label: "💳 Phương thức thanh toán",
+    text: "Hệ thống hỗ trợ những phương thức thanh toán nào?",
+  },
+  {
+    label: "📞 Hotline tổng đài GoStay",
+    text: "Cho tôi số hotline tổng đài hỗ trợ GoStay",
+  },
+];
+
 export default function ChatbotWidget() {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
@@ -50,7 +70,7 @@ export default function ChatbotWidget() {
       id: "welcome",
       role: "assistant",
       message:
-        "Xin chào! Tôi là trợ lý du lịch ảo GoStay. Tôi có thể giúp bạn tìm phòng khách sạn giá tốt, gợi ý điểm đến hấp dẫn hoặc hỗ trợ giải đáp thắc mắc về chuyến đi. Bạn cần hỗ trợ gì hôm nay?",
+        "Xin chào! Tôi là trợ lý du lịch ảo GoStay. Tôi có thể giúp bạn tìm phòng theo giờ, qua đêm hoặc theo ngày với giá tốt nhất giữa các cơ sở lưu trú. Bạn dự định đi đâu hôm nay?",
     },
   ]);
   const [inputMessage, setInputMessage] = useState("");
@@ -106,7 +126,7 @@ export default function ChatbotWidget() {
           id: (Date.now() + 1).toString(),
           role: "assistant",
           message:
-            "Dạ tạm thời em đang bận một chút, bạn thử lại sau ít giây nhé!",
+            "Dạ tôi đã ghi nhận yêu cầu của bạn. Bạn thử lại sau ít giây hoặc chọn các gợi ý bên dưới nhé!",
         },
       ]);
     } finally {
@@ -120,7 +140,7 @@ export default function ChatbotWidget() {
         id: Date.now().toString(),
         role: "assistant",
         message:
-          "Xin chào! Tôi là trợ lý du lịch ảo GoStay. Tôi có thể giúp bạn tìm phòng khách sạn giá tốt, gợi ý điểm đến hấp dẫn hoặc hỗ trợ giải đáp thắc mắc về chuyến đi. Bạn cần hỗ trợ gì hôm nay?",
+          "Xin chào! Tôi là trợ lý du lịch ảo GoStay. Tôi có thể giúp bạn tìm phòng theo giờ, qua đêm hoặc theo ngày với giá tốt nhất giữa các cơ sở lưu trú. Bạn dự định đi đâu hôm nay?",
       },
     ]);
   };
@@ -132,9 +152,16 @@ export default function ChatbotWidget() {
   const formatVND = (price) =>
     Number(price || 0).toLocaleString("vi-VN") + " ₫";
 
+  const getPriceLabel = (rentalType) => {
+    if (rentalType === "HOUR") return "1 giờ đầu";
+    if (rentalType === "OVERNIGHT") return "qua đêm";
+    if (rentalType === "HALF_DAY") return "1 buổi";
+    return "mỗi đêm";
+  };
+
   return (
     <div className="fixed bottom-6 right-6 z-50 font-sans select-none">
-      {/* NÚT BẬT CHAT NỔI THEO PHONG CÁCH GHOSTAY */}
+      {/* NÚT BẬT CHAT NỔI */}
       {!isOpen && (
         <button
           type="button"
@@ -147,10 +174,10 @@ export default function ChatbotWidget() {
         </button>
       )}
 
-      {/* CỬA SỔ CHAT AI (CHUẨN GIAO DIỆN GHOSTAY) */}
+      {/* CỬA SỔ CHAT AI */}
       {isOpen && (
         <div className="bg-white w-[375px] sm:w-[460px] h-[640px] rounded-3xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-          {/* HEADER CHAT SANG TRỌNG VỚI TÔNG XANH NAVY #003580 */}
+          {/* HEADER CHAT */}
           <div className="bg-[#003580] text-white px-5 py-4 flex items-center justify-between shadow-xs">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-2xl bg-white/10 flex items-center justify-center text-white border border-white/10">
@@ -162,6 +189,9 @@ export default function ChatbotWidget() {
                     GoStay AI
                   </h3>
                 </div>
+                <span className="text-[10px] text-blue-200 mt-1 block">
+                  Trợ lý tư vấn & tìm phòng thông minh
+                </span>
               </div>
             </div>
 
@@ -186,8 +216,31 @@ export default function ChatbotWidget() {
 
           {/* KHUNG NỘI DUNG CHAT */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50/50 text-xs">
+            {/* GỢI Ý CÂU HỎI NHANH */}
+            {messages.length === 1 && (
+              <div className="space-y-2 pt-1 animate-fadeIn">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block flex items-center gap-1">
+                  <Zap size={11} className="text-amber-500" /> Gợi ý tìm kiếm
+                  nhanh:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {QUICK_SUGGESTIONS.map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSendMessage(item.text)}
+                      className="px-2.5 py-1 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-xl text-gray-700 hover:text-[#003580] text-[11px] font-semibold shadow-2xs transition cursor-pointer"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {messages.map((m) => {
               const isBot = m.role === "assistant";
+              const currentRentalType = m.filter?.rentalType || "DAY";
 
               return (
                 <div key={m.id} className="space-y-3">
@@ -206,7 +259,7 @@ export default function ChatbotWidget() {
                     </div>
                   </div>
 
-                  {/* BĂNG CHUYỀN THẺ KHÁCH SẠN VUỐT NGANG (CAROUSEL SLIDER) */}
+                  {/* BĂNG CHUYỀN THẺ KHÁCH SẠN */}
                   {isBot && m.suggestions && m.suggestions.length > 0 && (
                     <div className="space-y-2.5 pt-1">
                       <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar snap-x snap-mandatory">
@@ -216,19 +269,26 @@ export default function ChatbotWidget() {
                             h.hotel_image || h.image || h.thumbnail,
                           );
                           const isFav = Boolean(favorites[targetId]);
-                          const priceNum = Number(h.price || 850000);
-                          const originalPrice = Math.round(priceNum * 1.35);
+                          const priceNum = Number(h.price || 100000);
+                          const originalPrice = Math.round(priceNum * 1.25);
+                          const ratingNum = Number(h.average_rating || 0);
+                          const reviewCount = Number(h.review_count || 0);
+
+                          // Phân biệt rõ Tên Hạng Phòng và Tên Khách Sạn
+                          const mainTitle =
+                            h.room_name || h.hotel_name || h.name;
+                          const subHotelName = h.hotel_name || h.name;
 
                           return (
                             <div
                               key={h.room_id || targetId}
-                              className="w-[215px] sm:w-[225px] bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between shrink-0 snap-start select-none"
+                              className="w-[220px] sm:w-[230px] bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between shrink-0 snap-start select-none"
                             >
                               {/* ẢNH & NÚT TIM */}
                               <div className="relative h-32 w-full bg-gray-100 overflow-hidden">
                                 <img
                                   src={roomImg}
-                                  alt={h.hotel_name || h.name}
+                                  alt={mainTitle}
                                   className="w-full h-full object-cover"
                                 />
                                 <button
@@ -247,47 +307,63 @@ export default function ChatbotWidget() {
                                 </button>
                               </div>
 
-                              {/* THÔNG TIN CHỖ NGHỈ */}
+                              {/* THÔNG TIN CHỖ NGHỈ: HIỂN THỊ RÕ HẠNG PHÒNG */}
                               <div className="p-3 space-y-2 flex-1 flex flex-col justify-between">
                                 <div className="space-y-1">
                                   <div className="flex text-amber-400 text-[10px]">
                                     {"⭐".repeat(h.star_rating || 3)}
                                   </div>
 
-                                  <h4 className="font-black text-xs text-[#0a2540] line-clamp-2 leading-tight">
-                                    {h.hotel_name || h.name}
+                                  {/* TÊN HẠNG PHÒNG LÀM CHỦ ĐẠO */}
+                                  <h4
+                                    className="font-black text-xs text-[#0a2540] line-clamp-1 leading-tight"
+                                    title={mainTitle}
+                                  >
+                                    {mainTitle}
                                   </h4>
 
-                                  <p className="text-[10px] text-gray-500 font-medium">
-                                    {h.city || "Việt Nam"}
+                                  {/* TÊN KHÁCH SẠN VÀ THÀNH PHỐ Ở DÒNG PHỤ */}
+                                  <p className="text-[10px] text-blue-700 font-bold truncate">
+                                    🏨 {subHotelName} • {h.city || "Việt Nam"}
                                   </p>
 
                                   {/* ĐIỂM ĐÁNH GIÁ */}
-                                  <div className="flex items-center gap-1.5 pt-1">
-                                    <span className="bg-[#003580] text-white font-black text-[10px] px-1.5 py-0.5 rounded-md">
-                                      {Number(h.average_rating || 8.5).toFixed(
-                                        1,
-                                      )}
-                                    </span>
-                                    <span className="text-[10px] font-bold text-gray-700">
-                                      {Number(h.average_rating || 8.5) >= 9
-                                        ? "Tuyệt vời"
-                                        : "Rất tốt"}
-                                    </span>
-                                    <span className="text-[9px] text-gray-400">
-                                      • {h.review_count || 120} đánh giá
-                                    </span>
-                                  </div>
+                                  {reviewCount > 0 && ratingNum > 0 ? (
+                                    <div className="flex items-center gap-1.5 pt-1">
+                                      <span className="bg-[#003580] text-white font-black text-[10px] px-1.5 py-0.5 rounded-md">
+                                        {ratingNum.toFixed(1)}
+                                      </span>
+                                      <span className="text-[10px] font-bold text-gray-700">
+                                        {ratingNum >= 9
+                                          ? "Tuyệt vời"
+                                          : "Rất tốt"}
+                                      </span>
+                                      <span className="text-[9px] text-gray-400 truncate">
+                                        • {reviewCount} đánh giá
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1 pt-1 text-[10px] font-bold text-emerald-700">
+                                      <span className="bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md">
+                                        Chỗ nghỉ mới
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
 
-                                {/* GIÁ TIỀN */}
+                                {/* GIÁ TIỀN CHUẨN XÁC */}
                                 <div className="pt-2 border-t border-gray-100">
-                                  <span className="text-[9px] text-gray-400 line-through block tabular-nums">
-                                    {originalPrice.toLocaleString("vi-VN")} ₫
+                                  <span className="text-[9px] text-gray-400 block font-semibold">
+                                    Giá {getPriceLabel(currentRentalType)} từ:
                                   </span>
-                                  <span className="text-sm font-black text-[#ff6a00] block tabular-nums">
-                                    {priceNum.toLocaleString("vi-VN")} ₫
-                                  </span>
+                                  <div className="flex items-baseline gap-1.5">
+                                    <span className="text-sm font-black text-[#ff6a00] tabular-nums">
+                                      {formatVND(priceNum)}
+                                    </span>
+                                    <span className="text-[9px] text-gray-400 line-through tabular-nums">
+                                      {formatVND(originalPrice)}
+                                    </span>
+                                  </div>
                                 </div>
 
                                 {/* THAO TÁC */}
@@ -296,7 +372,15 @@ export default function ChatbotWidget() {
                                     type="button"
                                     onClick={() => {
                                       setIsOpen(false);
-                                      navigate(`/hotel/${targetId}`);
+                                      const checkIn = m.filter?.checkIn || "";
+                                      const checkOut = m.filter?.checkOut || "";
+                                      const rental =
+                                        m.filter?.rentalType || "DAY";
+                                      const hours = m.filter?.hours || 2;
+                                      const adults = m.filter?.adults || 1;
+                                      navigate(
+                                        `/hotel/${targetId}?rentalType=${rental}&hours=${hours}&adults=${adults}&checkIn=${checkIn}&checkOut=${checkOut}`,
+                                      );
                                     }}
                                     className="w-full py-2 bg-[#003580] hover:bg-blue-900 text-white font-bold text-[11px] rounded-xl shadow-2xs flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95"
                                   >
@@ -307,7 +391,7 @@ export default function ChatbotWidget() {
                                     type="button"
                                     onClick={() =>
                                       handleSendMessage(
-                                        `Cho tôi biết thêm thông tin chi tiết về khách sạn ${h.hotel_name || h.name}`,
+                                        `Cho tôi biết thêm thông tin chi tiết về khách sạn ${subHotelName}`,
                                       )
                                     }
                                     className="w-full py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold text-[11px] rounded-xl border border-gray-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
@@ -330,8 +414,11 @@ export default function ChatbotWidget() {
                             const dest = m.filter?.city || "";
                             const checkIn = m.filter?.checkIn || "";
                             const checkOut = m.filter?.checkOut || "";
+                            const rental = m.filter?.rentalType || "DAY";
+                            const hours = m.filter?.hours || 2;
+                            const adults = m.filter?.adults || 1;
                             navigate(
-                              `/hotels?destination=${encodeURIComponent(dest)}&checkIn=${checkIn}&checkOut=${checkOut}`,
+                              `/hotels?destination=${encodeURIComponent(dest)}&checkIn=${checkIn}&checkOut=${checkOut}&rentalType=${rental}&hours=${hours}&adults=${adults}`,
                             );
                           }}
                           className="font-bold text-[#006ce4] hover:underline flex items-center gap-1.5 cursor-pointer"
@@ -387,7 +474,7 @@ export default function ChatbotWidget() {
             >
               <input
                 type="text"
-                placeholder="Nhập yêu cầu tìm phòng (VD: Khách sạn ở Đà Nẵng dưới 1 triệu)..."
+                placeholder="Nhập yêu cầu (VD: Tìm phòng theo giờ, gần biển, có hồ bơi)..."
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 className="flex-1 px-4 py-2.5 text-xs bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#003580] focus:bg-white transition font-medium"

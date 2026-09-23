@@ -11,7 +11,7 @@ const safeRequire = (m) => {
 };
 const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
 
-// Tự động đảm bảo migration các cột mở rộng & giá trị enum tồn tại
+// 🌟 TỰ ĐỘNG MIGRATION TOÀN BỘ CỘT CHO BẢNG BOOKING VÀ BẢNG HOTEL (KHÔNG CẦN CHẠY SQL BẰNG TAY) 🌟
 (async () => {
   try {
     await pool
@@ -19,11 +19,13 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
         `
       ALTER TYPE public.booking_payment_status_enum ADD VALUE IF NOT EXISTS 'unpaid';
       ALTER TYPE public.booking_payment_status_enum ADD VALUE IF NOT EXISTS 'paid';
+      ALTER TYPE public.booking_payment_status_enum ADD VALUE IF NOT EXISTS 'partially_paid';
     `,
       )
       .catch(() => {});
 
     await pool.query(`
+      -- Cột mở rộng cho bảng booking
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS room_legs jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS receptionist_assigned boolean DEFAULT false;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00';
@@ -32,6 +34,18 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) DEFAULT 'FULL';
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS guest_declarations jsonb DEFAULT '[]'::jsonb;
+
+      -- Cột giờ cho bảng hotel
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS checkout_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS overnight_checkin_time TIME WITHOUT TIME ZONE DEFAULT '22:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS overnight_checkout_time TIME WITHOUT TIME ZONE DEFAULT '11:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS halfday_checkin_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS halfday_checkout_time TIME WITHOUT TIME ZONE DEFAULT '21:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_start_time TIME WITHOUT TIME ZONE DEFAULT '08:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_end_time TIME WITHOUT TIME ZONE DEFAULT '22:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_grace_minutes INT DEFAULT 15;
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS daily_grace_hours INT DEFAULT 1;
 
       CREATE TABLE IF NOT EXISTS public.temporary_locks (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,6 +59,9 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
+    console.log(
+      "✓ Đã đồng bộ cấu trúc các cột khung giờ và đặt phòng thành công!",
+    );
   } catch (err) {
     console.warn("⚠️ Cảnh báo migration owner columns:", err.message);
   }
@@ -208,7 +225,7 @@ async function getOwnerStats(req, res, next) {
           JOIN public.hotel h ON h.id = b.hotel_id
           WHERE ${hotelFilter} 
             AND b.status != 'cancelled'
-            AND (b.booking_code LIKE 'DP%' OR b.payment_status = 'paid')
+            AND (b.booking_code LIKE 'DP%' OR b.payment_status IN ('paid', 'partially_paid') OR COALESCE(b.deposit_amount, 0) > 0)
             AND ((b.created_at::date BETWEEN $${revParams.length - 1}::date AND $${revParams.length}::date) 
                  OR (b.checkin_date::date BETWEEN $${revParams.length - 1}::date AND $${revParams.length}::date))
         )
@@ -235,7 +252,7 @@ async function getOwnerStats(req, res, next) {
             JOIN public.hotel h ON h.id = b_sub.hotel_id
             WHERE ${hotelFilter} 
               AND b_sub.status != 'cancelled'
-              AND (b_sub.booking_code LIKE 'DP%' OR b_sub.payment_status = 'paid')
+              AND (b_sub.booking_code LIKE 'DP%' OR b_sub.payment_status IN ('paid', 'partially_paid') OR COALESCE(b_sub.deposit_amount, 0) > 0)
           ) b ON ((b.checkin_date::date <= pd.day_date AND b.checkout_date::date >= pd.day_date) 
                   OR (b.created_at::date = pd.day_date))
           GROUP BY pd.day_date
@@ -251,7 +268,7 @@ async function getOwnerStats(req, res, next) {
          JOIN public.hotel h ON h.id = b.hotel_id 
          WHERE ${hotelFilter} 
            AND b.status != 'cancelled' 
-           AND (b.booking_code LIKE 'DP%' OR b.payment_status = 'paid')
+           AND (b.booking_code LIKE 'DP%' OR b.payment_status IN ('paid', 'partially_paid') OR COALESCE(b.deposit_amount, 0) > 0)
            AND ((b.created_at::date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date) 
                 OR (b.checkin_date BETWEEN $${prevParams.length - 1}::date AND $${prevParams.length}::date))`,
         prevParams,
@@ -297,7 +314,7 @@ async function getOwnerStats(req, res, next) {
         baseParams,
       ),
       pool.query(
-        `SELECT b.id, b.booking_code, COALESCE(b.room_number, 'Chưa xếp') AS room, b.customer_name AS guest, (b.total_price - COALESCE(b.subtotal, 0)) AS amount FROM public.booking b JOIN public.hotel h ON h.id = b.hotel_id WHERE ${hotelFilter} AND b.status = 'checked_in' AND b.payment_status != 'paid'`,
+        `SELECT b.id, b.booking_code, COALESCE(b.room_number, 'Chưa xếp') AS room, b.customer_name AS guest, (b.total_price - COALESCE(b.deposit_amount, b.subtotal, 0)) AS amount FROM public.booking b JOIN public.hotel h ON h.id = b.hotel_id WHERE ${hotelFilter} AND b.status = 'checked_in' AND b.payment_status != 'paid'`,
         baseParams,
       ),
       pool.query(
@@ -525,6 +542,8 @@ async function getOwnerBookings(req, res) {
              COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
              COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
              COALESCE(b.rental_type, 'DAY') AS rental_type,
+             COALESCE(b.payment_type, 'FULL') AS payment_type,
+             COALESCE(b.deposit_amount, 0) AS deposit_amount,
              h.name AS hotel_name, 
              COALESCE(u.full_name, b.customer_name) AS customer_name, 
              COALESCE(u.phone, b.guest_phone) AS guest_phone,
@@ -548,7 +567,7 @@ async function getOwnerBookings(req, res) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (ĐÃ SỬA CHUẨN XÁC MÚI GIỜ & CHỐNG LỖI NaN) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (HỖ TRỢ ĐỦ CẢ GIỜ, BUỔI, ĐÊM, NGÀY) ───
 async function getRoomMapData(req, res) {
   try {
     const { hotel_id: hotelId } = req.query;
@@ -557,13 +576,15 @@ async function getRoomMapData(req, res) {
         .status(400)
         .json({ success: false, message: "hotel_id là bắt buộc." });
 
+    // VÁ LỖI: Chỉ hủy đơn pending quá 15 phút nếu KHÔNG có cọc 30%
     await pool
       .query(
         `
       UPDATE public.booking 
       SET status = 'cancelled'::public.booking_status_enum, updated_at = NOW()
       WHERE status = 'pending' 
-        AND (payment_status IS NULL OR payment_status != 'paid')
+        AND (payment_status IS NULL OR (payment_status != 'paid' AND payment_status != 'partially_paid'))
+        AND COALESCE(deposit_amount, 0) = 0
         AND created_at < NOW() - INTERVAL '15 minutes'
     `,
       )
@@ -593,6 +614,8 @@ async function getRoomMapData(req, res) {
                COALESCE(b.checkin_time, '14:00:00'::time) AS checkin_time,
                COALESCE(b.checkout_time, '12:00:00'::time) AS checkout_time,
                COALESCE(b.rental_type, 'DAY') AS rental_type,
+               COALESCE(b.payment_type, 'FULL') AS payment_type,
+               COALESCE(b.deposit_amount, 0) AS deposit_amount,
                p.paid_amount AS payment_paid_amount
         FROM public.booking b
         LEFT JOIN public.payment p ON p.booking_id = b.id
@@ -677,6 +700,8 @@ async function getRoomMapData(req, res) {
           durationText = `${hours} giờ`;
         } else if (match.rental_type === "OVERNIGHT") {
           durationText = "1 đêm";
+        } else if (match.rental_type === "HALF_DAY") {
+          durationText = "1 buổi";
         } else {
           const days = Math.max(1, Math.round(diffMs / (24 * 3600000))) || 1;
           durationText = `${days} ngày`;
@@ -777,7 +802,8 @@ async function getPendingOnlineBookings(req, res) {
              COALESCE(b.rental_type, 'DAY') AS rental_type,
              b.adult_total, b.children_total, b.total_price, b.created_at, b.payment_status, b.status, b.room_number, b.hotel_id,
              COALESCE(p.paid_amount, 0) AS paid_amount, 
-             b.payment_type, b.deposit_amount,
+             COALESCE(b.payment_type, 'FULL') AS payment_type, 
+             COALESCE(b.deposit_amount, 0) AS deposit_amount,
              COALESCE(br.room_name, r.name, 'Phòng tiêu chuẩn') AS room_type_name,
              COALESCE(br.room_id, r.id) AS room_type_id
       FROM public.booking b
@@ -786,7 +812,7 @@ async function getPendingOnlineBookings(req, res) {
       LEFT JOIN public.payment p ON p.booking_id = b.id
       WHERE b.status NOT IN ('checked_in', 'checked_out', 'cancelled') 
         AND TRIM(COALESCE(b.room_number, '')) = ''
-        AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
+        AND (b.payment_status IN ('paid', 'partially_paid') OR COALESCE(b.deposit_amount, 0) > 0 OR b.created_at >= NOW() - INTERVAL '15 minutes')
         ${hotelFilter}
       ORDER BY b.created_at DESC LIMIT 50
     `,
@@ -811,6 +837,8 @@ async function getPendingOnlineBookings(req, res) {
         durationLabel = `${h} giờ`;
       } else if (b.rental_type === "OVERNIGHT") {
         durationLabel = "1 đêm";
+      } else if (b.rental_type === "HALF_DAY") {
+        durationLabel = "1 buổi";
       } else {
         const d = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
         durationLabel = `${d} ngày`;
@@ -998,6 +1026,8 @@ async function createWalkInBooking(req, res) {
         $1, $2, $3, $4::public.booking_status_enum, 
         CASE WHEN $5::numeric >= $6::numeric AND $6::numeric > 0 
              THEN 'paid'::public.booking_payment_status_enum 
+             WHEN $5::numeric > 0 
+             THEN 'partially_paid'::public.booking_payment_status_enum
              ELSE 'unpaid'::public.booking_payment_status_enum 
         END,
         $6::numeric,
@@ -1061,7 +1091,7 @@ async function createWalkInBooking(req, res) {
   }
 }
 
-// ─── 6. CHECK-IN (AN TOÀN TUYỆT ĐỐI) ───
+// ─── 6. CHECK-IN ───
 async function handleOwnerCheckIn(req, res) {
   const client = await pool.connect();
   try {
@@ -1119,7 +1149,6 @@ async function handleOwnerCheckIn(req, res) {
     const newDeposit = prevDeposit + collectedNow;
     const isNowFullyPaid = newDeposit >= totalP;
 
-    // Ép kiểu chuẩn xác các tham số
     const updateRes = await client.query(
       `
       UPDATE public.booking 
@@ -1181,7 +1210,7 @@ async function handleOwnerCheckIn(req, res) {
   }
 }
 
-// ─── 7. TRẢ PHÒNG (KHÔNG CÒN LỖI TRANSACTION ABORTED - THÀNH CÔNG 100%) ───
+// ─── 7. TRẢ PHÒNG ───
 async function handleOwnerCheckOut(req, res) {
   const client = await pool.connect();
   try {
@@ -1196,7 +1225,6 @@ async function handleOwnerCheckOut(req, res) {
 
     await client.query("BEGIN");
 
-    // 1. Tìm và khóa đơn booking
     const currentBookingRes = await client.query(
       `SELECT * FROM public.booking WHERE id::text = $1 OR booking_code = $1 LIMIT 1 FOR UPDATE`,
       [bookingId],
@@ -1216,7 +1244,6 @@ async function handleOwnerCheckOut(req, res) {
       ? Number(total_price)
       : Number(booking.total_price || 0) + extraTotal;
 
-    // 2. Cập nhật booking sang checked_out và payment_status = paid
     const updateRes = await client.query(
       `
       UPDATE public.booking 
@@ -1230,7 +1257,6 @@ async function handleOwnerCheckOut(req, res) {
       [finalTotalPrice, booking.id],
     );
 
-    // 3. Giải phóng phòng vật lý về trạng thái cần dọn dẹp ('dirty')
     if (booking.room_number && booking.hotel_id) {
       const cleanNum = String(booking.room_number).replace(/[^0-9]/g, "");
       await client.query(
@@ -1241,10 +1267,8 @@ async function handleOwnerCheckOut(req, res) {
       );
     }
 
-    // 4. COMMIT NGAY ĐẢM BẢO TRẢ PHÒNG THÀNH CÔNG VĨNH VIỄN
     await client.query("COMMIT");
 
-    // Cập nhật payment ở ngoài transaction (không làm ảnh hưởng kết quả trả phòng)
     pool
       .query(
         `UPDATE public.payment SET paid_amount = $1::numeric, status = 'paid', updated_at = NOW() WHERE booking_id = $2`,
@@ -1442,9 +1466,11 @@ async function deleteOwnerStaff(req, res) {
 
     if (!deleteRes.rowCount) {
       await client.query("ROLLBACK");
-      return res.status(404).json({
-        message: "Không tìm thấy nhân viên lễ tân này trong cơ sở của bạn.",
-      });
+      return res
+        .status(404)
+        .json({
+          message: "Không tìm thấy nhân viên lễ tân này trong cơ sở của bạn.",
+        });
     }
     await client.query("COMMIT");
     return res.json({

@@ -26,13 +26,26 @@ export default function CheckoutPage() {
     "";
 
   const rawPaymentType = searchParams.get("paymentType") || "FULL";
-  const rawTotalAmount = Number(searchParams.get("totalAmount")) || 500000;
-  const isDeposit = rawPaymentType === "DEPOSIT_30";
+  const rawTotalAmount = Number(searchParams.get("totalAmount")) || 0;
+  const rawAmount = Number(searchParams.get("amount")) || 0;
 
-  const totalAmount = rawTotalAmount;
+  // State lưu thông tin đơn hàng đồng bộ từ API
+  const [bookingData, setBookingData] = useState(null);
+
+  const isDeposit =
+    (bookingData?.payment_type || rawPaymentType) === "DEPOSIT_30";
+
+  // Ưu tiên số tiền thực từ API, sau đó mới tới param URL
+  const totalAmount = Number(
+    bookingData?.total_price || rawTotalAmount || rawAmount || 500000,
+  );
   const depositAmount = Math.round(totalAmount * 0.3);
   const remainingAmount = totalAmount - depositAmount;
-  const expectedAmount = isDeposit ? depositAmount : totalAmount;
+
+  // Số tiền khách cần thanh toán ngay
+  const expectedAmount = isDeposit
+    ? Number(bookingData?.deposit_amount || depositAmount)
+    : Number(bookingData?.expected_amount || rawAmount || totalAmount);
 
   // 🌟 THÔNG TIN TÀI KHOẢN CỔNG THANH TOÁN ADMIN (SEPAY)
   const ADMIN_BANK = {
@@ -77,7 +90,11 @@ export default function CheckoutPage() {
 
       if (remainingSeconds <= 0) {
         localStorage.removeItem(storageKey);
-        apiClient.patch(`/bookings/${bookingCode}/cancel`).catch(() => {});
+        // Hỗ trợ cả 2 endpoint hủy để tránh 404
+        apiClient
+          .patch(`/bookings/${bookingCode}/cancel`)
+          .catch(() => apiClient.post(`/bookings/${bookingCode}/cancel`))
+          .catch(() => {});
         alert(
           "⚠️ Thời gian giữ phòng 15 phút đã hết hạn! Phòng đã được tự động mở lại cho khách khác.",
         );
@@ -90,11 +107,16 @@ export default function CheckoutPage() {
     return () => clearInterval(interval);
   }, [bookingCode, navigate]);
 
-  // Khởi tạo đơn
+  // Khởi tạo đơn: Gọi linh hoạt endpoint để lấy đúng thông tin đơn hàng từ Backend
   useEffect(() => {
     if (!bookingCode) return;
     apiClient
       .get(`/bookings/code/${bookingCode}`)
+      .catch(() => apiClient.get(`/bookings/${bookingCode}`))
+      .then((res) => {
+        const data = res?.data?.booking || res?.data?.data || res?.data;
+        if (data) setBookingData(data);
+      })
       .catch((err) => console.error("Lỗi lấy thông tin đơn:", err))
       .finally(() => setLoadingPayment(false));
   }, [bookingCode]);
@@ -127,8 +149,8 @@ export default function CheckoutPage() {
 
       const isPaid =
         data?.paid === true ||
-        ["paid", "success"].includes(pStatus) ||
-        ["confirmed", "paid"].includes(bStatus);
+        ["paid", "success", "partially_paid"].includes(pStatus) ||
+        ["confirmed", "paid", "partially_paid"].includes(bStatus);
 
       if (isPaid) {
         setIsPaidSuccess(true);
@@ -174,7 +196,9 @@ export default function CheckoutPage() {
 
     try {
       setIsCancelling(true);
-      await apiClient.patch(`/bookings/${bookingCode}/cancel`);
+      await apiClient
+        .patch(`/bookings/${bookingCode}/cancel`)
+        .catch(() => apiClient.post(`/bookings/${bookingCode}/cancel`));
     } catch (err) {
       console.warn("Lỗi khi hủy đơn:", err);
     } finally {

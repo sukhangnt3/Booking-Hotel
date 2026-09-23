@@ -212,7 +212,7 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [destination]);
 
-  // Tab switching
+  // Tab switching chuẩn hóa đồng bộ
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
@@ -225,16 +225,16 @@ export default function HomePage() {
       setCheckOutDate(addDays(checkInDate, 1));
     } else if (type === "OVERNIGHT") {
       setCheckInTime("22:00");
-      setCheckOutTime("12:00");
+      setCheckOutTime("11:00"); // Đồng bộ 11:00 với toàn hệ thống
       setCheckOutDate(addDays(checkInDate, 1));
     } else if (type === "HALF_DAY") {
       setCheckInTime("12:00");
       setCheckOutTime("21:00");
-      setCheckOutDate(checkInDate); // Cùng ngày nhận phòng
+      setCheckOutDate(checkInDate);
     }
   };
 
-  // Tính thời lượng (Đã chuẩn hóa 1 Buổi)
+  // Tính thời lượng chuẩn xác (Khắc phục lỗi qua đêm rạng sáng & giờ vắt qua nửa đêm)
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -254,23 +254,43 @@ export default function HomePage() {
       };
     }
 
-    const [outH, outM] = checkOutTime.split(":").map(Number);
-    outDateTime.setHours(outH || 12, outM || 0, 0, 0);
-
-    const diffDays = Math.max(0, differenceInDays(outDateTime, inDateTime));
-
-    let badge = `${Math.max(1, diffDays)} Ngày`;
     if (rentalType === "OVERNIGHT") {
-      badge = diffDays > 1 ? `${diffDays} Đêm` : "1 Đêm";
-    } else if (rentalType === "HALF_DAY") {
-      badge = "1 Buổi";
+      // Nếu check-in rạng sáng 0h-5h: Trả phòng cùng ngày hôm đó
+      if ((inH || 0) >= 0 && (inH || 0) <= 5) {
+        outDateTime = new Date(checkInDate);
+      } else {
+        outDateTime = addDays(new Date(checkInDate), 1);
+      }
+      outDateTime.setHours(11, 0, 0, 0);
+      return {
+        badge: "1 Đêm",
+        inDateTime,
+        outDateTime,
+        outTimeStr: "11:00",
+      };
     }
 
+    if (rentalType === "HALF_DAY") {
+      outDateTime = new Date(checkInDate);
+      outDateTime.setHours(21, 0, 0, 0);
+      return {
+        badge: "1 Buổi",
+        inDateTime,
+        outDateTime,
+        outTimeStr: "21:00",
+      };
+    }
+
+    // THEO NGÀY (DAY)
+    const [outH, outM] = checkOutTime.split(":").map(Number);
+    outDateTime.setHours(outH || 12, outM || 0, 0, 0);
+    const diffDays = Math.max(1, differenceInDays(outDateTime, inDateTime));
+
     return {
-      badge,
+      badge: `${diffDays} Ngày`,
       inDateTime,
       outDateTime,
-      outTimeStr,
+      outTimeStr: checkOutTime,
     };
   }, [
     rentalType,
@@ -361,6 +381,7 @@ export default function HomePage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Submit Search với ngày trả tính toán đúng
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
     const query = new URLSearchParams();
@@ -370,18 +391,9 @@ export default function HomePage() {
     }
     query.append("rentalType", rentalType);
     query.append("checkInTime", checkInTime);
-    query.append(
-      "checkOutTime",
-      rentalType === "HOUR" ? durationSummary.outTimeStr : checkOutTime,
-    );
+    query.append("checkOutTime", durationSummary.outTimeStr);
     query.append("checkIn", format(checkInDate, "yyyy-MM-dd"));
-    query.append(
-      "checkOut",
-      format(
-        rentalType === "HOUR" ? durationSummary.outDateTime : checkOutDate,
-        "yyyy-MM-dd",
-      ),
-    );
+    query.append("checkOut", format(durationSummary.outDateTime, "yyyy-MM-dd"));
     query.append("hours", hoursCount.toString());
     query.append("adults", adults.toString());
     query.append("children", children.toString());
@@ -552,7 +564,7 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      {/* KHỐI 2: HUY HIỆU THỜI LƯỢNG (Chuẩn 1 Buổi) */}
+                      {/* KHỐI 2: HUY HIỆU THỜI LƯỢNG */}
                       <div className="text-[11px] font-black text-[#003580] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full shrink-0">
                         {durationSummary.badge}
                       </div>
@@ -567,13 +579,11 @@ export default function HomePage() {
                           <span className="text-[10px] font-black text-slate-500 block leading-tight">
                             {rentalType === "HOUR"
                               ? `Kết thúc (${durationSummary.outTimeStr})`
-                              : `Trả (${checkOutTime})`}
+                              : `Trả (${durationSummary.outTimeStr})`}
                           </span>
                           <span className="text-xs font-black text-gray-900 leading-none">
                             {safeFormatDate(
-                              rentalType === "HOUR"
-                                ? durationSummary.outDateTime
-                                : checkOutDate,
+                              durationSummary.outDateTime,
                               "dd/MM/yyyy",
                             )}
                           </span>
@@ -602,7 +612,7 @@ export default function HomePage() {
                         onClick={(e) => e.stopPropagation()}
                         className="absolute left-0 top-full mt-2 z-50 bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 w-[340px] sm:w-[370px] space-y-4 animate-in fade-in cursor-default"
                       >
-                        {/* 4 TABS */}
+                        {/* 4 TABS ĐỒNG BỘ */}
                         <div className="grid grid-cols-4 gap-1 p-1 bg-[#eef1f6] rounded-2xl">
                           <button
                             type="button"
@@ -618,18 +628,6 @@ export default function HomePage() {
 
                           <button
                             type="button"
-                            onClick={() => handleTabChange("DAY")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                              rentalType === "DAY"
-                                ? "bg-[#006ce4] text-white shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            <Sun size={14} /> <span>Ngày</span>
-                          </button>
-
-                          <button
-                            type="button"
                             onClick={() => handleTabChange("OVERNIGHT")}
                             className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
                               rentalType === "OVERNIGHT"
@@ -638,6 +636,18 @@ export default function HomePage() {
                             }`}
                           >
                             <Moon size={14} /> <span>Đêm</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleTabChange("DAY")}
+                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                              rentalType === "DAY"
+                                ? "bg-[#006ce4] text-white shadow-xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            <Sun size={14} /> <span>Ngày</span>
                           </button>
 
                           <button
@@ -788,7 +798,7 @@ export default function HomePage() {
                                   >
                                     <span className="truncate">
                                       {format(
-                                        checkOutDate,
+                                        durationSummary.outDateTime,
                                         "eee, dd 'Thg' M, yyyy",
                                         { locale: vi },
                                       )}
@@ -871,6 +881,12 @@ export default function HomePage() {
                                 end: endOfMonth(calendarMonth),
                               }).map((dayItem) => {
                                 const isPast = isBefore(dayItem, today);
+                                const isInvalidCheckOut =
+                                  activeDatePicker === "checkOut" &&
+                                  (isBefore(dayItem, checkInDate) ||
+                                    isSameDay(dayItem, checkInDate));
+                                const isDisabled = isPast || isInvalidCheckOut;
+
                                 const isSelected = isSameDay(
                                   dayItem,
                                   activeDatePicker === "checkIn"
@@ -881,7 +897,7 @@ export default function HomePage() {
                                   <button
                                     key={dayItem.toISOString()}
                                     type="button"
-                                    disabled={isPast}
+                                    disabled={isDisabled}
                                     onClick={() => {
                                       if (activeDatePicker === "checkIn") {
                                         setCheckInDate(dayItem);
@@ -889,21 +905,16 @@ export default function HomePage() {
                                           setCheckOutDate(addDays(dayItem, 1));
                                         }
                                       } else {
-                                        if (isBefore(dayItem, checkInDate)) {
-                                          setCheckInDate(dayItem);
-                                          setCheckOutDate(addDays(dayItem, 1));
-                                        } else {
-                                          setCheckOutDate(dayItem);
-                                        }
+                                        setCheckOutDate(dayItem);
                                       }
                                       setActiveDatePicker(null);
                                     }}
                                     className={`h-6 w-full flex items-center justify-center rounded font-bold text-[10px] transition ${
-                                      isPast
+                                      isDisabled
                                         ? "text-slate-300 cursor-not-allowed"
                                         : isSelected
                                           ? "bg-[#006ce4] text-white shadow"
-                                          : "hover:bg-slate-100 text-slate-800"
+                                          : "hover:bg-slate-100 text-slate-800 cursor-pointer"
                                     }`}
                                   >
                                     {format(dayItem, "d")}

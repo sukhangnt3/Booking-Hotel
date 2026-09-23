@@ -23,6 +23,7 @@ import {
   Sun,
   Moon,
   Hourglass,
+  CreditCard,
 } from "lucide-react";
 
 import { hotelService } from "@/services";
@@ -45,31 +46,31 @@ const SCORE_LABELS = {
   10: "Xuất sắc tuyệt đối",
 };
 
-// 🌟 HELPER TÍNH TOÁN TIỀN PHÒNG & PHÂN LOẠI CỌC 30% / 100% CHUẨN XÁC
+// 🌟 HELPER TÍNH TOÁN TIỀN PHÒNG & PHÂN LOẠI CỌC 30% / 100% CHUẨN XÁC ĐỒNG BỘ
 const resolveBookingPaymentInfo = (b) => {
   const total = Number(b?.total_price || 0);
-  const paidMoney = Number(
+  const isDeposit =
+    b?.payment_type === "DEPOSIT_30" ||
+    (Number(b?.deposit_amount) > 0 && Number(b?.deposit_amount) < total);
+
+  const rawPaid = Number(
     b?.customer_paid ?? b?.paid_amount ?? b?.deposit_amount ?? 0,
   );
-  const remMoney = Number(b?.remaining_amount || 0);
-
-  const isDeposit =
-    (b?.payment_type === "DEPOSIT_30" && paidMoney < total) ||
-    (paidMoney > 0 && paidMoney < total) ||
-    (remMoney > 0 && paidMoney < total);
-
   const deposit = isDeposit
-    ? paidMoney > 0
-      ? paidMoney
-      : Math.round(total * 0.3)
+    ? Number(b?.deposit_amount) > 0
+      ? Number(b?.deposit_amount)
+      : rawPaid > 0
+        ? rawPaid
+        : Math.round(total * 0.3)
     : total;
+
   const remaining = isDeposit
-    ? remMoney > 0
-      ? remMoney
+    ? Number(b?.remaining_amount) > 0
+      ? Number(b?.remaining_amount)
       : Math.max(0, total - deposit)
     : 0;
 
-  return { total, paidMoney, deposit, remaining, isDeposit };
+  return { total, paidMoney: rawPaid, deposit, remaining, isDeposit };
 };
 
 // 🌟 HELPER ĐỊNH DẠNG GIỜ + NGÀY LƯU TRÚ DỰA VÀO CSDL THAY VÌ GÁN CỨNG 14:00
@@ -259,7 +260,7 @@ export default function UserProfilePage() {
     }
   };
 
-  // Hủy đơn đặt phòng
+  // Hủy đơn đặt phòng linh hoạt endpoint
   const handleCancelBooking = async (event, bookingCode) => {
     event.stopPropagation();
     if (
@@ -270,7 +271,9 @@ export default function UserProfilePage() {
       return;
 
     try {
-      await apiClient.patch(`/bookings/${bookingCode}/cancel`);
+      await apiClient
+        .patch(`/bookings/${bookingCode}/cancel`)
+        .catch(() => apiClient.post(`/bookings/${bookingCode}/cancel`));
       showToast("Đã hủy đơn đặt phòng thành công!");
       fetchDatabaseBookings();
     } catch {
@@ -518,6 +521,7 @@ export default function UserProfilePage() {
                         rawStatus,
                       );
                       const isCheckedOut = isBookingCheckedOut(b.status);
+                      const isPending = rawStatus === "pending";
                       const isPaid =
                         b.payment_status === "paid" ||
                         rawStatus === "confirmed";
@@ -561,7 +565,7 @@ export default function UserProfilePage() {
                               <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-semibold rounded-md border border-blue-200 flex items-center gap-1">
                                 🏨 Đang lưu trú
                               </span>
-                            ) : isDeposit ? (
+                            ) : isDeposit && (isPaid || !isPending) ? (
                               <span className="px-2.5 py-1 bg-amber-50 text-amber-800 font-bold rounded-md border border-amber-200 flex items-center gap-1">
                                 <Building2
                                   size={13}
@@ -631,6 +635,9 @@ export default function UserProfilePage() {
                                     <strong className="text-slate-800">
                                       {b.room_name || "Phòng tiêu chuẩn"}
                                     </strong>
+                                    {b.quantity > 1
+                                      ? ` (${b.quantity} phòng)`
+                                      : ""}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -640,7 +647,11 @@ export default function UserProfilePage() {
                                   />
                                   <span>
                                     Khách: {b.customer_name || "Quý khách"} (
-                                    {b.guest_phone || "Đã lưu"})
+                                    {b.adult_total || 1} lớn
+                                    {b.children_total > 0
+                                      ? `, ${b.children_total} trẻ`
+                                      : ""}
+                                    )
                                   </span>
                                 </div>
                               </div>
@@ -677,6 +688,21 @@ export default function UserProfilePage() {
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
+                                {/* NÚT THANH TOÁN TIẾP NẾU ĐƠN CHỜ THANH TOÁN VẪN CÒN HẠN */}
+                                {isPending && !isPaid && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      navigate(
+                                        `/checkout?code=${bookingCode}&amount=${isDeposit ? deposit : total}&totalAmount=${total}&paymentType=${isDeposit ? "DEPOSIT_30" : "FULL"}&remainingAmount=${remaining}&hotelId=${b.hotel_id}`,
+                                      )
+                                    }
+                                    className="px-3.5 py-1.5 bg-[#003580] hover:bg-blue-900 text-white font-bold text-xs rounded-lg shadow-2xs transition flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <CreditCard size={13} /> Thanh toán ngay
+                                  </button>
+                                )}
+
                                 {!isCancelled &&
                                   !isCheckedIn &&
                                   !isCheckedOut && (
@@ -1091,6 +1117,9 @@ export default function UserProfilePage() {
                       <span className="text-slate-500">Hạng phòng:</span>
                       <strong className="text-slate-800">
                         {selectedTicket.room_name || "Phòng tiêu chuẩn"}
+                        {selectedTicket.quantity > 1
+                          ? ` (${selectedTicket.quantity} phòng)`
+                          : ""}
                       </strong>
                     </div>
 

@@ -1,5 +1,5 @@
 // src/pages/guest/BookingSuccessPage.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
@@ -13,6 +13,10 @@ import {
   Calendar,
   Clock,
   Printer,
+  AlertCircle,
+  Hourglass,
+  Sun,
+  Moon,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 import { useAuthStore } from "@/stores/authStore";
@@ -45,6 +49,11 @@ export default function BookingSuccessPage() {
     }
   };
 
+  const formatTime = (timeStr, defaultTime = "12:00") => {
+    if (!timeStr) return defaultTime;
+    return String(timeStr).trim().slice(0, 5);
+  };
+
   useEffect(() => {
     if (!bookingCode) {
       setLoading(false);
@@ -56,11 +65,13 @@ export default function BookingSuccessPage() {
       localStorage.removeItem(`lock_expires_${bookingCode}`);
     } catch {}
 
+    // Hỗ trợ cả 2 endpoint tra cứu để tránh lỗi 404
     apiClient
       .get(`/bookings/code/${bookingCode}`)
+      .catch(() => apiClient.get(`/bookings/${bookingCode}`))
       .then((res) => {
         const b = res?.data?.booking || res?.booking || res?.data || res;
-        setBooking(b);
+        if (b) setBooking(b);
       })
       .catch((err) => {
         console.error("Lỗi lấy thông tin đơn hàng:", err);
@@ -90,25 +101,83 @@ export default function BookingSuccessPage() {
     );
   }
 
+  if (!bookingCode && !booking) {
+    return (
+      <div className="min-h-screen bg-[#f4f7fa] flex items-center justify-center p-4 font-sans">
+        <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center space-y-4 max-w-md shadow-lg">
+          <AlertCircle size={44} className="text-amber-500 mx-auto" />
+          <h2 className="text-xl font-bold text-slate-900">
+            Không tìm thấy thông tin đơn phòng
+          </h2>
+          <p className="text-xs text-slate-500">
+            Vui lòng kiểm tra lại mã đặt phòng trong mục Chuyến đi của bạn.
+          </p>
+          <button
+            onClick={() => navigate("/profile?tab=trips")}
+            className="px-6 py-2.5 bg-[#003580] text-white font-bold text-xs rounded-xl shadow cursor-pointer"
+          >
+            Xem lịch sử chuyến đi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isDeposit =
     booking?.payment_type === "DEPOSIT_30" || paymentTypeParam === "DEPOSIT_30";
-  const totalOrderPrice =
-    booking?.total_price || totalAmountParam || paidAmountParam;
+  const totalOrderPrice = Number(
+    booking?.total_price || totalAmountParam || paidAmountParam || 0,
+  );
   const depositPaid = isDeposit
-    ? booking?.deposit_amount ||
-      paidAmountParam ||
-      Math.round(totalOrderPrice * 0.3)
+    ? Number(
+        booking?.deposit_amount ||
+          paidAmountParam ||
+          Math.round(totalOrderPrice * 0.3),
+      )
     : totalOrderPrice;
   const amountToPayAtHotel = isDeposit
-    ? booking?.remaining_amount ||
-      remainingAmountParam ||
-      Math.max(0, totalOrderPrice - depositPaid)
+    ? Number(
+        booking?.remaining_amount ||
+          remainingAmountParam ||
+          Math.max(0, totalOrderPrice - depositPaid),
+      )
     : 0;
 
   const customerName =
     booking?.customer_name || user?.full_name || user?.name || "Quý khách";
-  const hotelName = booking?.hotel_name || "GoStay Hotel";
+  const hotelName = booking?.hotel_name || "Khách sạn GoStay";
   const roomName = booking?.room_name || "Phòng tiêu chuẩn";
+
+  // Huy hiệu hình thức thuê phòng
+  const rentalType = booking?.rental_type || "DAY";
+  const renderRentalBadge = () => {
+    if (rentalType === "HOUR") {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#006ce4] bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+          <Clock size={12} /> Thuê theo giờ
+        </span>
+      );
+    }
+    if (rentalType === "OVERNIGHT") {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+          <Moon size={12} /> Thuê qua đêm
+        </span>
+      );
+    }
+    if (rentalType === "HALF_DAY") {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+          <Hourglass size={12} /> Thuê theo buổi
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+        <Sun size={12} /> Thuê theo ngày
+      </span>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#f4f7fa] text-slate-800 font-sans antialiased pb-24 pt-8">
@@ -171,9 +240,12 @@ export default function BookingSuccessPage() {
                 <span className="text-slate-400 block text-[11px]">
                   Hạng phòng:
                 </span>
-                <span className="font-bold text-slate-800 text-sm">
-                  {roomName}
-                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-slate-800 text-sm">
+                    {roomName}
+                  </span>
+                  {renderRentalBadge()}
+                </div>
               </div>
             </div>
 
@@ -190,7 +262,7 @@ export default function BookingSuccessPage() {
                       Nhận phòng
                     </span>
                     <strong className="text-slate-800 text-xs">
-                      {booking?.checkin_time || "14:00"},{" "}
+                      {formatTime(booking?.checkin_time, "14:00")},{" "}
                       {formatDate(booking?.checkin_date)}
                     </strong>
                   </div>
@@ -203,7 +275,7 @@ export default function BookingSuccessPage() {
                       Trả phòng
                     </span>
                     <strong className="text-slate-800 text-xs">
-                      {booking?.checkout_time || "12:00"},{" "}
+                      {formatTime(booking?.checkout_time, "12:00")},{" "}
                       {formatDate(booking?.checkout_date)}
                     </strong>
                   </div>

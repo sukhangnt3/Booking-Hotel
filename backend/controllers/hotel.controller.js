@@ -1,3 +1,4 @@
+// backend/controllers/hotels.controller.js
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -520,9 +521,11 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. CHECK PHÒNG TRỐNG (CHỐNG SPAM / TỰ ĐỘNG THU HỒI LOCK 15 PHÚT) ───
+// ─── 3. CHECK PHÒNG TRỐNG (ĐỒNG BỘ 100% CẢ GIỜ, ĐÊM, NGÀY, BUỔI) ───
 async function listHotelRoomAvailability(req, res) {
   const { id: hotelId } = req.params;
+  const targetRoomId = req.query.room_id || null;
+
   const checkIn =
     req.query.checkIn ||
     req.query.checkin_date ||
@@ -536,21 +539,32 @@ async function listHotelRoomAvailability(req, res) {
   const outTime = checkOutTime.length === 5 ? `${checkOutTime}:00` : "14:00:00";
 
   try {
-    // 🛡️ DỌN DẸP TOÀN BỘ LOCK VÀ ĐƠN PENDING CHƯA TRẢ TIỀN QUÁ 15 PHÚT
+    // 1. Dọn dẹp lock tạm thời đã hết hạn
     await pool
       .query(`DELETE FROM public.temporary_locks WHERE expires_at < NOW()`)
       .catch(() => {});
+
+    // 2. Tự động hủy đơn pending quá 15 phút NHƯNG TUYỆT ĐỐI KHÔNG HỦY ĐƠN ĐÃ CỌC 30%
     await pool
       .query(
         `
       UPDATE public.booking 
       SET status = 'cancelled'::public.booking_status_enum 
       WHERE status = 'pending' 
-        AND (payment_status IS NULL OR payment_status != 'paid') 
+        AND (payment_status IS NULL OR (payment_status != 'paid' AND payment_status != 'partially_paid'))
+        AND COALESCE(deposit_amount, 0) = 0
         AND created_at < NOW() - INTERVAL '15 minutes'
     `,
       )
       .catch(() => {});
+
+    let roomCondition = "";
+    const queryParams = [checkIn, inTime, checkOut, outTime, hotelId];
+
+    if (targetRoomId) {
+      queryParams.push(targetRoomId);
+      roomCondition = ` AND r.id::text = $${queryParams.length}`;
+    }
 
     const query = `
       SELECT r.*,
@@ -562,10 +576,9 @@ async function listHotelRoomAvailability(req, res) {
         COALESCE((SELECT json_agg(a.name) FROM public.room_amenity ra JOIN public.amenity a ON a.id = ra.amenity_id WHERE ra.room_id = r.id), '[]'::json) AS amenities,
         COALESCE((SELECT json_agg(img.path ORDER BY img.is_thumbnail DESC, img.display_order ASC) FROM public.image img WHERE img.room_id = r.id), '[]'::json) AS images,
         
-        -- 🌟 TÍNH TỔNG PHÒNG ĐÃ BÁN + TẠM GIỮ CÒN HẠN
         (
           COALESCE((
-            SELECT SUM(br.quantity)::int
+            SELECT SUM(COALESCE(br.quantity, 1))::int
             FROM public.booking b
             JOIN public.booking_room br ON br.booking_id = b.id
             WHERE br.room_id = r.id
@@ -574,7 +587,7 @@ async function listHotelRoomAvailability(req, res) {
                 b.status IN ('confirmed', 'checked_in')
                 OR (
                   b.status = 'pending' 
-                  AND (b.payment_status = 'paid' OR b.created_at >= NOW() - INTERVAL '15 minutes')
+                  AND (b.payment_status IN ('paid', 'partially_paid') OR COALESCE(b.deposit_amount, 0) > 0 OR b.created_at >= NOW() - INTERVAL '15 minutes')
                 )
               )
               AND (
@@ -589,21 +602,15 @@ async function listHotelRoomAvailability(req, res) {
             WHERE tl.room_id = r.id 
               AND tl.expires_at > NOW()
               AND tl.lock_date >= $1::date 
-              AND tl.lock_date < $3::date
+              AND tl.lock_date <= $3::date
           ), 0)
         ) AS booked_count
       FROM public.room r
-      WHERE r.hotel_id = $5 AND COALESCE(r.is_active, true)
+      WHERE r.hotel_id = $5 AND COALESCE(r.is_active, true) ${roomCondition}
       ORDER BY r.base_price ASC
     `;
 
-    const result = await pool.query(query, [
-      checkIn,
-      inTime,
-      checkOut,
-      outTime,
-      hotelId,
-    ]);
+    const result = await pool.query(query, queryParams);
 
     const rooms = result.rows.map((row) => {
       const total = Number(row.total_stock || 1);
@@ -748,11 +755,19 @@ async function registerHotel(req, res) {
     const hotelResult = await client.query(
       `INSERT INTO public.hotel (
         id, owner_id, name, address, city, latitude, longitude, phone, email,
-        star_rating, property_type, description, checkin_time, checkout_time,
+        star_rating, property_type, description, 
+        checkin_time, checkout_time,
+        overnight_checkin_time, overnight_checkout_time,
+        halfday_checkin_time, halfday_checkout_time,
+        hourly_start_time, hourly_end_time, hourly_grace_minutes,
         bank_code, bank_name, bank_account, bank_account_holder, tax_code,
         business_license_url, is_beachfront, distance_to_center, commission_rate,
         status, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, 18.00, 'pending', NOW(), NOW()) RETURNING *`,
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 
+        $13, $14, $15, $16, $17, $18, $19, $20, $21,
+        $22, $23, $24, $25, $26, $27, $28, $29, 18.00, 'pending', NOW(), NOW()
+      ) RETURNING *`,
       [
         newHotelId,
         validOwnerId,
@@ -772,6 +787,25 @@ async function registerHotel(req, res) {
         b.checkout_time
           ? String(b.checkout_time).slice(0, 5) + ":00"
           : "12:00:00",
+        b.overnight_checkin_time
+          ? String(b.overnight_checkin_time).slice(0, 5) + ":00"
+          : "22:00:00",
+        b.overnight_checkout_time
+          ? String(b.overnight_checkout_time).slice(0, 5) + ":00"
+          : "11:00:00",
+        b.halfday_checkin_time
+          ? String(b.halfday_checkin_time).slice(0, 5) + ":00"
+          : "12:00:00",
+        b.halfday_checkout_time
+          ? String(b.halfday_checkout_time).slice(0, 5) + ":00"
+          : "21:00:00",
+        b.hourly_start_time
+          ? String(b.hourly_start_time).slice(0, 5) + ":00"
+          : "08:00:00",
+        b.hourly_end_time
+          ? String(b.hourly_end_time).slice(0, 5) + ":00"
+          : "22:00:00",
+        b.hourly_grace_minutes ? Number(b.hourly_grace_minutes) : 15,
         b.bank_code || b.bankCode || "VCB",
         b.bank_name || b.bankName || "Vietcombank",
         b.bank_account || b.bankAccount || null,
@@ -855,9 +889,9 @@ async function registerHotel(req, res) {
       await client.query(
         `INSERT INTO public.room (
           id, hotel_id, name, capacity, base_price, amount, type, bed_type,
-          room_area, room_view, description, code, hourly_price, overnight_price,
+          room_area, room_view, description, code, hourly_price, overnight_price, half_day_price,
           is_active, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true, NOW(), NOW())`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, true, NOW(), NOW())`,
         [
           newRoomId,
           newHotelId,
@@ -873,6 +907,7 @@ async function registerHotel(req, res) {
           r.code || `P${String(rIdx + 1).padStart(3, "0")}`,
           Number(r.hourly_price || Math.round(basePrice * 0.25)),
           Number(r.overnight_price || basePrice),
+          Number(r.half_day_price || Math.round(basePrice * 0.8)),
         ],
       );
 
@@ -1030,16 +1065,35 @@ async function updateHotel(req, res, next) {
 
     const updateSql = `
       UPDATE public.hotel SET 
-        name = COALESCE($1, name), address = COALESCE($2, address), city = COALESCE($3, city),
-        phone = COALESCE($4, phone), email = COALESCE($5, email), star_rating = COALESCE($6, star_rating),
-        property_type = COALESCE($7, property_type), description = COALESCE($8, description),
-        checkin_time = COALESCE($9::time, checkin_time), checkout_time = COALESCE($10::time, checkout_time),
-        latitude = COALESCE($11, latitude), longitude = COALESCE($12, longitude),
-        is_beachfront = COALESCE($13, is_beachfront), distance_to_center = COALESCE($14, distance_to_center),
-        bank_code = COALESCE($15, bank_code), bank_name = COALESCE($16, bank_name),
-        bank_account = COALESCE($17, bank_account), bank_account_holder = COALESCE($18, bank_account_holder),
-        tax_code = COALESCE($19, tax_code), updated_at = NOW()
-      WHERE id::text = $20 RETURNING *;
+        name = COALESCE($1, name), 
+        address = COALESCE($2, address), 
+        city = COALESCE($3, city),
+        phone = COALESCE($4, phone), 
+        email = COALESCE($5, email), 
+        star_rating = COALESCE($6, star_rating),
+        property_type = COALESCE($7, property_type), 
+        description = COALESCE($8, description),
+        checkin_time = COALESCE($9::time, checkin_time), 
+        checkout_time = COALESCE($10::time, checkout_time),
+        latitude = COALESCE($11, latitude), 
+        longitude = COALESCE($12, longitude),
+        is_beachfront = COALESCE($13, is_beachfront), 
+        distance_to_center = COALESCE($14, distance_to_center),
+        bank_code = COALESCE($15, bank_code), 
+        bank_name = COALESCE($16, bank_name),
+        bank_account = COALESCE($17, bank_account), 
+        bank_account_holder = COALESCE($18, bank_account_holder),
+        tax_code = COALESCE($19, tax_code),
+        overnight_checkin_time = COALESCE($20::time, overnight_checkin_time),
+        overnight_checkout_time = COALESCE($21::time, overnight_checkout_time),
+        halfday_checkin_time = COALESCE($22::time, halfday_checkin_time),
+        halfday_checkout_time = COALESCE($23::time, halfday_checkout_time),
+        hourly_start_time = COALESCE($24::time, hourly_start_time),
+        hourly_end_time = COALESCE($25::time, hourly_end_time),
+        hourly_grace_minutes = COALESCE($26, hourly_grace_minutes),
+        cancellation_deadline_hours = COALESCE($27, cancellation_deadline_hours),
+        updated_at = NOW()
+      WHERE id::text = $28 RETURNING *;
     `;
 
     const updated = await client.query(updateSql, [
@@ -1070,6 +1124,28 @@ async function updateHotel(req, res, next) {
       b.bank_account || b.bankAccount || null,
       b.bank_account_holder || b.bankAccountHolder || null,
       b.tax_code || null,
+      b.overnight_checkin_time
+        ? String(b.overnight_checkin_time).slice(0, 5) + ":00"
+        : null,
+      b.overnight_checkout_time
+        ? String(b.overnight_checkout_time).slice(0, 5) + ":00"
+        : null,
+      b.halfday_checkin_time
+        ? String(b.halfday_checkin_time).slice(0, 5) + ":00"
+        : null,
+      b.halfday_checkout_time
+        ? String(b.halfday_checkout_time).slice(0, 5) + ":00"
+        : null,
+      b.hourly_start_time
+        ? String(b.hourly_start_time).slice(0, 5) + ":00"
+        : null,
+      b.hourly_end_time ? String(b.hourly_end_time).slice(0, 5) + ":00" : null,
+      b.hourly_grace_minutes !== undefined
+        ? Number(b.hourly_grace_minutes)
+        : null,
+      b.cancellation_deadline_hours
+        ? Number(b.cancellation_deadline_hours)
+        : null,
       hotelId,
     ]);
 
