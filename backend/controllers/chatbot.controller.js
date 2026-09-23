@@ -337,7 +337,7 @@ function extractFilters(text) {
   if (foundCity) {
     filter.city = foundCity;
     filter.cityQuery = foundCityQuery;
-    filter.hasExplicitCity = true; // Đánh dấu là khách tự gõ thành phố này
+    filter.hasExplicitCity = true;
   }
 
   // Bóc tách yêu cầu view biển
@@ -486,8 +486,7 @@ async function getMergedContext(sessionId, currentFilter) {
         currentFilter.lastHotelName || previousFilter.lastHotelName || null,
     };
 
-    // 🌟 SỬA LỖI QUAN TRỌNG: Nếu câu mới khách tìm BIỂN mà không nhắc thành phố
-    // thì BỎ NGAY thành phố Sài Gòn/Hà Nội của câu cũ để không bị ép vào TP không có biển!
+    // Nếu câu mới khách tìm biển mà không nhắc thành phố thì bỏ thành phố cũ không có biển (như Sài Gòn/Hà Nội)
     if (currentFilter.is_beachfront && !currentFilter.hasExplicitCity) {
       delete merged.city;
       delete merged.cityQuery;
@@ -952,7 +951,7 @@ async function handleChatMessage(req, res, next) {
         ? checkIn
         : new Date(Date.now() + 86400000).toISOString().slice(0, 10));
 
-    // Điều kiện giáp biển nghiêm ngặt
+    // Điều kiện giáp biển
     const isBeachfrontCondition = `
       (
         COALESCE(h.is_beachfront, false) = true
@@ -1087,7 +1086,6 @@ async function handleChatMessage(req, res, next) {
         paramIdx += 2;
       }
 
-      // 🌟 TUYỆT ĐỐI KHÔNG BỎ ĐIỀU KIỆN BIỂN NẾU KHÁCH YÊU CẦU TÌM BIỂN
       if (extractedFilter.is_beachfront && withBeach) {
         roomQuery += ` AND ${isBeachfrontCondition}`;
       }
@@ -1123,14 +1121,28 @@ async function handleChatMessage(req, res, next) {
       }
     };
 
-    // 🌟 KHÔNG TỰ Ý BỎ BIỂN ĐỂ LÔI KHÁCH SẠN KHÔNG CÓ BIỂN RA NỮA
+    // 1. Tìm phòng đáp ứng đầy đủ điều kiện (kể cả biển nếu có yêu cầu)
     let matchedRooms = await queryRooms(true, true, true);
     if (matchedRooms.length === 0 && extractedFilter.amenity_pool) {
       matchedRooms = await queryRooms(true, true, false);
     }
-    // Nếu vẫn không có và có filter gần trung tâm thì mới nới lỏng trung tâm (vẫn giữ điều kiện biển)
     if (matchedRooms.length === 0 && extractedFilter.near_center) {
       matchedRooms = await queryRooms(true, false, false);
+    }
+
+    let fallbackWithoutBeach = false;
+
+    // 🌟 NẾU KHÁCH TÌM THÀNH PHỐ CỤ THỂ (như Nha Trang, Vũng Tàu)
+    // Nhưng thành phố đó không có phòng giáp biển -> Tự động nới lỏng lấy các khách sạn tốt nhất tại thành phố đó
+    if (
+      matchedRooms.length === 0 &&
+      extractedFilter.is_beachfront &&
+      extractedFilter.city
+    ) {
+      matchedRooms = await queryRooms(false, false, false);
+      if (matchedRooms.length > 0) {
+        fallbackWithoutBeach = true; // Đánh dấu đã nới lỏng điều kiện biển
+      }
     }
 
     let botReply = "";
@@ -1148,12 +1160,27 @@ async function handleChatMessage(req, res, next) {
         ? `với giá dưới ${(extractedFilter.maxPrice >= 1000000 ? extractedFilter.maxPrice / 1000000 : extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}${extractedFilter.maxPrice >= 1000000 ? " triệu" : "k"}`
         : "giá tốt nhất";
 
-    // 🌟 NẾU KHÁCH TÌM BIỂN MÀ TRONG DATABASE CHƯA CÓ KHÁCH SẠN BIỂN NÀO
-    if (extractedFilter.is_beachfront && matchedRooms.length === 0) {
+    // Trường hợp 1: Có fallback vì không có khách sạn giáp biển nhưng có khách sạn đẹp khác tại thành phố đó
+    if (fallbackWithoutBeach) {
+      const cityName =
+        extractedFilter.city.charAt(0).toUpperCase() +
+        extractedFilter.city.slice(1);
+      botReply = `Dạ hiện tại ở **${cityName}** chưa có chỗ nghỉ sát biển trống phù hợp, nhưng mình gợi ý cho bạn **${matchedRooms.length} chỗ nghỉ có vị trí đẹp, giá tốt nhất** tại ${cityName} ${rentalLabel} ${priceText} nhé 👇`;
+    }
+    // Trường hợp 2: Hoàn toàn không có khách sạn giáp biển và cũng không có phòng nào
+    else if (extractedFilter.is_beachfront && matchedRooms.length === 0) {
       const targetArea = extractedFilter.city
         ? `tại ${extractedFilter.city}`
         : "gần biển";
-      botReply = `Dạ hiện tại hệ thống chưa tìm thấy chỗ nghỉ giáp biển nào ${targetArea} còn phòng trống phù hợp yêu cầu. Bạn có muốn thử tìm phòng tại các thành phố biển nổi tiếng như **Vũng Tàu, Đà Nẵng, Nha Trang, Phú Quốc** không? 🌊`;
+
+      // Loại bỏ chính thành phố mà khách vừa tìm ra khỏi danh sách gợi ý
+      const otherCities = ["Vũng Tàu", "Đà Nẵng", "Nha Trang", "Phú Quốc"]
+        .filter(
+          (c) => normalizeText(c) !== normalizeText(extractedFilter.city || ""),
+        )
+        .join(", ");
+
+      botReply = `Dạ hiện tại hệ thống chưa tìm thấy chỗ nghỉ giáp biển nào ${targetArea} còn phòng trống phù hợp yêu cầu. Bạn có muốn thử tìm phòng tại các thành phố biển khác như **${otherCities}** không? 🌊`;
 
       await logTurn(
         userId,
@@ -1169,8 +1196,8 @@ async function handleChatMessage(req, res, next) {
         filter: extractedFilter,
       });
     }
-
-    if (matchedRooms.length > 0) {
+    // Trường hợp 3: Tìm thấy kết quả bình thường
+    else if (matchedRooms.length > 0) {
       const cityName = extractedFilter.city
         ? extractedFilter.city.charAt(0).toUpperCase() +
           extractedFilter.city.slice(1)
@@ -1179,7 +1206,9 @@ async function handleChatMessage(req, res, next) {
           : "toàn hệ thống";
 
       botReply = `Mình vừa tìm thấy **${matchedRooms.length} chỗ nghỉ tiêu biểu** tại ${cityName} ${rentalLabel} ${priceText}. Mời bạn lướt xem các gợi ý bên dưới nhé 👇`;
-    } else {
+    }
+    // Trường hợp 4: Không tìm thấy phòng nào theo yêu cầu chung
+    else {
       const priceFailText =
         extractedFilter.maxPrice && Number(extractedFilter.maxPrice) > 0
           ? `thỏa mãn mức giá dưới ${(extractedFilter.maxPrice >= 1000000 ? extractedFilter.maxPrice / 1000000 : extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}${extractedFilter.maxPrice >= 1000000 ? " triệu" : "k"}`
