@@ -230,11 +230,11 @@ export default function HomePage() {
     } else if (type === "HALF_DAY") {
       setCheckInTime("12:00");
       setCheckOutTime("21:00");
-      setCheckOutDate(addDays(checkInDate, 1));
+      setCheckOutDate(checkInDate); // Cùng ngày nhận phòng
     }
   };
 
-  // Tính thời lượng
+  // Tính thời lượng (Đã chuẩn hóa 1 Buổi)
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -258,13 +258,12 @@ export default function HomePage() {
     outDateTime.setHours(outH || 12, outM || 0, 0, 0);
 
     const diffDays = Math.max(0, differenceInDays(outDateTime, inDateTime));
-    const totalHours = Math.max(0, differenceInHours(outDateTime, inDateTime));
 
     let badge = `${Math.max(1, diffDays)} Ngày`;
     if (rentalType === "OVERNIGHT") {
       badge = diffDays > 1 ? `${diffDays} Đêm` : "1 Đêm";
     } else if (rentalType === "HALF_DAY") {
-      badge = totalHours > 9 ? `1 Buổi ${totalHours - 9} Giờ` : "1 Buổi";
+      badge = "1 Buổi";
     }
 
     return {
@@ -528,7 +527,7 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* 🌟 HÀNG BỘ LỌC NGÀY VÀ GIỜ: HIỂN THỊ ĐẦY ĐỦ CẢ NHẬN VÀ TRẢ RÕ RÀNG 🌟 */}
+                {/* HÀNG BỘ LỌC NGÀY VÀ GIỜ */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
                   <div ref={calendarRef} className="relative md:col-span-9">
                     <div
@@ -553,12 +552,12 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      {/* KHỐI 2: HUY HIỆU THỜI LƯỢNG */}
+                      {/* KHỐI 2: HUY HIỆU THỜI LƯỢNG (Chuẩn 1 Buổi) */}
                       <div className="text-[11px] font-black text-[#003580] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full shrink-0">
                         {durationSummary.badge}
                       </div>
 
-                      {/* KHỐI 3: TRẢ PHÒNG (ĐÃ BỔ SUNG ĐẦY ĐỦ RÕ RÀNG) */}
+                      {/* KHỐI 3: TRẢ PHÒNG */}
                       <div className="flex items-center gap-2 shrink-0">
                         <CalendarIcon
                           size={17}
@@ -603,7 +602,7 @@ export default function HomePage() {
                         onClick={(e) => e.stopPropagation()}
                         className="absolute left-0 top-full mt-2 z-50 bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 w-[340px] sm:w-[370px] space-y-4 animate-in fade-in cursor-default"
                       >
-                        {/* 4 TABS: GIỜ, NGÀY, ĐÊM, BUỔI */}
+                        {/* 4 TABS */}
                         <div className="grid grid-cols-4 gap-1 p-1 bg-[#eef1f6] rounded-2xl">
                           <button
                             type="button"

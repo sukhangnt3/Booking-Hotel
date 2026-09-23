@@ -254,7 +254,67 @@ export default function HotelListPage() {
 
         const formattedList = apiHotels.map((h) => {
           const hotelId = String(h.id);
-          const price = Number(h.min_price || h.base_price || 650000);
+          const price = Number(
+            h.min_price || h.base_price || h.price || 650000,
+          );
+
+          // 1. TÌM GIÁ THEO GIỜ CHÍNH XÁC (Quét mọi trường alias có thể có)
+          let realHourlyPrice = 0;
+          if (Number(h.hourly_price) > 0) {
+            realHourlyPrice = Number(h.hourly_price);
+          } else if (Number(h.min_hourly_price) > 0) {
+            realHourlyPrice = Number(h.min_hourly_price);
+          } else if (Number(h.first_hour_price) > 0) {
+            realHourlyPrice = Number(h.first_hour_price);
+          } else if (Array.isArray(h.rooms) && h.rooms.length > 0) {
+            const roomHourlyPrices = h.rooms
+              .map((r) => Number(r.hourly_price || r.min_hourly_price || 0))
+              .filter((p) => p > 0);
+            if (roomHourlyPrices.length > 0) {
+              realHourlyPrice = Math.min(...roomHourlyPrices);
+            }
+          }
+          if (!realHourlyPrice) {
+            realHourlyPrice = Math.round(price * 0.25) || 80000;
+          }
+
+          // 2. TÌM GIÁ THEO BUỔI CHÍNH XÁC (Quét mọi trường alias có thể có)
+          let realHalfDayPrice = 0;
+          if (Number(h.half_day_price) > 0) {
+            realHalfDayPrice = Number(h.half_day_price);
+          } else if (Number(h.min_half_day_price) > 0) {
+            realHalfDayPrice = Number(h.min_half_day_price);
+          } else if (Array.isArray(h.rooms) && h.rooms.length > 0) {
+            const roomHalfDayPrices = h.rooms
+              .map((r) => Number(r.half_day_price || r.min_half_day_price || 0))
+              .filter((p) => p > 0);
+            if (roomHalfDayPrices.length > 0) {
+              realHalfDayPrice = Math.min(...roomHalfDayPrices);
+            }
+          }
+          if (!realHalfDayPrice) {
+            realHalfDayPrice = Math.round(price * 0.8) || 250000;
+          }
+
+          // 3. TÌM GIÁ QUA ĐÊM CHÍNH XÁC
+          let realOvernightPrice = 0;
+          if (Number(h.overnight_price) > 0) {
+            realOvernightPrice = Number(h.overnight_price);
+          } else if (Number(h.min_overnight_price) > 0) {
+            realOvernightPrice = Number(h.min_overnight_price);
+          } else if (Array.isArray(h.rooms) && h.rooms.length > 0) {
+            const roomOvernightPrices = h.rooms
+              .map((r) =>
+                Number(r.overnight_price || r.min_overnight_price || 0),
+              )
+              .filter((p) => p > 0);
+            if (roomOvernightPrices.length > 0) {
+              realOvernightPrice = Math.min(...roomOvernightPrices);
+            }
+          }
+          if (!realOvernightPrice) {
+            realOvernightPrice = price;
+          }
 
           return {
             ...h,
@@ -267,13 +327,9 @@ export default function HotelListPage() {
               : h.city || "Việt Nam",
             image: parseImageUrl(h.image || h.thumbnail || ""),
             salePrice: price,
-            min_hourly_price: Number(
-              h.min_hourly_price || Math.round(price * 0.25) || 80000,
-            ),
-            min_overnight_price: Number(h.min_overnight_price || price),
-            min_half_day_price: Number(
-              h.min_half_day_price || Math.round(price * 0.8) || 250000,
-            ),
+            min_hourly_price: realHourlyPrice,
+            min_overnight_price: realOvernightPrice,
+            min_half_day_price: realHalfDayPrice,
             star_rating: Number(h.star_rating || 3),
             stars: Number(h.star_rating || 3),
             rating: Number(h.average_rating || 0),
@@ -347,7 +403,7 @@ export default function HotelListPage() {
     } else if (type === "HALF_DAY") {
       setCheckInTime("12:00");
       setCheckOutTime("21:00");
-      setCheckOutDate(addDays(checkInDate, 1));
+      setCheckOutDate(checkInDate);
     }
   };
 
@@ -357,7 +413,7 @@ export default function HotelListPage() {
     setIsCalendarOpen(true);
   };
 
-  // Tính toán thời lượng
+  // Tính toán thời lượng hiển thị badge (Đã khóa chặt 1 Buổi, không còn chữ 24 giờ)
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -381,13 +437,13 @@ export default function HotelListPage() {
     outDateTime.setHours(outH || 12, outM || 0, 0, 0);
 
     const diffDays = Math.max(0, differenceInDays(outDateTime, inDateTime));
-    const totalHours = Math.max(0, differenceInHours(outDateTime, inDateTime));
 
     let badge = `${Math.max(1, diffDays)} Ngày`;
     if (rentalType === "OVERNIGHT") {
       badge = diffDays > 1 ? `${diffDays} Đêm` : "1 Đêm";
     } else if (rentalType === "HALF_DAY") {
-      badge = totalHours > 9 ? `1 Buổi ${totalHours - 9} Giờ` : "1 Buổi";
+      // Luôn hiển thị duy nhất "1 Buổi", bỏ toàn bộ chữ giờ phụ trội
+      badge = "1 Buổi";
     }
 
     return {
@@ -532,7 +588,7 @@ export default function HotelListPage() {
       <div className="max-w-7xl mx-auto px-4 pt-4">
         <Breadcrumb items={breadcrumbs} />
 
-        {/* 🌟 THANH TÌM KIẾM NGANG: HIỂN THỊ ĐẦY ĐỦ CẢ NHẬN VÀ TRẢ 🌟 */}
+        {/* THANH TÌM KIẾM NGANG: HIỂN THỊ ĐẦY ĐỦ CẢ NHẬN VÀ TRẢ */}
         <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-md mt-3 mb-6 relative">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
             {/* Ô 1: Điểm đến */}
@@ -600,7 +656,7 @@ export default function HotelListPage() {
               )}
             </div>
 
-            {/* Ô 2: Ô Lịch mở Popup (HIỂN THỊ RÕ CẢ NHẬN VÀ TRẢ) */}
+            {/* Ô 2: Ô Lịch mở Popup */}
             <div ref={calendarRef} className="relative md:col-span-7">
               <div
                 onClick={() => setIsCalendarOpen(!isCalendarOpen)}
@@ -626,7 +682,7 @@ export default function HotelListPage() {
                   {durationSummary.badge}
                 </div>
 
-                {/* KHỐI 3: TRẢ PHÒNG (ĐÃ BỔ SUNG ĐẦY ĐỦ RÕ RÀNG) */}
+                {/* KHỐI 3: TRẢ PHÒNG */}
                 <div className="flex items-center gap-2 shrink-0">
                   <CalendarIcon size={16} className="text-[#003580] shrink-0" />
                   <div>

@@ -346,7 +346,7 @@ export default function OwnerDashboardPage() {
               onChange={(e) => setSelectedHotelId(e.target.value)}
               className="bg-transparent text-xs font-bold text-gray-900 outline-none cursor-pointer pr-1"
             >
-              <option value="all">Chi nhánh trung tâm</option>
+              <option value="all">Tất cả chi nhánh</option>
               {myHotels.map((h) => (
                 <option key={h.id} value={h.id}>
                   {h.name}

@@ -243,7 +243,7 @@ export default function HotelDetailPage() {
     };
   }, [hotel]);
 
-  // Tính toán thời gian nhận và trả
+  // Tính toán thời gian nhận và trả (Đã khóa chuẩn 1 Buổi)
   const checkOutInfo = useMemo(() => {
     const [hStr, mStr] = checkInTime.split(":");
     const inHour = parseInt(hStr || "12", 10);
@@ -277,12 +277,8 @@ export default function HotelDetailPage() {
     if (rentalType === "OVERNIGHT") {
       badge = diffDays > 1 ? `${diffDays} Đêm` : "1 Đêm";
     } else if (rentalType === "HALF_DAY") {
-      if (totalHours > 9) {
-        const extraH = totalHours - 9;
-        badge = `1 Buổi ${extraH} Giờ`;
-      } else {
-        badge = "1 Buổi";
-      }
+      // Luôn hiển thị chuẩn 1 Buổi, không nối thêm giờ phụ trội
+      badge = "1 Buổi";
     }
 
     return {
@@ -323,7 +319,7 @@ export default function HotelDetailPage() {
       } else if (type === "HALF_DAY") {
         setCheckInTime(hotelPolicies.halfdayIn || "12:00");
         setCheckOutTime(hotelPolicies.halfdayOut || "21:00");
-        setCheckOutDate(addDays(checkInDate, 1));
+        setCheckOutDate(checkInDate); // Cùng ngày nhận phòng
       }
     },
     [checkInDate, hotelPolicies],
@@ -629,7 +625,7 @@ export default function HotelDetailPage() {
           totalPrice: total * rooms,
           unitPrice: total,
           hourlyBreakdown,
-          label: checkOutInfo.badge,
+          label: "1 Buổi",
         };
       }
 
@@ -1084,10 +1080,10 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* 🌟 THANH TÌM KIẾM NGANG ĐÃ ĐƯỢC MỞ RỘNG BỀ NGANG THÊNH THANG: md:col-span-7 🌟 */}
+        {/* THANH TÌM KIẾM NGANG */}
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-md mb-8">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
-            {/* Ô 1: Nhập tên chỗ nghỉ (Gọn gàng md:col-span-3) */}
+            {/* Ô 1: Nhập tên chỗ nghỉ */}
             <div className="md:col-span-3 relative flex items-center gap-2.5 px-3.5 h-12 bg-slate-50 rounded-xl border border-slate-200">
               <MapPin size={18} className="text-[#003580] shrink-0" />
               <input
@@ -1099,7 +1095,7 @@ export default function HotelDetailPage() {
               />
             </div>
 
-            {/* Ô 2: Ô LỊCH MỞ RỘNG RÃI md:col-span-7 (HIỂN THỊ ĐỦ CẢ NHẬN VÀ TRẢ) */}
+            {/* Ô 2: Ô LỊCH HIỂN THỊ ĐỦ CẢ NHẬN VÀ TRẢ */}
             <div ref={calendarRef} className="relative md:col-span-7">
               <div
                 onClick={() => setIsCalendarOpen(!isCalendarOpen)}
@@ -1120,12 +1116,12 @@ export default function HotelDetailPage() {
                   </div>
                 </div>
 
-                {/* 2. HUY HIỆU THỜI LƯỢNG */}
+                {/* 2. HUY HIỆU THỜI LƯỢNG (Chuẩn 1 Buổi) */}
                 <div className="text-[11px] font-black text-[#003580] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">
                   {checkOutInfo.badge}
                 </div>
 
-                {/* 3. KHỐI TRẢ (HIỆN RÕ RÀNG KHÔNG BỊ CẮT CHỮ NỮA) */}
+                {/* 3. KHỐI TRẢ */}
                 <div className="flex items-center gap-2 shrink-0">
                   <CalendarIcon size={16} className="text-[#003580] shrink-0" />
                   <div>
@@ -1565,7 +1561,7 @@ export default function HotelDetailPage() {
               )}
             </div>
 
-            {/* Ô 3: Nút Cập nhật (Gọn gàng md:col-span-2) */}
+            {/* Ô 3: Nút Cập nhật */}
             <div className="md:col-span-2">
               <button
                 type="button"
