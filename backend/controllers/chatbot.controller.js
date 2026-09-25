@@ -210,6 +210,7 @@ function extractFilters(text) {
     intent = "GREETING";
   }
 
+  // Nhận diện hỏi tiện ích
   if (
     normalizedText.includes("dieu hoa") ||
     normalizedText.includes("may lanh") ||
@@ -217,26 +218,14 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "air_conditioner";
     checkAmenityLabel = "điều hòa máy lạnh";
-    if (
-      normalizedText.includes("co") ||
-      normalizedText.includes("khong") ||
-      normalizedText.includes("k")
-    ) {
-      intent = "CHECK_AMENITY";
-    }
+    intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("wifi") ||
     normalizedText.includes("mang")
   ) {
     checkAmenityKey = "wifi";
     checkAmenityLabel = "Wi-Fi tốc độ cao";
-    if (
-      normalizedText.includes("co") ||
-      normalizedText.includes("khong") ||
-      normalizedText.includes("k")
-    ) {
-      intent = "CHECK_AMENITY";
-    }
+    intent = "CHECK_AMENITY";
   } else if (
     /\b(bai do xe|cho do xe|cho de xe|bai xe|xe hoi|o to)\b/.test(
       normalizedText,
@@ -244,31 +233,21 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "parking";
     checkAmenityLabel = "bãi đỗ xe ô tô";
-    if (
-      normalizedText.includes("co") ||
-      normalizedText.includes("khong") ||
-      normalizedText.includes("k")
-    ) {
-      intent = "CHECK_AMENITY";
-    }
+    intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("thang may") ||
     normalizedText.includes("elevator")
   ) {
     checkAmenityKey = "elevator";
     checkAmenityLabel = "thang máy di chuyển";
-    if (normalizedText.includes("co") || normalizedText.includes("khong")) {
-      intent = "CHECK_AMENITY";
-    }
+    intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("bon tam") ||
     normalizedText.includes("bathtub")
   ) {
     checkAmenityKey = "bathtub";
     checkAmenityLabel = "bồn tắm nằm thư giãn";
-    if (normalizedText.includes("co") || normalizedText.includes("khong")) {
-      intent = "CHECK_AMENITY";
-    }
+    intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("ho boi") ||
     normalizedText.includes("be boi") ||
@@ -276,9 +255,7 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "pool";
     checkAmenityLabel = "hồ bơi";
-    if (normalizedText.includes("co") || normalizedText.includes("khong")) {
-      intent = "CHECK_AMENITY";
-    }
+    intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("an sang") ||
     normalizedText.includes("bua sang") ||
@@ -286,20 +263,21 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "breakfast";
     checkAmenityLabel = "bữa sáng";
-    if (normalizedText.includes("co") || normalizedText.includes("khong")) {
-      intent = "CHECK_AMENITY";
-    }
+    intent = "CHECK_AMENITY";
   }
 
+  // Nhận diện hỏi vị trí / địa chỉ
   if (
     normalizedText.includes("o dau") ||
     normalizedText.includes("dia chi") ||
     normalizedText.includes("vi tri") ||
+    normalizedText.includes("cho nao") ||
     normalizedText.includes("cach trung tam")
   ) {
     intent = "CHECK_LOCATION";
   }
 
+  // Nhận diện hỏi giá
   if (
     normalizedText.includes("gia bao nhieu") ||
     normalizedText.includes("gia phong") ||
@@ -620,7 +598,7 @@ async function handleChatMessage(req, res, next) {
       });
     }
 
-    // 1. Quét tìm khách sạn được nhắc đến
+    // 1. Quét tìm khách sạn trong database
     const allHotelsRes = await pool.query(
       `SELECT h.id, h.name, h.address, h.city, h.phone, h.star_rating, 
               COALESCE(h.average_rating, 0) AS average_rating, 
@@ -628,6 +606,7 @@ async function handleChatMessage(req, res, next) {
               h.description,
               COALESCE(h.distance_to_center, 1.2) AS distance_to_center,
               COALESCE(h.is_beachfront, false) AS is_beachfront,
+              h.amenities AS hotel_amenities,
               COALESCE(
                 (SELECT img.path FROM public.image img WHERE img.hotel_id = h.id ORDER BY img.is_thumbnail DESC, img.created_at ASC LIMIT 1),
                 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600'
@@ -636,6 +615,8 @@ async function handleChatMessage(req, res, next) {
     );
 
     let specificHotel = null;
+
+    // A. Quét theo tên khách sạn trực tiếp trong tin nhắn
     for (const h of allHotelsRes.rows) {
       const normHName = normalizeText(h.name);
       if (normMsg.includes(normHName)) {
@@ -646,21 +627,33 @@ async function handleChatMessage(req, res, next) {
       }
     }
 
-    if (!specificHotel && extractedFilter.lastHotelId) {
-      if (
-        normMsg.includes("khach san nay") ||
-        normMsg.includes("o day") ||
-        normMsg.includes("cho nay") ||
-        normMsg.includes("phong nay")
-      ) {
-        specificHotel = allHotelsRes.rows.find(
-          (h) => String(h.id) === String(extractedFilter.lastHotelId),
-        );
-      }
+    // B. 🌟 TỰ ĐỘNG GẮN KHÁCH SẠN ĐANG XEM NẾU NGƯỜI DÙNG DÙNG CÁC TỪ QUY CHIẾU:
+    // "ở đây", "chỗ này", "khách sạn này", "phòng này", "địa chỉ ở đâu"...
+    const isReferringToCurrentHotel =
+      normMsg.includes("khach san nay") ||
+      normMsg.includes("o day") ||
+      normMsg.includes("cho nay") ||
+      normMsg.includes("phong nay") ||
+      normMsg.includes("noi nay") ||
+      normMsg.includes("dia chi o dau") ||
+      normMsg.includes("o dau vay") ||
+      (extractedFilter.intent === "CHECK_LOCATION" &&
+        extractedFilter.lastHotelId) ||
+      (extractedFilter.intent === "CHECK_AMENITY" &&
+        extractedFilter.lastHotelId);
+
+    if (
+      !specificHotel &&
+      extractedFilter.lastHotelId &&
+      isReferringToCurrentHotel
+    ) {
+      specificHotel = allHotelsRes.rows.find(
+        (h) => String(h.id) === String(extractedFilter.lastHotelId),
+      );
     }
 
     // ─────────────────────────────────────────────────────────────
-    // NHÁNH 1: KHÁCH HỎI VỀ TIỆN ÍCH
+    // NHÁNH 1: KHÁCH HỎI VỀ TIỆN ÍCH ("CÓ HỒ BƠI KHÔNG?", "CÓ WIFI KHÔNG?")
     // ─────────────────────────────────────────────────────────────
     if (
       extractedFilter.intent === "CHECK_AMENITY" &&
@@ -673,6 +666,26 @@ async function handleChatMessage(req, res, next) {
       if (specificHotel) {
         let hotelHasAmenity = false;
         try {
+          // 1. Kiểm tra tiện ích ở cấp Khách sạn
+          if (
+            checkAmenityExists(
+              specificHotel.hotel_amenities,
+              extractedFilter.checkAmenityKey,
+            )
+          ) {
+            hotelHasAmenity = true;
+          }
+          if (
+            !hotelHasAmenity &&
+            checkAmenityExists(
+              specificHotel.description,
+              extractedFilter.checkAmenityKey,
+            )
+          ) {
+            hotelHasAmenity = true;
+          }
+
+          // 2. Kiểm tra tiện ích ở cấp Hạng Phòng
           const roomsData = await pool.query(
             `SELECT * FROM public.room WHERE hotel_id = $1`,
             [specificHotel.id],
@@ -699,20 +712,6 @@ async function handleChatMessage(req, res, next) {
             }
           }
 
-          if (!hotelHasAmenity && specificHotel.description) {
-            hotelHasAmenity = checkAmenityExists(
-              specificHotel.description,
-              extractedFilter.checkAmenityKey,
-            );
-          }
-
-          if (
-            extractedFilter.checkAmenityKey === "wifi" ||
-            extractedFilter.checkAmenityKey === "air_conditioner"
-          ) {
-            hotelHasAmenity = true;
-          }
-
           matchedSuggestions = roomsData.rows.slice(0, 3).map((r) => ({
             hotel_id: specificHotel.id,
             room_id: r.id,
@@ -725,17 +724,18 @@ async function handleChatMessage(req, res, next) {
             review_count: specificHotel.review_count,
             hotel_image: specificHotel.hotel_image,
             is_beachfront: specificHotel.is_beachfront,
+            distance_to_center: specificHotel.distance_to_center,
             price: Number(r.hourly_price || r.base_price),
             base_price: Number(r.base_price || 650000),
           }));
         } catch (e) {
-          hotelHasAmenity = true;
+          hotelHasAmenity = false;
         }
 
         if (hotelHasAmenity) {
-          replyText = `Dạ có bạn nhé! Khách sạn **${specificHotel.name}** được trang bị đầy đủ **${amenityLabel}** miễn phí tại các phòng. Bạn có thể bấm vào thẻ bên dưới để xem chi tiết từng hạng phòng và đặt ngay nhé!`;
+          replyText = `Dạ có bạn nhé! **${specificHotel.name}** được trang bị đầy đủ **${amenityLabel}** phục vụ khách lưu trú. Bạn có thể bấm vào thẻ bên dưới để xem chi tiết và đặt phòng nhé!`;
         } else {
-          replyText = `Dạ hiện tại khách sạn **${specificHotel.name}** chưa trang bị **${amenityLabel}** bạn nha. Tuy nhiên, các phòng ở đây đều sạch sẽ, thoáng mát và có giá rất tốt đó ạ!`;
+          replyText = `Dạ hiện tại **${specificHotel.name}** chưa có tiện ích **${amenityLabel}** bạn nha. Tuy nhiên, chỗ nghỉ vẫn có vị trí rất đẹp và nhiều dịch vụ tiện nghi khác phục vụ bạn chu đáo!`;
         }
       } else {
         if (extractedFilter.checkAmenityKey === "wifi") {
@@ -767,27 +767,29 @@ async function handleChatMessage(req, res, next) {
     // ─────────────────────────────────────────────────────────────
     // NHÁNH 2: KHÁCH HỎI VỀ ĐỊA CHỈ / VỊ TRÍ
     // ─────────────────────────────────────────────────────────────
-    if (extractedFilter.intent === "CHECK_LOCATION" && specificHotel) {
-      let locReply = `📍 Khách sạn **${specificHotel.name}** tọa lạc tại: **${specificHotel.address || ""}, ${specificHotel.city || "Việt Nam"}**.\n\n`;
-      locReply += `• Vị trí cách trung tâm khoảng **${specificHotel.distance_to_center} km**, rất thuận tiện đi lại ăn uống và mua sắm.\n`;
-      if (specificHotel.is_beachfront) {
-        locReply += `• Đặc biệt, khách sạn nằm **sát biển**, chỉ vài bước chân là ra đến bãi tắm!\n`;
-      }
-      locReply += `Bạn có thể xem thêm chi tiết phòng ở thẻ bên dưới nhé!`;
+    if (extractedFilter.intent === "CHECK_LOCATION") {
+      if (specificHotel) {
+        let locReply = `📍 **${specificHotel.name}** tọa lạc tại: **${specificHotel.address || ""}, ${specificHotel.city || "Việt Nam"}**.\n\n`;
+        locReply += `• Vị trí cách trung tâm thành phố khoảng **${specificHotel.distance_to_center} km**, rất thuận tiện đi lại ăn uống và mua sắm.\n`;
+        if (specificHotel.is_beachfront) {
+          locReply += `• Đặc biệt, khách sạn nằm **sát biển**, chỉ vài bước chân là ra đến bãi tắm!\n`;
+        }
+        locReply += `Bạn có thể bấm vào thẻ bên dưới để xem đường đi và thông tin phòng nhé!`;
 
-      await logTurn(
-        userId,
-        session_id,
-        message.trim(),
-        extractedFilter,
-        locReply,
-      );
-      return res.json({
-        success: true,
-        reply: locReply,
-        suggestions: [],
-        filter: extractedFilter,
-      });
+        await logTurn(
+          userId,
+          session_id,
+          message.trim(),
+          extractedFilter,
+          locReply,
+        );
+        return res.json({
+          success: true,
+          reply: locReply,
+          suggestions: [],
+          filter: extractedFilter,
+        });
+      }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -1014,6 +1016,7 @@ async function handleChatMessage(req, res, next) {
         review_count: specificHotel.review_count,
         hotel_image: specificHotel.hotel_image,
         is_beachfront: specificHotel.is_beachfront,
+        distance_to_center: specificHotel.distance_to_center,
         price: r.hourly_p || r.daily_p,
         base_price: r.daily_p,
       }));
@@ -1034,10 +1037,9 @@ async function handleChatMessage(req, res, next) {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // NHÁNH 6: TÌM KIẾM PHÒNG (ĐÃ FIX LỖI SQL & ALIAS)
+    // NHÁNH 6: TÌM KIẾM PHÒNG (SEARCH_HOTEL)
     // ─────────────────────────────────────────────────────────────
 
-    // Nếu khách không cung cấp thành phố và không tìm biển
     if (!extractedFilter.city && !extractedFilter.is_beachfront) {
       const guestText =
         extractedFilter.adults > 1
@@ -1065,7 +1067,6 @@ async function handleChatMessage(req, res, next) {
       extractedFilter.checkOut ||
       (extractedFilter.rentalType === "HOUR" ? checkIn : getRelativeDateVN(1));
 
-    // 🌟 ĐÃ SỬA: Dùng ar.room_view và LOWER() LIKE tiêu chuẩn, không phụ thuộc extension unaccent
     const isBeachfrontCondition = `
       (
         COALESCE(h.is_beachfront, false) = true
@@ -1209,7 +1210,7 @@ async function handleChatMessage(req, res, next) {
       }
 
       if (extractedFilter.near_center && withCenter) {
-        roomQuery += ` AND COALESCE(h.distance_to_center, 1.2) <= 2.5`;
+        roomQuery += ` AND COALESCE(h.distance_to_center, 1.2) <= 3.5`;
       }
 
       if (extractedFilter.maxPrice && Number(extractedFilter.maxPrice) > 0) {
@@ -1249,7 +1250,6 @@ async function handleChatMessage(req, res, next) {
 
     let fallbackWithoutBeach = false;
 
-    // Nếu tìm biển mà phòng biển hết, tự động nới lỏng lấy khách sạn thường
     if (
       matchedRooms.length === 0 &&
       extractedFilter.is_beachfront &&
@@ -1259,6 +1259,12 @@ async function handleChatMessage(req, res, next) {
       if (matchedRooms.length > 0) {
         fallbackWithoutBeach = true;
       }
+    }
+
+    // 🌟 QUAN TRỌNG NHẤT: LƯU NGAY KHÁCH SẠN VỪA TÌM ĐƯỢC VÀO LAST_HOTEL_ID
+    if (matchedRooms.length > 0) {
+      extractedFilter.lastHotelId = matchedRooms[0].hotel_id;
+      extractedFilter.lastHotelName = matchedRooms[0].hotel_name;
     }
 
     let botReply = "";
