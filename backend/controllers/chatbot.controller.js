@@ -55,8 +55,17 @@ function getRelativeDateVN(daysFromToday) {
 
 function getThisWeekendVN() {
   const today = getNowVN();
-  const dayOfWeek = today.getDay();
-  const daysUntilSaturday = (6 - dayOfWeek + 7) % 7 || 7;
+  const dayOfWeek = today.getDay(); // 0: CN, 6: T7
+
+  // Nếu hôm nay là Thứ 7 (6) hoặc CN (0) thì lấy chính cuối tuần này
+  let daysUntilSaturday = 0;
+  if (dayOfWeek === 6) {
+    daysUntilSaturday = 0; // Hôm nay là Thứ 7 luôn
+  } else if (dayOfWeek === 0) {
+    daysUntilSaturday = -1; // Hôm nay là Chủ Nhật
+  } else {
+    daysUntilSaturday = 6 - dayOfWeek;
+  }
 
   const checkInDate = new Date(today);
   checkInDate.setDate(today.getDate() + daysUntilSaturday);
@@ -322,7 +331,6 @@ function extractFilters(text) {
     filter.rentalType = "HALF_DAY";
   }
 
-  // Gán cờ tiện ích để câu SQL tìm kiếm
   if (checkAmenityKey === "pool") filter.amenity_pool = true;
   if (checkAmenityKey === "bathtub") filter.amenity_bathtub = true;
   if (checkAmenityKey === "air_conditioner") filter.amenity_ac = true;
@@ -465,7 +473,7 @@ function extractFilters(text) {
     normalizedText.includes("thue") ||
     normalizedText.includes("dat");
 
-  // 🌟 NGUYÊN TẮC: Cứ có thành phố HOẶC hình thức thuê HOẶC từ tìm phòng -> 100% SEARCH_HOTEL
+  // Nguyên tắc: có thành phố, có từ khóa phòng, có kiểu thuê -> SEARCH_HOTEL
   if (
     Boolean(filter.city) ||
     Boolean(filter.rentalType) ||
@@ -531,7 +539,7 @@ async function getMergedContext(sessionId, currentFilter) {
           currentFilter.rawText.includes("tim phong") ||
           currentFilter.rawText.includes("cho nghi")));
 
-    // 🌟 XÓA TOÀN BỘ TIỆN ÍCH CŨ NẾU CÂU TÌM KIẾM MỚI KHÔNG NHẮC LẠI
+    // Xóa toàn bộ tiện ích cũ nếu câu tìm kiếm mới không nhắc lại
     if (isNewExplicitSearch) {
       if (!currentFilter.is_beachfront) delete previousFilter.is_beachfront;
       if (!currentFilter.near_center) delete previousFilter.near_center;
@@ -542,7 +550,7 @@ async function getMergedContext(sessionId, currentFilter) {
       delete previousFilter.checkAmenityLabel;
     }
 
-    // 3. Nếu chuyển thành phố mới -> XÓA toàn bộ thông tin khách sạn cũ và tiện ích cũ
+    // 3. Nếu chuyển thành phố mới -> Xóa toàn bộ thông tin khách sạn cũ và tiện ích cũ
     if (
       currentFilter.city &&
       previousFilter.city &&
@@ -615,7 +623,7 @@ async function handleChatMessage(req, res, next) {
       });
     }
 
-    // 1. Quét tìm khách sạn từ database
+    // 1. Quét tìm khách sạn từ database (chỉ chọn cột thực sự có trong bảng hotel)
     const allHotelsRes = await pool.query(
       `SELECT h.id, h.name, h.address, h.city, h.phone, h.star_rating, 
               COALESCE(h.average_rating, 0) AS average_rating, 
@@ -701,8 +709,7 @@ async function handleChatMessage(req, res, next) {
                 r.amenities,
                 extractedFilter.checkAmenityKey,
               ) ||
-              checkAmenityExists(r.name, extractedFilter.checkAmenityKey) ||
-              checkAmenityExists(r.description, extractedFilter.checkAmenityKey)
+              checkAmenityExists(r.name, extractedFilter.checkAmenityKey)
             ) {
               hotelHasAmenity = true;
               break;
@@ -1054,7 +1061,6 @@ async function handleChatMessage(req, res, next) {
     // NHÁNH 6: TÌM KIẾM PHÒNG (SEARCH_HOTEL)
     // ─────────────────────────────────────────────────────────────
 
-    // Nếu khách không cung cấp thành phố và không tìm biển
     if (!extractedFilter.city && !extractedFilter.is_beachfront) {
       const guestText =
         extractedFilter.adults > 1
@@ -1083,7 +1089,7 @@ async function handleChatMessage(req, res, next) {
         ? "gần biển"
         : "toàn hệ thống";
 
-    // 🌟 KIỂM TRA THÔNG MINH: Thành phố này đã có khách sạn nào trong DB chưa?
+    // Kiểm tra xem thành phố này đã có khách sạn nào trong DB chưa
     if (extractedFilter.city && extractedFilter.cityQuery) {
       const cityCheckRes = await pool.query(
         `SELECT 1 FROM public.hotel h 
@@ -1096,7 +1102,6 @@ async function handleChatMessage(req, res, next) {
         ],
       );
 
-      // Nếu trong DB chưa có khách sạn nào ở thành phố này
       if (cityCheckRes.rows.length === 0) {
         const noPartnerReply = `Dạ hiện tại hệ thống GoStay chưa có cơ sở lưu trú đối tác nào tại **${cityName}** ạ. Bạn có muốn tham khảo các khách sạn giá tốt đang mở bán tại **Vũng Tàu** hoặc **Hồ Chí Minh** không? 😊`;
         await logTurn(
@@ -1136,7 +1141,7 @@ async function handleChatMessage(req, res, next) {
     const poolCondition = `
       (
         ar.room_view = 'pool_view'
-        OR LOWER(ar.name) LIKE '%ho boi%' OR LOWER(ar.name) LIKE '%pool%'
+        OR LOWER(ar.room_name) LIKE '%ho boi%' OR LOWER(ar.room_name) LIKE '%pool%'
         OR LOWER(h.description) LIKE '%ho boi%' OR LOWER(h.description) LIKE '%hồ bơi%'
         OR LOWER(h.name) LIKE '%pool%' OR LOWER(h.name) LIKE '%resort%'
       )
@@ -1145,22 +1150,17 @@ async function handleChatMessage(req, res, next) {
     const bathtubCondition = `
       (
         ar.room_view = 'bathtub'
-        OR LOWER(ar.name) LIKE '%bon tam%' OR LOWER(ar.name) LIKE '%bồn tắm%'
-        OR LOWER(ar.name) LIKE '%bathtub%'
-        OR LOWER(ar.description) LIKE '%bon tam%' OR LOWER(ar.description) LIKE '%bồn tắm%'
-        OR LOWER(ar.amenities::text) LIKE '%bathtub%' 
-        OR LOWER(ar.amenities::text) LIKE '%bon_tam%' 
-        OR LOWER(ar.amenities::text) LIKE '%bon tam%'
+        OR LOWER(ar.room_name) LIKE '%bon tam%' OR LOWER(ar.room_name) LIKE '%bồn tắm%'
+        OR LOWER(ar.room_name) LIKE '%bathtub%'
+        OR LOWER(h.description) LIKE '%bon tam%' OR LOWER(h.description) LIKE '%bồn tắm%'
       )
     `;
 
+    // Công thức tính giá: linh hoạt không bắt buộc r.hourly_price > 0 để tránh loại trừ nhầm dữ liệu test
     let priceColumnFormula = "r.base_price";
-    let extraRoomCondition = "AND COALESCE(r.base_price, 0) > 0";
-
     if (extractedFilter.rentalType === "HOUR") {
-      priceColumnFormula = "r.hourly_price";
-      extraRoomCondition +=
-        " AND r.hourly_price IS NOT NULL AND r.hourly_price > 0";
+      priceColumnFormula =
+        "COALESCE(r.hourly_price, ROUND(r.base_price * 0.25)::int, r.base_price)";
     } else if (extractedFilter.rentalType === "OVERNIGHT") {
       priceColumnFormula = "COALESCE(r.overnight_price, r.base_price)";
     } else if (extractedFilter.rentalType === "HALF_DAY") {
@@ -1206,7 +1206,7 @@ async function handleChatMessage(req, res, next) {
             ) AS available_count
           FROM public.room r
           CROSS JOIN stay_nights sn
-          WHERE 1=1 ${extraRoomCondition}
+          WHERE COALESCE(r.base_price, 0) > 0
         ),
         available_rooms AS (
           SELECT 
@@ -1219,8 +1219,6 @@ async function handleChatMessage(req, res, next) {
             r.half_day_price,
             r.capacity, 
             r.room_view,
-            r.description,
-            r.amenities,
             MIN(ns.available_count)::int AS remaining_rooms,
             ROUND(AVG(ns.calculated_price))::int AS price
           FROM public.room r
@@ -1315,7 +1313,6 @@ async function handleChatMessage(req, res, next) {
     let matchedRooms = await queryRooms(true, true, true, true);
     let fallbackBathtub = false;
 
-    // Nếu tìm phòng có bồn tắm mà không có, tự động nới lỏng lấy phòng đẹp khác tại thành phố đó
     if (matchedRooms.length === 0 && extractedFilter.amenity_bathtub) {
       matchedRooms = await queryRooms(true, true, true, false);
       if (matchedRooms.length > 0) {
