@@ -23,6 +23,7 @@ import {
   Hourglass,
   Zap,
   Waves,
+  Navigation,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import apiClient from "@/services/apiClient";
@@ -51,6 +52,7 @@ const parseImageUrl = (img) => {
 const QUICK_SUGGESTIONS = [
   { label: "⚡ Thuê phòng theo giờ", text: "Tìm phòng thuê theo giờ giá tốt" },
   { label: "🌊 Khách sạn gần biển", text: "Tìm khách sạn gần biển view đẹp" },
+  { label: "📍 Gần trung tâm", text: "Tìm khách sạn gần trung tâm thành phố" },
   { label: "💰 Phòng dưới 500k", text: "Tìm khách sạn giá dưới 500k" },
   { label: "🌙 Thuê phòng qua đêm", text: "Tìm khách sạn thuê qua đêm" },
   {
@@ -79,7 +81,7 @@ export default function ChatbotWidget() {
   const [favorites, setFavorites] = useState({});
   const messagesEndRef = useRef(null);
 
-  // Tạo mới sessionId hoàn toàn khi bấm Làm mới chat
+  // Tạo mới sessionId hoàn toàn mỗi khi bấm Làm mới chat
   const [sessionId, setSessionId] = useState(`guest_${Date.now()}`);
 
   useEffect(() => {
@@ -316,7 +318,7 @@ export default function ChatbotWidget() {
                                     <div className="flex text-amber-400 text-[10px]">
                                       {"⭐".repeat(h.star_rating || 3)}
                                     </div>
-                                    {/* 🌟 HIỂN THỊ HUY HIỆU GIÁP BIỂN TRÊN THẺ PHÒNG CHATBOT */}
+                                    {/* 🌟 HUY HIỆU GIÁP BIỂN */}
                                     {h.is_beachfront && (
                                       <span className="text-[9px] font-black text-cyan-800 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
                                         <Waves
@@ -339,8 +341,21 @@ export default function ChatbotWidget() {
                                     🏨 {subHotelName} • {h.city || "Việt Nam"}
                                   </p>
 
+                                  {/* 🌟 HIỂN THỊ KHOẢNG CÁCH TỚI TRUNG TÂM (DISTANCE_TO_CENTER) */}
+                                  {h.distance_to_center && (
+                                    <div className="flex items-center gap-1 text-[10px] text-amber-800 font-semibold bg-amber-50/70 border border-amber-200/60 px-1.5 py-0.5 rounded-md w-fit">
+                                      <Navigation
+                                        size={10}
+                                        className="text-amber-600 shrink-0"
+                                      />
+                                      <span>
+                                        Cách TT {h.distance_to_center} km
+                                      </span>
+                                    </div>
+                                  )}
+
                                   {reviewCount > 0 && ratingNum > 0 ? (
-                                    <div className="flex items-center gap-1.5 pt-1">
+                                    <div className="flex items-center gap-1.5 pt-0.5">
                                       <span className="bg-[#003580] text-white font-black text-[10px] px-1.5 py-0.5 rounded-md">
                                         {ratingNum.toFixed(1)}
                                       </span>
@@ -354,7 +369,7 @@ export default function ChatbotWidget() {
                                       </span>
                                     </div>
                                   ) : (
-                                    <div className="flex items-center gap-1 pt-1 text-[10px] font-bold text-emerald-700">
+                                    <div className="flex items-center gap-1 pt-0.5 text-[10px] font-bold text-emerald-700">
                                       <span className="bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md">
                                         Chỗ nghỉ mới
                                       </span>
@@ -416,7 +431,7 @@ export default function ChatbotWidget() {
                         })}
                       </div>
 
-                      {/* XEM TẤT CẢ KẾT QUẢ CÓ TRUYỀN THAM SỐ BEACHFRONT */}
+                      {/* XEM TẤT CẢ KẾT QUẢ CÓ TRUYỀN CẢ BEACHFRONT VÀ NEARCENTER */}
                       <div className="flex items-center justify-between pt-1 text-xs">
                         <button
                           type="button"
@@ -431,8 +446,11 @@ export default function ChatbotWidget() {
                             const beachfrontParam = m.filter?.is_beachfront
                               ? "&beachfront=true"
                               : "";
+                            const nearCenterParam = m.filter?.near_center
+                              ? "&nearCenter=true"
+                              : "";
                             navigate(
-                              `/hotels?destination=${encodeURIComponent(dest)}&checkIn=${checkIn}&checkOut=${checkOut}&rentalType=${rental}&hours=${hours}&adults=${adults}${beachfrontParam}`,
+                              `/hotels?destination=${encodeURIComponent(dest)}&checkIn=${checkIn}&checkOut=${checkOut}&rentalType=${rental}&hours=${hours}&adults=${adults}${beachfrontParam}${nearCenterParam}`,
                             );
                           }}
                           className="font-bold text-[#006ce4] hover:underline flex items-center gap-1.5 cursor-pointer"

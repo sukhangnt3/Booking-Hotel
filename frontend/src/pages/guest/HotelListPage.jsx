@@ -163,12 +163,16 @@ export default function HotelListPage() {
     searchParams.get("stars")?.split(",").map(Number).filter(Boolean) || [];
   const sortBy = searchParams.get("sortBy") || "popular";
 
-  // 🌟 ĐỌC THAM SỐ GIÁP BIỂN TỪ URL (VD TỪ CHATBOT BẤM SANG)
+  // 🌟 ĐỌC THAM SỐ GIÁP BIỂN & GẦN TRUNG TÂM TỪ URL
   const initialBeachfront = searchParams.get("beachfront") === "true";
   const [onlyBeachfront, setOnlyBeachfront] = useState(initialBeachfront);
 
+  const initialNearCenter = searchParams.get("nearCenter") === "true";
+  const [onlyNearCenter, setOnlyNearCenter] = useState(initialNearCenter);
+
   useEffect(() => {
     setOnlyBeachfront(searchParams.get("beachfront") === "true");
+    setOnlyNearCenter(searchParams.get("nearCenter") === "true");
   }, [searchParams]);
 
   // State thanh tìm kiếm
@@ -320,7 +324,6 @@ export default function HotelListPage() {
             if (rd > 0) roomDailyList.push(rd);
           });
 
-          // TÌM GIÁ THEO GIỜ CHÍNH XÁC
           let finalHourly = 0;
           if (roomHourlyList.length > 0) {
             finalHourly = Math.min(...roomHourlyList);
@@ -334,7 +337,6 @@ export default function HotelListPage() {
             finalHourly = rawPrice > 0 ? rawPrice : 80000;
           }
 
-          // TÌM GIÁ THEO BUỔI CHÍNH XÁC
           let finalHalfDay = 0;
           if (roomHalfDayList.length > 0) {
             finalHalfDay = Math.min(...roomHalfDayList);
@@ -348,7 +350,6 @@ export default function HotelListPage() {
             finalHalfDay = rawPrice > 0 ? rawPrice : 250000;
           }
 
-          // TÌM GIÁ QUA ĐÊM CHÍNH XÁC
           let finalOvernight = 0;
           if (roomOvernightList.length > 0) {
             finalOvernight = Math.min(...roomOvernightList);
@@ -393,7 +394,9 @@ export default function HotelListPage() {
             rating: Number(h.average_rating || 0),
             review_count: Number(h.review_count || 0),
             is_beachfront: Boolean(h.is_beachfront),
-            distance_to_center: h.distance_to_center,
+            distance_to_center: h.distance_to_center
+              ? Number(h.distance_to_center)
+              : 1.2,
             rooms: roomList,
             checkin_time: formatTime(h.checkin_time, "14:00"),
             checkout_time: formatTime(h.checkout_time, "12:00"),
@@ -557,6 +560,7 @@ export default function HotelListPage() {
     query.rooms = rooms.toString();
     if (selectedStars.length > 0) query.stars = selectedStars.join(",");
     if (onlyBeachfront) query.beachfront = "true";
+    if (onlyNearCenter) query.nearCenter = "true";
     query.sortBy = sortBy;
 
     setIsDestDropdownOpen(false);
@@ -582,8 +586,9 @@ export default function HotelListPage() {
     setSelectedStars([]);
     setSelectedRating(null);
     setOnlyBeachfront(false);
+    setOnlyNearCenter(false);
     setUserPriceRange([priceBounds.min, priceBounds.max]);
-    updateUrlParams({ stars: "", beachfront: "" });
+    updateUrlParams({ stars: "", beachfront: "", nearCenter: "" });
   };
 
   const filterCounts = useMemo(() => {
@@ -591,6 +596,7 @@ export default function HotelListPage() {
       stars: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
       ratings: { 9: 0, 8: 0, 7: 0, 6: 0 },
       beachfront: 0,
+      nearCenter: 0,
     };
     hotels.forEach((h) => {
       const star = Math.round(h.star_rating);
@@ -600,22 +606,33 @@ export default function HotelListPage() {
       if (h.rating >= 7.0) counts.ratings[7]++;
       if (h.rating >= 6.0) counts.ratings[6]++;
       if (h.is_beachfront) counts.beachfront++;
+      if (h.distance_to_center && Number(h.distance_to_center) <= 2.5) {
+        counts.nearCenter++;
+      }
     });
     return counts;
   }, [hotels]);
 
-  // LỌC NGÂN SÁCH ĐỘNG, GIÁP BIỂN & KHUNG GIỜ MỞ BÁN
+  // LỌC TỔNG HỢP: NGÂN SÁCH, GIÁP BIỂN, GẦN TRUNG TÂM & KHUNG GIỜ MỞ BÁN
   const filteredHotels = useMemo(() => {
     return hotels.filter((hotel) => {
       const star = Number(hotel.star_rating || 0);
       const score = Number(hotel.rating || 0);
 
-      // 🌟 1. Lọc theo giáp biển nếu được chọn
+      // 1. Lọc theo giáp biển
       if (onlyBeachfront && !hotel.is_beachfront) {
         return false;
       }
 
-      // 2. Lọc theo tên
+      // 🌟 2. Lọc theo khoảng cách tới trung tâm (<= 2.5 km)
+      if (
+        onlyNearCenter &&
+        (!hotel.distance_to_center || Number(hotel.distance_to_center) > 2.5)
+      ) {
+        return false;
+      }
+
+      // 3. Lọc theo tên
       if (searchHotelName.trim()) {
         const nameSearchKey = removeVietnameseTones(searchHotelName);
         const nameKey = removeVietnameseTones(hotel.name);
@@ -642,7 +659,7 @@ export default function HotelListPage() {
         return false;
       if (selectedRating !== null && score < selectedRating) return false;
 
-      // 3. KIỂM TRA KHUNG GIỜ THEO GIỜ (HOURLY)
+      // 4. KIỂM TRA KHUNG GIỜ THEO GIỜ (HOURLY)
       if (rentalType === "HOUR") {
         const hStart = (hotel.hourly_start_time || "08:00").slice(0, 5);
         const hEnd = (hotel.hourly_end_time || "22:00").slice(0, 5);
@@ -653,7 +670,7 @@ export default function HotelListPage() {
         }
       }
 
-      // 4. KIỂM TRA KHUNG GIỜ QUA ĐÊM (OVERNIGHT)
+      // 5. KIỂM TRA KHUNG GIỜ QUA ĐÊM (OVERNIGHT)
       if (rentalType === "OVERNIGHT") {
         const oIn = (hotel.overnight_checkin_time || "22:00").slice(0, 5);
         const inTime = (checkInTime || "22:00").slice(0, 5);
@@ -670,6 +687,7 @@ export default function HotelListPage() {
   }, [
     hotels,
     onlyBeachfront,
+    onlyNearCenter,
     searchHotelName,
     userPriceRange,
     selectedStars,
@@ -1277,7 +1295,7 @@ export default function HotelListPage() {
         {/* NỘI DUNG CHÍNH */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* SIDEBAR BỘ LỌC */}
-          <aside className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-5 sticky top-20">
+          <aside className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-4 sticky top-20">
             <div className="flex items-center justify-between pb-2 border-b border-gray-100">
               <h2 className="font-extrabold text-base text-gray-900 flex items-center gap-1.5">
                 <SlidersHorizontal size={16} /> Chọn lọc theo:
@@ -1301,7 +1319,7 @@ export default function HotelListPage() {
               />
             </div>
 
-            {/* 🌟 BỘ LỌC CHỖ NGHỈ GIÁP BIỂN 🌟 */}
+            {/* 🌊 BỘ LỌC CHỖ NGHỈ GIÁP BIỂN 🌊 */}
             <div className="pt-2 border-t border-gray-100">
               <label className="flex items-center justify-between text-xs text-gray-800 cursor-pointer group p-2.5 rounded-xl hover:bg-cyan-50/60 border border-cyan-100 transition">
                 <div className="flex items-center gap-2 font-bold text-cyan-950">
@@ -1322,6 +1340,34 @@ export default function HotelListPage() {
                 </div>
                 <span className="text-[10px] bg-cyan-100 text-cyan-800 font-black px-1.5 py-0.5 rounded">
                   {filterCounts.beachfront}
+                </span>
+              </label>
+            </div>
+
+            {/* 📍 BỘ LỌC KHOẢNG CÁCH GẦN TRUNG TÂM (DISTANCE_TO_CENTER <= 2.5 KM) 📍 */}
+            <div>
+              <label className="flex items-center justify-between text-xs text-gray-800 cursor-pointer group p-2.5 rounded-xl hover:bg-amber-50/60 border border-amber-200 transition">
+                <div className="flex items-center gap-2 font-bold text-amber-950">
+                  <input
+                    type="checkbox"
+                    checked={onlyNearCenter}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setOnlyNearCenter(checked);
+                      updateUrlParams({ nearCenter: checked ? "true" : "" });
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-[#006ce4] focus:ring-[#006ce4] cursor-pointer"
+                  />
+                  <span className="flex items-center gap-1">
+                    <Navigation
+                      size={15}
+                      className="text-amber-600 stroke-[2.5]"
+                    />
+                    Gần trung tâm (&le; 2.5 km)
+                  </span>
+                </div>
+                <span className="text-[10px] bg-amber-100 text-amber-800 font-black px-1.5 py-0.5 rounded">
+                  {filterCounts.nearCenter}
                 </span>
               </label>
             </div>
@@ -1559,13 +1605,14 @@ export default function HotelListPage() {
                                 {hotel.location}
                               </span>
                             </div>
+                            {/* HIỂN THỊ KHOẢNG CÁCH TỚI TRUNG TÂM */}
                             {hotel.distance_to_center && (
                               <>
                                 <span>•</span>
-                                <span className="text-slate-600 font-semibold flex items-center gap-1">
+                                <span className="text-amber-800 font-semibold flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                                   <Navigation
                                     size={11}
-                                    className="text-amber-600"
+                                    className="text-amber-600 shrink-0"
                                   />{" "}
                                   Cách trung tâm {hotel.distance_to_center} km
                                 </span>
@@ -1645,7 +1692,6 @@ export default function HotelListPage() {
                                 {badgeRental}
                               </span>
                             )}
-                            {/* HUY HIỆU GIÁP BIỂN TRÊN THẺ KHÁCH SẠN */}
                             {hotel.is_beachfront && (
                               <span className="inline-flex items-center gap-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-[10.5px] font-bold px-2 py-0.5 rounded-md shadow-2xs">
                                 <Waves
