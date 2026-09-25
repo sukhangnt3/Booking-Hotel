@@ -210,7 +210,6 @@ function extractFilters(text) {
     intent = "GREETING";
   }
 
-  // Nhận diện hỏi tiện ích
   if (
     normalizedText.includes("dieu hoa") ||
     normalizedText.includes("may lanh") ||
@@ -266,7 +265,6 @@ function extractFilters(text) {
     intent = "CHECK_AMENITY";
   }
 
-  // Nhận diện hỏi vị trí / địa chỉ
   if (
     normalizedText.includes("o dau") ||
     normalizedText.includes("dia chi") ||
@@ -277,7 +275,6 @@ function extractFilters(text) {
     intent = "CHECK_LOCATION";
   }
 
-  // Nhận diện hỏi giá
   if (
     normalizedText.includes("gia bao nhieu") ||
     normalizedText.includes("gia phong") ||
@@ -598,7 +595,7 @@ async function handleChatMessage(req, res, next) {
       });
     }
 
-    // 1. Quét tìm khách sạn trong database
+    // 1. Quét tìm khách sạn trong database (🌟 ĐÃ BỎ CỘT h.amenities GÂY LỖI)
     const allHotelsRes = await pool.query(
       `SELECT h.id, h.name, h.address, h.city, h.phone, h.star_rating, 
               COALESCE(h.average_rating, 0) AS average_rating, 
@@ -606,7 +603,6 @@ async function handleChatMessage(req, res, next) {
               h.description,
               COALESCE(h.distance_to_center, 1.2) AS distance_to_center,
               COALESCE(h.is_beachfront, false) AS is_beachfront,
-              h.amenities AS hotel_amenities,
               COALESCE(
                 (SELECT img.path FROM public.image img WHERE img.hotel_id = h.id ORDER BY img.is_thumbnail DESC, img.created_at ASC LIMIT 1),
                 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600'
@@ -616,7 +612,7 @@ async function handleChatMessage(req, res, next) {
 
     let specificHotel = null;
 
-    // A. Quét theo tên khách sạn trực tiếp trong tin nhắn
+    // A. Quét theo tên khách sạn trong tin nhắn
     for (const h of allHotelsRes.rows) {
       const normHName = normalizeText(h.name);
       if (normMsg.includes(normHName)) {
@@ -627,8 +623,7 @@ async function handleChatMessage(req, res, next) {
       }
     }
 
-    // B. 🌟 TỰ ĐỘNG GẮN KHÁCH SẠN ĐANG XEM NẾU NGƯỜI DÙNG DÙNG CÁC TỪ QUY CHIẾU:
-    // "ở đây", "chỗ này", "khách sạn này", "phòng này", "địa chỉ ở đâu"...
+    // B. Gắn khách sạn đang xem nếu người dùng dùng từ quy chiếu
     const isReferringToCurrentHotel =
       normMsg.includes("khach san nay") ||
       normMsg.includes("o day") ||
@@ -653,7 +648,7 @@ async function handleChatMessage(req, res, next) {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // NHÁNH 1: KHÁCH HỎI VỀ TIỆN ÍCH ("CÓ HỒ BƠI KHÔNG?", "CÓ WIFI KHÔNG?")
+    // NHÁNH 1: KHÁCH HỎI VỀ TIỆN ÍCH
     // ─────────────────────────────────────────────────────────────
     if (
       extractedFilter.intent === "CHECK_AMENITY" &&
@@ -666,17 +661,8 @@ async function handleChatMessage(req, res, next) {
       if (specificHotel) {
         let hotelHasAmenity = false;
         try {
-          // 1. Kiểm tra tiện ích ở cấp Khách sạn
+          // Kiểm tra tiện ích ở mô tả khách sạn
           if (
-            checkAmenityExists(
-              specificHotel.hotel_amenities,
-              extractedFilter.checkAmenityKey,
-            )
-          ) {
-            hotelHasAmenity = true;
-          }
-          if (
-            !hotelHasAmenity &&
             checkAmenityExists(
               specificHotel.description,
               extractedFilter.checkAmenityKey,
@@ -685,7 +671,7 @@ async function handleChatMessage(req, res, next) {
             hotelHasAmenity = true;
           }
 
-          // 2. Kiểm tra tiện ích ở cấp Hạng Phòng
+          // Kiểm tra tiện ích ở cấp Hạng Phòng (từ bảng room)
           const roomsData = await pool.query(
             `SELECT * FROM public.room WHERE hotel_id = $1`,
             [specificHotel.id],
@@ -1261,7 +1247,7 @@ async function handleChatMessage(req, res, next) {
       }
     }
 
-    // 🌟 QUAN TRỌNG NHẤT: LƯU NGAY KHÁCH SẠN VỪA TÌM ĐƯỢC VÀO LAST_HOTEL_ID
+    // Lưu khách sạn tiêu biểu đầu tiên vào bộ nhớ để khách hỏi câu nối tiếp
     if (matchedRooms.length > 0) {
       extractedFilter.lastHotelId = matchedRooms[0].hotel_id;
       extractedFilter.lastHotelName = matchedRooms[0].hotel_name;
