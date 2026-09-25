@@ -373,6 +373,7 @@ function extractFilters(text) {
     filter.is_beachfront = true;
   }
 
+  // Bóc tách yêu cầu gần trung tâm
   if (
     normalizedText.includes("gan trung tam") ||
     normalizedText.includes("trung tam") ||
@@ -381,6 +382,7 @@ function extractFilters(text) {
     filter.near_center = true;
   }
 
+  // Bóc tách tìm giá rẻ
   if (
     normalizedText.includes("gia re") ||
     normalizedText.includes("re nhat") ||
@@ -595,7 +597,7 @@ async function handleChatMessage(req, res, next) {
       });
     }
 
-    // 1. Quét tìm khách sạn trong database (🌟 ĐÃ BỎ CỘT h.amenities GÂY LỖI)
+    // 1. Quét tìm khách sạn an toàn từ database
     const allHotelsRes = await pool.query(
       `SELECT h.id, h.name, h.address, h.city, h.phone, h.star_rating, 
               COALESCE(h.average_rating, 0) AS average_rating, 
@@ -612,7 +614,7 @@ async function handleChatMessage(req, res, next) {
 
     let specificHotel = null;
 
-    // A. Quét theo tên khách sạn trong tin nhắn
+    // A. Quét theo tên khách sạn trực tiếp trong tin nhắn
     for (const h of allHotelsRes.rows) {
       const normHName = normalizeText(h.name);
       if (normMsg.includes(normHName)) {
@@ -623,7 +625,7 @@ async function handleChatMessage(req, res, next) {
       }
     }
 
-    // B. Gắn khách sạn đang xem nếu người dùng dùng từ quy chiếu
+    // B. Gắn khách sạn đang xem nếu người dùng dùng từ quy chiếu ("ở đây", "chỗ này"...)
     const isReferringToCurrentHotel =
       normMsg.includes("khach san nay") ||
       normMsg.includes("o day") ||
@@ -661,7 +663,6 @@ async function handleChatMessage(req, res, next) {
       if (specificHotel) {
         let hotelHasAmenity = false;
         try {
-          // Kiểm tra tiện ích ở mô tả khách sạn
           if (
             checkAmenityExists(
               specificHotel.description,
@@ -671,7 +672,6 @@ async function handleChatMessage(req, res, next) {
             hotelHasAmenity = true;
           }
 
-          // Kiểm tra tiện ích ở cấp Hạng Phòng (từ bảng room)
           const roomsData = await pool.query(
             `SELECT * FROM public.room WHERE hotel_id = $1`,
             [specificHotel.id],
@@ -973,7 +973,7 @@ async function handleChatMessage(req, res, next) {
           : 650000;
 
       let detailReply = `🏨 **Thông tin cơ sở lưu trú: ${specificHotel.name}**\n\n`;
-      detailReply += `📍 **Địa chỉ:** ${specificHotel.address || ""}, ${specificHotel.city || "Việt Nam"}\n`;
+      detailReply += `📍 **Địa chỉ:** ${specificHotel.address || ""}, ${specificHotel.city || "Việt Nam"} (Cách trung tâm ${specificHotel.distance_to_center} km)\n`;
       detailReply += `⭐ **Tiêu chuẩn:** ${specificHotel.star_rating || 3} sao\n`;
       detailReply += `📞 **Hotline Lễ tân:** **${specificHotel.phone || "Quầy lễ tân phục vụ khi đến"}** (Hỗ trợ nhận phòng sớm, gửi đồ...)\n`;
       detailReply += `🛏️ **Hạng phòng:** Hiện có ${roomCount} loại phòng đang mở bán trực tuyến.\n`;
@@ -1247,38 +1247,66 @@ async function handleChatMessage(req, res, next) {
       }
     }
 
-    // Lưu khách sạn tiêu biểu đầu tiên vào bộ nhớ để khách hỏi câu nối tiếp
     if (matchedRooms.length > 0) {
       extractedFilter.lastHotelId = matchedRooms[0].hotel_id;
       extractedFilter.lastHotelName = matchedRooms[0].hotel_name;
     }
 
-    let botReply = "";
-    const rentalLabel =
-      extractedFilter.rentalType === "HOUR"
-        ? `theo giờ (${extractedFilter.hours || 2} giờ)`
-        : extractedFilter.rentalType === "OVERNIGHT"
-          ? "qua đêm"
-          : extractedFilter.rentalType === "HALF_DAY"
-            ? "theo buổi"
-            : "theo ngày đêm";
-
-    const priceText =
-      extractedFilter.maxPrice && Number(extractedFilter.maxPrice) > 0
-        ? `với giá dưới ${(extractedFilter.maxPrice >= 1000000 ? extractedFilter.maxPrice / 1000000 : extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}${extractedFilter.maxPrice >= 1000000 ? " triệu" : "k"}`
-        : "giá tốt nhất";
-
+    // ─────────────────────────────────────────────────────────────
+    // 🌟 BỘ XÂY DỰNG CÂU TRẢ LỜI TỰ ĐỘNG BIẾN HÓA THEO NGỮ CẢNH 🌟
+    // ─────────────────────────────────────────────────────────────
     const cityName = extractedFilter.city
       ? formatTitleCase(extractedFilter.city)
       : extractedFilter.is_beachfront
         ? "gần biển"
         : "toàn hệ thống";
 
-    if (fallbackWithoutBeach) {
-      botReply = `Dạ hiện tại ở **${cityName}** chưa có chỗ nghỉ sát biển trống phù hợp, nhưng mình gợi ý cho bạn **${matchedRooms.length} chỗ nghỉ có vị trí đẹp, giá tốt nhất** tại ${cityName} ${rentalLabel} ${priceText} nhé 👇`;
-    } else if (extractedFilter.is_beachfront && matchedRooms.length === 0) {
-      const targetArea = extractedFilter.city ? `tại ${cityName}` : "gần biển";
+    // 1. Phân tích cụm từ vị trí & tiện ích mà khách đã yêu cầu
+    const contextFeatures = [];
+    if (extractedFilter.is_beachfront && extractedFilter.near_center) {
+      contextFeatures.push("vừa sát biển vừa gần trung tâm");
+    } else if (extractedFilter.is_beachfront) {
+      contextFeatures.push("sát biển view đẹp");
+    } else if (extractedFilter.near_center) {
+      contextFeatures.push("có vị trí thuận tiện gần trung tâm");
+    }
 
+    if (extractedFilter.amenity_pool) {
+      contextFeatures.push("có hồ bơi");
+    }
+    if (extractedFilter.amenity_bathtub) {
+      contextFeatures.push("có bồn tắm thư giãn");
+    }
+
+    const featureDesc =
+      contextFeatures.length > 0 ? ` ${contextFeatures.join(", ")}` : "";
+
+    // 2. Phân tích hình thức thuê
+    const rentalDesc =
+      extractedFilter.rentalType === "HOUR"
+        ? `thuê theo giờ (${extractedFilter.hours || 2} tiếng)`
+        : extractedFilter.rentalType === "OVERNIGHT"
+          ? "thuê qua đêm"
+          : extractedFilter.rentalType === "HALF_DAY"
+            ? "thuê theo buổi"
+            : "theo ngày đêm";
+
+    // 3. Phân tích ngân sách / giá tiền
+    const priceDesc = extractedFilter.sortByCheapest
+      ? "với mức giá rẻ nhất"
+      : extractedFilter.maxPrice && Number(extractedFilter.maxPrice) > 0
+        ? `với giá dưới ${(extractedFilter.maxPrice >= 1000000 ? extractedFilter.maxPrice / 1000000 : extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}${extractedFilter.maxPrice >= 1000000 ? " triệu" : "k"}`
+        : "giá tốt nhất";
+
+    let botReply = "";
+
+    // Kịch bản A: Nới lỏng vì không có khách sạn biển
+    if (fallbackWithoutBeach) {
+      botReply = `Dạ hiện tại ở **${cityName}** chưa có chỗ nghỉ sát biển trống phù hợp, nhưng mình đã chọn lọc cho bạn **${matchedRooms.length} chỗ nghỉ có vị trí đẹp, giá tốt nhất** tại ${cityName} ${rentalDesc} ${priceDesc} nhé 👇`;
+    }
+    // Kịch bản B: Khách tìm biển mà không có bất kỳ chỗ nào
+    else if (extractedFilter.is_beachfront && matchedRooms.length === 0) {
+      const targetArea = extractedFilter.city ? `tại ${cityName}` : "gần biển";
       const otherCities = ["Vũng Tàu", "Đà Nẵng", "Nha Trang", "Phú Quốc"]
         .filter(
           (c) => normalizeText(c) !== normalizeText(extractedFilter.city || ""),
@@ -1300,20 +1328,21 @@ async function handleChatMessage(req, res, next) {
         suggestions: [],
         filter: extractedFilter,
       });
-    } else if (matchedRooms.length > 0) {
+    }
+    // Kịch bản C: Tìm thấy kết quả -> Câu trả lời ghép ngữ cảnh tự nhiên 100%
+    else if (matchedRooms.length > 0) {
       let groupAdvice = "";
       if (extractedFilter.isGroupBooking) {
         groupAdvice = `\n*(💡 Mẹo: Với đoàn ${extractedFilter.adults} người, bạn có thể tham khảo đặt từ 2 - 3 phòng để lưu trú thoải mái nhất nhé!)*\n`;
       }
 
-      botReply = `Mình vừa tìm thấy **${matchedRooms.length} chỗ nghỉ tiêu biểu** tại ${cityName} ${rentalLabel} ${priceText}.${groupAdvice} Mời bạn lướt xem các gợi ý bên dưới nhé 👇`;
-    } else {
-      const priceFailText =
-        extractedFilter.maxPrice && Number(extractedFilter.maxPrice) > 0
-          ? `thỏa mãn mức giá dưới ${(extractedFilter.maxPrice >= 1000000 ? extractedFilter.maxPrice / 1000000 : extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}${extractedFilter.maxPrice >= 1000000 ? " triệu" : "k"}`
-          : "";
-
-      botReply = `Hiện tại mình chưa tìm thấy phòng nào còn trống tại ${cityName || "khu vực này"} ${priceFailText} ${rentalLabel}. Bạn có muốn thử nâng ngân sách lên một chút hoặc đổi ngày không?`;
+      botReply = `Mình vừa tìm thấy **${matchedRooms.length} chỗ nghỉ tiêu biểu${featureDesc}** tại ${cityName} ${rentalDesc} ${priceDesc}.${groupAdvice} Mời bạn lướt xem các gợi ý bên dưới nhé 👇`;
+    }
+    // Kịch bản D: Không có phòng trống
+    else {
+      const criteriaFailed =
+        contextFeatures.length > 0 ? ` ${contextFeatures.join(", ")}` : "";
+      botReply = `Hiện tại mình chưa tìm thấy phòng nào${criteriaFailed} còn trống tại ${cityName || "khu vực này"} ${rentalDesc} ${priceDesc}. Bạn có muốn thử nâng ngân sách lên một chút hoặc đổi ngày không?`;
     }
 
     await logTurn(
