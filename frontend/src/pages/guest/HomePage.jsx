@@ -211,7 +211,7 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [destination]);
 
-  // Tab switching chuẩn hóa đồng bộ
+  // Tab switching chuẩn hóa
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
@@ -395,6 +395,7 @@ export default function HomePage() {
     navigate(`/hotels?${query.toString()}`);
   };
 
+  // 🌟 NGHIỆP VỤ HOMEPAGE: Mở tự do 24/7, chỉ khóa giờ đã qua trong quá khứ nếu chọn ngày hôm nay!
   const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
 
@@ -403,16 +404,14 @@ export default function HomePage() {
       if (hourNum < currentH) return true;
     }
 
-    if (rentalType === "HOUR") {
-      return hourNum < 8 || hourNum > 22;
-    }
-
-    if (rentalType === "OVERNIGHT") {
-      return hourNum > 5 && hourNum < 22;
-    }
-
     return false;
   };
+
+  // 🌟 MẢNG 24 KHUNG GIỜ TOÀN DIỆN TỪ 00:00 ĐẾN 23:00
+  const ALL_24_HOURS = Array.from(
+    { length: 24 },
+    (_, i) => `${String(i).padStart(2, "0")}:00`,
+  );
 
   const cardTranslatePercentage = 100 / visibleCount;
 
@@ -618,7 +617,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* 🌟 POPUP CHỌN GIỜ & PHÒNG 2 CỘT SANG TRỌNG Y HỆT HOTEL DETAIL 🌟 */}
+                    {/* 🌟 POPUP CHỌN GIỜ & PHÒNG 2 CỘT MỞ TRỌN VẸN 24 KHUNG GIỜ 🌟 */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
@@ -789,32 +788,20 @@ export default function HomePage() {
                             </div>
                           </div>
 
-                          {/* CỘT PHẢI: GIỜ, THỜI GIAN, KHÁCH & PHÒNG */}
+                          {/* CỘT PHẢI: GIỜ (24 KHUNG GIỜ), THỜI GIAN, KHÁCH & PHÒNG */}
                           <div className="sm:col-span-6 space-y-3.5">
-                            {/* GIỜ NHẬN PHÒNG */}
+                            {/* 🌟 ĐẦY ĐỦ 24 KHUNG GIỜ TỪ 00:00 ĐẾN 23:00 🌟 */}
                             <div className="space-y-1.5">
-                              <label className="text-xs font-black text-slate-800 block">
-                                Giờ nhận phòng
-                              </label>
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-black text-slate-800 block">
+                                  Giờ nhận phòng (24h)
+                                </label>
+                                <span className="text-[10px] text-slate-400 font-semibold">
+                                  Lướt ngang chọn giờ &rarr;
+                                </span>
+                              </div>
                               <div className="flex gap-1.5 overflow-x-auto pb-1.5 custom-scrollbar">
-                                {[
-                                  "08:00",
-                                  "09:00",
-                                  "10:00",
-                                  "11:00",
-                                  "12:00",
-                                  "13:00",
-                                  "14:00",
-                                  "15:00",
-                                  "16:00",
-                                  "17:00",
-                                  "18:00",
-                                  "19:00",
-                                  "20:00",
-                                  "21:00",
-                                  "22:00",
-                                  "23:00",
-                                ].map((t) => {
+                                {ALL_24_HOURS.map((t) => {
                                   const disabled = isTimeSlotDisabled(t);
                                   const active = checkInTime === t;
 
@@ -884,7 +871,7 @@ export default function HomePage() {
                               </strong>
                             </div>
 
-                            {/* 🌟 ĐỒNG BỘ ĐẦY ĐỦ: NGƯỜI LỚN, TRẺ EM, SỐ PHÒNG 🌟 */}
+                            {/* ĐỒNG BỘ ĐẦY ĐỦ: NGƯỜI LỚN, TRẺ EM, SỐ PHÒNG */}
                             <div className="space-y-2 pt-1 border-t border-slate-100">
                               {/* 1. Người lớn */}
                               <div className="flex items-center justify-between">
