@@ -64,9 +64,16 @@ const initialFormData = {
 
   starRating: 3,
   description: "",
+
+  // 🌟 KHỞI TẠO ĐẦY ĐỦ CÁC MỐC GIỜ CHUẨN
   checkInFrom: "14:00",
   checkInTo: "23:59",
   checkOutTo: "12:00",
+  hourly_start_time: "07:00",
+  hourly_end_time: "21:00",
+  overnight_checkin_time: "21:00",
+  overnight_checkout_time: "11:00",
+  hourly_grace_minutes: 15,
   cancellation_deadline_hours: 24,
 
   firstName: "",
@@ -166,7 +173,7 @@ export const RegisterForm = () => {
           if (!r.name?.trim())
             err[`room_${i}_name`] = "Vui lòng chọn hoặc nhập tên phòng!";
           if (!r.base_price || Number(r.base_price) <= 0)
-            err[`room_${i}_price`] = "Giá bán phòng phải lớn hơn 0 ₫!";
+            err[`room_${i}_price`] = "Giá bán phòng mỗi đêm phải lớn hơn 0 ₫!";
         });
       }
     }
@@ -260,7 +267,7 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
-  // 🌟 BƯỚC 8: TẠO TÀI KHOẢN VÀ ĐĂNG TẢI KHÁCH SẠN VÀO DATABASE
+  // 🌟 ĐĂNG KÝ KHÁCH SẠN VÀ ĐỒNG BỘ 4 LOẠI GIÁ + CÁC MỐC GIỜ VÀO DATABASE
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
@@ -299,7 +306,7 @@ export const RegisterForm = () => {
         }
       }
 
-      // 2. XỬ LÝ HẠNG PHÒNG & SỐ PHÒNG
+      // 2. 🌟 ĐÓNG GÓI HẠNG PHÒNG VỚI ĐỦ 4 LOẠI GIÁ
       const processedRooms = formData.rooms.map((r, rIdx) => {
         let numbers = [];
         if (r.roomNumbersText) {
@@ -309,7 +316,7 @@ export const RegisterForm = () => {
             .filter(Boolean);
         }
         if (numbers.length === 0) {
-          const count = Number(r.amount || 4);
+          const count = Number(r.amount || 2);
           for (let i = 1; i <= count; i++) numbers.push(`P.${rIdx + 1}0${i}`);
         }
 
@@ -325,7 +332,11 @@ export const RegisterForm = () => {
           id: r.id,
           name: r.name || `Phòng Hạng ${rIdx + 1}`,
           capacity: Number(r.capacity || 2),
+          // 🌟 4 LOẠI GIÁ PHÒNG LƯU VÀO DATABASE
           base_price: Number(r.base_price || 650000),
+          hourly_price: Number(r.hourly_price || 0),
+          overnight_price: Number(r.overnight_price || 0),
+          half_day_price: Number(r.half_day_price || 0),
           description: r.description || "Phòng nghỉ hiện đại, tiện nghi.",
           type: r.type || "Deluxe",
           room_view: r.room_view || "city_view",
@@ -366,10 +377,10 @@ export const RegisterForm = () => {
           };
         });
 
-      // Đảm bảo luôn có 1 ảnh bìa chính
       const hotelCover =
         formData.hotelMainImage || propertyImages[0]?.path || "";
 
+      // 4. 🌟 PAYLOAD ĐẦY ĐỦ CÁC MỐC THỜI GIAN NHẬN - TRẢ PHÒNG
       const payload = {
         name: formData.hotelName || "Cơ sở lưu trú",
         property_type: formData.propertyType || "hotel",
@@ -385,8 +396,26 @@ export const RegisterForm = () => {
         description:
           formData.description ||
           `Tận hưởng kỳ nghỉ dưỡng tuyệt vời tại ${formData.hotelName} với dịch vụ chất lượng cao.`,
+        // 🌟 CÁC MỐC GIỜ VẬN HÀNH ĐỒNG BỘ CHUẨN POSTGRES
         checkin_time: sanitizeTimeToPostgres(formData.checkInFrom, "14:00:00"),
         checkout_time: sanitizeTimeToPostgres(formData.checkOutTo, "12:00:00"),
+        hourly_start_time: sanitizeTimeToPostgres(
+          formData.hourly_start_time,
+          "07:00:00",
+        ),
+        hourly_end_time: sanitizeTimeToPostgres(
+          formData.hourly_end_time,
+          "21:00:00",
+        ),
+        overnight_checkin_time: sanitizeTimeToPostgres(
+          formData.overnight_checkin_time,
+          "21:00:00",
+        ),
+        overnight_checkout_time: sanitizeTimeToPostgres(
+          formData.overnight_checkout_time,
+          "11:00:00",
+        ),
+        hourly_grace_minutes: Number(formData.hourly_grace_minutes || 15),
         cancellation_deadline_hours: Number(
           formData.cancellation_deadline_hours || 24,
         ),

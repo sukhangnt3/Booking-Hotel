@@ -11,6 +11,11 @@ import {
   X,
   Loader2,
   AlertCircle,
+  Sun,
+  Clock,
+  Moon,
+  Hourglass,
+  Users,
 } from "lucide-react";
 
 export const ROOM_CATEGORIES = [
@@ -100,7 +105,6 @@ export const ROOM_AMENITIES_OPTIONS = [
   { id: "toiletries", label: "Đồ vệ sinh cá nhân" },
 ];
 
-// Hàm phụ sinh danh sách số phòng tự động theo số tầng và số lượng
 const generateRoomNumbers = (roomIndex, count) => {
   const floor = roomIndex + 1;
   return Array.from({ length: count }, (_, i) => {
@@ -121,7 +125,6 @@ export const Step3RoomsAndPricing = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [urlInputs, setUrlInputs] = useState({});
 
-  // Nén ảnh Canvas an toàn trước khi lưu
   const compressImageFile = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -143,9 +146,10 @@ export const Step3RoomsAndPricing = ({
     });
   };
 
+  // 🌟 THÊM PHÒNG MỚI ĐẦY ĐỦ 4 LOẠI GIÁ
   const handleAddRoom = () => {
     const nextIdx = rooms.length;
-    const initialAmount = 2; // Khởi tạo mặc định 2 phòng
+    const initialAmount = 2;
     const autoNumbers = generateRoomNumbers(nextIdx, initialAmount);
 
     const newRoom = {
@@ -154,7 +158,6 @@ export const Step3RoomsAndPricing = ({
       name: "Phòng Deluxe Giường Đôi",
       custom_name: "Deluxe Double Room",
       smoking_policy: "non_smoking",
-      // ĐỒNG BỘ TOÀN BỘ CÁC TRƯỜNG SỐ LƯỢNG ĐỂ BACKEND ĐỌC ĐÚNG
       amount: initialAmount,
       total_rooms: initialAmount,
       quantity: initialAmount,
@@ -166,7 +169,11 @@ export const Step3RoomsAndPricing = ({
       bed_type: "1 Giường đôi lớn (King/Queen Size)",
       room_area: 28,
       capacity: 2,
+      // 🌟 ĐẦY ĐỦ 4 LOẠI GIÁ CHUẨN
       base_price: 650000,
+      hourly_price: 150000,
+      overnight_price: 450000,
+      half_day_price: 350000,
       description: "Phòng nghỉ hiện đại, tiện nghi.",
       image: "",
       images: [],
@@ -182,7 +189,6 @@ export const Step3RoomsAndPricing = ({
       if (r.id !== roomId) return r;
       const merged = { ...r, ...updates };
 
-      // NẾU CẬP NHẬT SỐ LƯỢNG PHÒNG
       if (updates.amount !== undefined) {
         const count = Math.max(1, parseInt(updates.amount, 10) || 1);
         merged.amount = count;
@@ -316,14 +322,14 @@ export const Step3RoomsAndPricing = ({
       <div>
         <div className="flex items-center gap-1.5 text-xs font-black text-[#003580] uppercase tracking-wider mb-1">
           <Sparkles size={14} className="text-[#006ce4]" /> Bước 3 / 8: Thiết
-          lập phòng & Giá
+          lập phòng & Bảng giá
         </div>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-          Chi tiết hạng phòng & Hình ảnh
+          Chi tiết hạng phòng & Bảng giá đa dạng
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Tải ảnh thực tế của từng loại phòng, thiết lập cấu hình giường và giá
-          niêm yết mỗi đêm.
+          Thiết lập cấu hình phòng, tải ảnh thực tế và cài đặt giá cho các hình
+          thức thuê: theo ngày, theo giờ, qua đêm hoặc theo buổi.
         </p>
       </div>
 
@@ -345,7 +351,6 @@ export const Step3RoomsAndPricing = ({
                 ? [room.image]
                 : [];
 
-          // Đọc chính xác số phòng đang có
           const roomCountVal =
             room.amount !== undefined && room.amount !== null
               ? room.amount
@@ -563,12 +568,12 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* SỐ LƯỢNG PHÒNG THỰC TẾ (BẢO TOÀN GIÁ TRỊ NHẬP) */}
-              <div className="w-full sm:w-1/2">
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Số phòng thực tế (loại này) *
-                </label>
-                <div className="flex items-center gap-3">
+              {/* SỐ PHÒNG THỰC TẾ & THÔNG SỐ CƠ BẢN */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Số phòng thực tế *
+                  </label>
                   <input
                     type="number"
                     min="1"
@@ -585,52 +590,12 @@ export const Step3RoomsAndPricing = ({
                         handleUpdateRoom(room.id, { amount: 1 });
                       }
                     }}
-                    className="w-32 h-11 px-3.5 text-sm font-black text-[#003580] bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4] text-center"
+                    className="w-full h-11 px-3 text-xs sm:text-sm font-black text-[#003580] bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4] text-center"
                   />
-                  <span className="text-xs text-slate-500 font-medium">
-                    (Phòng đã sinh:{" "}
-                    <b>{room.roomNumbersText || "P.101, P.102..."}</b>)
-                  </span>
-                </div>
-              </div>
-
-              <hr className="border-slate-100 my-2" />
-
-              {/* GIÁ, HƯỚNG VIEW, DIỆN TÍCH */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div
-                  className={`rounded-xl border p-3 ${errors[`room_${idx}_price`] ? "bg-rose-50 border-rose-300" : "bg-[#e8f2ff]/40 border-blue-200"}`}
-                >
-                  <label className="block text-[11px] font-black text-[#003580] uppercase tracking-wider mb-1">
-                    Giá niêm yết / đêm *
-                  </label>
-                  <div className="flex items-center justify-between">
-                    <input
-                      type="text"
-                      value={Number(room.base_price || 0).toLocaleString(
-                        "vi-VN",
-                      )}
-                      onChange={(e) => {
-                        const cleanDigits = e.target.value.replace(/\D/g, "");
-                        handleUpdateRoom(room.id, {
-                          base_price: Number(cleanDigits) || 0,
-                        });
-                      }}
-                      className="w-full text-base font-black text-[#ff6a00] bg-transparent outline-none"
-                    />
-                    <span className="text-xs font-black text-slate-500 shrink-0 ml-1">
-                      ₫
-                    </span>
-                  </div>
-                  {errors[`room_${idx}_price`] && (
-                    <p className="text-[10px] text-rose-600 font-bold mt-1">
-                      {errors[`room_${idx}_price`]}
-                    </p>
-                  )}
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     Hướng phòng (View)
                   </label>
                   <div className="relative">
@@ -655,7 +620,7 @@ export const Step3RoomsAndPricing = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
                     Diện tích phòng (m²)
                   </label>
                   <input
@@ -666,8 +631,153 @@ export const Step3RoomsAndPricing = ({
                         room_area: Number(e.target.value),
                       })
                     }
-                    className="w-full h-11 px-3 text-xs font-bold bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4]"
+                    className="w-full h-11 px-3 text-xs font-bold bg-white rounded-xl border border-slate-300 outline-none focus:border-[#006ce4] text-center"
                   />
+                </div>
+              </div>
+
+              {/* 🌟🌟🌟 BẢNG THIẾT LẬP 4 LOẠI GIÁ (THEO NGÀY, GIỜ, ĐÊM, BUỔI) 🌟🌟🌟 */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-[#003580] uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles size={15} className="text-[#006ce4]" /> Thiết lập
+                    bảng giá các hình thức lưu trú
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    (Nhập 0 hoặc để trống nếu không cung cấp hình thức đó)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                  {/* 1. GIÁ THEO NGÀY (BẮT BUỘC) */}
+                  <div
+                    className={`rounded-xl border p-3 bg-white ${
+                      errors[`room_${idx}_price`]
+                        ? "border-rose-400 bg-rose-50/30"
+                        : "border-blue-200 shadow-2xs"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1 text-[11px] font-black text-[#003580] mb-1">
+                      <Sun size={13} className="text-amber-500" />
+                      <span>Giá mỗi đêm *</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <input
+                        type="text"
+                        value={Number(room.base_price || 0).toLocaleString(
+                          "vi-VN",
+                        )}
+                        onChange={(e) => {
+                          const cleanDigits = e.target.value.replace(/\D/g, "");
+                          handleUpdateRoom(room.id, {
+                            base_price: Number(cleanDigits) || 0,
+                          });
+                        }}
+                        className="w-full text-sm font-black text-[#ff6a00] bg-transparent outline-none"
+                      />
+                      <span className="text-xs font-black text-slate-400 ml-1">
+                        ₫
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-1">
+                      Tiêu chuẩn ngày đêm
+                    </span>
+                    {errors[`room_${idx}_price`] && (
+                      <p className="text-[10px] text-rose-600 font-bold mt-1">
+                        {errors[`room_${idx}_price`]}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 2. GIÁ THEO GIỜ (1-2H ĐẦU) */}
+                  <div className="rounded-xl border border-slate-200 p-3 bg-white shadow-2xs">
+                    <div className="flex items-center gap-1 text-[11px] font-black text-[#003580] mb-1">
+                      <Clock size={13} className="text-blue-600" />
+                      <span>Giá theo giờ (1-2h)</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <input
+                        type="text"
+                        value={Number(room.hourly_price || 0).toLocaleString(
+                          "vi-VN",
+                        )}
+                        onChange={(e) => {
+                          const cleanDigits = e.target.value.replace(/\D/g, "");
+                          handleUpdateRoom(room.id, {
+                            hourly_price: Number(cleanDigits) || 0,
+                          });
+                        }}
+                        placeholder="0"
+                        className="w-full text-sm font-black text-slate-900 bg-transparent outline-none"
+                      />
+                      <span className="text-xs font-black text-slate-400 ml-1">
+                        ₫
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-1">
+                      Giá 1 hoặc 2 giờ đầu
+                    </span>
+                  </div>
+
+                  {/* 3. GIÁ QUA ĐÊM */}
+                  <div className="rounded-xl border border-slate-200 p-3 bg-white shadow-2xs">
+                    <div className="flex items-center gap-1 text-[11px] font-black text-[#003580] mb-1">
+                      <Moon size={13} className="text-indigo-600" />
+                      <span>Giá qua đêm</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <input
+                        type="text"
+                        value={Number(room.overnight_price || 0).toLocaleString(
+                          "vi-VN",
+                        )}
+                        onChange={(e) => {
+                          const cleanDigits = e.target.value.replace(/\D/g, "");
+                          handleUpdateRoom(room.id, {
+                            overnight_price: Number(cleanDigits) || 0,
+                          });
+                        }}
+                        placeholder="0"
+                        className="w-full text-sm font-black text-slate-900 bg-transparent outline-none"
+                      />
+                      <span className="text-xs font-black text-slate-400 ml-1">
+                        ₫
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-1">
+                      Nhận tối - trả sáng hôm sau
+                    </span>
+                  </div>
+
+                  {/* 4. GIÁ THEO BUỔI (NỬA NGÀY) */}
+                  <div className="rounded-xl border border-slate-200 p-3 bg-white shadow-2xs">
+                    <div className="flex items-center gap-1 text-[11px] font-black text-[#003580] mb-1">
+                      <Hourglass size={13} className="text-teal-600" />
+                      <span>Giá theo buổi</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <input
+                        type="text"
+                        value={Number(room.half_day_price || 0).toLocaleString(
+                          "vi-VN",
+                        )}
+                        onChange={(e) => {
+                          const cleanDigits = e.target.value.replace(/\D/g, "");
+                          handleUpdateRoom(room.id, {
+                            half_day_price: Number(cleanDigits) || 0,
+                          });
+                        }}
+                        placeholder="0"
+                        className="w-full text-sm font-black text-slate-900 bg-transparent outline-none"
+                      />
+                      <span className="text-xs font-black text-slate-400 ml-1">
+                        ₫
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 block mt-1">
+                      Lưu trú nửa ngày trong ngày
+                    </span>
+                  </div>
                 </div>
               </div>
 
