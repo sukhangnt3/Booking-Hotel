@@ -81,7 +81,6 @@ export default function ChatbotWidget() {
   const [favorites, setFavorites] = useState({});
   const messagesEndRef = useRef(null);
 
-  // Tạo mới sessionId hoàn toàn mỗi khi bấm Làm mới chat
   const [sessionId, setSessionId] = useState(`guest_${Date.now()}`);
 
   useEffect(() => {
@@ -279,9 +278,12 @@ export default function ChatbotWidget() {
                           const ratingNum = Number(h.average_rating || 0);
                           const reviewCount = Number(h.review_count || 0);
 
-                          const mainTitle =
-                            h.room_name || h.hotel_name || h.name;
-                          const subHotelName = h.hotel_name || h.name;
+                          // 🌟 CHUẨN UX: TIÊU ĐỀ CHÍNH LÀ TÊN KHÁCH SẠN
+                          const hotelTitle =
+                            h.hotel_name || h.name || "Khách sạn nghỉ dưỡng";
+                          const roomSubtitle = h.room_name
+                            ? `🛏️ ${h.room_name}`
+                            : "🏨 Chỗ nghỉ tiêu biểu";
 
                           return (
                             <div
@@ -292,7 +294,7 @@ export default function ChatbotWidget() {
                               <div className="relative h-32 w-full bg-gray-100 overflow-hidden">
                                 <img
                                   src={roomImg}
-                                  alt={mainTitle}
+                                  alt={hotelTitle}
                                   className="w-full h-full object-cover"
                                 />
                                 <button
@@ -318,7 +320,7 @@ export default function ChatbotWidget() {
                                     <div className="flex text-amber-400 text-[10px]">
                                       {"⭐".repeat(h.star_rating || 3)}
                                     </div>
-                                    {/* 🌟 HUY HIỆU GIÁP BIỂN */}
+                                    {/* HUY HIỆU GIÁP BIỂN */}
                                     {h.is_beachfront && (
                                       <span className="text-[9px] font-black text-cyan-800 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
                                         <Waves
@@ -330,18 +332,20 @@ export default function ChatbotWidget() {
                                     )}
                                   </div>
 
+                                  {/* 🌟 1. TÊN KHÁCH SẠN LÀ TIÊU ĐỀ CHÍNH BẬT NỔI BẬT */}
                                   <h4
                                     className="font-black text-xs text-[#0a2540] line-clamp-1 leading-tight"
-                                    title={mainTitle}
+                                    title={hotelTitle}
                                   >
-                                    {mainTitle}
+                                    🏨 {hotelTitle}
                                   </h4>
 
+                                  {/* 🌟 2. TÊN HẠNG PHÒNG VÀ ĐỊA ĐIỂM Ở DÒNG PHỤ */}
                                   <p className="text-[10px] text-blue-700 font-bold truncate">
-                                    🏨 {subHotelName} • {h.city || "Việt Nam"}
+                                    {roomSubtitle} • {h.city || "Việt Nam"}
                                   </p>
 
-                                  {/* 🌟 HIỂN THỊ KHOẢNG CÁCH TỚI TRUNG TÂM (DISTANCE_TO_CENTER) */}
+                                  {/* KHOẢNG CÁCH TỚI TRUNG TÂM */}
                                   {h.distance_to_center && (
                                     <div className="flex items-center gap-1 text-[10px] text-amber-800 font-semibold bg-amber-50/70 border border-amber-200/60 px-1.5 py-0.5 rounded-md w-fit">
                                       <Navigation
@@ -417,7 +421,7 @@ export default function ChatbotWidget() {
                                     type="button"
                                     onClick={() =>
                                       handleSendMessage(
-                                        `Cho tôi biết thêm thông tin chi tiết về khách sạn ${subHotelName}`,
+                                        `Cho tôi biết thêm thông tin chi tiết về khách sạn ${hotelTitle}`,
                                       )
                                     }
                                     className="w-full py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold text-[11px] rounded-xl border border-gray-200 flex items-center justify-center gap-1.5 transition cursor-pointer"
@@ -431,7 +435,7 @@ export default function ChatbotWidget() {
                         })}
                       </div>
 
-                      {/* XEM TẤT CẢ KẾT QUẢ CÓ TRUYỀN CẢ BEACHFRONT VÀ NEARCENTER */}
+                      {/* XEM TẤT CẢ KẾT QUẢ */}
                       <div className="flex items-center justify-between pt-1 text-xs">
                         <button
                           type="button"
