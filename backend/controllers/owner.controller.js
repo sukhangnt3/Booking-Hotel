@@ -11,7 +11,7 @@ const safeRequire = (m) => {
 };
 const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
 
-// 🌟 TỰ ĐỘNG MIGRATION TOÀN BỘ CỘT CHO BẢNG BOOKING VÀ BẢNG HOTEL (KHÔNG CẦN CHẠY SQL BẰNG TAY) 🌟
+// 🌟 TỰ ĐỘNG MIGRATION TOÀN BỘ CỘT CHO BẢNG BOOKING, HOTEL VÀ ROOM TRÊN POSTGRESQL 🌟
 (async () => {
   try {
     await pool
@@ -25,7 +25,7 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       .catch(() => {});
 
     await pool.query(`
-      -- Cột mở rộng cho bảng booking
+      -- 1. Cột mở rộng cho bảng booking (Đơn đặt phòng)
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS room_legs jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS receptionist_assigned boolean DEFAULT false;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00';
@@ -35,18 +35,28 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS guest_declarations jsonb DEFAULT '[]'::jsonb;
 
-      -- Cột giờ cho bảng hotel
+      -- 2. Cột giờ & thông số định vị cho bảng hotel (Cơ sở lưu trú)
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS checkout_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00';
-      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS overnight_checkin_time TIME WITHOUT TIME ZONE DEFAULT '22:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS overnight_checkin_time TIME WITHOUT TIME ZONE DEFAULT '21:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS overnight_checkout_time TIME WITHOUT TIME ZONE DEFAULT '11:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS halfday_checkin_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS halfday_checkout_time TIME WITHOUT TIME ZONE DEFAULT '21:00:00';
-      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_start_time TIME WITHOUT TIME ZONE DEFAULT '08:00:00';
-      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_end_time TIME WITHOUT TIME ZONE DEFAULT '22:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_start_time TIME WITHOUT TIME ZONE DEFAULT '07:00:00';
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_end_time TIME WITHOUT TIME ZONE DEFAULT '21:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_grace_minutes INT DEFAULT 15;
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS daily_grace_hours INT DEFAULT 1;
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS is_beachfront BOOLEAN DEFAULT false;
+      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS distance_to_center NUMERIC DEFAULT 1.2;
 
+      -- 3. Cột giá đa dạng cho bảng room (Hạng phòng)
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS hourly_price NUMERIC DEFAULT 0;
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS overnight_price NUMERIC DEFAULT 0;
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS half_day_price NUMERIC DEFAULT 0;
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS hourly_tiers JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+      -- 4. Bảng khóa tạm giữ phòng khi khách đang thanh toán
       CREATE TABLE IF NOT EXISTS public.temporary_locks (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         room_id UUID,
@@ -60,7 +70,7 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       );
     `);
     console.log(
-      "✓ Đã đồng bộ cấu trúc các cột khung giờ và đặt phòng thành công!",
+      "✓ [AUTO-MIGRATION] Đã đồng bộ cấu trúc cột Bảng Hotel, Room và Booking thành công!",
     );
   } catch (err) {
     console.warn("⚠️ Cảnh báo migration owner columns:", err.message);
@@ -576,7 +586,6 @@ async function getRoomMapData(req, res) {
         .status(400)
         .json({ success: false, message: "hotel_id là bắt buộc." });
 
-    // VÁ LỖI: Chỉ hủy đơn pending quá 15 phút nếu KHÔNG có cọc 30%
     await pool
       .query(
         `
@@ -1466,11 +1475,9 @@ async function deleteOwnerStaff(req, res) {
 
     if (!deleteRes.rowCount) {
       await client.query("ROLLBACK");
-      return res
-        .status(404)
-        .json({
-          message: "Không tìm thấy nhân viên lễ tân này trong cơ sở của bạn.",
-        });
+      return res.status(404).json({
+        message: "Không tìm thấy nhân viên lễ tân này trong cơ sở của bạn.",
+      });
     }
     await client.query("COMMIT");
     return res.json({

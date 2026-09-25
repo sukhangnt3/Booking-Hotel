@@ -12,6 +12,9 @@ import {
   Send,
   Loader2,
   Image as ImageIcon,
+  Sun,
+  Moon,
+  Hourglass,
 } from "lucide-react";
 
 export const ReviewModal = ({
@@ -21,7 +24,6 @@ export const ReviewModal = ({
   onConfirmSubmit,
   loading = false,
 }) => {
-  // Đóng modal khi bấm phím Escape
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape" && isOpen && !loading) onClose();
@@ -61,7 +63,8 @@ export const ReviewModal = ({
                 Rà Soát Hồ Sơ Khách Sạn Trước Khi Mở Bán
               </h2>
               <p className="text-xs text-blue-100">
-                Kiểm tra thông tin trước khi đồng bộ lên hệ thống GoStay
+                Kiểm tra thông tin chi tiết trước khi đồng bộ lên hệ thống
+                GoStay
               </p>
             </div>
           </div>
@@ -76,8 +79,8 @@ export const ReviewModal = ({
         </div>
 
         {/* NỘI DUNG CHI TIẾT */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-sm text-slate-800">
-          {/* KHỐI 1: THÔNG TIN CƠ SỞ & ẢNH ĐẠI DIỆN */}
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 text-sm text-slate-800 custom-scrollbar">
+          {/* KHỐI 1: THÔNG TIN CƠ SỞ & CÁC MỐC GIỜ VẬN HÀNH */}
           <div className="border border-slate-200 rounded-2xl p-4 bg-[#f5f7fa] space-y-3">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -115,46 +118,109 @@ export const ReviewModal = ({
               </span>
             </div>
 
-            <div className="flex flex-wrap gap-4 text-xs text-slate-600 pt-2 border-t border-slate-200">
-              <span className="flex items-center gap-1">
-                <Clock size={14} className="text-[#006ce4]" /> Nhận phòng:{" "}
-                <b>{data?.checkInFrom || "14:00"}</b>
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock size={14} className="text-[#006ce4]" /> Trả phòng:{" "}
-                <b>{data?.checkOutTo || "12:00"}</b>
-              </span>
-              <span className="flex items-center gap-1">
-                <ShieldCheck size={14} className="text-emerald-600" /> Hủy miễn
-                phí: <b>{data?.cancellation_deadline_hours || 24}h trước</b>
-              </span>
+            {/* MỐC GIỜ ĐẦY ĐỦ 4 HÌNH THỨC */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-700 pt-2 border-t border-slate-200 font-medium">
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block font-bold">
+                  ☀️ Theo ngày:
+                </span>
+                <b>
+                  {data?.checkInFrom || "14:00"} – {data?.checkOutTo || "12:00"}
+                </b>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block font-bold">
+                  🕒 Theo giờ:
+                </span>
+                <b>
+                  {data?.hourly_start_time || "07:00"} –{" "}
+                  {data?.hourly_end_time || "21:00"}
+                </b>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block font-bold">
+                  🌙 Qua đêm:
+                </span>
+                <b>
+                  Từ {data?.overnight_checkin_time || "21:00"} (Trả{" "}
+                  {data?.overnight_checkout_time || "11:00"})
+                </b>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-slate-400 block font-bold">
+                  ⏳ Theo buổi:
+                </span>
+                <b>
+                  {data?.halfday_checkin_time || "12:00"} –{" "}
+                  {data?.halfday_checkout_time || "21:00"}
+                </b>
+              </div>
             </div>
           </div>
 
-          {/* KHỐI 2: HẠNG PHÒNG & GIÁ BÁN */}
+          {/* KHỐI 2: HẠNG PHÒNG & ĐẦY ĐỦ BẢNG GIÁ 4 LOẠI */}
           <div className="border border-slate-200 rounded-2xl p-4 space-y-3">
             <h4 className="font-black text-xs uppercase tracking-wider text-slate-700 flex items-center gap-2">
               <Bed size={16} className="text-[#006ce4]" /> Danh mục{" "}
-              {rooms.length} Loại phòng mở bán:
+              {rooms.length} Hạng phòng & Bảng giá chi tiết:
             </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               {rooms.map((r, i) => (
                 <div
                   key={r?.id || i}
-                  className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5"
+                  className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2"
                 >
-                  <div className="flex justify-between items-center font-bold text-slate-900">
-                    <span className="truncate">
+                  <div className="flex justify-between items-center font-bold text-slate-900 border-b border-slate-200 pb-2">
+                    <span className="text-sm font-black text-[#003580]">
                       #{i + 1}. {r?.name || "Phòng nghỉ"}
                     </span>
-                    <span className="text-[#ff6a00] font-black shrink-0 ml-2">
-                      {formatVND(r?.base_price || r?.weekdayPrice)}
+                    <span className="text-slate-500 font-medium">
+                      Số lượng: <b>{r?.amount || 2} phòng</b> (
+                      {r?.capacity || 2} khách/phòng)
                     </span>
                   </div>
-                  <p className="text-slate-500 font-medium">
-                    {r?.bed_type || "1 Giường đôi"} • {r?.room_area || 28}m² •
-                    Tối đa {r?.capacity || 2} khách
-                  </p>
+
+                  {/* 4 LOẠI GIÁ */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-slate-700">
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">
+                        ☀️ Ngày đêm:
+                      </span>
+                      <strong className="text-[#ff6a00] font-black">
+                        {formatVND(r?.base_price)}
+                      </strong>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">
+                        🕒 Theo giờ:
+                      </span>
+                      <strong>
+                        {Number(r?.hourly_price) > 0
+                          ? formatVND(r?.hourly_price)
+                          : "Không áp dụng"}
+                      </strong>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">
+                        🌙 Qua đêm:
+                      </span>
+                      <strong>
+                        {Number(r?.overnight_price) > 0
+                          ? formatVND(r?.overnight_price)
+                          : "Không áp dụng"}
+                      </strong>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-400 block font-bold">
+                        ⏳ Theo buổi:
+                      </span>
+                      <strong>
+                        {Number(r?.half_day_price) > 0
+                          ? formatVND(r?.half_day_price)
+                          : "Không áp dụng"}
+                      </strong>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -196,7 +262,7 @@ export const ReviewModal = ({
           </div>
         </div>
 
-        {/* FOOTER CÁC NÚT BẤM */}
+        {/* FOOTER NÚT BẤM */}
         <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex justify-between items-center gap-3">
           <button
             type="button"
@@ -221,7 +287,7 @@ export const ReviewModal = ({
             ) : (
               <>
                 <Send size={15} />
-                <span>Đồng ý & Gửi hồ sơ</span>
+                <span>Đồng ý & Mở bán ngay</span>
               </>
             )}
           </button>
