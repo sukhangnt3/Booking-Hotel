@@ -22,6 +22,7 @@ import {
   Sun,
   Hourglass,
   Zap,
+  Waves,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import apiClient from "@/services/apiClient";
@@ -78,7 +79,8 @@ export default function ChatbotWidget() {
   const [favorites, setFavorites] = useState({});
   const messagesEndRef = useRef(null);
 
-  const sessionId = useRef(`guest_${Date.now()}`).current;
+  // Tạo mới sessionId hoàn toàn khi bấm Làm mới chat
+  const [sessionId, setSessionId] = useState(`guest_${Date.now()}`);
 
   useEffect(() => {
     if (isOpen) {
@@ -135,6 +137,7 @@ export default function ChatbotWidget() {
   };
 
   const handleNewChat = () => {
+    setSessionId(`guest_${Date.now()}`);
     setMessages([
       {
         id: Date.now().toString(),
@@ -219,7 +222,7 @@ export default function ChatbotWidget() {
             {/* GỢI Ý CÂU HỎI NHANH */}
             {messages.length === 1 && (
               <div className="space-y-2 pt-1 animate-fadeIn">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block flex items-center gap-1">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                   <Zap size={11} className="text-amber-500" /> Gợi ý tìm kiếm
                   nhanh:
                 </span>
@@ -274,7 +277,6 @@ export default function ChatbotWidget() {
                           const ratingNum = Number(h.average_rating || 0);
                           const reviewCount = Number(h.review_count || 0);
 
-                          // Phân biệt rõ Tên Hạng Phòng và Tên Khách Sạn
                           const mainTitle =
                             h.room_name || h.hotel_name || h.name;
                           const subHotelName = h.hotel_name || h.name;
@@ -307,14 +309,25 @@ export default function ChatbotWidget() {
                                 </button>
                               </div>
 
-                              {/* THÔNG TIN CHỖ NGHỈ: HIỂN THỊ RÕ HẠNG PHÒNG */}
+                              {/* THÔNG TIN CHỖ NGHỈ */}
                               <div className="p-3 space-y-2 flex-1 flex flex-col justify-between">
                                 <div className="space-y-1">
-                                  <div className="flex text-amber-400 text-[10px]">
-                                    {"⭐".repeat(h.star_rating || 3)}
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <div className="flex text-amber-400 text-[10px]">
+                                      {"⭐".repeat(h.star_rating || 3)}
+                                    </div>
+                                    {/* 🌟 HIỂN THỊ HUY HIỆU GIÁP BIỂN TRÊN THẺ PHÒNG CHATBOT */}
+                                    {h.is_beachfront && (
+                                      <span className="text-[9px] font-black text-cyan-800 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                                        <Waves
+                                          size={10}
+                                          className="text-cyan-600"
+                                        />
+                                        Giáp biển
+                                      </span>
+                                    )}
                                   </div>
 
-                                  {/* TÊN HẠNG PHÒNG LÀM CHỦ ĐẠO */}
                                   <h4
                                     className="font-black text-xs text-[#0a2540] line-clamp-1 leading-tight"
                                     title={mainTitle}
@@ -322,12 +335,10 @@ export default function ChatbotWidget() {
                                     {mainTitle}
                                   </h4>
 
-                                  {/* TÊN KHÁCH SẠN VÀ THÀNH PHỐ Ở DÒNG PHỤ */}
                                   <p className="text-[10px] text-blue-700 font-bold truncate">
                                     🏨 {subHotelName} • {h.city || "Việt Nam"}
                                   </p>
 
-                                  {/* ĐIỂM ĐÁNH GIÁ */}
                                   {reviewCount > 0 && ratingNum > 0 ? (
                                     <div className="flex items-center gap-1.5 pt-1">
                                       <span className="bg-[#003580] text-white font-black text-[10px] px-1.5 py-0.5 rounded-md">
@@ -351,7 +362,7 @@ export default function ChatbotWidget() {
                                   )}
                                 </div>
 
-                                {/* GIÁ TIỀN CHUẨN XÁC */}
+                                {/* GIÁ TIỀN */}
                                 <div className="pt-2 border-t border-gray-100">
                                   <span className="text-[9px] text-gray-400 block font-semibold">
                                     Giá {getPriceLabel(currentRentalType)} từ:
@@ -405,7 +416,7 @@ export default function ChatbotWidget() {
                         })}
                       </div>
 
-                      {/* XEM TẤT CẢ KẾT QUẢ */}
+                      {/* XEM TẤT CẢ KẾT QUẢ CÓ TRUYỀN THAM SỐ BEACHFRONT */}
                       <div className="flex items-center justify-between pt-1 text-xs">
                         <button
                           type="button"
@@ -417,8 +428,11 @@ export default function ChatbotWidget() {
                             const rental = m.filter?.rentalType || "DAY";
                             const hours = m.filter?.hours || 2;
                             const adults = m.filter?.adults || 1;
+                            const beachfrontParam = m.filter?.is_beachfront
+                              ? "&beachfront=true"
+                              : "";
                             navigate(
-                              `/hotels?destination=${encodeURIComponent(dest)}&checkIn=${checkIn}&checkOut=${checkOut}&rentalType=${rental}&hours=${hours}&adults=${adults}`,
+                              `/hotels?destination=${encodeURIComponent(dest)}&checkIn=${checkIn}&checkOut=${checkOut}&rentalType=${rental}&hours=${hours}&adults=${adults}${beachfrontParam}`,
                             );
                           }}
                           className="font-bold text-[#006ce4] hover:underline flex items-center gap-1.5 cursor-pointer"

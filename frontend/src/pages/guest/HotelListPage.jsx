@@ -163,6 +163,14 @@ export default function HotelListPage() {
     searchParams.get("stars")?.split(",").map(Number).filter(Boolean) || [];
   const sortBy = searchParams.get("sortBy") || "popular";
 
+  // 🌟 ĐỌC THAM SỐ GIÁP BIỂN TỪ URL (VD TỪ CHATBOT BẤM SANG)
+  const initialBeachfront = searchParams.get("beachfront") === "true";
+  const [onlyBeachfront, setOnlyBeachfront] = useState(initialBeachfront);
+
+  useEffect(() => {
+    setOnlyBeachfront(searchParams.get("beachfront") === "true");
+  }, [searchParams]);
+
   // State thanh tìm kiếm
   const [destInput, setDestInput] = useState(initialDestination);
   const [rentalType, setRentalType] = useState(initialRentalType);
@@ -402,7 +410,6 @@ export default function HotelListPage() {
           };
         });
 
-        // TÍNH MIN/MAX NGÂN SÁCH ĐÚNG THEO HÌNH THỨC ĐANG CHỌN
         if (formattedList.length > 0) {
           const allPrices = formattedList.map((h) => {
             if (curRental === "HOUR") return h.min_hourly_price;
@@ -549,6 +556,7 @@ export default function HotelListPage() {
     query.children = children.toString();
     query.rooms = rooms.toString();
     if (selectedStars.length > 0) query.stars = selectedStars.join(",");
+    if (onlyBeachfront) query.beachfront = "true";
     query.sortBy = sortBy;
 
     setIsDestDropdownOpen(false);
@@ -573,14 +581,16 @@ export default function HotelListPage() {
     setSearchHotelName("");
     setSelectedStars([]);
     setSelectedRating(null);
+    setOnlyBeachfront(false);
     setUserPriceRange([priceBounds.min, priceBounds.max]);
-    updateUrlParams({ stars: "" });
+    updateUrlParams({ stars: "", beachfront: "" });
   };
 
   const filterCounts = useMemo(() => {
     const counts = {
       stars: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
       ratings: { 9: 0, 8: 0, 7: 0, 6: 0 },
+      beachfront: 0,
     };
     hotels.forEach((h) => {
       const star = Math.round(h.star_rating);
@@ -589,24 +599,29 @@ export default function HotelListPage() {
       if (h.rating >= 8.0) counts.ratings[8]++;
       if (h.rating >= 7.0) counts.ratings[7]++;
       if (h.rating >= 6.0) counts.ratings[6]++;
+      if (h.is_beachfront) counts.beachfront++;
     });
     return counts;
   }, [hotels]);
 
-  // LỌC NGÂN SÁCH ĐỘNG & KHUNG GIỜ MỞ BÁN
+  // LỌC NGÂN SÁCH ĐỘNG, GIÁP BIỂN & KHUNG GIỜ MỞ BÁN
   const filteredHotels = useMemo(() => {
     return hotels.filter((hotel) => {
       const star = Number(hotel.star_rating || 0);
       const score = Number(hotel.rating || 0);
 
-      // 1. Lọc theo tên
+      // 🌟 1. Lọc theo giáp biển nếu được chọn
+      if (onlyBeachfront && !hotel.is_beachfront) {
+        return false;
+      }
+
+      // 2. Lọc theo tên
       if (searchHotelName.trim()) {
         const nameSearchKey = removeVietnameseTones(searchHotelName);
         const nameKey = removeVietnameseTones(hotel.name);
         if (!nameKey.includes(nameSearchKey)) return false;
       }
 
-      // Lấy đúng giá của hình thức lưu trú đang chọn để so sánh ngân sách
       let currentComparePrice = hotel.salePrice;
       if (rentalType === "HOUR") {
         currentComparePrice = hotel.min_hourly_price;
@@ -627,7 +642,7 @@ export default function HotelListPage() {
         return false;
       if (selectedRating !== null && score < selectedRating) return false;
 
-      // 2. KIỂM TRA KHUNG GIỜ THEO GIỜ (HOURLY)
+      // 3. KIỂM TRA KHUNG GIỜ THEO GIỜ (HOURLY)
       if (rentalType === "HOUR") {
         const hStart = (hotel.hourly_start_time || "08:00").slice(0, 5);
         const hEnd = (hotel.hourly_end_time || "22:00").slice(0, 5);
@@ -638,7 +653,7 @@ export default function HotelListPage() {
         }
       }
 
-      // 3. KIỂM TRA KHUNG GIỜ QUA ĐÊM (OVERNIGHT)
+      // 4. KIỂM TRA KHUNG GIỜ QUA ĐÊM (OVERNIGHT)
       if (rentalType === "OVERNIGHT") {
         const oIn = (hotel.overnight_checkin_time || "22:00").slice(0, 5);
         const inTime = (checkInTime || "22:00").slice(0, 5);
@@ -654,6 +669,7 @@ export default function HotelListPage() {
     });
   }, [
     hotels,
+    onlyBeachfront,
     searchHotelName,
     userPriceRange,
     selectedStars,
@@ -1261,7 +1277,7 @@ export default function HotelListPage() {
         {/* NỘI DUNG CHÍNH */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* SIDEBAR BỘ LỌC */}
-          <aside className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-6 sticky top-20">
+          <aside className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-5 sticky top-20">
             <div className="flex items-center justify-between pb-2 border-b border-gray-100">
               <h2 className="font-extrabold text-base text-gray-900 flex items-center gap-1.5">
                 <SlidersHorizontal size={16} /> Chọn lọc theo:
@@ -1283,6 +1299,31 @@ export default function HotelListPage() {
                 onChange={(e) => setSearchHotelName(e.target.value)}
                 className="w-full px-3 py-2 text-xs border border-gray-300 rounded-xl focus:border-[#006ce4] focus:outline-none placeholder:text-gray-400 font-medium"
               />
+            </div>
+
+            {/* 🌟 BỘ LỌC CHỖ NGHỈ GIÁP BIỂN 🌟 */}
+            <div className="pt-2 border-t border-gray-100">
+              <label className="flex items-center justify-between text-xs text-gray-800 cursor-pointer group p-2.5 rounded-xl hover:bg-cyan-50/60 border border-cyan-100 transition">
+                <div className="flex items-center gap-2 font-bold text-cyan-950">
+                  <input
+                    type="checkbox"
+                    checked={onlyBeachfront}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setOnlyBeachfront(checked);
+                      updateUrlParams({ beachfront: checked ? "true" : "" });
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-[#006ce4] focus:ring-[#006ce4] cursor-pointer"
+                  />
+                  <span className="flex items-center gap-1">
+                    <Waves size={15} className="text-cyan-600 stroke-[2.5]" />
+                    Chỗ nghỉ giáp biển
+                  </span>
+                </div>
+                <span className="text-[10px] bg-cyan-100 text-cyan-800 font-black px-1.5 py-0.5 rounded">
+                  {filterCounts.beachfront}
+                </span>
+              </label>
             </div>
 
             {/* Ngân sách */}
@@ -1424,7 +1465,6 @@ export default function HotelListPage() {
               <div className="space-y-4">
                 {sortedHotels.map((hotel) => {
                   const id = hotel.id;
-                  // 🌟 ĐÃ SỬA LỖI Ở ĐÂY: Dùng đúng biến id thay vì hotelId 🌟
                   const isFav = Boolean(favorites[id]);
                   const score = Number(hotel.rating || 0);
 
@@ -1533,12 +1573,11 @@ export default function HotelListPage() {
                             )}
                           </div>
 
-                          {/* THANH TÓM TẮT ĐA DẠNG MỨC GIÁ CHUẨN TỪNG HẠNG PHÒNG */}
+                          {/* THANH TÓM TẮT ĐA DẠNG MỨC GIÁ */}
                           <div
                             className="flex items-center gap-1.5 flex-wrap pt-1 text-[11px]"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {/* Nút Giờ */}
                             <button
                               type="button"
                               onClick={() => handleTabChange("HOUR")}
@@ -1554,7 +1593,6 @@ export default function HotelListPage() {
                               </b>
                             </button>
 
-                            {/* Nút Buổi */}
                             <button
                               type="button"
                               onClick={() => handleTabChange("HALF_DAY")}
@@ -1570,7 +1608,6 @@ export default function HotelListPage() {
                               </b>
                             </button>
 
-                            {/* Nút Đêm */}
                             <button
                               type="button"
                               onClick={() => handleTabChange("OVERNIGHT")}
@@ -1586,7 +1623,6 @@ export default function HotelListPage() {
                               </b>
                             </button>
 
-                            {/* Nút Ngày */}
                             <button
                               type="button"
                               onClick={() => handleTabChange("DAY")}
@@ -1609,6 +1645,7 @@ export default function HotelListPage() {
                                 {badgeRental}
                               </span>
                             )}
+                            {/* HUY HIỆU GIÁP BIỂN TRÊN THẺ KHÁCH SẠN */}
                             {hotel.is_beachfront && (
                               <span className="inline-flex items-center gap-1 bg-cyan-50 border border-cyan-200 text-cyan-800 text-[10.5px] font-bold px-2 py-0.5 rounded-md shadow-2xs">
                                 <Waves

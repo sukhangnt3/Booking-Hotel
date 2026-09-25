@@ -14,6 +14,18 @@ const CITY_ALIASES = [
   ["phú quốc", "phu quoc"],
   ["đà lạt", "da lat"],
   ["vũng tàu", "vung tau"],
+  ["hạ long", "ha long"],
+  ["quảng ninh", "quang ninh"],
+  ["phan thiết", "phan thiet"],
+  ["mũi né", "mui ne"],
+  ["quy nhơn", "quy nhon"],
+  ["bình định", "binh dinh"],
+  ["huế", "hue"],
+  ["hội an", "hoi an"],
+  ["sa pa", "sa pa"],
+  ["sapa", "sa pa"],
+  ["cần thơ", "can tho"],
+  ["ninh bình", "ninh binh"],
 ];
 
 function normalizeText(value) {
@@ -26,34 +38,57 @@ function normalizeText(value) {
     .trim();
 }
 
+/**
+ * LẤY THỜI GIAN THEO MÚI GIỜ VIỆT NAM (GMT+7)
+ */
+function getNowVN() {
+  const now = new Date();
+  const utcOffsetMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utcOffsetMs + 7 * 3600000);
+}
+
+function getRelativeDateVN(daysFromToday) {
+  const d = getNowVN();
+  d.setDate(d.getDate() + daysFromToday);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getThisWeekendVN() {
+  const today = getNowVN();
+  const dayOfWeek = today.getDay();
+  const daysUntilSaturday = (6 - dayOfWeek + 7) % 7 || 7;
+
+  const checkInDate = new Date(today);
+  checkInDate.setDate(today.getDate() + daysUntilSaturday);
+
+  const checkOutDate = new Date(checkInDate);
+  checkOutDate.setDate(checkInDate.getDate() + 1);
+
+  const fmt = (d) => {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+
+  return {
+    checkIn: fmt(checkInDate),
+    checkOut: fmt(checkOutDate),
+  };
+}
+
 function parseDate(value) {
   const match = value.match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?/);
   if (!match) return null;
 
-  const now = new Date();
+  const now = getNowVN();
   const year = Number(match[3] || now.getFullYear());
   const date = new Date(year, Number(match[2]) - 1, Number(match[1]));
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
-}
+  if (Number.isNaN(date.getTime())) return null;
 
-function getThisWeekend() {
-  const today = new Date();
-  const day = today.getDay();
-  const daysUntilSaturday = (6 - day + 7) % 7 || 7;
-  const checkIn = new Date(today);
-  checkIn.setDate(today.getDate() + daysUntilSaturday);
-  const checkOut = new Date(checkIn);
-  checkOut.setDate(checkIn.getDate() + 1);
-  return {
-    checkIn: checkIn.toISOString().slice(0, 10),
-    checkOut: checkOut.toISOString().slice(0, 10),
-  };
-}
-
-function getRelativeDate(daysFromToday) {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromToday);
-  return date.toISOString().slice(0, 10);
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${m}-${d}`;
 }
 
 function parseMoney(rawValue, unit = "") {
@@ -64,6 +99,15 @@ function parseMoney(rawValue, unit = "") {
     return Math.round(value * 1000);
   if (unit === "tr" || unit === "trieu") return Math.round(value * 1000000);
   return Math.round(Number(String(rawValue).replace(/[.,]/g, "")));
+}
+
+function formatTitleCase(str) {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function checkAmenityExists(rawSource, targetKey) {
@@ -277,6 +321,7 @@ function extractFilters(text) {
     rentalType: null,
     hours: 2,
     adults: 1,
+    rawText: normalizedText,
   };
 
   if (
@@ -309,10 +354,14 @@ function extractFilters(text) {
   if (checkAmenityKey === "bathtub") filter.amenity_bathtub = true;
   if (checkAmenityKey === "air_conditioner") filter.amenity_ac = true;
 
+  // Xử lý số người đi đoàn
   const guestMatch = normalizedText.match(/(\d+)\s*(?:nguoi|khach|adults|ban)/);
   if (guestMatch) {
     filter.adults = Math.max(1, Number(guestMatch[1]));
-    filter.capacity = filter.adults;
+    filter.capacity = Math.min(4, filter.adults);
+    if (filter.adults > 4) {
+      filter.isGroupBooking = true;
+    }
   }
 
   // Bóc tách thành phố
@@ -348,7 +397,7 @@ function extractFilters(text) {
     normalizedText.includes("view bien") ||
     normalizedText.includes("huong bien") ||
     normalizedText.includes("ven bien") ||
-    normalizedText.includes("bien")
+    /\bbien\b/.test(normalizedText)
   ) {
     filter.is_beachfront = true;
   }
@@ -359,6 +408,16 @@ function extractFilters(text) {
     normalizedText.includes("noi thanh")
   ) {
     filter.near_center = true;
+  }
+
+  // Bóc tách yêu cầu tìm giá rẻ
+  if (
+    normalizedText.includes("gia re") ||
+    normalizedText.includes("re nhat") ||
+    normalizedText.includes("tiet kiem") ||
+    normalizedText.includes("gia re nhat")
+  ) {
+    filter.sortByCheapest = true;
   }
 
   const rangeMatch = normalizedText.match(
@@ -400,23 +459,29 @@ function extractFilters(text) {
     const nightsMatch = normalizedText.match(/(\d+)\s*(dem|ngay)/);
     date.setDate(date.getDate() + Number(nightsMatch?.[1] || 1));
     filter.checkIn = checkIn;
-    filter.checkOut = date.toISOString().slice(0, 10);
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    filter.checkOut = `${date.getFullYear()}-${m}-${d}`;
   } else if (
     normalizedText.includes("cuoi tuan") ||
     normalizedText.includes("weekend")
   ) {
-    Object.assign(filter, getThisWeekend());
+    Object.assign(filter, getThisWeekendVN());
   } else if (
     normalizedText.includes("hom nay") ||
     normalizedText.includes("toi nay")
   ) {
-    filter.checkIn = getRelativeDate(0);
+    filter.checkIn = getRelativeDateVN(0);
     filter.checkOut =
-      filter.rentalType === "HOUR" ? getRelativeDate(0) : getRelativeDate(1);
+      filter.rentalType === "HOUR"
+        ? getRelativeDateVN(0)
+        : getRelativeDateVN(1);
   } else if (normalizedText.includes("ngay mai")) {
-    filter.checkIn = getRelativeDate(1);
+    filter.checkIn = getRelativeDateVN(1);
     filter.checkOut =
-      filter.rentalType === "HOUR" ? getRelativeDate(1) : getRelativeDate(2);
+      filter.rentalType === "HOUR"
+        ? getRelativeDateVN(1)
+        : getRelativeDateVN(2);
   }
 
   const hasHotelKeyword =
@@ -452,6 +517,9 @@ function extractFilters(text) {
   return filter;
 }
 
+/**
+ * XỬ LÝ HỢP NHẤT NGỮ CẢNH (CONTEXT MERGING)
+ */
 async function getMergedContext(sessionId, currentFilter) {
   try {
     const historyRes = await pool.query(
@@ -476,6 +544,38 @@ async function getMergedContext(sessionId, currentFilter) {
       return currentFilter;
     }
 
+    // 1. Nếu câu mới KHÔNG nhắc đến tiền bạc -> XÓA LUÔN mức giá cũ của quá khứ
+    if (!currentFilter.maxPrice && !currentFilter.minPrice) {
+      delete previousFilter.maxPrice;
+      delete previousFilter.minPrice;
+    }
+
+    // 2. Nếu câu mới là tìm kiếm độc lập mà không nhắc đến biển -> XÓA ĐIỀU KIỆN BIỂN CŨ
+    const isNewExplicitSearch =
+      Boolean(currentFilter.hasExplicitCity) ||
+      Boolean(currentFilter.maxPrice) ||
+      (currentFilter.rawText &&
+        (currentFilter.rawText.includes("khach san") ||
+          currentFilter.rawText.includes("tim phong") ||
+          currentFilter.rawText.includes("cho nghi")));
+
+    if (isNewExplicitSearch && !currentFilter.is_beachfront) {
+      delete previousFilter.is_beachfront;
+    }
+
+    // 3. Nếu chuyển thành phố mới -> XÓA toàn bộ tiện ích và thông tin khách sạn cũ
+    if (
+      currentFilter.city &&
+      previousFilter.city &&
+      normalizeText(currentFilter.city) !== normalizeText(previousFilter.city)
+    ) {
+      delete previousFilter.lastHotelId;
+      delete previousFilter.lastHotelName;
+      if (!currentFilter.is_beachfront) delete previousFilter.is_beachfront;
+      if (!currentFilter.amenity_pool) delete previousFilter.amenity_pool;
+      if (!currentFilter.near_center) delete previousFilter.near_center;
+    }
+
     const merged = {
       ...previousFilter,
       ...currentFilter,
@@ -486,7 +586,6 @@ async function getMergedContext(sessionId, currentFilter) {
         currentFilter.lastHotelName || previousFilter.lastHotelName || null,
     };
 
-    // Nếu câu mới khách tìm biển mà không nhắc thành phố thì bỏ thành phố cũ không có biển (như Sài Gòn/Hà Nội)
     if (currentFilter.is_beachfront && !currentFilter.hasExplicitCity) {
       delete merged.city;
       delete merged.cityQuery;
@@ -590,7 +689,7 @@ async function handleChatMessage(req, res, next) {
         let hotelHasAmenity = false;
         try {
           const roomsData = await pool.query(
-            `SELECT * FROM public.room WHERE hotel_id = $1`,
+            `SELECT * FROM public.room WHERE hotel_id = $1 AND base_price >= 50000`,
             [specificHotel.id],
           );
 
@@ -640,7 +739,7 @@ async function handleChatMessage(req, res, next) {
             average_rating: specificHotel.average_rating,
             review_count: specificHotel.review_count,
             hotel_image: specificHotel.hotel_image,
-            price: Number(r.hourly_price || Math.round(r.base_price * 0.25)),
+            price: Number(r.hourly_price || r.base_price),
             base_price: Number(r.base_price || 650000),
           }));
         } catch (e) {
@@ -712,18 +811,18 @@ async function handleChatMessage(req, res, next) {
       let priceReply = `💰 **Bảng giá phòng tham khảo tại ${specificHotel.name}:**\n\n`;
       try {
         const priceRooms = await pool.query(
-          `SELECT name, base_price, hourly_price FROM public.room WHERE hotel_id = $1 ORDER BY base_price ASC`,
+          `SELECT name, base_price, hourly_price FROM public.room WHERE hotel_id = $1 AND base_price >= 50000 ORDER BY base_price ASC`,
           [specificHotel.id],
         );
         priceRooms.rows.forEach((r) => {
-          const hourP = Number(
-            r.hourly_price || Math.round(r.base_price * 0.25),
-          ).toLocaleString("vi-VN");
+          const hourText = r.hourly_price
+            ? `từ **${Number(r.hourly_price).toLocaleString("vi-VN")} đ / giờ**`
+            : "Chỉ nhận theo ngày đêm";
           const dayP = Number(r.base_price).toLocaleString("vi-VN");
-          priceReply += `• **${r.name}:**\n  - Thuê theo giờ: từ **${hourP} đ / giờ**\n  - Thuê ngày đêm: từ **${dayP} đ / đêm**\n`;
+          priceReply += `• **${r.name}:**\n  - Thuê theo giờ: ${hourText}\n  - Thuê ngày đêm: từ **${dayP} đ / đêm**\n`;
         });
       } catch {
-        priceReply += `• Thuê theo giờ: từ **100.000 đ / giờ**\n• Thuê ngày đêm: từ **650.000 đ / đêm**\n`;
+        priceReply += `• Thuê ngày đêm: từ **650.000 đ / đêm**\n`;
       }
       priceReply += `\nGiá trên đã bao gồm thuế và tất cả các phí dịch vụ bạn nhé!`;
 
@@ -878,19 +977,22 @@ async function handleChatMessage(req, res, next) {
     ) {
       const roomsRes = await pool.query(
         `SELECT r.*,
-           COALESCE(r.hourly_price, ROUND(r.base_price * 0.25)::int) AS hourly_p,
+           r.hourly_price AS hourly_p,
            r.base_price AS daily_p
          FROM public.room r
-         WHERE r.hotel_id = $1
+         WHERE r.hotel_id = $1 AND r.base_price >= 50000
          ORDER BY r.base_price ASC`,
         [specificHotel.id],
       );
 
       const roomCount = roomsRes.rows.length;
+      const hourRooms = roomsRes.rows.filter(
+        (r) => r.hourly_p && r.hourly_p > 0,
+      );
       const minHourPrice =
-        roomCount > 0
-          ? Math.min(...roomsRes.rows.map((r) => r.hourly_p))
-          : 100000;
+        hourRooms.length > 0
+          ? Math.min(...hourRooms.map((r) => r.hourly_p))
+          : null;
       const minDailyPrice =
         roomCount > 0
           ? Math.min(...roomsRes.rows.map((r) => r.daily_p))
@@ -902,7 +1004,11 @@ async function handleChatMessage(req, res, next) {
       detailReply += `📞 **Hotline Lễ tân:** **${specificHotel.phone || "Quầy lễ tân phục vụ khi đến"}** (Hỗ trợ nhận phòng sớm, gửi đồ...)\n`;
       detailReply += `🛏️ **Hạng phòng:** Hiện có ${roomCount} loại phòng đang mở bán trực tuyến.\n`;
       detailReply += `💰 **Giá tham khảo:**\n`;
-      detailReply += `   • Theo giờ: từ **${Number(minHourPrice).toLocaleString("vi-VN")} đ / giờ**\n`;
+      if (minHourPrice) {
+        detailReply += `   • Theo giờ: từ **${Number(minHourPrice).toLocaleString("vi-VN")} đ / giờ**\n`;
+      } else {
+        detailReply += `   • Theo giờ: Không áp dụng (chỉ bán ngày đêm)\n`;
+      }
       detailReply += `   • Theo ngày đêm: từ **${Number(minDailyPrice).toLocaleString("vi-VN")} đ / đêm**\n\n`;
 
       if (specificHotel.description) {
@@ -921,7 +1027,7 @@ async function handleChatMessage(req, res, next) {
         average_rating: specificHotel.average_rating,
         review_count: specificHotel.review_count,
         hotel_image: specificHotel.hotel_image,
-        price: r.hourly_p,
+        price: r.hourly_p || r.daily_p,
         base_price: r.daily_p,
       }));
 
@@ -941,47 +1047,71 @@ async function handleChatMessage(req, res, next) {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // NHÁNH 6: TÌM KIẾM PHÒNG (MỖI KHÁCH SẠN 1 PHÒNG RẺ NHẤT DUY NHẤT)
+    // NHÁNH 6: TÌM KIẾM PHÒNG (CHUẨN NGHIỆP VỤ KHÁCH SẠN)
     // ─────────────────────────────────────────────────────────────
-    const checkIn =
-      extractedFilter.checkIn || new Date().toISOString().slice(0, 10);
+
+    // 🌟 CHẶN NGHIỆP VỤ: Nếu khách chỉ nói số người ("phòng 2 người", "tìm phòng") mà CHƯA CÓ THÀNH PHỐ
+    if (!extractedFilter.city && !extractedFilter.is_beachfront) {
+      const guestText =
+        extractedFilter.adults > 1
+          ? ` cho **${extractedFilter.adults} người**`
+          : "";
+      const askCityReply = `Dạ bạn muốn tìm phòng${guestText} ở **thành phố nào** ạ (VD: Vũng Tàu, Đà Nẵng, Nha Trang, Sài Gòn, Hà Nội, Đà Lạt...)? Bạn cho mình biết thêm ngày nhận phòng để mình lọc giá tốt nhất cho bạn nhé! 😊`;
+
+      await logTurn(
+        userId,
+        session_id,
+        message.trim(),
+        extractedFilter,
+        askCityReply,
+      );
+      return res.json({
+        success: true,
+        reply: askCityReply,
+        suggestions: [],
+        filter: extractedFilter,
+      });
+    }
+
+    const checkIn = extractedFilter.checkIn || getRelativeDateVN(0);
     const checkOut =
       extractedFilter.checkOut ||
-      (extractedFilter.rentalType === "HOUR"
-        ? checkIn
-        : new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+      (extractedFilter.rentalType === "HOUR" ? checkIn : getRelativeDateVN(1));
 
     // Điều kiện giáp biển
     const isBeachfrontCondition = `
       (
         COALESCE(h.is_beachfront, false) = true
         OR r.room_view = 'sea_view'
-        OR h.name ILIKE '%Sóng%'
-        OR h.name ILIKE '%Beach%' 
-        OR h.name ILIKE '%Sea%' 
-        OR h.address ILIKE '%Thùy Vân%' 
-        OR h.address ILIKE '%Hạ Long%' 
-        OR h.address ILIKE '%Trần Phú%' 
-        OR h.address ILIKE '%Võ Nguyên Giáp%'
+        OR unaccent(lower(h.name)) ILIKE '%song%'
+        OR unaccent(lower(h.name)) ILIKE '%beach%' 
+        OR unaccent(lower(h.name)) ILIKE '%sea%' 
+        OR unaccent(lower(h.address)) ILIKE '%thuy van%' 
+        OR unaccent(lower(h.address)) ILIKE '%ha long%' 
+        OR unaccent(lower(h.address)) ILIKE '%tran phu%' 
+        OR unaccent(lower(h.address)) ILIKE '%vo nguyen giap%'
       )
     `;
 
     const poolCondition = `
       (
         r.room_view = 'pool_view'
-        OR r.amenities::text ILIKE '%hồ bơi%'
-        OR r.amenities::text ILIKE '%pool%'
-        OR h.description ILIKE '%hồ bơi%'
-        OR h.description ILIKE '%bể bơi%'
-        OR h.name ILIKE '%pool%'
-        OR h.name ILIKE '%resort%'
+        OR unaccent(lower(r.amenities::text)) ILIKE '%ho boi%'
+        OR unaccent(lower(r.amenities::text)) ILIKE '%pool%'
+        OR unaccent(lower(h.description)) ILIKE '%ho boi%'
+        OR unaccent(lower(h.description)) ILIKE '%be boi%'
+        OR unaccent(lower(h.name)) ILIKE '%pool%'
+        OR unaccent(lower(h.name)) ILIKE '%resort%'
       )
     `;
 
     let priceColumnFormula = "r.base_price";
+    let extraRoomCondition = "AND r.base_price >= 50000";
+
     if (extractedFilter.rentalType === "HOUR") {
-      priceColumnFormula =
-        "COALESCE(r.hourly_price, ROUND(r.base_price * 0.25)::int)";
+      priceColumnFormula = "r.hourly_price";
+      extraRoomCondition +=
+        " AND r.hourly_price IS NOT NULL AND r.hourly_price > 0";
     } else if (extractedFilter.rentalType === "OVERNIGHT") {
       priceColumnFormula = "COALESCE(r.overnight_price, r.base_price)";
     } else if (extractedFilter.rentalType === "HALF_DAY") {
@@ -1026,6 +1156,7 @@ async function handleChatMessage(req, res, next) {
             ) AS available_count
           FROM public.room r
           CROSS JOIN stay_nights sn
+          WHERE 1=1 ${extraRoomCondition}
         ),
         available_rooms AS (
           SELECT 
@@ -1104,11 +1235,16 @@ async function handleChatMessage(req, res, next) {
         paramIdx++;
       }
 
+      // Xử lý thứ tự sắp xếp: nếu khách tìm "giá rẻ" thì ưu tiên giá thấp nhất trước
+      const orderClause = extractedFilter.sortByCheapest
+        ? "ORDER BY price ASC, star_rating DESC"
+        : "ORDER BY star_rating DESC, price ASC";
+
       roomQuery += ` 
         )
         SELECT * FROM ranked_hotels 
         WHERE rn = 1
-        ORDER BY star_rating DESC, price ASC
+        ${orderClause}
         LIMIT 4;
       `;
 
@@ -1121,7 +1257,6 @@ async function handleChatMessage(req, res, next) {
       }
     };
 
-    // 1. Tìm phòng đáp ứng đầy đủ điều kiện (kể cả biển nếu có yêu cầu)
     let matchedRooms = await queryRooms(true, true, true);
     if (matchedRooms.length === 0 && extractedFilter.amenity_pool) {
       matchedRooms = await queryRooms(true, true, false);
@@ -1132,8 +1267,6 @@ async function handleChatMessage(req, res, next) {
 
     let fallbackWithoutBeach = false;
 
-    // 🌟 NẾU KHÁCH TÌM THÀNH PHỐ CỤ THỂ (như Nha Trang, Vũng Tàu)
-    // Nhưng thành phố đó không có phòng giáp biển -> Tự động nới lỏng lấy các khách sạn tốt nhất tại thành phố đó
     if (
       matchedRooms.length === 0 &&
       extractedFilter.is_beachfront &&
@@ -1141,7 +1274,7 @@ async function handleChatMessage(req, res, next) {
     ) {
       matchedRooms = await queryRooms(false, false, false);
       if (matchedRooms.length > 0) {
-        fallbackWithoutBeach = true; // Đánh dấu đã nới lỏng điều kiện biển
+        fallbackWithoutBeach = true;
       }
     }
 
@@ -1160,20 +1293,17 @@ async function handleChatMessage(req, res, next) {
         ? `với giá dưới ${(extractedFilter.maxPrice >= 1000000 ? extractedFilter.maxPrice / 1000000 : extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}${extractedFilter.maxPrice >= 1000000 ? " triệu" : "k"}`
         : "giá tốt nhất";
 
-    // Trường hợp 1: Có fallback vì không có khách sạn giáp biển nhưng có khách sạn đẹp khác tại thành phố đó
-    if (fallbackWithoutBeach) {
-      const cityName =
-        extractedFilter.city.charAt(0).toUpperCase() +
-        extractedFilter.city.slice(1);
-      botReply = `Dạ hiện tại ở **${cityName}** chưa có chỗ nghỉ sát biển trống phù hợp, nhưng mình gợi ý cho bạn **${matchedRooms.length} chỗ nghỉ có vị trí đẹp, giá tốt nhất** tại ${cityName} ${rentalLabel} ${priceText} nhé 👇`;
-    }
-    // Trường hợp 2: Hoàn toàn không có khách sạn giáp biển và cũng không có phòng nào
-    else if (extractedFilter.is_beachfront && matchedRooms.length === 0) {
-      const targetArea = extractedFilter.city
-        ? `tại ${extractedFilter.city}`
-        : "gần biển";
+    const cityName = extractedFilter.city
+      ? formatTitleCase(extractedFilter.city)
+      : extractedFilter.is_beachfront
+        ? "gần biển"
+        : "toàn hệ thống";
 
-      // Loại bỏ chính thành phố mà khách vừa tìm ra khỏi danh sách gợi ý
+    if (fallbackWithoutBeach) {
+      botReply = `Dạ hiện tại ở **${cityName}** chưa có chỗ nghỉ sát biển trống phù hợp, nhưng mình gợi ý cho bạn **${matchedRooms.length} chỗ nghỉ có vị trí đẹp, giá tốt nhất** tại ${cityName} ${rentalLabel} ${priceText} nhé 👇`;
+    } else if (extractedFilter.is_beachfront && matchedRooms.length === 0) {
+      const targetArea = extractedFilter.city ? `tại ${cityName}` : "gần biển";
+
       const otherCities = ["Vũng Tàu", "Đà Nẵng", "Nha Trang", "Phú Quốc"]
         .filter(
           (c) => normalizeText(c) !== normalizeText(extractedFilter.city || ""),
@@ -1195,26 +1325,20 @@ async function handleChatMessage(req, res, next) {
         suggestions: [],
         filter: extractedFilter,
       });
-    }
-    // Trường hợp 3: Tìm thấy kết quả bình thường
-    else if (matchedRooms.length > 0) {
-      const cityName = extractedFilter.city
-        ? extractedFilter.city.charAt(0).toUpperCase() +
-          extractedFilter.city.slice(1)
-        : extractedFilter.is_beachfront
-          ? "gần biển"
-          : "toàn hệ thống";
+    } else if (matchedRooms.length > 0) {
+      let groupAdvice = "";
+      if (extractedFilter.isGroupBooking) {
+        groupAdvice = `\n*(💡 Mẹo: Với đoàn ${extractedFilter.adults} người, bạn có thể tham khảo đặt từ 2 - 3 phòng để lưu trú thoải mái nhất nhé!)*\n`;
+      }
 
-      botReply = `Mình vừa tìm thấy **${matchedRooms.length} chỗ nghỉ tiêu biểu** tại ${cityName} ${rentalLabel} ${priceText}. Mời bạn lướt xem các gợi ý bên dưới nhé 👇`;
-    }
-    // Trường hợp 4: Không tìm thấy phòng nào theo yêu cầu chung
-    else {
+      botReply = `Mình vừa tìm thấy **${matchedRooms.length} chỗ nghỉ tiêu biểu** tại ${cityName} ${rentalLabel} ${priceText}.${groupAdvice} Mời bạn lướt xem các gợi ý bên dưới nhé 👇`;
+    } else {
       const priceFailText =
         extractedFilter.maxPrice && Number(extractedFilter.maxPrice) > 0
           ? `thỏa mãn mức giá dưới ${(extractedFilter.maxPrice >= 1000000 ? extractedFilter.maxPrice / 1000000 : extractedFilter.maxPrice / 1000).toLocaleString("vi-VN")}${extractedFilter.maxPrice >= 1000000 ? " triệu" : "k"}`
           : "";
 
-      botReply = `Hiện tại mình chưa tìm thấy phòng nào còn trống tại ${extractedFilter.city || "khu vực này"} ${priceFailText} ${rentalLabel}. Bạn có muốn thử nâng ngân sách lên một chút hoặc đổi ngày không?`;
+      botReply = `Hiện tại mình chưa tìm thấy phòng nào còn trống tại ${cityName || "khu vực này"} ${priceFailText} ${rentalLabel}. Bạn có muốn thử nâng ngân sách lên một chút hoặc đổi ngày không?`;
     }
 
     await logTurn(
