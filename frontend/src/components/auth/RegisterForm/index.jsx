@@ -65,7 +65,7 @@ const initialFormData = {
   starRating: 3,
   description: "",
 
-  // 🌟 KHỞI TẠO ĐẦY ĐỦ CÁC MỐC GIỜ CHUẨN
+  // 🌟 KHỞI TẠO ĐẦY ĐỦ CẢ 4 HÌNH THỨC VẬN HÀNH CHUẨN
   checkInFrom: "14:00",
   checkInTo: "23:59",
   checkOutTo: "12:00",
@@ -73,6 +73,8 @@ const initialFormData = {
   hourly_end_time: "21:00",
   overnight_checkin_time: "21:00",
   overnight_checkout_time: "11:00",
+  halfday_checkin_time: "12:00",
+  halfday_checkout_time: "21:00",
   hourly_grace_minutes: 15,
   cancellation_deadline_hours: 24,
 
@@ -267,7 +269,7 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
-  // 🌟 ĐĂNG KÝ KHÁCH SẠN VÀ ĐỒNG BỘ 4 LOẠI GIÁ + CÁC MỐC GIỜ VÀO DATABASE
+  // 🌟 ĐĂNG KÝ KHÁCH SẠN VÀ ĐỒNG BỘ ĐẦY ĐỦ 4 LOẠI GIÁ + 4 MỐC GIỜ VÀO DATABASE
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
@@ -380,7 +382,7 @@ export const RegisterForm = () => {
       const hotelCover =
         formData.hotelMainImage || propertyImages[0]?.path || "";
 
-      // 4. 🌟 PAYLOAD ĐẦY ĐỦ CÁC MỐC THỜI GIAN NHẬN - TRẢ PHÒNG
+      // 4. 🌟 PAYLOAD ĐẦY ĐỦ CẢ 4 MỐC THỜI GIAN VẬN HÀNH (NGÀY, GIỜ, ĐÊM, BUỔI)
       const payload = {
         name: formData.hotelName || "Cơ sở lưu trú",
         property_type: formData.propertyType || "hotel",
@@ -396,7 +398,7 @@ export const RegisterForm = () => {
         description:
           formData.description ||
           `Tận hưởng kỳ nghỉ dưỡng tuyệt vời tại ${formData.hotelName} với dịch vụ chất lượng cao.`,
-        // 🌟 CÁC MỐC GIỜ VẬN HÀNH ĐỒNG BỘ CHUẨN POSTGRES
+        // 🌟 ĐẦY ĐỦ 4 HÌNH THỨC NHẬN - TRẢ PHÒNG LƯU VÀO DATABASE
         checkin_time: sanitizeTimeToPostgres(formData.checkInFrom, "14:00:00"),
         checkout_time: sanitizeTimeToPostgres(formData.checkOutTo, "12:00:00"),
         hourly_start_time: sanitizeTimeToPostgres(
@@ -414,6 +416,14 @@ export const RegisterForm = () => {
         overnight_checkout_time: sanitizeTimeToPostgres(
           formData.overnight_checkout_time,
           "11:00:00",
+        ),
+        halfday_checkin_time: sanitizeTimeToPostgres(
+          formData.halfday_checkin_time,
+          "12:00:00",
+        ),
+        halfday_checkout_time: sanitizeTimeToPostgres(
+          formData.halfday_checkout_time,
+          "21:00:00",
         ),
         hourly_grace_minutes: Number(formData.hourly_grace_minutes || 15),
         cancellation_deadline_hours: Number(
