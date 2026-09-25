@@ -88,7 +88,7 @@ async function cleanupExpiredLocks() {
   } catch (e) {}
 }
 
-// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (CHẶN TRIỆT ĐỂ OVERBOOKING KHI HẾT PHÒNG) ───
+// ─── 1. TẠO ĐƠN ĐẶT PHÒNG (CHẶN OVERBOOKING CHUẨN THỜI GIAN THỰC) ───
 async function createBooking(req, res, next) {
   await cleanupExpiredLocks();
 
@@ -132,10 +132,10 @@ async function createBooking(req, res, next) {
       customer_paid = 0,
     } = req.body;
 
-    const finalCheckInTime = String(checkin_time || checkInTime || "12:00")
+    const finalCheckInTime = String(checkin_time || checkInTime || "14:00")
       .trim()
       .slice(0, 5);
-    const finalCheckOutTime = String(checkout_time || checkOutTime || "14:00")
+    const finalCheckOutTime = String(checkout_time || checkOutTime || "12:00")
       .trim()
       .slice(0, 5);
     const currentRentalType = String(
@@ -154,28 +154,28 @@ async function createBooking(req, res, next) {
     let outDateStr = String(checkout_date).slice(0, 10);
 
     const formattedInTime =
-      finalCheckInTime.length === 5 ? `${finalCheckInTime}:00` : "12:00:00";
+      finalCheckInTime.length === 5 ? `${finalCheckInTime}:00` : "14:00:00";
     const formattedOutTime =
-      finalCheckOutTime.length === 5 ? `${finalCheckOutTime}:00` : "14:00:00";
+      finalCheckOutTime.length === 5 ? `${finalCheckOutTime}:00` : "12:00:00";
 
-    const inTimestamp = new Date(`${inDateStr}T${formattedInTime}`);
-    let outTimestamp = new Date(`${outDateStr}T${formattedOutTime}`);
-
-    // ĐỒNG BỘ: Thuê giờ / buổi / đêm vắt qua ngày
     const inHourNum = parseInt(finalCheckInTime.slice(0, 2), 10);
+
+    // 🌟 ĐỒNG BỘ MỐC GIỜ THUÊ LINH HOẠT
     if (currentRentalType === "HOUR" || currentRentalType === "HALF_DAY") {
-      if (outTimestamp <= inTimestamp) {
-        outTimestamp = addDays(outTimestamp, 1);
-        outDateStr = outTimestamp.toISOString().slice(0, 10);
+      const inTs = new Date(`${inDateStr}T${formattedInTime}`);
+      let outTs = new Date(`${outDateStr}T${formattedOutTime}`);
+      if (outTs <= inTs) {
+        outTs = addDays(outTs, 1);
+        outDateStr = outTs.toISOString().slice(0, 10);
       }
     } else if (currentRentalType === "OVERNIGHT") {
-      // Nếu check-in lúc rạng sáng (0h - 5h) thì cùng ngày hôm đó trả phòng lúc 11h
-      if (inHourNum >= 0 && inHourNum <= 5) {
+      // 🌟 Ca rạng sáng (00h - 06h): Cùng ngày hôm đó trả phòng lúc 11:00
+      if (inHourNum >= 0 && inHourNum <= 6) {
         outDateStr = inDateStr;
-        outTimestamp = new Date(`${outDateStr}T${formattedOutTime}`);
-      } else if (outTimestamp <= inTimestamp) {
-        outTimestamp = addDays(new Date(inDateStr), 1);
-        outDateStr = outTimestamp.toISOString().slice(0, 10);
+      } else {
+        // Ca tối: Trả phòng trưa ngày hôm sau
+        const outTs = addDays(new Date(inDateStr), 1);
+        outDateStr = outTs.toISOString().slice(0, 10);
       }
     } else {
       if (new Date(outDateStr) < new Date(inDateStr)) {
@@ -183,16 +183,6 @@ async function createBooking(req, res, next) {
         return res.status(400).json({
           success: false,
           message: "Ngày trả phòng phải sau ngày nhận phòng.",
-        });
-      }
-      if (
-        new Date(outDateStr).getTime() === new Date(inDateStr).getTime() &&
-        outTimestamp <= inTimestamp
-      ) {
-        client.release();
-        return res.status(400).json({
-          success: false,
-          message: "Giờ trả phòng phải sau giờ nhận phòng.",
         });
       }
     }
@@ -227,7 +217,7 @@ async function createBooking(req, res, next) {
     // Lấy thông tin khách sạn và buffer dọn phòng
     const hotelQueryRes = await client.query(
       `SELECT id, name, commission_rate, bank_code, bank_name, bank_account, bank_account_holder,
-              COALESCE(hourly_grace_minutes, 30) AS cleaning_buffer_minutes
+              COALESCE(hourly_grace_minutes, 15) AS cleaning_buffer_minutes
        FROM public.hotel 
        WHERE id = $1 LIMIT 1`,
       [hotel_id],
@@ -245,7 +235,7 @@ async function createBooking(req, res, next) {
     const hotelData = hotelQueryRes.rows[0];
     const cleaningBufferMinutes = Math.max(
       15,
-      Number(hotelData.cleaning_buffer_minutes || 30),
+      Number(hotelData.cleaning_buffer_minutes || 15),
     );
 
     const isWalkInBooking =
@@ -268,7 +258,7 @@ async function createBooking(req, res, next) {
                   1
                 ) AS total_stock
          FROM public.room r
-         WHERE r.id = $1 AND r.is_active = true 
+         WHERE r.id = $1 AND COALESCE(r.is_active, true) = true 
          FOR UPDATE`,
         [room_id],
       );
@@ -285,7 +275,10 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
-      // ĐỒNG BỘ: Đếm chính xác cả đơn thanh toán cọc lẫn thanh toán full
+      // 🌟 KHẮC PHỤC LỖI MÚI GIỜ: Truyền trực tiếp chuỗi ngày giờ thực tế tránh bị lệch 7 tiếng
+      const localInTimestampStr = `${inDateStr} ${formattedInTime}`;
+      const localOutTimestampStr = `${outDateStr} ${formattedOutTime}`;
+
       const conflictCheckSql = `
         SELECT COALESCE(SUM(br.quantity), 0)::int AS booked_count
         FROM public.booking b
@@ -307,8 +300,8 @@ async function createBooking(req, res, next) {
 
       const conflictRes = await client.query(conflictCheckSql, [
         room_id,
-        inTimestamp.toISOString(),
-        outTimestamp.toISOString(),
+        localInTimestampStr,
+        localOutTimestampStr,
         cleaningBufferMinutes,
       ]);
 
@@ -356,7 +349,6 @@ async function createBooking(req, res, next) {
         Number(customer_paid) >= finalPrice ? "paid" : "unpaid";
     }
 
-    // ĐỒNG BỘ: Lưu thêm payment_type và deposit_amount vào public.booking
     const insertBookingSql = `
       INSERT INTO public.booking (
         id, booking_code, user_id, hotel_id, promotion_id,
@@ -486,7 +478,7 @@ async function createBooking(req, res, next) {
   }
 }
 
-// ─── 2. XÁC NHẬN THANH TOÁN (TỰ PHỤC HỒI ĐƠN NẾU LỠ BỊ HỦY) ───
+// ─── 2. XÁC NHẬN THANH TOÁN (TỰ ĐỘNG CHUYỂN SANG CONFIRMED KHI NHẬN TIỀN) ───
 async function confirmPayment(req, res, next) {
   const client = await pool.connect();
   try {
@@ -535,15 +527,15 @@ async function confirmPayment(req, res, next) {
         ? "partially_paid"
         : "paid";
 
+    // 🌟 KHI ĐÃ NHẬN TIỀN (FULL HOẶC CỌC 30%): CHUYỂN SANG CONFIRMED ĐỂ KHÓA GIỮ PHÒNG CHÍNH THỨC
     await client.query(
       `UPDATE public.booking
        SET payment_status = $1,
            deposit_amount = CASE WHEN $2 THEN $3 ELSE deposit_amount END,
-           status = 'pending'::public.booking_status_enum,
+           status = 'confirmed'::public.booking_status_enum,
            cancelled_at = NULL,
            receptionist_assigned = false,
-           room_number = NULL,
-           confirmed_at = NULL,
+           confirmed_at = NOW(),
            updated_at = NOW()
        WHERE id = $4`,
       [newPayStatus, isDeposit, actualPaid, booking.id],
@@ -573,7 +565,7 @@ async function confirmPayment(req, res, next) {
 
     return res.json({
       success: true,
-      message: "✓ Xác nhận thanh toán thành công!",
+      message: "✓ Xác nhận thanh toán thành công và đã giữ phòng chính thức!",
       bookingCode: booking.booking_code,
       paidAmount: actualPaid,
       status: newPayStatus,
@@ -585,7 +577,7 @@ async function confirmPayment(req, res, next) {
   }
 }
 
-// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO MÃ (SELECT ĐỦ CẢ GIỜ VÀ HÌNH THỨC) ───
+// ─── 3. TRA CỨU ĐƠN ĐẶT PHÒNG THEO MÃ ───
 async function getBookingByCode(req, res, next) {
   try {
     const { code } = req.params;
@@ -676,7 +668,7 @@ async function getBookingByCode(req, res, next) {
   }
 }
 
-// ─── 4. LỊCH SỬ ĐẶT PHÒNG (TRẢ VỀ ĐỦ CHECKIN_TIME VÀ CHECKOUT_TIME) ───
+// ─── 4. LỊCH SỬ ĐẶT PHÒNG CỦA TÔI ───
 async function getMyBookings(req, res, next) {
   try {
     const userId =

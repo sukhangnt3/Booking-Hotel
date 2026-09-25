@@ -28,6 +28,45 @@ import apiClient from "@/services/apiClient";
 import QuickBookingModal from "../reception/components/QuickBookingModal";
 import ConfirmCheckInModal from "../reception/components/ConfirmCheckInModal";
 
+// 🌟 HÀM TÍNH TOÁN TIỀN PHÒNG & TIỀN CỌC 30% CHUẨN XÁC CHỐNG THẤT THOÁT
+const resolveBookingPaymentDetails = (b) => {
+  const totalPrice = Number(b?.total_price || 0);
+  const isWalkIn =
+    String(b?.booking_code || "").startsWith("DP") ||
+    b?.booking_type === "walk_in" ||
+    b?.source === "counter";
+
+  let isDeposit = false;
+  let paidAmount = 0;
+
+  if (isWalkIn) {
+    if (b?.payment_status === "paid") {
+      paidAmount = totalPrice;
+    } else {
+      paidAmount = Number(
+        b?.customer_paid ?? b?.paid_amount ?? b?.deposit_amount ?? 0,
+      );
+    }
+  } else {
+    isDeposit =
+      b?.payment_type === "DEPOSIT_30" ||
+      (Number(b?.deposit_amount) > 0 && Number(b?.deposit_amount) < totalPrice);
+
+    if (isDeposit) {
+      paidAmount = Number(
+        b?.deposit_amount || b?.paid_amount || Math.round(totalPrice * 0.3),
+      );
+    } else if (b?.payment_status === "paid" || b?.status === "confirmed") {
+      paidAmount = totalPrice;
+    } else {
+      paidAmount = Number(b?.paid_amount || 0);
+    }
+  }
+
+  const remainingAmount = Math.max(0, totalPrice - paidAmount);
+  return { totalPrice, paidAmount, remainingAmount, isDeposit, isWalkIn };
+};
+
 export default function BookingListPage() {
   const [bookings, setBookings] = useState([]);
   const [hotels, setHotels] = useState([]);
@@ -91,7 +130,6 @@ export default function BookingListPage() {
     return `${day}/${month}/${year} ${hours}:${mins}`;
   };
 
-  // 🌟 LẤY KHÁCH SẠN VÀ LƯU HOTEL_ID CHUẨN XÁC
   const fetchMyHotels = useCallback(async () => {
     try {
       const res = await apiClient.get("/hotels/my-hotels?active_only=true");
@@ -106,7 +144,6 @@ export default function BookingListPage() {
     }
   }, []);
 
-  // Lấy danh sách đơn đặt phòng từ API
   const fetchOwnerBookings = useCallback(async () => {
     setLoading(true);
     setApiError("");
@@ -127,7 +164,6 @@ export default function BookingListPage() {
     }
   }, [selectedHotelId]);
 
-  // Lấy danh sách phòng của khách sạn
   const fetchRooms = useCallback(async () => {
     if (!selectedHotelId) return;
     try {
@@ -158,7 +194,6 @@ export default function BookingListPage() {
     return () => window.removeEventListener("click", handleClickOutside);
   }, []);
 
-  // Tính số lượng đơn theo từng trạng thái
   const counts = useMemo(() => {
     const now = new Date();
     return {
@@ -179,7 +214,6 @@ export default function BookingListPage() {
     };
   }, [bookings]);
 
-  // Bộ lọc dữ liệu theo Tab & Tìm kiếm
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
       if (activeTab === "pending" && b.status !== "pending") return false;
@@ -204,7 +238,6 @@ export default function BookingListPage() {
     });
   }, [bookings, activeTab, search]);
 
-  // Mở modal nhận phòng
   const handleOpenCheckIn = (booking) => {
     const inDate = String(booking.checkin_date || "").slice(0, 10);
     const outDate = String(booking.checkout_date || inDate).slice(0, 10);
@@ -239,7 +272,6 @@ export default function BookingListPage() {
     });
   };
 
-  // Xác nhận check-in
   const handleFinalExecuteCheckIn = async () => {
     if (!confirmCheckInRoom?.booking?.id) return;
     const b = confirmCheckInRoom.booking;
@@ -262,7 +294,6 @@ export default function BookingListPage() {
     }
   };
 
-  // Mở modal Đặt phòng nhanh
   const handleOpenQuickBooking = () => {
     const targetRoom = rooms[0] || {
       id: "room_default",
@@ -307,7 +338,6 @@ export default function BookingListPage() {
     setIsQuickBookingOpen(true);
   };
 
-  // 🌟 LƯU ĐƠN: TRUYỀN ĐỦ ROOM_NUMBER VÀ HOTEL_ID ĐỂ SƠ ĐỒ ĐỔI VÀNG & LIST HIỆN ĐƠN NGAY
   const handleConfirmQuickBooking = async (isCheckInNow) => {
     if (quickBookingData.rooms.length === 0)
       return alert("Vui lòng chọn phòng!");
@@ -319,7 +349,7 @@ export default function BookingListPage() {
         await apiClient.post("/owner/bookings/walkin", {
           hotel_id: activeHotelId,
           room_id: item.room_id,
-          room_number: item.room_number, // 🌟 GỬI SỐ PHÒNG ĐỂ LƯU VÀO ĐƠN
+          room_number: item.room_number,
           customer_name: quickBookingData.customer_name.trim() || "Khách lẻ",
           guest_phone: quickBookingData.customer_phone.trim(),
           total_price: item.price,
@@ -337,26 +367,23 @@ export default function BookingListPage() {
         isCheckInNow ? "✓ Nhận phòng thành công!" : "✓ Đã lưu đơn đặt trước!",
       );
       setIsQuickBookingOpen(false);
-      await fetchOwnerBookings(); // Tự động load lại danh sách ngay lập tức
+      await fetchOwnerBookings();
     } catch (err) {
       alert("Lỗi đặt phòng: " + (err.response?.data?.message || err.message));
     }
   };
 
-  // Xuất file Excel
+  // 🌟 XUẤT EXCEL CHUẨN XÁC: Tính đúng tiền cọc và tiền còn nợ
   const handleExportExcel = () => {
     if (filteredBookings.length === 0)
       return alert("Không có dữ liệu để xuất!");
     let csv =
       "STT,Ma Dat Phong,Khach Hang,SDT,Phong,Hang Phong,Gio Nhan,Gio Tra,Thoi Gian,Tong Cong,Khach Da Tra,Con Lai\n";
     filteredBookings.forEach((b, idx) => {
-      const paid = Number(
-        b.subtotal ||
-          b.deposit_amount ||
-          (b.payment_status === "paid" ? b.total_price : 0),
-      );
-      const rem = Math.max(0, Number(b.total_price || 0) - paid);
-      csv += `${idx + 1},"${b.booking_code}","${b.customer_name || ""}","${b.guest_phone || ""}","${b.room_number || ""}","${b.room_name || ""}","${b.checkin_date} ${b.checkin_time}","${b.checkout_date} ${b.checkout_time}","${b.rental_type}",${b.total_price},${paid},${rem}\n`;
+      const { totalPrice, paidAmount, remainingAmount } =
+        resolveBookingPaymentDetails(b);
+
+      csv += `${idx + 1},"${b.booking_code}","${b.customer_name || ""}","${b.guest_phone || ""}","${b.room_number || ""}","${b.room_name || ""}","${b.checkin_date} ${b.checkin_time}","${b.checkout_date} ${b.checkout_time}","${b.rental_type}",${totalPrice},${paidAmount},${remainingAmount}\n`;
     });
 
     const blob = new Blob(["\uFEFF" + csv], {
@@ -371,10 +398,9 @@ export default function BookingListPage() {
 
   return (
     <div className="w-full pb-20 bg-[#f4f6f8] font-sans text-gray-900 min-h-screen p-3 sm:p-5 space-y-3">
-      {/* ─── DÒNG 1: TOOLBAR TÌM KIẾM, CHỌN KHÁCH SẠN & NÚT ĐẶT PHÒNG MÀU XANH #003580 ─── */}
+      {/* TOOLBAR TÌM KIẾM & CHỌN CƠ SỞ */}
       <div className="bg-white p-3.5 rounded-3xl border border-gray-200 shadow-2xs flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-1 min-w-[300px]">
-          {/* Nút Danh Sách màu xanh #003580 chuẩn web */}
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -392,7 +418,6 @@ export default function BookingListPage() {
             </div>
           </div>
 
-          {/* Ô TÌM KIẾM CHUẨN XÁC */}
           <div className="flex items-center border border-gray-200 rounded-xl px-3 py-1.5 bg-white focus-within:border-[#003580] shadow-2xs flex-1 max-w-md">
             <Search size={15} className="text-gray-400 mr-2 shrink-0" />
             <input
@@ -417,7 +442,6 @@ export default function BookingListPage() {
           </div>
         </div>
 
-        {/* BÊN PHẢI: CHỌN CƠ SỞ, THỜI GIAN LƯU TRÚ & NÚT + ĐẶT PHÒNG XANH NAVY #003580 */}
         <div className="flex items-center gap-2 flex-wrap">
           {hotels.length > 1 && (
             <div className="flex items-center border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-xs font-bold text-[#003580] shadow-2xs">
@@ -441,16 +465,6 @@ export default function BookingListPage() {
             <ChevronDown size={14} className="ml-1 text-gray-400" />
           </div>
 
-          <div className="flex items-center border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-xs text-gray-700 font-semibold cursor-pointer shadow-2xs">
-            <span>Tuỳ chọn</span>
-            <ChevronDown size={14} className="ml-1 text-gray-400" />
-          </div>
-
-          <div className="flex items-center border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-xs font-bold text-gray-800 shadow-2xs">
-            <span>19/09/2026 - 25/09/2026</span>
-          </div>
-
-          {/* NÚT + ĐẶT PHÒNG MÀU XANH NAVY #003580 CHUẨN WEB GOSTAY */}
           <button
             type="button"
             onClick={handleOpenQuickBooking}
@@ -462,7 +476,7 @@ export default function BookingListPage() {
         </div>
       </div>
 
-      {/* ─── DÒNG 2: BĂNG TAB LỌC TRẠNG THÁI VỚI MÀU XANH #003580 & NÚT ĐỒNG BỘ ─── */}
+      {/* TABS LỌC TRẠNG THÁI */}
       <div className="bg-white p-2.5 rounded-2xl border border-gray-200 shadow-2xs flex items-center justify-between gap-2 overflow-x-auto text-xs">
         <div className="flex items-center gap-1.5 flex-wrap">
           {[
@@ -534,7 +548,7 @@ export default function BookingListPage() {
         </div>
       )}
 
-      {/* ─── DÒNG 3: BẢNG DANH SÁCH ĐƠN PHÒNG CHUẨN XÁC THEO HÌNH ẢNH ─── */}
+      {/* BẢNG DANH SÁCH ĐƠN PHÒNG */}
       <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-2xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
@@ -599,14 +613,14 @@ export default function BookingListPage() {
                 </tr>
               ) : (
                 filteredBookings.map((b, idx) => {
-                  const totalPrice = Number(b.total_price || 100000);
-                  const isPaid = b.payment_status === "paid";
-                  const paidAmount = Number(
-                    b.subtotal !== undefined && b.subtotal !== null
-                      ? b.subtotal
-                      : b.deposit_amount || (isPaid ? totalPrice : 0),
-                  );
-                  const remainingAmount = Math.max(0, totalPrice - paidAmount);
+                  // 🌟 TÍNH TOÁN TIỀN PHÒNG CHUẨN XÁC THEO TỪNG LOẠI ĐƠN
+                  const {
+                    totalPrice,
+                    paidAmount,
+                    remainingAmount,
+                    isDeposit,
+                    isWalkIn,
+                  } = resolveBookingPaymentDetails(b);
 
                   const isHourly =
                     b.rental_type === "HOUR" || b.rental_type === "Giờ";
@@ -614,11 +628,6 @@ export default function BookingListPage() {
                     ? `${b.stay_duration || 1} giờ`
                     : "1 đêm";
                   const unitLabel = isHourly ? "/giờ" : "/đêm";
-
-                  const isWalkIn =
-                    String(b.booking_code || "").startsWith("DP") ||
-                    b.booking_type === "walk_in" ||
-                    b.source === "counter";
 
                   return (
                     <tr
@@ -639,14 +648,14 @@ export default function BookingListPage() {
                           {formatCreationTime(b.created_at || new Date())}
                         </span>
                         <span className="text-[11px] text-gray-500 font-medium block mt-0.5">
-                          1 phòng
+                          {b.quantity || 1} phòng
                         </span>
                       </td>
 
                       {/* 3. KÊNH BÁN */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-1 text-gray-800 font-medium text-xs">
-                          <span>🚶</span>
+                          <span>{isWalkIn ? "🚶" : "🌐"}</span>
                           <span>
                             {isWalkIn
                               ? "Khách đến trực tiếp"
@@ -663,14 +672,14 @@ export default function BookingListPage() {
                         </div>
                       </td>
 
-                      {/* 4. THÔNG TIN KHÁCH (TÊN LINH VỪA NHẬP Ở ĐẶT PHÒNG NHANH) */}
+                      {/* 4. THÔNG TIN KHÁCH */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <strong className="text-[#003580] font-bold text-xs block">
-                          {b.customer_name || "linh"}
+                          {b.customer_name || "Khách hàng"}
                         </strong>
                         <span className="text-gray-500 text-[11px] block mt-0.5 font-normal">
                           {b.adult_total || 2} người lớn,{" "}
-                          {b.children_total || 1} trẻ em
+                          {b.children_total || 0} trẻ em
                         </span>
                       </td>
 
@@ -704,19 +713,41 @@ export default function BookingListPage() {
                         {formatNumber(totalPrice)}
                       </td>
 
-                      {/* 10. KHÁCH ĐÃ TRẢ */}
+                      {/* 10. KHÁCH ĐÃ TRẢ (HIỂN THỊ ĐÚNG SỐ TIỀN THỰC TẾ) */}
                       <td className="py-3.5 px-4 text-right font-bold text-gray-700 tabular-nums whitespace-nowrap">
-                        {formatNumber(paidAmount)}
+                        <span
+                          className={
+                            isDeposit
+                              ? "text-emerald-700 font-black"
+                              : "text-gray-900"
+                          }
+                        >
+                          {formatNumber(paidAmount)}
+                        </span>
+                        {isDeposit && (
+                          <span className="text-[10px] text-emerald-600 block font-normal">
+                            (Cọc 30%)
+                          </span>
+                        )}
                       </td>
 
-                      {/* 11. CÒN CẦN TRẢ (MÀU ĐỎ CHUẨN THEO ẢNH) */}
-                      <td className="py-3.5 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap">
-                        {remainingAmount === 0
-                          ? "0"
-                          : formatNumber(remainingAmount)}
+                      {/* 11. CÒN CẦN TRẢ (BÁO ĐỎ CHÍNH XÁC KHOẢN TIỀN CÒN THIẾU CẦN THU) */}
+                      <td className="py-3.5 px-4 text-right font-black tabular-nums whitespace-nowrap">
+                        {remainingAmount === 0 ? (
+                          <span className="text-gray-400 font-bold">0</span>
+                        ) : (
+                          <div className="space-y-0.5">
+                            <span className="text-rose-600 text-xs block">
+                              {formatNumber(remainingAmount)}
+                            </span>
+                            <span className="text-[10px] text-rose-500 font-medium block">
+                              (Thu tại quầy)
+                            </span>
+                          </div>
+                        )}
                       </td>
 
-                      {/* 12. THAO TÁC (NÚT NHẬN PHÒNG XANH NAVY #003580 CHUẨN WEB) */}
+                      {/* 12. THAO TÁC */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5 relative">
                           {b.status === "confirmed" ||
@@ -762,7 +793,7 @@ export default function BookingListPage() {
                                   alert(`Chi tiết đơn #${b.booking_code}`);
                                   setActiveMenuId(null);
                                 }}
-                                className="w-full px-3.5 py-2 hover:bg-blue-50 text-gray-700 font-medium"
+                                className="w-full px-3.5 py-2 hover:bg-blue-50 text-gray-700 font-medium cursor-pointer"
                               >
                                 Xem chi tiết
                               </button>
@@ -772,7 +803,7 @@ export default function BookingListPage() {
                                   alert(`In hóa đơn đơn #${b.booking_code}`);
                                   setActiveMenuId(null);
                                 }}
-                                className="w-full px-3.5 py-2 hover:bg-blue-50 text-gray-700 font-medium"
+                                className="w-full px-3.5 py-2 hover:bg-blue-50 text-gray-700 font-medium cursor-pointer"
                               >
                                 In hóa đơn
                               </button>
@@ -788,7 +819,7 @@ export default function BookingListPage() {
           </table>
         </div>
 
-        {/* ─── DÒNG 4: PHÂN TRANG VÀ NÚT XUẤT EXCEL MÀU XANH #003580 ─── */}
+        {/* PHÂN TRANG VÀ XUẤT EXCEL */}
         <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between gap-4 flex-wrap text-xs">
           <div className="flex items-center gap-2 text-gray-600">
             <span>Hiển thị</span>
@@ -802,22 +833,7 @@ export default function BookingListPage() {
               <option value={50}>50</option>
             </select>
             <span>
-              trên tổng số <b>{filteredBookings.length}</b> đặt phòng,{" "}
-              <b>{filteredBookings.length}</b> phòng,{" "}
-              <b>
-                {filteredBookings.reduce(
-                  (s, i) => s + Number(i.adult_total || 2),
-                  0,
-                )}
-              </b>{" "}
-              người lớn,{" "}
-              <b>
-                {filteredBookings.reduce(
-                  (s, i) => s + Number(i.children_total || 1),
-                  0,
-                )}
-              </b>{" "}
-              trẻ em
+              trên tổng số <b>{filteredBookings.length}</b> đặt phòng
             </span>
           </div>
 
@@ -840,7 +856,7 @@ export default function BookingListPage() {
         </div>
       </div>
 
-      {/* ─── MODAL ĐẶT PHÒNG NHANH ─── */}
+      {/* MODAL ĐẶT PHÒNG NHANH */}
       <QuickBookingModal
         isOpen={isQuickBookingOpen}
         onClose={() => setIsQuickBookingOpen(false)}
@@ -851,7 +867,7 @@ export default function BookingListPage() {
         formatVND={(num) => Number(num || 0).toLocaleString("vi-VN") + " ₫"}
       />
 
-      {/* ─── MODAL XÁC NHẬN NHẬN PHÒNG (KHI ẤN NÚT "NHẬN PHÒNG" TRÊN BẢNG) ─── */}
+      {/* MODAL XÁC NHẬN NHẬN PHÒNG */}
       {confirmCheckInRoom && (
         <ConfirmCheckInModal
           isOpen={Boolean(confirmCheckInRoom)}
