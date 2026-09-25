@@ -215,13 +215,6 @@ function extractFilters(text) {
   }
 
   // Nhận diện tiện ích
-  const isAskingQuestion =
-    normalizedText.includes("co ") ||
-    normalizedText.includes("khong") ||
-    normalizedText.includes("ko") ||
-    normalizedText.includes("k ") ||
-    normalizedText.endsWith("k");
-
   if (
     normalizedText.includes("dieu hoa") ||
     normalizedText.includes("may lanh") ||
@@ -229,14 +222,12 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "air_conditioner";
     checkAmenityLabel = "điều hòa máy lạnh";
-    if (isAskingQuestion) intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("wifi") ||
     normalizedText.includes("mang")
   ) {
     checkAmenityKey = "wifi";
     checkAmenityLabel = "Wi-Fi tốc độ cao";
-    if (isAskingQuestion) intent = "CHECK_AMENITY";
   } else if (
     /\b(bai do xe|cho do xe|cho de xe|bai xe|xe hoi|o to)\b/.test(
       normalizedText,
@@ -244,21 +235,18 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "parking";
     checkAmenityLabel = "bãi đỗ xe ô tô";
-    if (isAskingQuestion) intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("thang may") ||
     normalizedText.includes("elevator")
   ) {
     checkAmenityKey = "elevator";
     checkAmenityLabel = "thang máy di chuyển";
-    if (isAskingQuestion) intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("bon tam") ||
     normalizedText.includes("bathtub")
   ) {
     checkAmenityKey = "bathtub";
     checkAmenityLabel = "bồn tắm nằm thư giãn";
-    if (isAskingQuestion) intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("ho boi") ||
     normalizedText.includes("be boi") ||
@@ -266,7 +254,6 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "pool";
     checkAmenityLabel = "hồ bơi";
-    if (isAskingQuestion) intent = "CHECK_AMENITY";
   } else if (
     normalizedText.includes("an sang") ||
     normalizedText.includes("bua sang") ||
@@ -274,7 +261,6 @@ function extractFilters(text) {
   ) {
     checkAmenityKey = "breakfast";
     checkAmenityLabel = "bữa sáng";
-    if (isAskingQuestion) intent = "CHECK_AMENITY";
   }
 
   // Nhận diện hỏi vị trí
@@ -336,7 +322,7 @@ function extractFilters(text) {
     filter.rentalType = "HALF_DAY";
   }
 
-  // Nếu người dùng tìm kiếm phòng có bồn tắm / hồ bơi
+  // Gán cờ tiện ích để câu SQL tìm kiếm
   if (checkAmenityKey === "pool") filter.amenity_pool = true;
   if (checkAmenityKey === "bathtub") filter.amenity_bathtub = true;
   if (checkAmenityKey === "air_conditioner") filter.amenity_ac = true;
@@ -479,21 +465,22 @@ function extractFilters(text) {
     normalizedText.includes("thue") ||
     normalizedText.includes("dat");
 
-  const hasSearchSlot =
+  // 🌟 NGUYÊN TẮC: Cứ có thành phố HOẶC hình thức thuê HOẶC từ tìm phòng -> 100% SEARCH_HOTEL
+  if (
     Boolean(filter.city) ||
     Boolean(filter.rentalType) ||
-    Boolean(filter.maxPrice) ||
-    Boolean(filter.is_beachfront) ||
-    Boolean(filter.near_center) ||
-    Boolean(filter.checkIn) ||
-    hasHotelKeyword;
-
-  // 🌟 NẾU CÓ THÀNH PHỐ HOẶC TỪ KHÓA TÌM PHÒNG THÌ PHẢI LÀ SEARCH_HOTEL, KHÔNG ĐƯỢC ĐÈ SANG FAQ
-  if (Boolean(filter.city) || hasHotelKeyword || filter.is_beachfront) {
+    hasHotelKeyword ||
+    Boolean(filter.is_beachfront)
+  ) {
     filter.intent = "SEARCH_HOTEL";
-  } else if (!filter.intent && hasSearchSlot) {
+  } else if (
+    checkAmenityKey &&
+    (normalizedText.includes("co ") || normalizedText.includes("khong"))
+  ) {
+    filter.intent = "CHECK_AMENITY";
+  } else if (!filter.intent && hasHotelKeyword) {
     filter.intent = "SEARCH_HOTEL";
-  } else if (!filter.intent && !hasSearchSlot) {
+  } else if (!filter.intent) {
     filter.intent = "UNKNOWN";
   }
 
@@ -504,9 +491,6 @@ function extractFilters(text) {
   return filter;
 }
 
-/**
- * XỬ LÝ HỢP NHẤT NGỮ CẢNH (CONTEXT MERGING)
- */
 async function getMergedContext(sessionId, currentFilter) {
   try {
     const historyRes = await pool.query(
@@ -773,9 +757,9 @@ async function handleChatMessage(req, res, next) {
         } else if (extractedFilter.checkAmenityKey === "pool") {
           replyText = `Dạ trên GoStay có các resort và khách sạn có **hồ bơi ngoài trời / vô cực** view rất đẹp. Bạn đang dự định đi du lịch ở thành phố nào ạ?`;
         } else if (extractedFilter.checkAmenityKey === "bathtub") {
-          replyText = `Dạ trên GoStay có các khách sạn có phòng trang bị **bồn tắm nằm thư giãn** rất tiện nghi. Bạn đang tìm phòng ở khu vực nào để mình lọc cho bạn nhé!`;
+          replyText = `Dạ trên GoStay có các khách sạn có phòng trang bị **bồn tắm nằm thư giãn** rất tiện nghi. Bạn đang tìm phòng ở thành phố nào để mình hỗ trợ nhé!`;
         } else {
-          replyText = `Dạ có bạn nhé! Nhiều khách sạn trên GoStay có hỗ trợ **${amenityLabel}**. Bạn muốn tìm phòng ở khu vực nào để mình lọc cho bạn nhé!`;
+          replyText = `Dạ có bạn nhé! Nhiều khách sạn trên GoStay có hỗ trợ **${amenityLabel}**. Bạn muốn tìm phòng ở thành phố nào để mình lọc cho bạn nhé!`;
         }
       }
 
@@ -1070,12 +1054,13 @@ async function handleChatMessage(req, res, next) {
     // NHÁNH 6: TÌM KIẾM PHÒNG (SEARCH_HOTEL)
     // ─────────────────────────────────────────────────────────────
 
+    // Nếu khách không cung cấp thành phố và không tìm biển
     if (!extractedFilter.city && !extractedFilter.is_beachfront) {
       const guestText =
         extractedFilter.adults > 1
           ? ` cho **${extractedFilter.adults} người**`
           : "";
-      const askCityReply = `Dạ bạn muốn tìm phòng${guestText} ở **thành phố nào** ạ (VD: Vũng Tàu, Đà Nẵng, Nha Trang, Sài Gòn, Hà Nội, Đà Lạt...)? Bạn cho mình biết thêm ngày nhận phòng để mình lọc giá tốt nhất cho bạn nhé! 😊`;
+      const askCityReply = `Dạ bạn muốn tìm phòng${guestText} ở **thành phố nào** ạ (VD: Sài Gòn, Vũng Tàu, Đà Nẵng, Nha Trang, Đà Lạt...)? Bạn cho mình biết thêm ngày nhận phòng để mình lọc giá tốt nhất cho bạn nhé! 😊`;
 
       await logTurn(
         userId,
@@ -1090,6 +1075,44 @@ async function handleChatMessage(req, res, next) {
         suggestions: [],
         filter: extractedFilter,
       });
+    }
+
+    const cityName = extractedFilter.city
+      ? formatTitleCase(extractedFilter.city)
+      : extractedFilter.is_beachfront
+        ? "gần biển"
+        : "toàn hệ thống";
+
+    // 🌟 KIỂM TRA THÔNG MINH: Thành phố này đã có khách sạn nào trong DB chưa?
+    if (extractedFilter.city && extractedFilter.cityQuery) {
+      const cityCheckRes = await pool.query(
+        `SELECT 1 FROM public.hotel h 
+         WHERE h.status::text IN ('active', 'approved') 
+           AND (LOWER(h.city) LIKE LOWER($1) OR LOWER(h.city) LIKE LOWER($2) OR LOWER(h.address) LIKE LOWER($1) OR LOWER(h.address) LIKE LOWER($2)) 
+         LIMIT 1`,
+        [
+          `%${extractedFilter.cityQuery[0]}%`,
+          `%${extractedFilter.cityQuery[1]}%`,
+        ],
+      );
+
+      // Nếu trong DB chưa có khách sạn nào ở thành phố này
+      if (cityCheckRes.rows.length === 0) {
+        const noPartnerReply = `Dạ hiện tại hệ thống GoStay chưa có cơ sở lưu trú đối tác nào tại **${cityName}** ạ. Bạn có muốn tham khảo các khách sạn giá tốt đang mở bán tại **Vũng Tàu** hoặc **Hồ Chí Minh** không? 😊`;
+        await logTurn(
+          userId,
+          session_id,
+          message.trim(),
+          extractedFilter,
+          noPartnerReply,
+        );
+        return res.json({
+          success: true,
+          reply: noPartnerReply,
+          suggestions: [],
+          filter: extractedFilter,
+        });
+      }
     }
 
     const checkIn = extractedFilter.checkIn || getRelativeDateVN(0);
@@ -1119,7 +1142,6 @@ async function handleChatMessage(req, res, next) {
       )
     `;
 
-    // 🌟 ĐIỀU KIỆN TÌM PHÒNG CÓ BỒN TẮM TRONG DATABASE
     const bathtubCondition = `
       (
         ar.room_view = 'bathtub'
@@ -1197,8 +1219,8 @@ async function handleChatMessage(req, res, next) {
             r.half_day_price,
             r.capacity, 
             r.room_view,
-            r.description AS room_description,
-            r.amenities AS room_amenities,
+            r.description,
+            r.amenities,
             MIN(ns.available_count)::int AS remaining_rooms,
             ROUND(AVG(ns.calculated_price))::int AS price
           FROM public.room r
@@ -1291,11 +1313,18 @@ async function handleChatMessage(req, res, next) {
     };
 
     let matchedRooms = await queryRooms(true, true, true, true);
-    if (matchedRooms.length === 0 && extractedFilter.amenity_pool) {
-      matchedRooms = await queryRooms(true, true, false, true);
-    }
+    let fallbackBathtub = false;
+
+    // Nếu tìm phòng có bồn tắm mà không có, tự động nới lỏng lấy phòng đẹp khác tại thành phố đó
     if (matchedRooms.length === 0 && extractedFilter.amenity_bathtub) {
       matchedRooms = await queryRooms(true, true, true, false);
+      if (matchedRooms.length > 0) {
+        fallbackBathtub = true;
+      }
+    }
+
+    if (matchedRooms.length === 0 && extractedFilter.amenity_pool) {
+      matchedRooms = await queryRooms(true, true, false, false);
     }
     if (matchedRooms.length === 0 && extractedFilter.near_center) {
       matchedRooms = await queryRooms(true, false, false, false);
@@ -1322,12 +1351,6 @@ async function handleChatMessage(req, res, next) {
     // ─────────────────────────────────────────────────────────────
     // XÂY DỰNG CÂU TRẢ LỜI TỰ ĐỘNG BIẾN HÓA THEO ĐÚNG NGỮ CẢNH
     // ─────────────────────────────────────────────────────────────
-    const cityName = extractedFilter.city
-      ? formatTitleCase(extractedFilter.city)
-      : extractedFilter.is_beachfront
-        ? "gần biển"
-        : "toàn hệ thống";
-
     const contextFeatures = [];
     if (extractedFilter.is_beachfront && extractedFilter.near_center) {
       contextFeatures.push("vừa sát biển vừa gần trung tâm");
@@ -1340,7 +1363,7 @@ async function handleChatMessage(req, res, next) {
     if (extractedFilter.amenity_pool) {
       contextFeatures.push("có hồ bơi");
     }
-    if (extractedFilter.amenity_bathtub) {
+    if (extractedFilter.amenity_bathtub && !fallbackBathtub) {
       contextFeatures.push("có bồn tắm thư giãn");
     }
 
@@ -1364,7 +1387,9 @@ async function handleChatMessage(req, res, next) {
 
     let botReply = "";
 
-    if (fallbackWithoutBeach) {
+    if (fallbackBathtub) {
+      botReply = `Dạ hiện tại ở **${cityName}** chưa có phòng trang bị bồn tắm nằm còn trống, nhưng mình gợi ý cho bạn **${matchedRooms.length} chỗ nghỉ có phòng đẹp, giá tốt nhất** tại ${cityName} ${rentalDesc} ${priceDesc} nhé 👇`;
+    } else if (fallbackWithoutBeach) {
       botReply = `Dạ hiện tại ở **${cityName}** chưa có chỗ nghỉ sát biển trống phù hợp, nhưng mình đã chọn lọc cho bạn **${matchedRooms.length} chỗ nghỉ có vị trí đẹp, giá tốt nhất** tại ${cityName} ${rentalDesc} ${priceDesc} nhé 👇`;
     } else if (extractedFilter.is_beachfront && matchedRooms.length === 0) {
       const targetArea = extractedFilter.city ? `tại ${cityName}` : "gần biển";

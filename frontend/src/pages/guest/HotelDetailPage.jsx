@@ -224,7 +224,6 @@ export default function HotelDetailPage() {
     differenceInDays(appliedCheckOut, appliedCheckIn),
   );
 
-  // Đọc chuẩn xác các khung giờ quy định từ Database
   const hotelPolicies = useMemo(() => {
     const formatTime = (timeStr, defaultTime = "") => {
       if (!timeStr) return defaultTime;
@@ -264,7 +263,6 @@ export default function HotelDetailPage() {
     };
   }, [hotel]);
 
-  // Tính toán thời gian nhận và trả chuẩn xác
   const checkOutInfo = useMemo(() => {
     const [hStr, mStr] = checkInTime.split(":");
     const inHour = parseInt(hStr || "12", 10);
@@ -323,7 +321,6 @@ export default function HotelDetailPage() {
       };
     }
 
-    // THEO NGÀY (DAY)
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     outDateTime.setHours(outH || 12, outM || 0, 0, 0);
     const diffDays = Math.max(1, differenceInDays(outDateTime, inDateTime));
@@ -346,8 +343,6 @@ export default function HotelDetailPage() {
     hoursCount,
     hotelPolicies,
   ]);
-
-  const durationSummary = checkOutInfo;
 
   const handleTabChange = useCallback(
     (type) => {
@@ -513,7 +508,6 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // Tính giá phòng chi tiết
   const calculateRoomPricing = useCallback(
     (room) => {
       const baseDailyPrice = Number(
@@ -579,7 +573,6 @@ export default function HotelDetailPage() {
         };
       }
 
-      // THEO NGÀY (DAY)
       const totalDays = Math.max(
         1,
         differenceInDays(checkOutInfo.outDateTime, checkOutInfo.inDateTime),
@@ -729,7 +722,6 @@ export default function HotelDetailPage() {
   const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
 
-    // Khóa giờ đã qua trong quá khứ nếu chọn ngày hôm nay
     if (isSameDay(checkInDate, today)) {
       const currentH = new Date().getHours();
       if (hourNum < currentH) return true;
@@ -802,6 +794,12 @@ export default function HotelDetailPage() {
               {hotel.property_type && (
                 <span className="text-[10px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
                   {hotel.property_type}
+                </span>
+              )}
+              {hotel.is_beachfront && (
+                <span className="text-[11px] font-bold bg-cyan-50 border border-cyan-200 text-cyan-800 px-2.5 py-0.5 rounded-lg flex items-center gap-1 shadow-2xs">
+                  <Palmtree size={13} className="text-cyan-600" />
+                  Chỗ nghỉ giáp biển
                 </span>
               )}
             </div>
@@ -1314,49 +1312,86 @@ export default function HotelDetailPage() {
                         </strong>
                       </div>
 
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-xs font-bold text-slate-700">
-                          Khách & Phòng:
-                        </span>
-                        <div className="flex items-center gap-3">
+                      {/* 🌟 ĐÃ BỔ SUNG ĐẦY ĐỦ: NGƯỜI LỚN, TRẺ EM, SỐ PHÒNG 🌟 */}
+                      <div className="space-y-2 pt-1 border-t border-slate-100">
+                        {/* 1. Người lớn */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700">
+                            Người lớn:
+                          </span>
                           <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-8">
                             <button
                               type="button"
                               onClick={() =>
                                 setAdults((p) => Math.max(1, p - 1))
                               }
-                              className="px-2 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
                             >
                               -
                             </button>
-                            <span className="px-2 font-bold text-xs">
-                              {adults} Lớn
+                            <span className="px-2.5 font-bold text-xs select-none">
+                              {adults}
                             </span>
                             <button
                               type="button"
                               onClick={() => setAdults((p) => p + 1)}
-                              className="px-2 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
                             >
                               +
                             </button>
                           </div>
+                        </div>
+
+                        {/* 2. Trẻ em */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700">
+                            Trẻ em:
+                          </span>
+                          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-8">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setChildren((p) => Math.max(0, p - 1))
+                              }
+                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="px-2.5 font-bold text-xs select-none">
+                              {children}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setChildren((p) => p + 1)}
+                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 3. Số phòng */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700">
+                            Số phòng:
+                          </span>
                           <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-8">
                             <button
                               type="button"
                               onClick={() =>
                                 setRooms((p) => Math.max(1, p - 1))
                               }
-                              className="px-2 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
                             >
                               -
                             </button>
-                            <span className="px-2 font-bold text-xs">
-                              {rooms} Phòng
+                            <span className="px-2.5 font-bold text-xs select-none">
+                              {rooms}
                             </span>
                             <button
                               type="button"
                               onClick={() => setRooms((p) => p + 1)}
-                              className="px-2 hover:bg-slate-100 text-slate-600 cursor-pointer"
+                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
                             >
                               +
                             </button>
@@ -1590,7 +1625,6 @@ export default function HotelDetailPage() {
                               {formatNumberWithDots(pricing.totalPrice)} đ
                             </span>
 
-                            {/* TOOLTIP CHI TIẾT GIÁ */}
                             <div
                               onMouseEnter={() =>
                                 setHoveredPriceRoomId(room.id || idx)
@@ -1741,7 +1775,6 @@ export default function HotelDetailPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-xs pt-1">
-            {/* 1. Theo giờ */}
             <div className="space-y-1">
               <span className="font-bold text-slate-500 block">Theo giờ</span>
               <strong className="text-slate-900 font-black text-sm block">
@@ -1756,7 +1789,6 @@ export default function HotelDetailPage() {
               </span>
             </div>
 
-            {/* 2. Qua đêm */}
             <div className="space-y-1">
               <span className="font-bold text-slate-500 block">Qua đêm</span>
               <strong className="text-slate-900 font-black text-sm block">
@@ -1771,7 +1803,6 @@ export default function HotelDetailPage() {
               </span>
             </div>
 
-            {/* 3. Theo ngày */}
             <div className="space-y-1">
               <span className="font-bold text-slate-500 block">
                 Theo ngày (Ngày đêm)
@@ -1787,7 +1818,6 @@ export default function HotelDetailPage() {
               </span>
             </div>
 
-            {/* 4. Theo buổi */}
             <div className="space-y-1">
               <span className="font-bold text-slate-500 block">
                 Theo buổi (Nửa ngày)
