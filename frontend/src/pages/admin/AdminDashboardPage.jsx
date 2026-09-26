@@ -1,4 +1,3 @@
-// src/pages/admin/AdminDashboardPage.jsx
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -58,7 +57,7 @@ export default function AdminDashboardPage() {
   const [pendingList, setPendingList] = useState([]);
   const [hotelRevenues, setHotelRevenues] = useState([]);
 
-  // 🌟 TAB CHUYỂN ĐỔI: "ACTIVE" (Cần quyết toán) HOẶC "HISTORY" (Lịch sử đã chuyển tiền)
+  // TAB CHUYỂN ĐỔI: "ACTIVE" (Cần quyết toán) HOẶC "HISTORY" (Lịch sử đã chuyển tiền)
   const [payoutTab, setPayoutTab] = useState("active");
   const [payoutHistoryList, setPayoutHistoryList] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -139,7 +138,6 @@ export default function AdminDashboardPage() {
     }
   }, [timeRange]);
 
-  // 🌟 LẤY LỊCH SỬ CÁC ĐỢT QUYẾT TOÁN TRONG QUÁ KHỨ
   const fetchPayoutHistory = useCallback(async () => {
     setLoadingHistory(true);
     try {
@@ -175,7 +173,7 @@ export default function AdminDashboardPage() {
       await apiClient.post("/admin/payouts/confirm", {
         hotel_id: hotelId,
         amount,
-        note: `Quyết toán chu kỳ tuần cho cơ sở [${hotelName}]`,
+        note: `Quyết toán chu kỳ cho cơ sở [${hotelName}]`,
       });
 
       alert(
@@ -315,7 +313,7 @@ export default function AdminDashboardPage() {
                 {formatVND(stats.totalGMV)}
               </h3>
               <p className="text-[11px] text-gray-500 font-medium">
-                Khách đã thanh toán qua cổng trực tuyến
+                Toàn bộ tiền phòng khách đã đặt
               </p>
             </div>
 
@@ -330,7 +328,7 @@ export default function AdminDashboardPage() {
                 {formatVND(stats.totalRevenue)}
               </h3>
               <p className="text-[11px] text-emerald-600 font-semibold">
-                Doanh thu thực tế giữ lại của sàn
+                Doanh thu thực tế của Admin (đã trừ cấn)
               </p>
             </div>
 
@@ -345,7 +343,7 @@ export default function AdminDashboardPage() {
                 {formatVND(stats.totalOwnerPayout)}
               </h3>
               <p className="text-[11px] text-gray-500 font-medium">
-                Khoản đã check-out chờ quyết toán
+                Tiền cọc thừa cần bắn trả khách sạn
               </p>
             </div>
 
@@ -368,7 +366,7 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* 2. BẢNG QUYẾT TOÁN CƠ SỞ KÈM TAB LỊCH SỬ */}
+          {/* 2. BẢNG QUYẾT TOÁN CƠ SỞ KÈM ĐỐI SOÁT MINH BẠCH */}
           <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-2xs space-y-4">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pb-3 border-b border-gray-100">
               <div>
@@ -379,13 +377,14 @@ export default function AdminDashboardPage() {
                 <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
                   <CalendarDays size={13} className="text-[#006ce4]" />
                   <span>
-                    Chu kỳ thanh toán định kỳ: Chỉ quyết toán các đơn khách{" "}
-                    <strong>đã hoàn thành trả phòng</strong>
+                    Chỉ quyết toán khi khách{" "}
+                    <strong>đã trả phòng (Check-out)</strong>. Công thức:{" "}
+                    <b>Tiền quyết toán = [Sàn thu] - [Hoa hồng]</b>.
                   </span>
                 </p>
               </div>
 
-              {/* TAB NÚT CHUYỂN ĐỔI GIỮA CẦN QUYẾT TOÁN VÀ LỊCH SỬ */}
+              {/* TAB NÚT CHUYỂN ĐỔI */}
               <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl">
                 <button
                   type="button"
@@ -479,7 +478,7 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
 
-                {/* BẢNG DỮ LIỆU CẦN QUYẾT TOÁN */}
+                {/* BẢNG DỮ LIỆU ĐỐI SOÁT CHUẨN XÁC */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-gray-50 text-gray-500 font-bold uppercase tracking-wider border-b border-gray-200">
@@ -488,10 +487,13 @@ export default function AdminDashboardPage() {
                         <th className="py-3.5 px-3">Chủ Cơ Sở (Owner)</th>
                         <th className="py-3.5 px-3 text-center">Tỷ Lệ Sàn</th>
                         <th className="py-3.5 px-3 text-right">
-                          Tổng Khách Đặt (GMV)
+                          Tổng Giá Trị Đơn (GMV)
                         </th>
-                        <th className="py-3.5 px-3 text-right">
-                          Hoa Hồng Sàn Thu
+                        <th className="py-3.5 px-3 text-right text-blue-800">
+                          Sàn Đã Thu (Online)
+                        </th>
+                        <th className="py-3.5 px-3 text-right text-emerald-700">
+                          Hoa Hồng Sàn
                         </th>
                         <th className="py-3.5 px-3 text-right">
                           Tiền Cần Quyết Toán
@@ -535,6 +537,9 @@ export default function AdminDashboardPage() {
                               <td className="py-3.5 px-3 text-right font-bold text-gray-900 tabular-nums">
                                 {formatVND(h.total_gmv)}
                               </td>
+                              <td className="py-3.5 px-3 text-right font-bold text-blue-900 tabular-nums">
+                                {formatVND(h.total_online_collected)}
+                              </td>
                               <td className="py-3.5 px-3 text-right font-black text-emerald-700 tabular-nums">
                                 +{formatVND(h.admin_commission)}
                               </td>
@@ -570,7 +575,7 @@ export default function AdminDashboardPage() {
                       ) : (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={8}
                             className="py-12 text-center text-gray-400 italic"
                           >
                             Không tìm thấy khách sạn nào khớp với tìm kiếm.
@@ -624,7 +629,7 @@ export default function AdminDashboardPage() {
                 )}
               </>
             ) : (
-              /* ─── 🌟 BẢNG LỊCH SỬ CÁC ĐỢT ĐÃ CHUYỂN TIỀN QUYẾT TOÁN TRONG DATABASE ─── */
+              /* LỊCH SỬ CÁC ĐỢT ĐÃ CHUYỂN TIỀN QUYẾT TOÁN */
               <div className="overflow-x-auto">
                 {loadingHistory ? (
                   <div className="py-12 flex justify-center text-gray-400">

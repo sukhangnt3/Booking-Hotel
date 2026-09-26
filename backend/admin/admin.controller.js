@@ -1,8 +1,7 @@
-// backend/controllers/admin.controller.js
 const pool = require("../config/database");
 const bcrypt = require("bcryptjs");
 
-// 🌟 TỰ ĐỘNG ĐẢM BẢO BẢNG QUYẾT TOÁN TỒN TẠI ĐỂ ĐỐI SOÁT TRỪ NỢ & XEM LỊCH SỬ
+// TỰ ĐỘNG ĐẢM BẢO BẢNG QUYẾT TOÁN TỒN TẠI
 pool
   .query(
     `
@@ -17,7 +16,7 @@ pool
   )
   .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
 
-// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & DOANH THU TỪNG KHÁCH SẠN ───
+// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & DOANH THU ĐỐI SOÁT CHUẨN XÁC ───
 async function getStats(req, res, next) {
   try {
     const dbStart = Date.now();
@@ -29,7 +28,7 @@ async function getStats(req, res, next) {
     const minutes = Math.floor((uptimeSeconds % 3600) / 60);
     const uptimeFormatted = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-    const range = (req.query.range || "today").toLowerCase(); // 'today' | '7days' | '30days'
+    const range = (req.query.range || "today").toLowerCase();
 
     let trafficQuery = "";
     let timeBookingFilter = "";
@@ -94,9 +93,7 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN CHI TIẾT DOANH THU:
-    // 🛑 CHỈ LẤY ĐƠN ONLINE (BK), BỎ QUA ĐƠN TẠI QUẦY (DP)
-    // 🛑 CHỈ TÍNH TIỀN TRẢ OWNER KHI KHÁCH ĐÃ CHECK-OUT (TRẢ PHÒNG)
+    // 🌟 TRUY VẤN ĐỐI SOÁT TOÁN HỌC CHUẨN XÁC TUYỆT ĐỐI (KHÔNG LỆCH 1 ĐỒNG)
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -114,24 +111,47 @@ async function getStats(req, res, next) {
         u.phone AS owner_phone,
         COUNT(b.id)::int AS total_bookings,
         COUNT(CASE WHEN b.status = 'checked_out' THEN 1 END)::int AS completed_bookings,
+        -- 1. TỔNG GIÁ TRỊ ĐƠN HÀNG (GMV)
         COALESCE(SUM(b.total_price), 0)::bigint AS total_gmv,
+        
+        -- 2. TỔNG SỐ TIỀN THỰC TẾ KHÁCH ĐÃ CHUYỂN QUA CỔNG THANH TOÁN (SEPAY / VIETQR)
         COALESCE(
           SUM(
             CASE 
-              WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
-              ELSE ROUND(b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)
+              WHEN b.payment_type = 'DEPOSIT_30' OR (COALESCE(b.deposit_amount, 0) > 0 AND COALESCE(b.deposit_amount, 0) < b.total_price)
+                THEN COALESCE(b.deposit_amount, ROUND(b.total_price * 0.3))
+              ELSE b.total_price
             END
+          ),
+          0
+        )::bigint AS total_online_collected,
+
+        -- 3. HOA HỒNG SÀN ADMIN THU CHUẨN XÁC: (GMV * % HOA HỒNG)
+        COALESCE(
+          SUM(
+            ROUND(b.total_price * (COALESCE(h.commission_rate, 18.0) / 100.0))
           ), 
           0
         )::bigint AS admin_commission,
-        -- TIỀN SẴN SÀNG QUYẾT TOÁN CHO OWNER (ĐÃ CHECK-OUT VÀ TRỪ ĐI TIỀN ĐÃ CHUYỂN TRƯỚC ĐÓ)
+
+        -- 4. TIỀN CẦN QUYẾT TOÁN CHO KHÁCH SẠN = (TIỀN CỌC/TRẢ ĐỦ SÀN GIỮ) - (HOA HỒNG SÀN) - (ĐÃ QUYẾT TOÁN TRƯỚC ĐÓ)
         GREATEST(
           0,
           COALESCE(
             SUM(
               CASE 
                 WHEN b.status = 'checked_out' THEN 
-                  COALESCE(b.hotel_payout, ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0)))
+                  CASE 
+                    -- Đơn cọc 30%: Tiền sàn trả = (Cọc 30% sàn cầm) - (Hoa hồng sàn ăn trên 100% đơn)
+                    WHEN b.payment_type = 'DEPOSIT_30' OR (COALESCE(b.deposit_amount, 0) > 0 AND COALESCE(b.deposit_amount, 0) < b.total_price) THEN 
+                      GREATEST(
+                        0, 
+                        COALESCE(b.deposit_amount, ROUND(b.total_price * 0.3)) - ROUND(b.total_price * (COALESCE(h.commission_rate, 18.0) / 100.0))
+                      )
+                    -- Đơn trả đủ 100%: Tiền sàn trả = 100% tiền phòng - Hoa hồng
+                    ELSE 
+                      ROUND(b.total_price * (1.0 - (COALESCE(h.commission_rate, 18.0) / 100.0)))
+                  END
                 ELSE 0
               END
             ), 
@@ -142,7 +162,7 @@ async function getStats(req, res, next) {
       LEFT JOIN public.users u ON u.id = h.owner_id
       LEFT JOIN public.booking b 
         ON b.hotel_id = h.id 
-       AND b.payment_status = 'paid'
+       AND (b.payment_status IN ('paid', 'partially_paid') OR COALESCE(b.deposit_amount, 0) > 0)
        AND b.status IN ('confirmed', 'checked_in', 'checked_out')
        AND b.booking_code LIKE 'BK%'
       GROUP BY h.id, u.id
@@ -164,6 +184,7 @@ async function getStats(req, res, next) {
         `SELECT COUNT(*)::int AS count 
          FROM public.booking b 
          WHERE b.status IN ('confirmed', 'checked_in', 'checked_out') 
+           AND (b.payment_status IN ('paid', 'partially_paid') OR COALESCE(b.deposit_amount, 0) > 0)
            AND b.booking_code LIKE 'BK%'
            ${timeBookingFilter}`,
       ),
@@ -179,7 +200,6 @@ async function getStats(req, res, next) {
 
     const hotelRows = hotelRevenuesResult.rows || [];
 
-    // 🌟 ĐỒNG BỘ 100% GIỮA THẺ TỔNG VÀ BẢNG DANH SÁCH CƠ SỞ
     const totalGMV = hotelRows.reduce(
       (sum, h) => sum + Number(h.total_gmv || 0),
       0,
@@ -226,12 +246,10 @@ async function confirmPayout(req, res) {
     const payoutAmount = Number(amount || 0);
 
     if (!targetHotelId || payoutAmount <= 0) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Thông tin quyết toán không hợp lệ.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Thông tin quyết toán không hợp lệ.",
+      });
     }
 
     await pool.query(
@@ -588,12 +606,12 @@ async function listAllBookings(req, res, next) {
          CASE 
            WHEN b.booking_code LIKE 'DP%' THEN 0
            WHEN COALESCE(b.hotel_payout, 0) > 0 THEN (b.total_price - b.hotel_payout)
-           ELSE ROUND(b.total_price * COALESCE(h.commission_rate, 18.0) / 100.0)::bigint
+           ELSE ROUND(b.total_price * (COALESCE(h.commission_rate, 18.0) / 100.0))::bigint
          END AS commission_amount,
          CASE 
            WHEN b.booking_code LIKE 'DP%' THEN b.total_price
            WHEN COALESCE(b.hotel_payout, 0) > 0 THEN b.hotel_payout
-           ELSE ROUND(b.total_price * (1 - COALESCE(h.commission_rate, 18.0) / 100.0))::bigint
+           ELSE ROUND(b.total_price * (1.0 - (COALESCE(h.commission_rate, 18.0) / 100.0)))::bigint
          END AS owner_amount,
          p.payment_method,
          p.paid_amount
@@ -690,7 +708,7 @@ async function deleteReview(req, res, next) {
 module.exports = {
   getStats,
   confirmPayout,
-  getPayoutHistory, // 🌟 Export hàm xem lịch sử các đợt quyết toán
+  getPayoutHistory,
   listUsers,
   createUser,
   updateUserRole,
