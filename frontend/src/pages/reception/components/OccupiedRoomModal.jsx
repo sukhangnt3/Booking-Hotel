@@ -82,20 +82,19 @@ export default function OccupiedRoomModal({
 
   const now = new Date();
 
-  // 🌟 ĐÃ SỬA: ĐỒNG BỘ 100% CÙNG CÔNG THỨC VỚI ROOM CARD
+  // 🌟 ĐÃ SỬA: LUÔN GHÉP NGÀY + GIỜ NHẬN (18:00) - KHÔNG BAO GIỜ BỊ NHẢY VỀ 7H SÁNG
   const actualStayDuration = useMemo(() => {
     let checkinTime = null;
 
-    if (String(b.checkin_date).includes("T")) {
-      checkinTime = new Date(b.checkin_date);
-    } else {
-      const datePart = String(b.checkin_date || "").slice(0, 10);
-      const timePart = b.checkin_time
-        ? String(b.checkin_time).slice(0, 5)
-        : "14:00";
-      if (datePart) {
-        checkinTime = new Date(`${datePart}T${timePart}:00`);
-      }
+    // 1. Luôn lấy 10 ký tự đầu YYYY-MM-DD
+    const datePart = String(b.checkin_date || "").slice(0, 10);
+    // 2. Lấy đúng giờ nhận phòng (vd: "18:00")
+    const timePart = b.checkin_time
+      ? String(b.checkin_time).slice(0, 5)
+      : "14:00";
+
+    if (datePart && timePart) {
+      checkinTime = new Date(`${datePart}T${timePart}:00`);
     }
 
     if (!checkinTime || isNaN(checkinTime.getTime())) {
