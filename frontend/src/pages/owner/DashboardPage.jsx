@@ -37,7 +37,7 @@ const TIME_OPTIONS = [
   { id: "last_month", label: "Tháng trước" },
 ];
 
-// 🌟 TÍNH TOÁN TRỤC Y CO GIÃN THÔNG MINH THEO SỐ TIỀN THỰC TẾ (KHÔNG CỐ ĐỊNH 500K)
+// 🌟 TÍNH TOÁN TRỤC Y CO GIÃN THÔNG MINH THEO SỐ TIỀN THỰC TẾ
 function calculateSmartTicks(maxVal) {
   let target = maxVal || 0;
   if (target <= 0) target = 100000;
@@ -294,7 +294,6 @@ export default function OwnerDashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
-  // 🌟 LẤY GIÁ TRỊ DOANH THU LỚN NHẤT THỰC TẾ ĐỂ TÍNH TRỤC Y VỪA VẶN
   const maxBookingVal = Math.max(
     Number(stats.channelStats.directAmount || 0),
     Number(stats.channelStats.onlineAmount || 0),
@@ -444,9 +443,7 @@ export default function OwnerDashboardPage() {
             </div>
           </div>
 
-          {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* 🌟 BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG (CỘT CO GIÃN THEO DOANH THU THỰC TẾ) 🌟 */}
-          {/* ═══════════════════════════════════════════════════════════════════════ */}
+          {/* BIỂU ĐỒ 1: GIÁ TRỊ ĐẶT PHÒNG */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-gray-900 tracking-tight">
@@ -483,7 +480,6 @@ export default function OwnerDashboardPage() {
               </button>
             </div>
 
-            {/* TAB 1: THEO KÊNH BÁN */}
             {bookingValueTab === "channel" ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -603,7 +599,6 @@ export default function OwnerDashboardPage() {
                 </div>
               </div>
             ) : (
-              /* TAB 2: THEO NGÀY LƯU TRÚ */
               <div className="space-y-4">
                 <div className="w-fit min-w-[240px] p-4 bg-white border border-gray-200 rounded-2xl space-y-1.5 shadow-2xs">
                   <div className="text-xs text-gray-700 font-bold">
@@ -642,6 +637,7 @@ export default function OwnerDashboardPage() {
                         dataKey="label"
                         stroke="#94a3b8"
                         fontSize={11}
+                        minTickGap={20}
                         tickLine={false}
                         axisLine={{ stroke: "#e2e8f0" }}
                       />
@@ -704,7 +700,7 @@ export default function OwnerDashboardPage() {
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════════════ */}
-          {/* BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG */}
+          {/* 🌟 BIỂU ĐỒ 2: CÔNG SUẤT PHÒNG (ĐÃ SỬA GIÃN CÁCH NGÀY THÔNG MINH) 🌟 */}
           {/* ═══════════════════════════════════════════════════════════════════════ */}
           <div className="bg-white rounded-2xl p-5 sm:p-6 border border-gray-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
@@ -789,11 +785,13 @@ export default function OwnerDashboardPage() {
                           vertical={false}
                           stroke="#f1f5f9"
                         />
+                        {/* 🌟 ĐÃ SỬA: minTickGap={25} VÀ BỎ interval={0} ĐỂ CÁC MỐC NGÀY GIÃN ĐỀU RÕ RÀNG, KHÔNG BAO GIỜ BỊ ĐÈ CHỮ */}
                         <XAxis
                           dataKey="label"
                           stroke="#94a3b8"
-                          fontSize={10}
-                          interval={0}
+                          fontSize={11}
+                          minTickGap={25}
+                          interval="preserveStartEnd"
                           axisLine={{ stroke: "#e2e8f0" }}
                           tickLine={false}
                         />
@@ -807,6 +805,7 @@ export default function OwnerDashboardPage() {
                         />
                         <Tooltip
                           formatter={(v) => [`${v}%`, "Công suất"]}
+                          labelFormatter={(label) => `Ngày ${label}`}
                           contentStyle={{
                             backgroundColor: "#003580",
                             borderRadius: "10px",
@@ -823,7 +822,13 @@ export default function OwnerDashboardPage() {
                           strokeWidth={2}
                           fillOpacity={1}
                           fill="url(#occupancyGrad)"
-                          dot={{ r: 3.5, fill: "#006ce4" }}
+                          dot={{ r: 3, fill: "#006ce4" }}
+                          activeDot={{
+                            r: 5,
+                            fill: "#006ce4",
+                            stroke: "#fff",
+                            strokeWidth: 2,
+                          }}
                         />
                       </AreaChart>
                     </ResponsiveContainer>
