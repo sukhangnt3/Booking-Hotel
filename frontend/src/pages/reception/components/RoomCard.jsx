@@ -44,23 +44,29 @@ export default function RoomCard({
     return `P.${raw}`;
   }, [room.room_number]);
 
-  // 🌟 ĐÃ SỬA TRIỆT ĐỂ: TÍNH CHÍNH XÁC THỜI GIAN ĐÃ Ở THỰC TẾ (GHÉP CẢ NGÀY + GIỜ ĐỂ KHÔNG BỊ TỤT VỀ 7H SÁNG)
+  // 🌟 ĐÃ SỬA: ƯU TIÊN GIỜ CHECK-IN THỰC TẾ TRƯỚC (KHÔNG LẤY GIỜ TẠO ĐƠN CREATED_AT NỮA)
   const actualStayDurationText = useMemo(() => {
     if (!b) return "1 ngày";
 
     let startTime = null;
-    const realTime = b.confirmed_at || b.actual_checkin_time || b.created_at;
 
-    // 1. Ưu tiên thời điểm thực tế bấm check-in
-    if (realTime && !isNaN(new Date(realTime).getTime())) {
-      startTime = new Date(realTime);
+    // 1. Ưu tiên tuyệt đối giờ nhận phòng thực tế (checkin_date)
+    if (String(b.checkin_date).includes("T")) {
+      startTime = new Date(b.checkin_date);
     } else {
-      // 2. Nếu chỉ có checkin_date, BẮT BUỘC ghép với checkin_time (tránh bị lệch UTC về 7h sáng)
       const datePart = String(b.checkin_date || "").slice(0, 10);
-      const timePart = String(b.checkin_time || "14:00").slice(0, 5);
+      const timePart = b.checkin_time
+        ? String(b.checkin_time).slice(0, 5)
+        : "14:00";
       if (datePart) {
         startTime = new Date(`${datePart}T${timePart}:00`);
       }
+    }
+
+    // 2. Nếu không có mới fallback về actual_checkin_time hoặc confirmed_at
+    if (!startTime || isNaN(startTime.getTime())) {
+      const fallback = b.actual_checkin_time || b.confirmed_at || b.created_at;
+      if (fallback) startTime = new Date(fallback);
     }
 
     if (!startTime || isNaN(startTime.getTime())) {

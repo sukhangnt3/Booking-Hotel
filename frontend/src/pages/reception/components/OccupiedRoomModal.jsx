@@ -82,19 +82,25 @@ export default function OccupiedRoomModal({
 
   const now = new Date();
 
-  // 🌟 ĐÃ SỬA: ĐỒNG BỘ 100% LOGIC VỚI ROOMCARD (KHÔNG BỊ TỤT VỀ 07:00 SÁNG DO MÚI GIỜ)
+  // 🌟 ĐÃ SỬA: ĐỒNG BỘ 100% CÙNG CÔNG THỨC VỚI ROOM CARD
   const actualStayDuration = useMemo(() => {
     let checkinTime = null;
-    const realTime = b.confirmed_at || b.actual_checkin_time || b.created_at;
 
-    if (realTime && !isNaN(new Date(realTime).getTime())) {
-      checkinTime = new Date(realTime);
+    if (String(b.checkin_date).includes("T")) {
+      checkinTime = new Date(b.checkin_date);
     } else {
       const datePart = String(b.checkin_date || "").slice(0, 10);
-      const timePart = String(b.checkin_time || "14:00").slice(0, 5);
+      const timePart = b.checkin_time
+        ? String(b.checkin_time).slice(0, 5)
+        : "14:00";
       if (datePart) {
         checkinTime = new Date(`${datePart}T${timePart}:00`);
       }
+    }
+
+    if (!checkinTime || isNaN(checkinTime.getTime())) {
+      const fallback = b.actual_checkin_time || b.confirmed_at || b.created_at;
+      if (fallback) checkinTime = new Date(fallback);
     }
 
     if (!checkinTime || isNaN(checkinTime.getTime())) return "Vừa nhận phòng";

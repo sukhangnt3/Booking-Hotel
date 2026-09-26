@@ -1298,9 +1298,48 @@ export default function ReceptionMapPage() {
 
                 <div className="text-center">
                   <span className="px-2.5 py-1 rounded-md bg-blue-50 text-[#003580] font-bold text-xs border border-blue-200">
-                    {assigningBooking.rental_type === "HOUR"
-                      ? `${assigningBooking.stay_duration || 2} giờ`
-                      : "1 đêm"}
+                    {(() => {
+                      if (assigningBooking.rental_type === "HOUR") {
+                        // 1. Thử bóc tách số giờ nếu có
+                        let h = null;
+                        if (assigningBooking.stay_duration) {
+                          const match = String(
+                            assigningBooking.stay_duration,
+                          ).match(/\d+/);
+                          if (match) h = Number(match[0]);
+                        }
+
+                        // 2. Nếu không có số hợp lệ, tự lấy Giờ trả trừ Giờ nhận
+                        if (
+                          !h &&
+                          assigningBooking.checkin_time &&
+                          assigningBooking.checkout_time
+                        ) {
+                          const inDate = String(
+                            assigningBooking.checkin_date || "",
+                          ).slice(0, 10);
+                          const outDate = String(
+                            assigningBooking.checkout_date || inDate,
+                          ).slice(0, 10);
+                          const inT = String(
+                            assigningBooking.checkin_time,
+                          ).slice(0, 5);
+                          const outT = String(
+                            assigningBooking.checkout_time,
+                          ).slice(0, 5);
+                          const diffMs =
+                            new Date(`${outDate}T${outT}:00`) -
+                            new Date(`${inDate}T${inT}:00`);
+                          if (diffMs > 0) {
+                            h = Math.round(diffMs / 3600000);
+                          }
+                        }
+
+                        const finalH = h && !isNaN(h) && h > 0 ? h : 2;
+                        return `${finalH} giờ`;
+                      }
+                      return "1 đêm";
+                    })()}
                   </span>
                 </div>
 
