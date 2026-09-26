@@ -547,7 +547,7 @@ export default function QuickBookingModal({
     });
   };
 
-  // 🌟 ĐÃ SỬA: NẾU BẤM "ĐẶT TRƯỚC" THÌ KHÁCH ĐÃ TRẢ MẶC ĐỊNH LÀ 0 (HOẶC SỐ TIỀN NHẬP THỰC TẾ)
+  // 🌟 NẾU BẤM "ĐẶT TRƯỚC" THÌ KHÁCH ĐÃ TRẢ MẶC ĐỊNH LÀ 0 (HOẶC SỐ TIỀN NHẬP THỰC TẾ)
   const handleExecuteConfirm = (isCheckInNow) => {
     const finalAdult = Number(tempGuestCount.adult || 2);
     const finalChildren = Number(tempGuestCount.children || 0);

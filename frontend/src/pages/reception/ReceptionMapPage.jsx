@@ -38,7 +38,7 @@ import OccupiedRoomModal from "./components/OccupiedRoomModal";
 import QuickBookingModal from "./components/QuickBookingModal";
 import ChangeRoomModal from "./components/ChangeRoomModal";
 
-// PHÁT ÂM THANH CHUÔNG THÔNG BÁO
+// PHÁT ÂM THANH CHUÔNG THÔNG BÁO KHI CÓ ĐƠN MỚI
 const playNotificationSound = () => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -129,23 +129,25 @@ const formatStayTimeRange = (b) => {
   return `${inDate}, ${inTime} - ${outDate}, ${outTime}`;
 };
 
+// 🌟 ĐÃ SỬA: BỎ TOÀN BỘ NGÀY CỨNG 19/09/2026, LẤY ĐÚNG THỜI GIAN THỰC CỦA ĐƠN
 const getCheckinCountdownText = (checkinDateStr, checkinTimeStr) => {
   if (!checkinDateStr) return "Sắp đến nhận phòng";
   const now = new Date();
 
   const s = String(checkinDateStr).trim();
-  let y = 2026,
-    m = 9,
-    d = 19;
-  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  let y = now.getFullYear();
+  let m = now.getMonth() + 1;
+  let d = now.getDate();
+
+  const match = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (match) {
     y = Number(match[1]);
     m = Number(match[2]);
     d = Number(match[3]);
   }
 
-  let h = 14,
-    min = 0;
+  let h = 14;
+  let min = 0;
   if (checkinTimeStr) {
     const tm = String(checkinTimeStr).match(/(\d{1,2}):(\d{2})/);
     if (tm) {
@@ -492,7 +494,7 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // 🌟 ĐÃ SỬA: TÍNH ĐÚNG SỐ TIỀN KHÁCH ĐÃ TRẢ THỰC TẾ (KHÔNG TỰ GÁN totalP CHO ĐƠN CHƯA TRẢ)
+  // XÁC ĐỊNH CHUẨN SỐ TIỀN KHÁCH ĐÃ TRẢ THỰC TẾ
   const handleRoomCardClick = (room) => {
     const b = room.booking;
     const totalP = Number(b?.total_price || room.daily_price || 0);
@@ -619,9 +621,7 @@ export default function ReceptionMapPage() {
           0,
       );
 
-      const actualPaid = isCheckInNow
-        ? Number(quickBookingData.customer_paid || 0)
-        : Number(quickBookingData.customer_paid || 0);
+      const actualPaid = Number(quickBookingData.customer_paid || 0);
 
       for (const item of quickBookingData.rooms) {
         await apiClient.post("/owner/bookings/walkin", {

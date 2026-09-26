@@ -48,7 +48,7 @@ const parseAmenityArray = (raw) => {
   if (Array.isArray(raw)) {
     return raw
       .map((i) =>
-        (typeof i === "string" ? i : i?.name || i?.id || i?.label || "").trim(),
+        (typeof i === "string" ? i : i?.name || i?.label || i?.id || "").trim(),
       )
       .filter(Boolean);
   }
@@ -60,8 +60,7 @@ const parseAmenityArray = (raw) => {
     : [];
 };
 
-const base64Cache = new Map();
-
+// 🌟 ĐÃ SỬA: LƯU BASE64 RA FILE ĐĨA AN TOÀN, TRÁNH RÒ RỈ BỘ NHỚ RAM
 const saveBase64ToFile = (rawString) => {
   if (
     !rawString ||
@@ -69,10 +68,6 @@ const saveBase64ToFile = (rawString) => {
     !rawString.startsWith("data:image/")
   ) {
     return rawString;
-  }
-
-  if (base64Cache.has(rawString)) {
-    return base64Cache.get(rawString);
   }
 
   try {
@@ -97,9 +92,7 @@ const saveBase64ToFile = (rawString) => {
       fs.writeFileSync(filePath, buffer);
     }
 
-    const publicUrl = `/uploads/${fileName}`;
-    base64Cache.set(rawString, publicUrl);
-    return publicUrl;
+    return `/uploads/${fileName}`;
   } catch (err) {
     console.warn("⚠️ Lỗi lưu base64 thành file:", err.message);
     return rawString;
@@ -521,7 +514,7 @@ async function getHotelById(req, res, next) {
   }
 }
 
-// ─── 3. CHECK PHÒNG TRỐNG (ĐỒNG BỘ 100% CẢ GIỜ, ĐÊM, NGÀY, BUỔI) ───
+// ─── 3. CHECK PHÒNG TRỐNG (ĐÃ ĐỒNG BỘ 100% THỜI GIAN VỆ SINH DỌN PHÒNG) ───
 async function listHotelRoomAvailability(req, res) {
   const { id: hotelId } = req.params;
   const targetRoomId = req.query.room_id || null;
@@ -544,14 +537,14 @@ async function listHotelRoomAvailability(req, res) {
       .query(`DELETE FROM public.temporary_locks WHERE expires_at < NOW()`)
       .catch(() => {});
 
-    // 2. Tự động hủy đơn pending quá 15 phút NHƯNG TUYỆT ĐỐI KHÔNG HỦY ĐƠN ĐÃ CỌC 30%
+    // 2. Tự động hủy đơn pending quá 15 phút NHƯNG TUYỆT ĐỐI KHÔNG HỦY ĐƠN ĐÃ CỌC HOẶC ĐÃ THANH TOÁN
     await pool
       .query(
         `
       UPDATE public.booking 
       SET status = 'cancelled'::public.booking_status_enum 
       WHERE status = 'pending' 
-        AND (payment_status IS NULL OR (payment_status != 'paid' AND payment_status != 'partially_paid'))
+        AND (payment_status IS NULL OR payment_status NOT IN ('paid', 'partially_paid'))
         AND COALESCE(deposit_amount, 0) = 0
         AND created_at < NOW() - INTERVAL '15 minutes'
     `,
@@ -566,6 +559,7 @@ async function listHotelRoomAvailability(req, res) {
       roomCondition = ` AND r.id::text = $${queryParams.length}`;
     }
 
+    // 🌟 ĐÃ SỬA: CỘNG THỜI GIAN VỆ SINH DỌN PHÒNG ĐỒNG BỘ 100% VỚI CREATE_BOOKING
     const query = `
       SELECT r.*,
         COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS total_stock,
@@ -591,7 +585,7 @@ async function listHotelRoomAvailability(req, res) {
                 )
               )
               AND (
-                ($1::date + $2::time) < (b.checkout_date::date + COALESCE(b.checkout_time, '12:00:00'::time))
+                ($1::date + $2::time) < (b.checkout_date::date + COALESCE(b.checkout_time, '12:00:00'::time) + (COALESCE(h.hourly_grace_minutes, 15) || ' minutes')::interval)
                 AND ($3::date + $4::time) > (b.checkin_date::date + COALESCE(b.checkin_time, '14:00:00'::time))
               )
           ), 0)
@@ -606,6 +600,7 @@ async function listHotelRoomAvailability(req, res) {
           ), 0)
         ) AS booked_count
       FROM public.room r
+      JOIN public.hotel h ON h.id = r.hotel_id
       WHERE r.hotel_id = $5 AND COALESCE(r.is_active, true) ${roomCondition}
       ORDER BY r.base_price ASC
     `;

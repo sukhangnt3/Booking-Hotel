@@ -82,13 +82,22 @@ export default function OccupiedRoomModal({
 
   const now = new Date();
 
-  // 🌟 TÍNH THỜI GIAN ĐÃ Ở THỰC TẾ
+  // 🌟 ĐÃ SỬA: ĐỒNG BỘ 100% LOGIC VỚI ROOMCARD (KHÔNG BỊ TỤT VỀ 07:00 SÁNG DO MÚI GIỜ)
   const actualStayDuration = useMemo(() => {
-    const checkinSource = b.confirmed_at || b.created_at || b.checkin_date;
-    if (!checkinSource) return "Vừa nhận phòng";
+    let checkinTime = null;
+    const realTime = b.confirmed_at || b.actual_checkin_time || b.created_at;
 
-    const checkinTime = new Date(checkinSource);
-    if (isNaN(checkinTime.getTime())) return "Vừa nhận phòng";
+    if (realTime && !isNaN(new Date(realTime).getTime())) {
+      checkinTime = new Date(realTime);
+    } else {
+      const datePart = String(b.checkin_date || "").slice(0, 10);
+      const timePart = String(b.checkin_time || "14:00").slice(0, 5);
+      if (datePart) {
+        checkinTime = new Date(`${datePart}T${timePart}:00`);
+      }
+    }
+
+    if (!checkinTime || isNaN(checkinTime.getTime())) return "Vừa nhận phòng";
 
     const diffMs = Math.max(0, now.getTime() - checkinTime.getTime());
     const totalMinutes = Math.floor(diffMs / 60000);
@@ -96,8 +105,12 @@ export default function OccupiedRoomModal({
     const remainingMinutes = totalMinutes % 60;
 
     if (totalMinutes < 1) return "Vừa nhận phòng";
-    if (totalHours < 1) return `${totalMinutes} phút`;
-    return `${totalHours} giờ ${remainingMinutes > 0 ? `${remainingMinutes} phút` : ""}`.trim();
+    if (totalMinutes < 60) return `${totalMinutes} phút`;
+    if (totalHours < 24) {
+      return `${totalHours} giờ ${remainingMinutes > 0 ? `${remainingMinutes}p` : ""}`.trim();
+    }
+    const days = Math.floor(totalHours / 24);
+    return `${days} ngày`;
   }, [b, now]);
 
   // 🌟 TÍNH CHÍNH XÁC GIỜ TRẢ DỰ KIẾN: KHÔNG BAO GIỜ BỊ LỆCH MÚI GIỜ VỀ NGÀY HÔM QUA
@@ -303,7 +316,6 @@ export default function OccupiedRoomModal({
                           Phòng {room.room_number}
                         </span>
 
-                        {/* 🌟 ĐÃ ĐỔI THÀNH "Đang sử dụng phòng" THEO YÊU CẦU CỦA BẠN */}
                         <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[#003580] font-bold text-[10px]">
                           Đang sử dụng phòng
                         </span>

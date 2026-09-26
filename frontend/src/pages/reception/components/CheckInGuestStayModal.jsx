@@ -18,7 +18,7 @@ const formatPMSDateTime = (isoStr) => {
   }
 
   const d = new Date(isoStr);
-  if (isNaN(d.getTime())) return isoStr;
+  if (isNaN(d.getTime())) return String(isoStr);
   const day = String(d.getDate()).padStart(2, "0");
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const hours = String(d.getHours()).padStart(2, "0");
@@ -47,7 +47,7 @@ export default function CheckInGuestStayModal({
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
   const totalPrice = Number(b.total_price || room.daily_price || 100000);
 
-  // 🌟 ĐÃ SỬA CHUẨN XÁC: XÁC ĐỊNH ĐÚNG SỐ TIỀN KHÁCH ĐÃ TRẢ THỰC TẾ
+  // 🌟 XÁC ĐỊNH CHUẨN XÁC: SỐ TIỀN KHÁCH ĐÃ TRẢ THỰC TẾ
   const isWalkIn =
     String(bookingCode).startsWith("DP") ||
     b.source === "counter" ||
@@ -261,7 +261,7 @@ export default function CheckInGuestStayModal({
             </table>
           </div>
 
-          {/* 🌟 GHI CHÚ VÀ BẢNG THANH TOÁN (ĐÃ HIỂN THỊ ĐÚNG CHUẨN) */}
+          {/* GHI CHÚ VÀ BẢNG THANH TOÁN */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 pt-2">
             <div className="md:col-span-6 flex items-center gap-2">
               <span className="font-semibold text-gray-700 shrink-0 whitespace-nowrap">

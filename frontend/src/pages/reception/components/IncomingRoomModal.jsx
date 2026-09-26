@@ -2,12 +2,13 @@
 import React, { useMemo } from "react";
 import { X, Trash2, MoreHorizontal, Edit3 } from "lucide-react";
 
-// Hàm parse datetime an toàn
+// 🌟 HÀM PARSE DATETIME AN TOÀN TUYỆT ĐỐI (KHÔNG HARDCODE NGÀY 19/09/2026)
 const parseDateTimeSafe = (dateVal, timeVal, defaultHour = 14) => {
   if (!dateVal) return null;
-  let y = 2026,
-    m = 9,
-    d = 19;
+  const now = new Date();
+  let y = now.getFullYear();
+  let m = now.getMonth() + 1;
+  let d = now.getDate();
 
   if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
     y = dateVal.getFullYear();
@@ -15,7 +16,7 @@ const parseDateTimeSafe = (dateVal, timeVal, defaultHour = 14) => {
     d = dateVal.getDate();
   } else {
     const s = String(dateVal).trim();
-    const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const match = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
     if (match) {
       y = Number(match[1]);
       m = Number(match[2]);
@@ -32,8 +33,8 @@ const parseDateTimeSafe = (dateVal, timeVal, defaultHour = 14) => {
     }
   }
 
-  let h = defaultHour,
-    min = 0;
+  let h = defaultHour;
+  let min = 0;
   if (timeVal) {
     const tm = String(timeVal).match(/(\d{1,2}):(\d{2})/);
     if (tm) {
@@ -85,7 +86,7 @@ export default function IncomingRoomModal({
 
   const totalPrice = Number(b.total_price || room.daily_price || 100000);
 
-  // 🌟 ĐÃ SỬA CHUẨN XÁC: TÍNH ĐÚNG SỐ TIỀN KHÁCH ĐÃ TRẢ (NẾU ĐẶT TRƯỚC CHƯA TRẢ THÌ = 0)
+  // 🌟 XÁC ĐỊNH CHUẨN XÁC: SỐ TIỀN KHÁCH ĐÃ TRẢ (NẾU ĐẶT TRƯỚC CHƯA TRẢ THÌ = 0)
   let paidAmount = 0;
   if (isWalkIn) {
     if (b.payment_status === "paid") {

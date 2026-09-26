@@ -15,7 +15,7 @@ const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   let h = defaultHour;
   let min = defaultMin;
 
-  // Nếu là Date object (ví dụ new Date()) -> Lấy trực tiếp giờ và phút thực tế
+  // Nếu là Date object (ví dụ new Date()) -> Lấy trực tiếp giờ và phút thực tế của trình duyệt
   if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
     y = dateVal.getFullYear();
     m = dateVal.getMonth() + 1;
@@ -73,7 +73,7 @@ const formatPMSDateTime = (isoStr) => {
   if (!isoStr) return "---";
   const s = String(isoStr).trim();
   const match = s.match(
-    /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{1,2})/,
+    /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T\s](\d{1,2}):(\d{2})/,
   );
   if (match) {
     const day = String(match[3]).padStart(2, "0");
@@ -218,7 +218,7 @@ export default function ConfirmCheckInModal({
     return list;
   }, [room, rooms]);
 
-  // 🌟 ĐÃ SỬA: LẤY ĐÚNG 100% NGÀY & GIỜ HIỆN TẠI KHI BẤM NÚT "HIỆN TẠI"
+  // 🌟 LẤY ĐÚNG 100% NGÀY & GIỜ HIỆN TẠI KHI BẤM NÚT "HIỆN TẠI"
   const handleSetModeCurrent = () => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
@@ -281,7 +281,7 @@ export default function ConfirmCheckInModal({
           </button>
         </div>
 
-        {/* BẢNG CHỌN PHÒNG & GIỜ NHẬN (CÁC CỘT CÓ WHITESPACE-NOWRAP KHÔNG BỊ RỚT CHỮ) */}
+        {/* BẢNG CHỌN PHÒNG & GIỜ NHẬN */}
         <div className="p-6 space-y-6">
           <div className="border border-blue-100 rounded-2xl overflow-hidden bg-white shadow-2xs">
             <table className="w-full text-left border-collapse">

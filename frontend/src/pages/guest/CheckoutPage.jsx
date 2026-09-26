@@ -32,19 +32,21 @@ export default function CheckoutPage() {
   // State lưu thông tin đơn hàng đồng bộ từ API
   const [bookingData, setBookingData] = useState(null);
 
-  const isDeposit =
-    (bookingData?.payment_type || rawPaymentType) === "DEPOSIT_30";
+  const finalPaymentType = bookingData?.payment_type || rawPaymentType;
+  const isDeposit = finalPaymentType === "DEPOSIT_30";
 
   // Ưu tiên số tiền thực từ API, sau đó mới tới param URL
   const totalAmount = Number(
     bookingData?.total_price || rawTotalAmount || rawAmount || 500000,
   );
-  const depositAmount = Math.round(totalAmount * 0.3);
-  const remainingAmount = totalAmount - depositAmount;
+  const depositAmount = isDeposit
+    ? Number(bookingData?.deposit_amount || Math.round(totalAmount * 0.3))
+    : 0;
+  const remainingAmount = isDeposit ? totalAmount - depositAmount : 0;
 
   // Số tiền khách cần thanh toán ngay
   const expectedAmount = isDeposit
-    ? Number(bookingData?.deposit_amount || depositAmount)
+    ? depositAmount
     : Number(bookingData?.expected_amount || rawAmount || totalAmount);
 
   // 🌟 THÔNG TIN TÀI KHOẢN CỔNG THANH TOÁN ADMIN (SEPAY)
@@ -70,7 +72,7 @@ export default function CheckoutPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 🌟 1. ĐẾM NGƯỢC THỜI GIAN THEO ĐỒNG HỒ THỰC TẾ (KHÔNG BỊ LỖI KHI ĐỔI TAB / KHÓA MÀN HÌNH)
+  // 🌟 1. ĐẾM NGƯỢC THỜI GIAN THEO ĐỒNG HỒ THỰC TẾ (BẢO VỆ CHỐNG HỦY NHẦM ĐƠN ĐÃ TRẢ TIỀN)
   useEffect(() => {
     if (!bookingCode) return;
     const storageKey = `lock_expires_${bookingCode}`;
@@ -82,6 +84,9 @@ export default function CheckoutPage() {
     }
 
     const updateTimer = () => {
+      // Nếu đã thanh toán thành công thì không đếm ngược hủy nữa
+      if (isPaidSuccess) return;
+
       const remainingSeconds = Math.max(
         0,
         Math.floor((expireTimestamp - Date.now()) / 1000),
@@ -90,22 +95,47 @@ export default function CheckoutPage() {
 
       if (remainingSeconds <= 0) {
         localStorage.removeItem(storageKey);
-        // Hỗ trợ cả 2 endpoint hủy để tránh 404
+
+        // Kiểm tra lần cuối với máy chủ trước khi quyết định hủy
         apiClient
-          .patch(`/bookings/${bookingCode}/cancel`)
-          .catch(() => apiClient.post(`/bookings/${bookingCode}/cancel`))
-          .catch(() => {});
-        alert(
-          "⚠️ Thời gian giữ phòng 15 phút đã hết hạn! Phòng đã được tự động mở lại cho khách khác.",
-        );
-        navigate("/hotels");
+          .get(`/payments/status/${bookingCode}`)
+          .then((res) => {
+            const data = res?.data || res;
+            const pStatus = String(
+              data?.payment_status || data?.status || "",
+            ).toLowerCase();
+            const bStatus = String(data?.booking_status || "").toLowerCase();
+
+            if (
+              data?.paid === true ||
+              ["paid", "partially_paid", "success"].includes(pStatus) ||
+              ["confirmed", "paid"].includes(bStatus)
+            ) {
+              setIsPaidSuccess(true);
+              return;
+            }
+
+            // Chỉ hủy nếu thật sự chưa thanh toán
+            apiClient
+              .patch(`/bookings/${bookingCode}/cancel`)
+              .catch(() => apiClient.post(`/bookings/${bookingCode}/cancel`))
+              .catch(() => {});
+
+            alert(
+              "⚠️ Thời gian giữ phòng 15 phút đã hết hạn! Phòng đã được tự động mở lại cho khách khác.",
+            );
+            navigate("/hotels");
+          })
+          .catch(() => {
+            navigate("/hotels");
+          });
       }
     };
 
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [bookingCode, navigate]);
+  }, [bookingCode, navigate, isPaidSuccess]);
 
   // Khởi tạo đơn: Gọi linh hoạt endpoint để lấy đúng thông tin đơn hàng từ Backend
   useEffect(() => {
@@ -159,7 +189,7 @@ export default function CheckoutPage() {
 
         setTimeout(() => {
           navigate(
-            `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${rawPaymentType}&remainingAmount=${remainingAmount}`,
+            `/booking-success?success=true&code=${bookingCode}&amount=${expectedAmount}&totalAmount=${totalAmount}&paymentType=${finalPaymentType}&remainingAmount=${remainingAmount}`,
           );
         }, 500);
       }
@@ -171,7 +201,7 @@ export default function CheckoutPage() {
     isPaidSuccess,
     expectedAmount,
     totalAmount,
-    rawPaymentType,
+    finalPaymentType,
     remainingAmount,
     navigate,
   ]);
@@ -187,8 +217,13 @@ export default function CheckoutPage() {
     };
   }, [bookingCode, isPaidSuccess, checkPaymentStatus]);
 
-  // Hủy đơn khi bấm quay lại
+  // Hủy đơn khi bấm quay lại (Có kiểm tra trạng thái thanh toán)
   const handleGoBack = async () => {
+    if (isPaidSuccess) {
+      navigate(-1);
+      return;
+    }
+
     const confirmCancel = window.confirm(
       "⚠️ Nếu bạn quay lại bây giờ, phiên giữ phòng sẽ bị HỦY và phòng sẽ được mở lại cho khách khác đặt.\n\nBạn có chắc chắn muốn hủy đơn và quay lại không?",
     );
@@ -245,7 +280,7 @@ export default function CheckoutPage() {
         <div className="max-w-4xl mx-auto px-4 flex items-center justify-between">
           <button
             type="button"
-            disabled={isCancelling}
+            disabled={isCancelling || isPaidSuccess}
             onClick={handleGoBack}
             className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-rose-600 cursor-pointer transition disabled:opacity-50"
           >

@@ -191,7 +191,7 @@ export default function ChangeRoomModal({
       setSelectedNewRoomNumber("");
       onClose();
     } catch (err) {
-      // Bắt lỗi
+      // Bắt lỗi ngoại lệ
     } finally {
       setLoading(false);
     }

@@ -44,14 +44,28 @@ export default function RoomCard({
     return `P.${raw}`;
   }, [room.room_number]);
 
-  // 🌟 TÍNH CHÍNH XÁC THỜI GIAN ĐÃ Ở THỰC TẾ
+  // 🌟 ĐÃ SỬA TRIỆT ĐỂ: TÍNH CHÍNH XÁC THỜI GIAN ĐÃ Ở THỰC TẾ (GHÉP CẢ NGÀY + GIỜ ĐỂ KHÔNG BỊ TỤT VỀ 7H SÁNG)
   const actualStayDurationText = useMemo(() => {
     if (!b) return "1 ngày";
-    const checkinSource = b.confirmed_at || b.created_at || b.checkin_date;
-    if (!checkinSource) return b.stay_duration || "Vừa nhận phòng";
 
-    const startTime = new Date(checkinSource);
-    if (isNaN(startTime.getTime())) return b.stay_duration || "Vừa nhận phòng";
+    let startTime = null;
+    const realTime = b.confirmed_at || b.actual_checkin_time || b.created_at;
+
+    // 1. Ưu tiên thời điểm thực tế bấm check-in
+    if (realTime && !isNaN(new Date(realTime).getTime())) {
+      startTime = new Date(realTime);
+    } else {
+      // 2. Nếu chỉ có checkin_date, BẮT BUỘC ghép với checkin_time (tránh bị lệch UTC về 7h sáng)
+      const datePart = String(b.checkin_date || "").slice(0, 10);
+      const timePart = String(b.checkin_time || "14:00").slice(0, 5);
+      if (datePart) {
+        startTime = new Date(`${datePart}T${timePart}:00`);
+      }
+    }
+
+    if (!startTime || isNaN(startTime.getTime())) {
+      return b.stay_duration || "Vừa nhận phòng";
+    }
 
     const diffMs = Math.max(0, Date.now() - startTime.getTime());
     const totalMinutes = Math.floor(diffMs / 60000);
@@ -59,7 +73,7 @@ export default function RoomCard({
     const remMins = totalMinutes % 60;
 
     if (totalMinutes < 1) return "Vừa nhận phòng";
-    if (totalHours < 1) return `${totalMinutes} phút`;
+    if (totalMinutes < 60) return `${totalMinutes} phút`;
     if (totalHours < 24) {
       return `${totalHours} giờ ${remMins > 0 ? `${remMins}p` : ""}`.trim();
     }

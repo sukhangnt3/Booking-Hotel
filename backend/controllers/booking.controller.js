@@ -33,10 +33,24 @@ const PLATFORM_ADMIN_BANK = {
   accountName: "SU TRACH KHANG",
 };
 
-function addDays(date, days) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
+// 🌟 HÀM FORMAT NGÀY AN TOÀN TUYỆT ĐỐI (KHÔNG DÙNG toISOString() TRÁNH LỆCH MÚI GIỜ)
+function formatLocalDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function addDays(dateVal, days) {
+  let dt;
+  if (typeof dateVal === "string") {
+    const [y, m, d] = dateVal.slice(0, 10).split("-").map(Number);
+    dt = new Date(y, m - 1, d);
+  } else {
+    dt = new Date(dateVal);
+  }
+  dt.setDate(dt.getDate() + days);
+  return formatLocalDate(dt);
 }
 
 async function getOwnerBankAccount(hotelId) {
@@ -160,22 +174,20 @@ async function createBooking(req, res, next) {
 
     const inHourNum = parseInt(finalCheckInTime.slice(0, 2), 10);
 
-    // 🌟 ĐỒNG BỘ MỐC GIỜ THUÊ LINH HOẠT
+    // 🌟 ĐỒNG BỘ MỐC GIỜ THUÊ LINH HOẠT (ĐÃ FIX LỖI TỤT NGÀY DO UTC)
     if (currentRentalType === "HOUR" || currentRentalType === "HALF_DAY") {
-      const inTs = new Date(`${inDateStr}T${formattedInTime}`);
-      let outTs = new Date(`${outDateStr}T${formattedOutTime}`);
+      const inTs = new Date(`${inDateStr}T${formattedInTime}`).getTime();
+      let outTs = new Date(`${outDateStr}T${formattedOutTime}`).getTime();
       if (outTs <= inTs) {
-        outTs = addDays(outTs, 1);
-        outDateStr = outTs.toISOString().slice(0, 10);
+        outDateStr = addDays(inDateStr, 1);
       }
     } else if (currentRentalType === "OVERNIGHT") {
-      // 🌟 Ca rạng sáng (00h - 06h): Cùng ngày hôm đó trả phòng lúc 11:00
+      // Ca rạng sáng (00h - 06h): Cùng ngày hôm đó trả phòng lúc 11:00
       if (inHourNum >= 0 && inHourNum <= 6) {
         outDateStr = inDateStr;
       } else {
         // Ca tối: Trả phòng trưa ngày hôm sau
-        const outTs = addDays(new Date(inDateStr), 1);
-        outDateStr = outTs.toISOString().slice(0, 10);
+        outDateStr = addDays(inDateStr, 1);
       }
     } else {
       if (new Date(outDateStr) < new Date(inDateStr)) {
@@ -275,7 +287,6 @@ async function createBooking(req, res, next) {
       const roomData = roomStockRes.rows[0];
       const maxStock = Number(roomData.total_stock);
 
-      // 🌟 KHẮC PHỤC LỖI MÚI GIỜ: Truyền trực tiếp chuỗi ngày giờ thực tế tránh bị lệch 7 tiếng
       const localInTimestampStr = `${inDateStr} ${formattedInTime}`;
       const localOutTimestampStr = `${outDateStr} ${formattedOutTime}`;
 
@@ -715,19 +726,23 @@ async function getMyBookings(req, res, next) {
   }
 }
 
-// ─── 5. HỦY ĐƠN ───
+// ─── 5. HỦY ĐƠN (ĐÃ BẢO VỆ CHẶT CHẼ: TUYỆT ĐỐI KHÔNG HỦY ĐƠN ĐÃ THANH TOÁN HOẶC ĐÃ CỌC) ───
 async function cancelBooking(req, res, next) {
   const client = await pool.connect();
   try {
     const { id } = req.params;
     await client.query("BEGIN");
 
+    // 🌟 CHỈ CHO PHÉP HỦY NẾU ĐƠN ĐANG PENDING VÀ CHƯA THANH TOÁN / CHƯA CỌC
     const result = await client.query(
       `UPDATE public.booking
        SET status = 'cancelled',
            cancelled_at = NOW(),
            updated_at = NOW()
-       WHERE id::text = $1 OR booking_code ILIKE $2
+       WHERE (id::text = $1 OR booking_code ILIKE $2)
+         AND status = 'pending'
+         AND (payment_status IS NULL OR payment_status NOT IN ('paid', 'partially_paid'))
+         AND COALESCE(deposit_amount, 0) = 0
        RETURNING *`,
       [id, `%${id}%`],
     );
@@ -735,9 +750,11 @@ async function cancelBooking(req, res, next) {
     if (result.rows.length === 0) {
       await client.query("ROLLBACK");
       client.release();
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy đơn hoặc không có quyền hủy." });
+      return res.status(400).json({
+        success: false,
+        message:
+          "Không thể hủy đơn: Đơn không tồn tại, đã thanh toán thành công hoặc đã bị hủy trước đó.",
+      });
     }
 
     const cancelledBooking = result.rows[0];
