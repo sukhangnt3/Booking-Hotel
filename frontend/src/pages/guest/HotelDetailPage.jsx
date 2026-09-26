@@ -326,7 +326,7 @@ export default function HotelDetailPage() {
       };
     }
 
-    // 4. THEO NGÀY (CỐ ĐỊNH TRẢ TRƯA 12:00)
+    // 4. THEO NGÀY (CỐ ĐỊNH TRẢ TRƯA THEO QUY ĐỊNH KHÁCH SẠN)
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     outDateTime = new Date(checkOutDate);
     outDateTime.setHours(outH || 12, outM || 0, 0, 0);
@@ -361,7 +361,7 @@ export default function HotelDetailPage() {
         setHoursCount(2);
         setCheckOutDate(checkInDate);
       } else if (type === "DAY") {
-        // Cố định 14:00 - 12:00, không chọn giờ
+        // Cố định theo giờ riêng của khách sạn
         setCheckInTime(hotelPolicies.dailyIn || "14:00");
         setCheckOutTime(hotelPolicies.dailyOut || "12:00");
         if (
@@ -434,6 +434,16 @@ export default function HotelDetailPage() {
         setHotel(hotelData);
         setSearchQuery(hotelData.name || "");
 
+        // 🌟 TỰ ĐỘNG CẬP NHẬT GIỜ THEO QUY ĐỊNH RIÊNG CỦA KHÁCH SẠN (NẾU THUÊ THEO NGÀY)
+        if (rentalType === "DAY") {
+          if (hotelData.checkin_time) {
+            setCheckInTime(String(hotelData.checkin_time).slice(0, 5));
+          }
+          if (hotelData.checkout_time) {
+            setCheckOutTime(String(hotelData.checkout_time).slice(0, 5));
+          }
+        }
+
         let isFav = Boolean(hotelData.is_favorite);
         if (isAuthenticated) {
           try {
@@ -467,7 +477,7 @@ export default function HotelDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, isAuthenticated]);
+  }, [id, isAuthenticated, rentalType]);
 
   useEffect(() => {
     fetchAllData();
@@ -1117,7 +1127,7 @@ export default function HotelDetailPage() {
                     </button>
                   </div>
 
-                  {/* HỘP MẸO BÓNG ĐÈN */}
+                  {/* 🌟 HỘP MẸO BÓNG ĐÈN ĐÃ ĐƯỢC ĐỔI THÀNH ĐỘNG THEO GIỜ RIÊNG CỦA KHÁCH SẠN */}
                   <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center gap-1.5">
                     <Lightbulb size={15} className="text-[#006ce4] shrink-0" />
                     <span>
@@ -1126,7 +1136,7 @@ export default function HotelDetailPage() {
                       {rentalType === "OVERNIGHT" &&
                         "Phù hợp nhận phòng buổi tối hoặc rạng sáng và trả phòng trưa hôm sau."}
                       {rentalType === "DAY" &&
-                        "Lưu trú theo ngày đêm tiêu chuẩn (Nhận 14:00 - Trả 12:00 trưa)."}
+                        `Lưu trú theo ngày đêm tiêu chuẩn (Nhận ${hotelPolicies.dailyIn} - Trả ${hotelPolicies.dailyOut} trưa).`}
                       {rentalType === "HALF_DAY" &&
                         "Phù hợp lưu trú nửa ngày (Tối đa 9 tiếng trong ngày)."}
                     </span>
@@ -1252,7 +1262,7 @@ export default function HotelDetailPage() {
                     <div
                       className={`${rentalType === "DAY" ? "sm:col-span-5" : "sm:col-span-6"} space-y-3.5`}
                     >
-                      {/* 1. NẾU LÀ THEO NGÀY: KHÔNG CHỌN GIỜ */}
+                      {/* 1. NẾU LÀ THEO NGÀY: TỰ ĐỘNG LẤY GIỜ RIÊNG CỦA KHÁCH SẠN */}
                       {rentalType === "DAY" ? (
                         <div className="space-y-3 pt-1">
                           <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1">

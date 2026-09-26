@@ -48,18 +48,25 @@ const resolveBookingPaymentDetails = (b) => {
       );
     }
   } else {
+    // Đơn đặt online qua GoStay
+    const depAmt = Number(b?.deposit_amount || 0);
+    const pdAmt = Number(b?.paid_amount || 0);
+
     isDeposit =
       b?.payment_type === "DEPOSIT_30" ||
-      (Number(b?.deposit_amount) > 0 && Number(b?.deposit_amount) < totalPrice);
+      b?.is_deposit === true ||
+      (depAmt > 0 && depAmt < totalPrice) ||
+      (pdAmt > 0 && pdAmt < totalPrice);
 
     if (isDeposit) {
-      paidAmount = Number(
-        b?.deposit_amount || b?.paid_amount || Math.round(totalPrice * 0.3),
-      );
-    } else if (b?.payment_status === "paid" || b?.status === "confirmed") {
+      paidAmount =
+        depAmt > 0 ? depAmt : pdAmt > 0 ? pdAmt : Math.round(totalPrice * 0.3);
+    } else if (b?.payment_status === "paid") {
       paidAmount = totalPrice;
+    } else if (pdAmt > 0) {
+      paidAmount = pdAmt;
     } else {
-      paidAmount = Number(b?.paid_amount || 0);
+      paidAmount = 0;
     }
   }
 
@@ -114,7 +121,12 @@ export default function BookingListPage() {
     const parts = dateStr.split("-");
     if (parts.length < 3) return String(dateVal);
     const [y, m, d] = parts;
-    const t = timeVal ? String(timeVal).slice(0, 5) : "14:00";
+    let t = "14:00";
+    if (timeVal) {
+      t = String(timeVal).slice(0, 5);
+    } else if (String(dateVal).includes("T")) {
+      t = String(dateVal).split("T")[1].slice(0, 5);
+    }
     return `${d} Thg ${m}, ${t}`;
   };
 
@@ -613,7 +625,7 @@ export default function BookingListPage() {
                 </tr>
               ) : (
                 filteredBookings.map((b, idx) => {
-                  // 🌟 TÍNH TOÁN TIỀN PHÒNG CHUẨN XÁC THEO TỪNG LOẠI ĐƠN
+                  // 🌟 TÍNH TOÁN TIỀN PHÒNG CHUẨN XÁC CHỐNG THẤT THOÁT
                   const {
                     totalPrice,
                     paidAmount,
