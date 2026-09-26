@@ -152,7 +152,7 @@ export default function RoomManagementPage() {
   const [newRoomUnitInput, setNewRoomUnitInput] = useState("");
   const [newRoomUnitArea, setNewRoomUnitArea] = useState("Tầng 8");
 
-  // KHỞI TẠO STATE CÓ CẢ PHỤ THU CỐ ĐỊNH VÀ BẬC THANG %
+  // KHỞI TẠO STATE CHỈ CÒN 3 LOẠI GIÁ (NGÀY, ĐÊM, GIỜ - ĐÃ BỎ BUỔI)
   const initialFormState = {
     hotel_id: "",
     code: "",
@@ -166,7 +166,6 @@ export default function RoomManagementPage() {
     max_children: 1,
     base_price: "", // Giá ngày đêm
     overnight_price: "", // Qua đêm
-    half_day_price: "", // Buổi
     hourly_price: "", // Giờ
     auto_surcharge: true,
     surcharge_type: "tiered",
@@ -359,10 +358,6 @@ export default function RoomManagementPage() {
       Number(room.overnight_price || 0) > 0
         ? Number(room.overnight_price)
         : baseP;
-    const halfDayP =
-      Number(room.half_day_price || 0) > 0
-        ? Number(room.half_day_price)
-        : Math.round(baseP * 0.8);
     const hourlyP =
       Number(room.hourly_price || 0) > 0
         ? Number(room.hourly_price)
@@ -409,7 +404,6 @@ export default function RoomManagementPage() {
             { hours: 2, percent: 30 },
           ];
 
-    // Lấy chính xác số lượng phòng đã đăng ký
     const roomAmount = Number(
       room.amount ??
         room.total_rooms ??
@@ -426,7 +420,6 @@ export default function RoomManagementPage() {
       amount: roomAmount,
       base_price: baseP,
       overnight_price: overnightP,
-      half_day_price: halfDayP,
       hourly_price: hourlyP,
       auto_surcharge:
         room.auto_surcharge !== undefined ? Boolean(room.auto_surcharge) : true,
@@ -611,7 +604,7 @@ export default function RoomManagementPage() {
     setIsRoomUnitModalOpen(true);
   };
 
-  // LƯU HẠNG PHÒNG: Bảo toàn đúng số lượng phòng đã nhập
+  // LƯU HẠNG PHÒNG: 3 MỨC GIÁ CHUẨN
   const handleSaveRoom = async (e) => {
     if (e) e.preventDefault();
     const targetHotelId = formData.hotel_id || selectedHotelId;
@@ -628,7 +621,6 @@ export default function RoomManagementPage() {
       const selectedImg =
         formData.images.length > 0 ? formData.images[0] : null;
 
-      // Ưu tiên số lượng phòng được thiết lập tại form, nếu có nhiều phòng cụ thể hơn thì lấy theo số lượng phòng thực tế
       const parsedAmount = Number(formData.amount || 1);
       const finalAmount = Math.max(parsedAmount, formRoomUnits.length);
 
@@ -650,8 +642,6 @@ export default function RoomManagementPage() {
         max_children: Number(formData.max_children || 1),
         base_price: dailyPrice,
         overnight_price: Number(formData.overnight_price) || dailyPrice,
-        half_day_price:
-          Number(formData.half_day_price) || Math.round(dailyPrice * 0.8),
         hourly_price:
           Number(formData.hourly_price) || Math.round(dailyPrice * 0.25),
         auto_surcharge: Boolean(formData.auto_surcharge),
@@ -913,7 +903,7 @@ export default function RoomManagementPage() {
                 <LoadingSpinner size="md" label="Đang tải dữ liệu phòng..." />
               </div>
             ) : activeTab === "room_types" ? (
-              /* TAB 1: BẢNG HẠNG PHÒNG */
+              /* TAB 1: BẢNG HẠNG PHÒNG (ĐÃ XÓA GIÁ BUỔI) */
               <div className="w-full overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -951,9 +941,6 @@ export default function RoomManagementPage() {
                         Giá qua đêm
                       </th>
                       <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
-                        Giá buổi
-                      </th>
-                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
                         Giá giờ
                       </th>
                       <th className="py-3 px-2.5 font-bold text-center whitespace-nowrap">
@@ -974,7 +961,6 @@ export default function RoomManagementPage() {
                         (Array.isArray(room.images) && room.images[0]) ||
                         "";
 
-                      // Đọc đúng số lượng phòng từ các trường API
                       const displayAmount = Number(
                         room.amount ??
                           room.total_rooms ??
@@ -1021,14 +1007,11 @@ export default function RoomManagementPage() {
                             <td className="py-3 px-2 text-center font-bold text-gray-900">
                               {displayAmount}
                             </td>
-                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                            <td className="py-3 px-2.5 text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">
                               {formatVND(room.base_price)}
                             </td>
                             <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
                               {formatVND(room.overnight_price)}
-                            </td>
-                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
-                              {formatVND(room.half_day_price)}
                             </td>
                             <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
                               {formatVND(room.hourly_price)}
@@ -1048,7 +1031,7 @@ export default function RoomManagementPage() {
                           {/* MỞ RỘNG CHI TIẾT */}
                           {isExpanded && (
                             <tr className="bg-white border-b-2 border-[#003580]">
-                              <td colSpan={10} className="p-5 space-y-4">
+                              <td colSpan={9} className="p-5 space-y-4">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-center gap-3.5">
                                     <div className="w-20 h-16 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 shrink-0 flex items-center justify-center shadow-xs">
@@ -1134,7 +1117,7 @@ export default function RoomManagementPage() {
                                   </div>
                                 </div>
 
-                                {/* BẢNG 4 MỨC GIÁ CƠ SỞ CHUẨN */}
+                                {/* BẢNG 3 MỨC GIÁ CƠ SỞ CHUẨN */}
                                 <div className="w-full max-w-lg text-xs space-y-1.5">
                                   <div className="flex justify-between border-b border-gray-200 pb-1.5 text-gray-500 font-bold">
                                     <span>Loại hình lưu trú</span>
@@ -1154,12 +1137,6 @@ export default function RoomManagementPage() {
                                     </span>
                                     <span className="font-bold text-gray-900 tabular-nums">
                                       {formatVND(room.overnight_price)}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
-                                    <span className="text-gray-700">Buổi</span>
-                                    <span className="font-bold text-gray-900 tabular-nums">
-                                      {formatVND(room.half_day_price)}
                                     </span>
                                   </div>
                                   <div className="flex justify-between py-1 font-semibold">
@@ -1200,7 +1177,7 @@ export default function RoomManagementPage() {
                 </table>
               </div>
             ) : (
-              /* TAB 2: BẢNG PHÒNG CỤ THỂ */
+              /* TAB 2: BẢNG PHÒNG CỤ THỂ (ĐÃ XÓA GIÁ BUỔI) */
               <div className="w-full overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -1225,9 +1202,6 @@ export default function RoomManagementPage() {
                       </th>
                       <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
                         Giá qua đêm
-                      </th>
-                      <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
-                        Giá buổi
                       </th>
                       <th className="py-3 px-2.5 font-bold text-right whitespace-nowrap">
                         Giá giờ
@@ -1274,14 +1248,11 @@ export default function RoomManagementPage() {
                             <td className="py-3 px-2 font-medium text-gray-700 whitespace-nowrap">
                               {unit.area || "Tầng 8"}
                             </td>
-                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                            <td className="py-3 px-2.5 text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">
                               {formatVND(unit.daily_price)}
                             </td>
                             <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
                               {formatVND(unit.overnight_price)}
-                            </td>
-                            <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
-                              {formatVND(unit.half_day_price)}
                             </td>
                             <td className="py-3 px-2.5 text-right font-medium text-gray-800 tabular-nums whitespace-nowrap">
                               {formatVND(unit.hourly_price)}
@@ -1299,7 +1270,7 @@ export default function RoomManagementPage() {
                           {/* MỞ RỘNG PHÒNG CON */}
                           {isExpanded && (
                             <tr className="bg-white border-b-2 border-[#003580]">
-                              <td colSpan={10} className="p-5 space-y-4">
+                              <td colSpan={9} className="p-5 space-y-4">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-[#003580] flex items-center justify-center font-black">
@@ -1343,7 +1314,7 @@ export default function RoomManagementPage() {
                                   </div>
                                 </div>
 
-                                {/* BẢNG 4 MỨC GIÁ THỪA HƯỞNG TRỰC TIẾP */}
+                                {/* BẢNG 3 MỨC GIÁ THỪA HƯỞNG */}
                                 <div className="w-full max-w-lg text-xs space-y-1.5">
                                   <div className="flex justify-between border-b border-gray-200 pb-1.5 text-gray-500 font-bold">
                                     <span>Loại hình lưu trú</span>
@@ -1363,12 +1334,6 @@ export default function RoomManagementPage() {
                                     </span>
                                     <span className="font-bold text-gray-900 tabular-nums">
                                       {formatVND(unit.overnight_price)}
-                                    </span>
-                                  </div>
-                                  <div className="flex justify-between py-1 border-b border-gray-100 font-semibold">
-                                    <span className="text-gray-700">Buổi</span>
-                                    <span className="font-bold text-gray-900 tabular-nums">
-                                      {formatVND(unit.half_day_price)}
                                     </span>
                                   </div>
                                   <div className="flex justify-between py-1 font-semibold">
@@ -1569,7 +1534,7 @@ export default function RoomManagementPage() {
                       </div>
                     </div>
 
-                    {/* 4 MỨC GIÁ */}
+                    {/* 🌟 3 MỨC GIÁ CHUẨN (MÀU CHỮ ĐỒNG BỘ text-gray-900) */}
                     <div className="space-y-3.5">
                       <div className="flex items-center justify-between">
                         <span className="text-gray-700 font-bold">
@@ -1586,16 +1551,13 @@ export default function RoomManagementPage() {
                               ...prev,
                               base_price: val,
                               overnight_price: prev.overnight_price || val,
-                              half_day_price:
-                                prev.half_day_price ||
-                                (val ? Math.round(Number(val) * 0.8) : ""),
                               hourly_price:
                                 prev.hourly_price ||
                                 (val ? Math.round(Number(val) * 0.25) : ""),
                             }));
                           }}
                           placeholder="200.000"
-                          className="w-28 text-right py-1 border-b border-[#003580] outline-none text-[#ff6a00] font-black bg-transparent"
+                          className="w-28 text-right py-1 border-b border-[#003580] outline-none text-gray-900 font-bold bg-transparent"
                         />
                       </div>
 
@@ -1616,25 +1578,6 @@ export default function RoomManagementPage() {
                             })
                           }
                           placeholder="100.000"
-                          className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-700 font-medium">
-                          Giá buổi
-                        </span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={formatNumberWithDots(formData.half_day_price)}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              half_day_price: parseDotsToNumber(e.target.value),
-                            })
-                          }
-                          placeholder="160.000"
                           className="w-28 text-right py-1 border-b border-gray-300 outline-none focus:border-[#003580] text-gray-900 font-bold bg-transparent"
                         />
                       </div>
@@ -2520,7 +2463,7 @@ export default function RoomManagementPage() {
                 </select>
               </div>
 
-              {/* BẢNG GIÁ THỪA HƯỞNG */}
+              {/* BẢNG GIÁ THỪA HƯỞNG (3 LOẠI GIÁ CHUẨN, MÀU CHỮ ĐỒNG BỘ text-gray-900) */}
               <div className="space-y-2.5 bg-gray-50/80 p-4 rounded-2xl border border-gray-200">
                 <span className="font-bold text-gray-600 text-xs block uppercase">
                   Bảng giá thừa hưởng từ "
@@ -2531,7 +2474,7 @@ export default function RoomManagementPage() {
                   <span className="text-gray-600 font-medium">
                     Giá ngày đêm:
                   </span>
-                  <b className="text-[#ff6a00] tabular-nums font-black text-sm">
+                  <b className="text-gray-900 tabular-nums font-bold text-sm">
                     {formatVND(selectedParentRoom?.base_price || 0)} đ
                   </b>
                 </div>
@@ -2542,13 +2485,6 @@ export default function RoomManagementPage() {
                   </span>
                   <b className="text-gray-900 tabular-nums font-bold">
                     {formatVND(selectedParentRoom?.overnight_price || 0)} đ
-                  </b>
-                </div>
-
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-gray-600 font-medium">Giá buổi:</span>
-                  <b className="text-gray-900 tabular-nums font-bold">
-                    {formatVND(selectedParentRoom?.half_day_price || 0)} đ
                   </b>
                 </div>
 

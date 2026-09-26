@@ -34,14 +34,13 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) DEFAULT 'FULL';
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS guest_declarations jsonb DEFAULT '[]'::jsonb;
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP WITHOUT TIME ZONE;
 
       -- 2. Cột giờ & thông số định vị cho bảng hotel (Cơ sở lưu trú)
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS checkout_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS overnight_checkin_time TIME WITHOUT TIME ZONE DEFAULT '21:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS overnight_checkout_time TIME WITHOUT TIME ZONE DEFAULT '11:00:00';
-      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS halfday_checkin_time TIME WITHOUT TIME ZONE DEFAULT '12:00:00';
-      ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS halfday_checkout_time TIME WITHOUT TIME ZONE DEFAULT '21:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_start_time TIME WITHOUT TIME ZONE DEFAULT '07:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_end_time TIME WITHOUT TIME ZONE DEFAULT '21:00:00';
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS hourly_grace_minutes INT DEFAULT 15;
@@ -52,7 +51,6 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       -- 3. Cột giá đa dạng cho bảng room (Hạng phòng)
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS hourly_price NUMERIC DEFAULT 0;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS overnight_price NUMERIC DEFAULT 0;
-      ALTER TABLE public.room ADD COLUMN IF NOT EXISTS half_day_price NUMERIC DEFAULT 0;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS hourly_tiers JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE public.room ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 
@@ -149,7 +147,7 @@ function resolveDateRange(range) {
   );
 }
 
-// ─── 1. THỐNG KÊ DASHBOARD ───
+// ─── 1. THỐNG KÊ DASHBOARD (ĐÃ TÍNH CHUẨN CÔNG SUẤT THEO KHU VỰC / TẦNG) ───
 async function getOwnerStats(req, res, next) {
   try {
     const ownerId =
@@ -319,10 +317,27 @@ async function getOwnerStats(req, res, next) {
       `,
         occParams,
       ),
+
+      // 🌟 ĐÃ SỬA CÂU QUERY: NỐI ROOM_UNIT VỚI BOOKING ĐỂ TÍNH ĐÚNG CÔNG SUẤT THEO TẦNG / KHU VỰC
       pool.query(
-        `SELECT COALESCE(ru.area, 'Tầng 1') AS area_name, COUNT(DISTINCT ru.id)::int AS unit_count FROM public.room_unit ru JOIN public.hotel h ON h.id = ru.hotel_id WHERE ${hotelFilter} GROUP BY COALESCE(ru.area, 'Tầng 1') ORDER BY area_name ASC`,
-        baseParams,
+        `
+        SELECT 
+          COALESCE(ru.area, 'Tầng 1') AS area_name,
+          COUNT(DISTINCT ru.id)::int AS total_units,
+          COUNT(DISTINCT b.id)::int AS total_bookings
+        FROM public.room_unit ru
+        JOIN public.hotel h ON h.id = ru.hotel_id
+        LEFT JOIN public.booking b ON b.hotel_id = h.id 
+          AND (b.room_number = ru.room_number OR b.room_number ILIKE '%' || ru.room_number || '%')
+          AND b.status IN ('checked_in', 'checked_out', 'confirmed')
+          AND (b.checkin_date <= $${occParams.length}::date AND b.checkout_date >= $${occParams.length - 1}::date)
+        WHERE ${hotelFilter}
+        GROUP BY COALESCE(ru.area, 'Tầng 1')
+        ORDER BY area_name ASC
+      `,
+        occParams,
       ),
+
       pool.query(
         `SELECT b.id, b.booking_code, COALESCE(b.room_number, 'Chưa xếp') AS room, b.customer_name AS guest, (b.total_price - COALESCE(b.deposit_amount, b.subtotal, 0)) AS amount FROM public.booking b JOIN public.hotel h ON h.id = b.hotel_id WHERE ${hotelFilter} AND b.status = 'checked_in' AND b.payment_status != 'paid'`,
         baseParams,
@@ -425,6 +440,19 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
+    // 🌟 TÍNH CÔNG SUẤT THỰC TẾ CHO TỪNG TẦNG / KHU VỰC
+    const byArea = areaRes.rows.map((a) => {
+      const cap = Number(a.total_units || 1) * occDates.dayCount;
+      const bCount = Number(a.total_bookings || 0);
+      return {
+        name: a.area_name,
+        rate:
+          cap > 0
+            ? Math.min(100, Math.round((bCount / cap) * 100))
+            : currentRate,
+      };
+    });
+
     return res.json({
       success: true,
       occupancyCurrent: {
@@ -502,8 +530,8 @@ async function getOwnerStats(req, res, next) {
         timelineDay,
         timelineWeekday,
         byRoomType,
-        byArea: areaRes.rows.length
-          ? areaRes.rows.map((a) => ({ name: a.area_name, rate: currentRate }))
+        byArea: byArea.length
+          ? byArea
           : [{ name: "Tầng 1", rate: currentRate }],
       },
       automationSummary: {
@@ -577,7 +605,7 @@ async function getOwnerBookings(req, res) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (HỖ TRỢ ĐỦ CẢ GIỜ, BUỔI, ĐÊM, NGÀY) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (HỖ TRỢ ĐỦ 3 HÌNH THỨC: GIỜ, ĐÊM, NGÀY) ───
 async function getRoomMapData(req, res) {
   try {
     const { hotel_id: hotelId } = req.query;
@@ -609,7 +637,6 @@ async function getRoomMapData(req, res) {
         SELECT r.id AS room_type_id, r.name AS room_type_name, r.code AS room_code, r.base_price AS daily_price, r.hourly_tiers,
                COALESCE(NULLIF(r.hourly_price, 0), ROUND(r.base_price * 0.25)) AS hourly_price,
                COALESCE(NULLIF(r.overnight_price, 0), r.base_price) AS overnight_price,
-               COALESCE(r.half_day_price, ROUND(r.base_price * 0.8)) AS half_day_price,
                ru.id AS unit_id, ru.room_number, COALESCE(ru.status, 'available') AS unit_status, COALESCE(ru.area, 'Tầng 1') AS area
         FROM public.room r LEFT JOIN public.room_unit ru ON ru.room_id = r.id
         WHERE r.hotel_id::text = $1 AND COALESCE(r.is_active, true) ORDER BY ru.area ASC, ru.room_number ASC
@@ -658,7 +685,6 @@ async function getRoomMapData(req, res) {
         hourly_price: Number(row.hourly_price || 0),
         daily_price: Number(row.daily_price || 0),
         overnight_price: Number(row.overnight_price || 0),
-        half_day_price: Number(row.half_day_price || 0),
         status: isDirty ? "dirty" : "available",
         unit_status: row.unit_status || "available",
         is_dirty: isDirty,
@@ -709,8 +735,6 @@ async function getRoomMapData(req, res) {
           durationText = `${hours} giờ`;
         } else if (match.rental_type === "OVERNIGHT") {
           durationText = "1 đêm";
-        } else if (match.rental_type === "HALF_DAY") {
-          durationText = "1 buổi";
         } else {
           const days = Math.max(1, Math.round(diffMs / (24 * 3600000))) || 1;
           durationText = `${days} ngày`;
@@ -766,6 +790,9 @@ async function getRoomMapData(req, res) {
           checkout_date: outDate,
           checkin_time: inTime,
           checkout_time: outTime,
+          // 🌟 BỔ SUNG TRƯỜNG confirmed_at VÀ created_at ĐỂ THẺ PHÒNG KHỚP GIỜ TỪNG GIÂY
+          confirmed_at: match.confirmed_at,
+          created_at: match.created_at,
           rental_type: match.rental_type,
           total_price: totalPrice,
           customer_paid: paidAmount,
@@ -846,8 +873,6 @@ async function getPendingOnlineBookings(req, res) {
         durationLabel = `${h} giờ`;
       } else if (b.rental_type === "OVERNIGHT") {
         durationLabel = "1 đêm";
-      } else if (b.rental_type === "HALF_DAY") {
-        durationLabel = "1 buổi";
       } else {
         const d = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
         durationLabel = `${d} ngày`;
@@ -911,7 +936,7 @@ async function confirmAndAssignRoom(req, res) {
   }
 }
 
-// ─── 5. ĐẶT PHÒNG TẠI QUẦY ───
+// ─── 5. ĐẶT PHÒNG TẠI QUẦY (ĐÃ DỌN SẠCH BUỔI) ───
 async function createWalkInBooking(req, res) {
   const client = await pool.connect();
   try {
@@ -1008,8 +1033,6 @@ async function createWalkInBooking(req, res) {
     let finalRentalType = "DAY";
     if (rental_type === "Giờ" || rental_type === "HOUR") {
       finalRentalType = "HOUR";
-    } else if (rental_type === "Buổi" || rental_type === "HALF_DAY") {
-      finalRentalType = "HALF_DAY";
     } else if (rental_type === "Đêm" || rental_type === "OVERNIGHT") {
       finalRentalType = "OVERNIGHT";
     }
