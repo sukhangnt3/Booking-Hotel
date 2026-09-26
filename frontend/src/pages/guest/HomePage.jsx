@@ -155,7 +155,7 @@ export default function HomePage() {
   // 🌟 HÌNH THỨC THUÊ
   const [rentalType, setRentalType] = useState("DAY");
 
-  // Giờ mặc định cho theo giờ lấy ngay giờ hiện tại
+  // Giờ mặc định lấy ngay khung giờ hiện tại
   const defaultHourTime = useMemo(() => {
     return `${String(currentRealHour).padStart(2, "0")}:00`;
   }, [currentRealHour]);
@@ -165,7 +165,7 @@ export default function HomePage() {
   const [checkInDate, setCheckInDate] = useState(today);
   const [checkOutDate, setCheckOutDate] = useState(addDays(today, 1));
 
-  // 🌟 SỐ GIỜ SỬ DỤNG
+  // 🌟 SỐ GIỜ SỬ DỤNG: Mở rộng lên tới 10 giờ
   const [hoursCount, setHoursCount] = useState(2);
 
   // Calendar Popup & Tháng hiển thị
@@ -236,7 +236,7 @@ export default function HomePage() {
         setCheckOutDate(addDays(checkInDate, 1));
       }
     } else if (type === "OVERNIGHT") {
-      // Qua đêm: Cố định giờ 22:00 - 11:00, không chọn giờ
+      // Qua đêm: Cố định 22:00 - 11:00, không chọn giờ
       setCheckInTime("22:00");
       setCheckOutTime("11:00");
       setCheckOutDate(addDays(checkInDate, 1));
@@ -247,7 +247,7 @@ export default function HomePage() {
     }
   };
 
-  // 🌟 TÍNH TOÁN THỜI GIAN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC
+  // 🌟 TÍNH TOÁN THỜI GIAN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC (TỰ ĐỘNG SANG HÔM SAU NẾU QUA NỬA ĐÊM)
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -256,7 +256,7 @@ export default function HomePage() {
     let outDateTime = new Date(checkOutDate);
     let outTimeStr = checkOutTime;
 
-    // 1. THEO GIỜ
+    // 1. THEO GIỜ (VÍ DỤ 22H + 2 TIẾNG = 00:00 NGÀY 27/09)
     if (rentalType === "HOUR") {
       outDateTime = addHours(inDateTime, hoursCount);
       outTimeStr = `${String(outDateTime.getHours()).padStart(2, "0")}:${String(outDateTime.getMinutes()).padStart(2, "0")}`;
@@ -311,6 +311,9 @@ export default function HomePage() {
     checkOutDate,
     hoursCount,
   ]);
+
+  // 🌟 KHAI BÁO BỔ SUNG ĐỂ ĐỒNG BỘ 100% CẢ 2 TÊN BIẾN, KHÔNG BAO GIỜ BỊ LỖI "checkOutInfo is not defined":
+  const checkOutInfo = durationSummary;
 
   useEffect(() => {
     let isMounted = true;
@@ -566,7 +569,7 @@ export default function HomePage() {
                 </div>
 
                 {/* HÀNG BỘ LỌC NGÀY VÀ GIỜ */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
                   <div ref={calendarRef} className="relative md:col-span-9">
                     <div
                       onClick={() => setIsCalendarOpen(!isCalendarOpen)}

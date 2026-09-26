@@ -487,7 +487,6 @@ export default function HotelListPage() {
         setCheckOutDate(addDays(checkInDate, 1));
       }
     } else if (type === "OVERNIGHT") {
-      // Qua đêm: Cố định 22:00 - 11:00, không chọn giờ
       setCheckInTime("22:00");
       setCheckOutTime("11:00");
       setCheckOutDate(addDays(checkInDate, 1));
@@ -565,6 +564,9 @@ export default function HotelListPage() {
     checkOutDate,
     hoursCount,
   ]);
+
+  // 🌟 KHAI BÁO BỔ SUNG ĐỂ ĐỒNG BỘ 100% CẢ 2 TÊN BIẾN, KHÔNG BAO GIỜ BỊ LỖI "checkOutInfo is not defined":
+  const checkOutInfo = durationSummary;
 
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
@@ -1251,9 +1253,9 @@ export default function HotelListPage() {
                             Dự kiến trả phòng:
                           </span>
                           <strong className="text-slate-900 font-black">
-                            {checkOutInfo.outTimeStr},{" "}
+                            {durationSummary.outTimeStr},{" "}
                             {safeFormatDate(
-                              checkOutInfo.outDateTime,
+                              durationSummary.outDateTime,
                               "dd/MM/yyyy",
                             )}
                           </strong>
