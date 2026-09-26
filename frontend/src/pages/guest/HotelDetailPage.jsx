@@ -171,7 +171,6 @@ export default function HotelDetailPage() {
     searchParams.get("rentalType") || "DAY",
   );
 
-  // 🌟 GIỜ MẶC ĐỊNH CHO THEO GIỜ LẤY NGAY KHUNG GIỜ HIỆN TẠI (VD 16:00 KHI ĐANG LÀ 16H17)
   const defaultInitialTime = useMemo(() => {
     return `${String(currentRealHour).padStart(2, "0")}:00`;
   }, [currentRealHour]);
@@ -270,7 +269,7 @@ export default function HotelDetailPage() {
     };
   }, [hotel]);
 
-  // 🌟 TÍNH TOÁN DỰ KIẾN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC (TỰ TÍNH SANG HÔM SAU NẾU LẤN QUA 00H)
+  // 🌟 TÍNH TOÁN DỰ KIẾN TRẢ PHÒNG CHUẨN GO2JOY
   const checkOutInfo = useMemo(() => {
     const [hStr, mStr] = checkInTime.split(":");
     const inHour = parseInt(hStr || "14", 10);
@@ -282,7 +281,7 @@ export default function HotelDetailPage() {
     let outDateTime = new Date(checkOutDate);
     let outTimeStr = checkOutTime;
 
-    // 1. THEO GIỜ (VÍ DỤ 22H + 2 TIẾNG = 00:00 NGÀY 27/09)
+    // 1. THEO GIỜ (VD 22H + 2 TIẾNG = 00:00 NGÀY 27/09)
     if (rentalType === "HOUR") {
       outDateTime = addHours(inDateTime, hoursCount);
       outTimeStr = `${String(outDateTime.getHours()).padStart(2, "0")}:${String(outDateTime.getMinutes()).padStart(2, "0")}`;
@@ -296,19 +295,16 @@ export default function HotelDetailPage() {
       };
     }
 
-    // 2. QUA ĐÊM (CHIA 2 CA SÁNG / TỐI CHUẨN GO2JOY)
+    // 2. QUA ĐÊM (CỐ ĐỊNH THEO QUY ĐỊNH KHÁCH SẠN, KHÔNG CẦN CHỌN GIỜ)
     if (rentalType === "OVERNIGHT") {
       const [oH, oM] = hotelPolicies.overnightOut.split(":").map(Number);
-      if (inHour >= 0 && inHour <= 6) {
-        outDateTime = new Date(checkInDate);
-      } else {
-        outDateTime = addDays(new Date(checkInDate), 1);
-      }
+      outDateTime = addDays(new Date(checkInDate), 1);
       outDateTime.setHours(oH || 11, oM || 0, 0, 0);
       outTimeStr = hotelPolicies.overnightOut;
+
       return {
         badge: "1 Đêm",
-        displayRange: `${checkInTime}, ${format(inDateTime, "dd/MM")} - ${outTimeStr}, ${format(outDateTime, "dd/MM")}`,
+        displayRange: `${hotelPolicies.overnightIn}, ${format(checkInDate, "dd/MM")} - ${outTimeStr}, ${format(outDateTime, "dd/MM")}`,
         inDateTime,
         outDateTime,
         outTimeStr,
@@ -332,7 +328,7 @@ export default function HotelDetailPage() {
       };
     }
 
-    // 4. THEO NGÀY (CỐ ĐỊNH TRẢ THEO GIỜ CỦA KHÁCH SẠN)
+    // 4. THEO NGÀY
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     outDateTime = new Date(checkOutDate);
     outDateTime.setHours(outH || 12, outM || 0, 0, 0);
@@ -357,12 +353,11 @@ export default function HotelDetailPage() {
     hotelPolicies,
   ]);
 
-  // 🌟 CHUYỂN TAB MƯỢT MÀ TỨC THÌ (TUYỆT ĐỐI KHÔNG RELOAD TRANG HAY BẬT LOADING FULL PAGE)
+  // 🌟 CHUYỂN TAB MƯỢT MÀ TỨC THÌ
   const handleTabChange = useCallback(
     (type) => {
       setRentalType(type);
       if (type === "HOUR") {
-        // Mặc định chọn ngay khung giờ hiện tại (16:00 khi đang là 16h)
         setCheckInTime(`${String(currentRealHour).padStart(2, "0")}:00`);
         setHoursCount(2);
         setCheckOutDate(checkInDate);
@@ -376,6 +371,7 @@ export default function HotelDetailPage() {
           setCheckOutDate(addDays(checkInDate, 1));
         }
       } else if (type === "OVERNIGHT") {
+        // Qua đêm: Lấy luôn giờ quy định khách sạn, tự động trả ngày hôm sau
         setCheckInTime(hotelPolicies.overnightIn || "22:00");
         setCheckOutTime(hotelPolicies.overnightOut || "11:00");
         setCheckOutDate(addDays(checkInDate, 1));
@@ -421,7 +417,6 @@ export default function HotelDetailPage() {
     [id, checkInTime, checkOutTime, rentalType, checkOutInfo],
   );
 
-  // 🌟 CHỈ TẢI THÔNG TIN KHÁCH SẠN 1 LẦN DUY NHẤT (CHỐNG GIẬT TRANG)
   const fetchAllData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -440,7 +435,6 @@ export default function HotelDetailPage() {
         setHotel(hotelData);
         setSearchQuery(hotelData.name || "");
 
-        // Tự động gán giờ nhận phòng theo quy định riêng của khách sạn
         if (hotelData.checkin_time && !searchParams.get("checkInTime")) {
           setCheckInTime(String(hotelData.checkin_time).slice(0, 5));
         }
@@ -537,7 +531,6 @@ export default function HotelDetailPage() {
     roomsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // Tính giá phòng chi tiết (hỗ trợ tới 10 giờ)
   const calculateRoomPricing = useCallback(
     (room) => {
       const baseDailyPrice = Number(
@@ -712,11 +705,9 @@ export default function HotelDetailPage() {
     }
   };
 
-  // 🌟 ĐÃ SỬA: CHỈ KHÓA CÁC GIỜ HOÀN TOÀN TRONG QUÁ KHỨ (< currentRealHour), GIỮ NGUYÊN KHUNG 16H KHI ĐANG LÀ 16H17!
   const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
 
-    // Dùng dấu "<" thay vì "<=" để khung giờ hiện tại VẪN ĐƯỢC CHỌN!
     if (isSameDay(checkInDate, today)) {
       if (hourNum < currentRealHour) return true;
     }
@@ -727,11 +718,6 @@ export default function HotelDetailPage() {
       return hourNum < startH || hourNum > endH;
     }
 
-    if (rentalType === "OVERNIGHT") {
-      const oInH = parseInt(hotelPolicies.overnightIn.slice(0, 2), 10) || 22;
-      return hourNum > 6 && hourNum < oInH;
-    }
-
     return false;
   };
 
@@ -739,16 +725,6 @@ export default function HotelDetailPage() {
     { length: 24 },
     (_, i) => `${String(i).padStart(2, "0")}:00`,
   );
-  const OVERNIGHT_MORNING_HOURS = [
-    "00:00",
-    "01:00",
-    "02:00",
-    "03:00",
-    "04:00",
-    "05:00",
-    "06:00",
-  ];
-  const OVERNIGHT_EVENING_HOURS = ["20:00", "21:00", "22:00", "23:00"];
   const HOURLY_DURATIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   if (loading)
@@ -1032,7 +1008,9 @@ export default function HotelDetailPage() {
                     <span className="text-[10px] font-black text-slate-500 block leading-tight whitespace-nowrap">
                       {rentalType === "DAY"
                         ? "Nhận phòng"
-                        : `Nhận (${checkInTime})`}
+                        : rentalType === "OVERNIGHT"
+                          ? `Nhận (${hotelPolicies.overnightIn})`
+                          : `Nhận (${checkInTime})`}
                     </span>
                     <span className="text-xs font-black text-slate-900 leading-none whitespace-nowrap">
                       {safeFormatDate(checkInDate, "dd/MM/yyyy")}
@@ -1075,11 +1053,15 @@ export default function HotelDetailPage() {
                 </div>
               </div>
 
-              {/* 🌟 POPUP CHỌN GIỜ & PHÒNG 2 CỘT CHUẨN GO2JOY 🌟 */}
+              {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN GO2JOY (BỎ HOÀN TOÀN CỘT CHỌN GIỜ KHI QUA ĐÊM) 🌟 */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute left-0 top-full mt-2 z-50 bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 w-full sm:w-[680px] space-y-4 animate-in fade-in cursor-default"
+                  className={`absolute left-0 top-full mt-2 z-50 bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 space-y-4 animate-in fade-in cursor-default ${
+                    rentalType === "HOUR"
+                      ? "w-full sm:w-[680px]"
+                      : "w-full sm:w-[480px]"
+                  }`}
                 >
                   {/* 4 TABS HÌNH THỨC THUÊ */}
                   <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl">
@@ -1132,25 +1114,26 @@ export default function HotelDetailPage() {
                     </button>
                   </div>
 
-                  {/* HỘP MẸO BÓNG ĐÈN ĐỘNG THEO GIỜ CỦA KHÁCH SẠN */}
+                  {/* 🌟 HỘP BÓNG ĐÈN GỢI Ý TINH TẾ CHUẨN GO2JOY (KHÔNG GHI SỐ GIỜ CỨNG) */}
                   <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center gap-1.5">
                     <Lightbulb size={15} className="text-[#006ce4] shrink-0" />
                     <span>
                       {rentalType === "HOUR" &&
-                        "Phù hợp nghỉ ngơi nhanh từ 1 đến 10 giờ trong ngày."}
+                        "Phù hợp khi bạn chỉ cần nghỉ vài giờ"}
                       {rentalType === "OVERNIGHT" &&
-                        "Phù hợp nhận phòng buổi tối hoặc rạng sáng và trả phòng trưa hôm sau."}
-                      {rentalType === "DAY" &&
-                        `Lưu trú theo ngày đêm tiêu chuẩn (Nhận ${hotelPolicies.dailyIn} - Trả ${hotelPolicies.dailyOut} trưa).`}
+                        "Phù hợp nghỉ một đêm đến sáng hôm sau"}
+                      {rentalType === "DAY" && "Phù hợp với lưu trú nhiều ngày"}
                       {rentalType === "HALF_DAY" &&
-                        "Phù hợp lưu trú nửa ngày (Tối đa 9 tiếng trong ngày)."}
+                        "Phù hợp với lưu trú nửa ngày"}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 pt-1">
-                    {/* CỘT TRÁI: LỊCH THÁNG TRỰC QUAN (TỰ ĐỘNG BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM) */}
+                  <div
+                    className={`grid grid-cols-1 gap-5 pt-1 ${rentalType === "HOUR" ? "sm:grid-cols-12" : ""}`}
+                  >
+                    {/* CỘT LỊCH THÁNG TRỰC QUAN */}
                     <div
-                      className={`${rentalType === "DAY" ? "sm:col-span-7" : "sm:col-span-6"} space-y-2 border-r border-slate-100 pr-0 sm:pr-4`}
+                      className={`${rentalType === "HOUR" ? "sm:col-span-6 border-r border-slate-100 pr-0 sm:pr-4" : "w-full"} space-y-2`}
                     >
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs font-black text-slate-800">
@@ -1209,7 +1192,7 @@ export default function HotelDetailPage() {
                         }).map((dayItem) => {
                           const isPast = isBefore(dayItem, today);
 
-                          // BÔI MÀU CẢ 2 NGÀY NẾU THUÊ QUA ĐÊM HOẶC THUÊ THEO GIỜ LẤN SANG HÔM SAU
+                          // BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM CHUẨN GO2JOY
                           const isStartDay = isSameDay(dayItem, checkInDate);
                           const isEndDay =
                             isSameDay(dayItem, checkOutInfo.outDateTime) &&
@@ -1237,7 +1220,7 @@ export default function HotelDetailPage() {
                                     setCheckOutDate(dayItem);
                                   }
                                 } else if (rentalType === "OVERNIGHT") {
-                                  // Qua đêm: Bấm ngày nào tự động chọn ngày hôm sau
+                                  // 🌟 QUA ĐÊM: BẤM NGÀY NÀO TỰ ĐỘNG CHỌN NGÀY HÔM SAU LUÔN!
                                   setCheckInDate(dayItem);
                                   setCheckOutDate(addDays(dayItem, 1));
                                 } else {
@@ -1263,165 +1246,171 @@ export default function HotelDetailPage() {
                           );
                         })}
                       </div>
-                    </div>
 
-                    {/* CỘT PHẢI: XỬ LÝ THEO TỪNG HÌNH THỨC */}
-                    <div
-                      className={`${rentalType === "DAY" ? "sm:col-span-5" : "sm:col-span-6"} space-y-3.5`}
-                    >
-                      {/* 1. NẾU LÀ THEO NGÀY: TỰ ĐỘNG LẤY GIỜ RIÊNG CỦA KHÁCH SẠN */}
-                      {rentalType === "DAY" ? (
-                        <div className="space-y-3 pt-1">
-                          <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1">
-                            <div className="flex justify-between font-bold text-slate-700">
-                              <span>Nhận phòng:</span>
-                              <strong className="text-blue-900">
-                                {hotelPolicies.dailyIn},{" "}
-                                {safeFormatDate(checkInDate, "dd/MM/yyyy")}
-                              </strong>
-                            </div>
-                            <div className="flex justify-between font-bold text-slate-700">
-                              <span>Trả phòng:</span>
-                              <strong className="text-blue-900">
-                                {hotelPolicies.dailyOut},{" "}
-                                {safeFormatDate(checkOutDate, "dd/MM/yyyy")}
-                              </strong>
-                            </div>
-                            <div className="pt-1.5 border-t border-blue-200 flex justify-between font-black text-[#003580] text-sm">
-                              <span>Thời gian lưu trú:</span>
-                              <span>{checkOutInfo.badge}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : rentalType === "OVERNIGHT" ? (
-                        /* 2. NẾU LÀ QUA ĐÊM: CHIA 2 CA SÁNG / TỐI */
-                        <div className="space-y-3">
-                          <div>
-                            <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 mb-1.5">
-                              <Moon size={13} className="text-indigo-600" />
-                              <span>Ca Tối (Trả 11h sáng hôm sau)</span>
-                            </label>
-                            <div className="flex gap-1.5 overflow-x-auto pb-1">
-                              {OVERNIGHT_EVENING_HOURS.map((t) => {
-                                const disabled = isTimeSlotDisabled(t);
-                                const active = checkInTime === t;
-                                return (
-                                  <button
-                                    key={t}
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() => setCheckInTime(t)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
-                                      disabled
-                                        ? "bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-100"
-                                        : active
-                                          ? "bg-blue-50 border-2 border-[#006ce4] text-[#006ce4] font-black"
-                                          : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-slate-300 cursor-pointer"
-                                    }`}
-                                  >
-                                    {t}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 mb-1.5">
-                              <Sun size={13} className="text-amber-500" />
-                              <span>Ca Sáng sớm (Trả 11h sáng cùng ngày)</span>
-                            </label>
-                            <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-                              {OVERNIGHT_MORNING_HOURS.map((t) => {
-                                const disabled = isTimeSlotDisabled(t);
-                                const active = checkInTime === t;
-                                return (
-                                  <button
-                                    key={t}
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() => setCheckInTime(t)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition ${
-                                      disabled
-                                        ? "bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-100"
-                                        : active
-                                          ? "bg-blue-50 border-2 border-[#006ce4] text-[#006ce4] font-black"
-                                          : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-slate-300 cursor-pointer"
-                                    }`}
-                                  >
-                                    {t}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        /* 3. NẾU LÀ THEO GIỜ: MỞ 1 - 10 GIỜ */
-                        <div className="space-y-3">
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <label className="text-xs font-black text-slate-800 block">
-                                Giờ nhận phòng (24h)
-                              </label>
-                              <span className="text-[10px] text-slate-400 font-semibold">
-                                Lướt ngang &rarr;
+                      {/* NẾU LÀ QUA ĐÊM HOẶC NGÀY: HIỂN THỊ LUÔN BỘ ĐẾM VÀ NÚT ÁP DỤNG DƯỚI LỊCH */}
+                      {rentalType !== "HOUR" && (
+                        <div className="space-y-3 pt-3 border-t border-slate-100">
+                          {/* BỘ ĐẾM: NGƯỜI LỚN, TRẺ EM, SỐ PHÒNG */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-600 block">
+                                Lớn
                               </span>
+                              <div className="flex items-center border border-slate-200 rounded-lg h-7">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAdults((p) => Math.max(1, p - 1))
+                                  }
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  -
+                                </button>
+                                <span className="flex-1 text-center font-bold text-xs">
+                                  {adults}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAdults((p) => p + 1)}
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  +
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-                              {ALL_HOURS.map((t) => {
-                                const disabled = isTimeSlotDisabled(t);
-                                const active = checkInTime === t;
-                                return (
-                                  <button
-                                    key={t}
-                                    type="button"
-                                    disabled={disabled}
-                                    onClick={() => setCheckInTime(t)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition ${
-                                      disabled
-                                        ? "bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-100"
-                                        : active
-                                          ? "bg-blue-50 border-2 border-[#006ce4] text-[#006ce4] font-black"
-                                          : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-slate-300 cursor-pointer"
-                                    }`}
-                                  >
-                                    {t}
-                                  </button>
-                                );
-                              })}
+
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-600 block">
+                                Trẻ
+                              </span>
+                              <div className="flex items-center border border-slate-200 rounded-lg h-7">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setChildren((p) => Math.max(0, p - 1))
+                                  }
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  -
+                                </button>
+                                <span className="flex-1 text-center font-bold text-xs">
+                                  {children}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setChildren((p) => p + 1)}
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-600 block">
+                                Phòng
+                              </span>
+                              <div className="flex items-center border border-slate-200 rounded-lg h-7">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRooms((p) => Math.max(1, p - 1))
+                                  }
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  -
+                                </button>
+                                <span className="flex-1 text-center font-bold text-xs">
+                                  {rooms}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setRooms((p) => p + 1)}
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  +
+                                </button>
+                              </div>
                             </div>
                           </div>
 
-                          <div>
-                            <label className="text-xs font-black text-slate-800 block mb-1.5">
-                              Số giờ sử dụng (1 - 10 giờ)
-                            </label>
-                            <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-                              {HOURLY_DURATIONS.map((h) => {
-                                const active = hoursCount === h;
-                                return (
-                                  <button
-                                    key={h}
-                                    type="button"
-                                    onClick={() => setHoursCount(h)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition cursor-pointer ${
-                                      active
-                                        ? "bg-blue-50 border-2 border-[#006ce4] text-[#006ce4] font-black"
-                                        : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-slate-300"
-                                    }`}
-                                  >
-                                    {h} giờ
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCalendarOpen(false);
+                              handleApplySearch();
+                            }}
+                            className="w-full h-10 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-md transition active:scale-98 cursor-pointer"
+                          >
+                            Áp dụng
+                          </button>
                         </div>
                       )}
+                    </div>
 
-                      {/* THẺ TÓM TẮT TRẢ PHÒNG (Ngoại trừ tab Ngày) */}
-                      {rentalType !== "DAY" && (
+                    {/* CỘT PHẢI: CHỈ HIỂN THỊ KHI CHỌN "THEO GIỜ" (BỎ HOÀN TOÀN Ở TAB QUA ĐÊM) */}
+                    {rentalType === "HOUR" && (
+                      <div className="sm:col-span-6 space-y-3.5">
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-black text-slate-800 block">
+                              Giờ nhận phòng (24h)
+                            </label>
+                            <span className="text-[10px] text-slate-400 font-semibold">
+                              Lướt ngang &rarr;
+                            </span>
+                          </div>
+                          <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                            {ALL_HOURS.map((t) => {
+                              const disabled = isTimeSlotDisabled(t);
+                              const active = checkInTime === t;
+                              return (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  disabled={disabled}
+                                  onClick={() => setCheckInTime(t)}
+                                  className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition ${
+                                    disabled
+                                      ? "bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-100"
+                                      : active
+                                        ? "bg-blue-50 border-2 border-[#006ce4] text-[#006ce4] font-black"
+                                        : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-slate-300 cursor-pointer"
+                                  }`}
+                                >
+                                  {t}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-black text-slate-800 block mb-1.5">
+                            Số giờ sử dụng (1 - 10 giờ)
+                          </label>
+                          <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                            {HOURLY_DURATIONS.map((h) => {
+                              const active = hoursCount === h;
+                              return (
+                                <button
+                                  key={h}
+                                  type="button"
+                                  onClick={() => setHoursCount(h)}
+                                  className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition cursor-pointer ${
+                                    active
+                                      ? "bg-blue-50 border-2 border-[#006ce4] text-[#006ce4] font-black"
+                                      : "bg-slate-50 border border-slate-200 text-slate-700 hover:border-slate-300"
+                                  }`}
+                                >
+                                  {h} giờ
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* THẺ TÓM TẮT TRẢ PHÒNG THEO GIỜ */}
                         <div className="p-2.5 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between text-xs">
                           <span className="text-slate-500 font-semibold">
                             Dự kiến trả phòng:
@@ -1434,105 +1423,105 @@ export default function HotelDetailPage() {
                             )}
                           </strong>
                         </div>
-                      )}
 
-                      {/* BỘ ĐẾM: NGƯỜI LỚN, TRẺ EM, SỐ PHÒNG */}
-                      <div className="space-y-2 pt-1 border-t border-slate-100">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700">
-                            Người lớn:
-                          </span>
-                          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-8">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setAdults((p) => Math.max(1, p - 1))
-                              }
-                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <span className="px-2.5 font-bold text-xs select-none">
-                              {adults}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setAdults((p) => p + 1)}
-                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
+                        {/* BỘ ĐẾM CHO THEO GIỜ */}
+                        <div className="space-y-2 pt-1 border-t border-slate-100">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-600 block">
+                                Lớn
+                              </span>
+                              <div className="flex items-center border border-slate-200 rounded-lg h-7">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAdults((p) => Math.max(1, p - 1))
+                                  }
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  -
+                                </button>
+                                <span className="flex-1 text-center font-bold text-xs">
+                                  {adults}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAdults((p) => p + 1)}
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
 
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700">
-                            Trẻ em:
-                          </span>
-                          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-8">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setChildren((p) => Math.max(0, p - 1))
-                              }
-                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <span className="px-2.5 font-bold text-xs select-none">
-                              {children}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setChildren((p) => p + 1)}
-                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-600 block">
+                                Trẻ
+                              </span>
+                              <div className="flex items-center border border-slate-200 rounded-lg h-7">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setChildren((p) => Math.max(0, p - 1))
+                                  }
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  -
+                                </button>
+                                <span className="flex-1 text-center font-bold text-xs">
+                                  {children}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setChildren((p) => p + 1)}
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
 
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700">
-                            Số phòng:
-                          </span>
-                          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-8">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setRooms((p) => Math.max(1, p - 1))
-                              }
-                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <span className="px-2.5 font-bold text-xs select-none">
-                              {rooms}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setRooms((p) => p + 1)}
-                              className="px-2.5 hover:bg-slate-100 text-slate-600 cursor-pointer"
-                            >
-                              +
-                            </button>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-slate-600 block">
+                                Phòng
+                              </span>
+                              <div className="flex items-center border border-slate-200 rounded-lg h-7">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRooms((p) => Math.max(1, p - 1))
+                                  }
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  -
+                                </button>
+                                <span className="flex-1 text-center font-bold text-xs">
+                                  {rooms}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setRooms((p) => p + 1)}
+                                  className="px-2 hover:bg-slate-100 text-slate-600"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCalendarOpen(false);
+                              handleApplySearch();
+                            }}
+                            className="w-full h-10 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-md transition active:scale-98 cursor-pointer"
+                          >
+                            Áp dụng
+                          </button>
                         </div>
                       </div>
-
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsCalendarOpen(false);
-                            handleApplySearch();
-                          }}
-                          className="w-full h-11 bg-[#003580] hover:bg-blue-900 text-white font-black text-sm rounded-2xl shadow-md transition active:scale-98 cursor-pointer"
-                        >
-                          Áp dụng
-                        </button>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1913,7 +1902,7 @@ export default function HotelDetailPage() {
                 {hotelPolicies.overnightIn} – {hotelPolicies.overnightOut}
               </strong>
               <span className="text-[11px] text-slate-500 block">
-                Nhận tối và trả trước trưa hôm sau (hoặc nhận rạng sáng)
+                Nhận tối và trả trước trưa hôm sau
               </span>
             </div>
 
