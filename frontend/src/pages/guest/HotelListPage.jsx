@@ -452,7 +452,7 @@ export default function HotelListPage() {
     return () => {
       isMounted = false;
     };
-  }, [searchParams, isAuthenticated, rentalType, checkInTime, hoursCount]);
+  }, [searchParams, isAuthenticated]);
 
   const updateUrlParams = (newParams) => {
     const current = Object.fromEntries(searchParams.entries());
@@ -463,7 +463,7 @@ export default function HotelListPage() {
     setSearchParams(updated);
   };
 
-  // 🌟 CHUYỂN TAB CHUẨN THỜI GIAN THỰC & KHÔNG CHỌN GIỜ Ở THEO NGÀY
+  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY (KHÔNG GIẬT TRANG)
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
@@ -497,7 +497,7 @@ export default function HotelListPage() {
     setIsCalendarOpen(true);
   };
 
-  // 🌟 TÍNH TOÁN DỰ KIẾN TRẢ PHÒNG CHUẨN GO2JOY
+  // 🌟 TÍNH TOÁN DỰ KIẾN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC (TỰ ĐỘNG SANG HÔM SAU NẾU QUA NỬA ĐÊM)
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -518,11 +518,9 @@ export default function HotelListPage() {
     }
 
     if (rentalType === "OVERNIGHT") {
-      // Nhận rạng sáng (00h - 06h): trả 11h sáng CÙNG NGÀY
       if ((inH || 0) >= 0 && (inH || 0) <= 6) {
         outDateTime = new Date(checkInDate);
       } else {
-        // Nhận ca tối (20h - 23h): trả 11h sáng NGÀY HÔM SAU
         outDateTime = addDays(new Date(checkInDate), 1);
       }
       outDateTime.setHours(11, 0, 0, 0);
@@ -681,27 +679,6 @@ export default function HotelListPage() {
         return false;
       if (selectedRating !== null && score < selectedRating) return false;
 
-      if (rentalType === "HOUR") {
-        const hStart = (hotel.hourly_start_time || "08:00").slice(0, 5);
-        const hEnd = (hotel.hourly_end_time || "22:00").slice(0, 5);
-        const inTime = (checkInTime || "12:00").slice(0, 5);
-
-        if (inTime < hStart || inTime > hEnd) {
-          return false;
-        }
-      }
-
-      if (rentalType === "OVERNIGHT") {
-        const oIn = (hotel.overnight_checkin_time || "22:00").slice(0, 5);
-        const inTime = (checkInTime || "22:00").slice(0, 5);
-        const inHourNum = parseInt(inTime.slice(0, 2), 10);
-        const oInHourNum = parseInt(oIn.slice(0, 2), 10);
-
-        if (inHourNum > 6 && inHourNum < oInHourNum) {
-          return false;
-        }
-      }
-
       return true;
     });
   }, [
@@ -713,7 +690,6 @@ export default function HotelListPage() {
     selectedStars,
     selectedRating,
     rentalType,
-    checkInTime,
   ]);
 
   const sortedHotels = useMemo(() => {
@@ -753,12 +729,10 @@ export default function HotelListPage() {
     },
   ];
 
-  // 🌟 KHÓA GIỜ THEO THỜI GIAN THỰC (REAL-TIME LOCK)
   const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
     const isToday = isSameDay(checkInDate, today);
 
-    // Nếu chọn ngày hôm nay: Khóa bất kỳ giờ nào nhỏ hơn hoặc bằng giờ hiện tại
     if (isToday) {
       if (hourNum <= currentRealHour) return true;
     }
@@ -916,7 +890,7 @@ export default function HotelListPage() {
                 </div>
               </div>
 
-              {/* 🌟 POPUP CHỌN GIỜ & PHÒNG 2 CỘT CHUẨN THỜI GIAN THỰC 🌟 */}
+              {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN GO2JOY (BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM) 🌟 */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
@@ -989,7 +963,7 @@ export default function HotelListPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 pt-1">
-                    {/* CỘT TRÁI: LỊCH THÁNG TRỰC QUAN */}
+                    {/* CỘT TRÁI: LỊCH THÁNG TRỰC QUAN (TỰ ĐỘNG BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM) */}
                     <div
                       className={`${rentalType === "DAY" ? "sm:col-span-7" : "sm:col-span-6"} space-y-2 border-r border-slate-100 pr-0 sm:pr-4`}
                     >
@@ -1049,15 +1023,19 @@ export default function HotelListPage() {
                           end: endOfMonth(calendarMonth),
                         }).map((dayItem) => {
                           const isPast = isBefore(dayItem, today);
-                          const isSelectedIn = isSameDay(dayItem, checkInDate);
-                          const isSelectedOut =
-                            rentalType === "DAY" &&
-                            isSameDay(dayItem, checkOutDate);
-                          const isInRange =
-                            rentalType === "DAY" &&
+
+                          // 🌟 TỰ ĐỘNG BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM CHUẨN GO2JOY
+                          const isStartDay = isSameDay(dayItem, checkInDate);
+                          const isEndDay =
+                            isSameDay(dayItem, durationSummary.outDateTime) &&
+                            !isSameDay(
+                              checkInDate,
+                              durationSummary.outDateTime,
+                            );
+                          const isInBetweenRange =
                             !isPast &&
                             isBefore(checkInDate, dayItem) &&
-                            isBefore(dayItem, checkOutDate);
+                            isBefore(dayItem, durationSummary.outDateTime);
 
                           return (
                             <button
@@ -1066,6 +1044,7 @@ export default function HotelListPage() {
                               disabled={isPast}
                               onClick={() => {
                                 if (rentalType === "DAY") {
+                                  // Theo ngày: Bấm lần 1 chọn nhận, lần 2 chọn trả
                                   if (
                                     isSameDay(dayItem, checkInDate) ||
                                     isBefore(dayItem, checkInDate)
@@ -1075,26 +1054,26 @@ export default function HotelListPage() {
                                   } else {
                                     setCheckOutDate(dayItem);
                                   }
-                                } else {
+                                } else if (rentalType === "OVERNIGHT") {
+                                  // Qua đêm: Bấm ngày nào tự động chọn ngày hôm sau
                                   setCheckInDate(dayItem);
-                                  if (
-                                    rentalType === "HOUR" ||
-                                    rentalType === "HALF_DAY"
-                                  ) {
-                                    setCheckOutDate(dayItem);
-                                  } else {
-                                    setCheckOutDate(addDays(dayItem, 1));
-                                  }
+                                  setCheckOutDate(addDays(dayItem, 1));
+                                } else {
+                                  // Theo giờ / Buổi
+                                  setCheckInDate(dayItem);
+                                  setCheckOutDate(dayItem);
                                 }
                               }}
-                              className={`h-7 w-full flex items-center justify-center rounded-xl font-bold text-[11px] transition cursor-pointer ${
+                              className={`h-7 w-full flex items-center justify-center font-bold text-[11px] transition cursor-pointer select-none ${
                                 isPast
                                   ? "text-slate-300 cursor-not-allowed"
-                                  : isSelectedIn || isSelectedOut
-                                    ? "bg-[#003580] text-white shadow-xs font-black"
-                                    : isInRange
-                                      ? "bg-blue-100 text-blue-900 font-bold"
-                                      : "hover:bg-blue-50 text-slate-800"
+                                  : isStartDay
+                                    ? "bg-[#003580] text-white font-black shadow-xs rounded-l-xl rounded-r-xs"
+                                    : isEndDay
+                                      ? "bg-[#003580] text-white font-black shadow-xs rounded-r-xl rounded-l-xs"
+                                      : isInBetweenRange
+                                        ? "bg-blue-100 text-blue-900 font-bold rounded-none"
+                                        : "hover:bg-blue-50 text-slate-800 rounded-xl"
                               }`}
                             >
                               {format(dayItem, "d")}
@@ -1108,7 +1087,7 @@ export default function HotelListPage() {
                     <div
                       className={`${rentalType === "DAY" ? "sm:col-span-5" : "sm:col-span-6"} space-y-3.5`}
                     >
-                      {/* 🌟 1. NẾU LÀ THEO NGÀY: KHÔNG CÓ CHỌN GIỜ 🌟 */}
+                      {/* 1. NẾU LÀ THEO NGÀY: TÓM TẮT THỜI GIAN */}
                       {rentalType === "DAY" ? (
                         <div className="space-y-3 pt-1">
                           <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1">
@@ -1133,7 +1112,7 @@ export default function HotelListPage() {
                           </div>
                         </div>
                       ) : rentalType === "OVERNIGHT" ? (
-                        /* 🌟 2. NẾU LÀ QUA ĐÊM: CHIA 2 CA SÁNG / TỐI 🌟 */
+                        /* 2. NẾU LÀ QUA ĐÊM: CHIA 2 CA SÁNG / TỐI */
                         <div className="space-y-3">
                           <div>
                             <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 mb-1.5">
@@ -1196,7 +1175,7 @@ export default function HotelListPage() {
                           </div>
                         </div>
                       ) : (
-                        /* 🌟 3. NẾU LÀ THEO GIỜ: MỞ 1 - 10 GIỜ 🌟 */
+                        /* 3. NẾU LÀ THEO GIỜ: MỞ 1 - 10 GIỜ */
                         <div className="space-y-3">
                           <div>
                             <div className="flex items-center justify-between mb-1.5">

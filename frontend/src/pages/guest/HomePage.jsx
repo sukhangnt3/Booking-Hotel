@@ -134,8 +134,6 @@ const safeFormatDate = (date, pattern = "dd/MM/yyyy") => {
 export default function HomePage() {
   const navigate = useNavigate();
   const today = useMemo(() => startOfToday(), []);
-
-  // Lấy giờ hiện tại theo thời gian thực
   const currentRealHour = useMemo(() => new Date().getHours(), []);
 
   const [trendingDestinations, setTrendingDestinations] = useState([]);
@@ -222,7 +220,7 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [destination]);
 
-  // 🌟 CHUYỂN TAB CHUẨN THỜI GIAN THỰC & KHÔNG CHỌN GIỜ Ở THEO NGÀY
+  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
@@ -230,7 +228,6 @@ export default function HomePage() {
       setHoursCount(2);
       setCheckOutDate(checkInDate);
     } else if (type === "DAY") {
-      // 🌟 THEO NGÀY: CỐ ĐỊNH 14:00 - 12:00, CHỈ CHỌN NGÀY
       setCheckInTime("14:00");
       setCheckOutTime("12:00");
       if (
@@ -240,7 +237,6 @@ export default function HomePage() {
         setCheckOutDate(addDays(checkInDate, 1));
       }
     } else if (type === "OVERNIGHT") {
-      // 🌟 QUA ĐÊM: Mặc định chọn ca tối 22:00
       setCheckInTime("22:00");
       setCheckOutTime("11:00");
       setCheckOutDate(addDays(checkInDate, 1));
@@ -251,7 +247,7 @@ export default function HomePage() {
     }
   };
 
-  // 🌟 TÍNH TOÁN THỜI GIAN TRẢ PHÒNG THEO CHUẨN GO2JOY
+  // 🌟 TÍNH TOÁN THỜI GIAN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC (TỰ ĐỘNG SANG HÔM SAU NẾU QUA NỬA ĐÊM)
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -260,7 +256,7 @@ export default function HomePage() {
     let outDateTime = new Date(checkOutDate);
     let outTimeStr = checkOutTime;
 
-    // 1. THEO GIỜ
+    // 1. THEO GIỜ (VÍ DỤ 22H + 2 TIẾNG = 00:00 NGÀY 27/09)
     if (rentalType === "HOUR") {
       outDateTime = addHours(inDateTime, hoursCount);
       outTimeStr = `${String(outDateTime.getHours()).padStart(2, "0")}:${String(outDateTime.getMinutes()).padStart(2, "0")}`;
@@ -272,13 +268,11 @@ export default function HomePage() {
       };
     }
 
-    // 2. QUA ĐÊM
+    // 2. QUA ĐÊM (CHIA 2 CA SÁNG / TỐI CHUẨN GO2JOY)
     if (rentalType === "OVERNIGHT") {
-      // Nếu nhận phòng ca rạng sáng (00h - 06h): Trả phòng vào 11h sáng CÙNG NGÀY hôm đó!
       if ((inH || 0) >= 0 && (inH || 0) <= 6) {
         outDateTime = new Date(checkInDate);
       } else {
-        // Nhận phòng ca tối (20h - 23h): Trả phòng vào 11h sáng NGÀY HÔM SAU!
         outDateTime = addDays(new Date(checkInDate), 1);
       }
       outDateTime.setHours(11, 0, 0, 0);
@@ -302,7 +296,7 @@ export default function HomePage() {
       };
     }
 
-    // 4. THEO NGÀY (CHỈ ĐẾM NGÀY/ĐÊM)
+    // 4. THEO NGÀY
     const diffDays = Math.max(1, differenceInDays(checkOutDate, checkInDate));
     outDateTime = new Date(checkOutDate);
     outDateTime.setHours(12, 0, 0, 0);
@@ -420,12 +414,10 @@ export default function HomePage() {
     navigate(`/hotels?${query.toString()}`);
   };
 
-  // 🌟 KHÓA GIỜ THEO THỜI GIAN THỰC (REAL-TIME LOCK)
-  const isTimeSlotDisabled = (timeStr, mode = "normal") => {
+  const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
     const isToday = isSameDay(checkInDate, today);
 
-    // Nếu chọn ngày hôm nay: Khóa bất kỳ giờ nào nhỏ hơn hoặc bằng giờ hiện tại
     if (isToday) {
       if (hourNum <= currentRealHour) return true;
     }
@@ -433,13 +425,10 @@ export default function HomePage() {
     return false;
   };
 
-  // Mảng 24 giờ cho Theo Giờ
   const ALL_HOURS = Array.from(
     { length: 24 },
     (_, i) => `${String(i).padStart(2, "0")}:00`,
   );
-
-  // Phân chia 2 ca chuẩn Go2Joy cho Qua Đêm
   const OVERNIGHT_MORNING_HOURS = [
     "00:00",
     "01:00",
@@ -450,8 +439,6 @@ export default function HomePage() {
     "06:00",
   ];
   const OVERNIGHT_EVENING_HOURS = ["20:00", "21:00", "22:00", "23:00"];
-
-  // 🌟 MẢNG TỪ 1 ĐẾN 10 GIỜ CHO THUÊ THEO GIỜ
   const HOURLY_DURATIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   const cardTranslatePercentage = 100 / visibleCount;
@@ -658,7 +645,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN THỜI GIAN THỰC 🌟 */}
+                    {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN GO2JOY (BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM) 🌟 */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
@@ -734,7 +721,7 @@ export default function HomePage() {
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 pt-1">
-                          {/* CỘT TRÁI: LỊCH THÁNG TRỰC QUAN */}
+                          {/* CỘT TRÁI: LỊCH THÁNG TRỰC QUAN (TỰ ĐỘNG BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM) */}
                           <div
                             className={`${rentalType === "DAY" ? "sm:col-span-7" : "sm:col-span-6"} space-y-2 border-r border-slate-100 pr-0 sm:pr-4`}
                           >
@@ -794,18 +781,28 @@ export default function HomePage() {
                                 end: endOfMonth(calendarMonth),
                               }).map((dayItem) => {
                                 const isPast = isBefore(dayItem, today);
-                                const isSelectedIn = isSameDay(
+
+                                // 🌟 TỰ ĐỘNG BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM CHUẨN GO2JOY
+                                const isStartDay = isSameDay(
                                   dayItem,
                                   checkInDate,
                                 );
-                                const isSelectedOut =
-                                  rentalType === "DAY" &&
-                                  isSameDay(dayItem, checkOutDate);
-                                const isInRange =
-                                  rentalType === "DAY" &&
+                                const isEndDay =
+                                  isSameDay(
+                                    dayItem,
+                                    durationSummary.outDateTime,
+                                  ) &&
+                                  !isSameDay(
+                                    checkInDate,
+                                    durationSummary.outDateTime,
+                                  );
+                                const isInBetweenRange =
                                   !isPast &&
                                   isBefore(checkInDate, dayItem) &&
-                                  isBefore(dayItem, checkOutDate);
+                                  isBefore(
+                                    dayItem,
+                                    durationSummary.outDateTime,
+                                  );
 
                                 return (
                                   <button
@@ -814,7 +811,7 @@ export default function HomePage() {
                                     disabled={isPast}
                                     onClick={() => {
                                       if (rentalType === "DAY") {
-                                        // Chọn khoảng ngày cho thuê theo ngày
+                                        // Theo ngày: Bấm lần 1 chọn nhận, lần 2 chọn trả
                                         if (
                                           isSameDay(dayItem, checkInDate) ||
                                           isBefore(dayItem, checkInDate)
@@ -824,27 +821,26 @@ export default function HomePage() {
                                         } else {
                                           setCheckOutDate(dayItem);
                                         }
-                                      } else {
-                                        // Các hình thức khác
+                                      } else if (rentalType === "OVERNIGHT") {
+                                        // Qua đêm: Bấm ngày nào tự động chọn ngày hôm sau
                                         setCheckInDate(dayItem);
-                                        if (
-                                          rentalType === "HOUR" ||
-                                          rentalType === "HALF_DAY"
-                                        ) {
-                                          setCheckOutDate(dayItem);
-                                        } else {
-                                          setCheckOutDate(addDays(dayItem, 1));
-                                        }
+                                        setCheckOutDate(addDays(dayItem, 1));
+                                      } else {
+                                        // Theo giờ / Buổi
+                                        setCheckInDate(dayItem);
+                                        setCheckOutDate(dayItem);
                                       }
                                     }}
-                                    className={`h-7 w-full flex items-center justify-center rounded-xl font-bold text-[11px] transition cursor-pointer ${
+                                    className={`h-7 w-full flex items-center justify-center font-bold text-[11px] transition cursor-pointer select-none ${
                                       isPast
                                         ? "text-slate-300 cursor-not-allowed"
-                                        : isSelectedIn || isSelectedOut
-                                          ? "bg-[#003580] text-white shadow-xs font-black"
-                                          : isInRange
-                                            ? "bg-blue-100 text-blue-900 font-bold"
-                                            : "hover:bg-blue-50 text-slate-800"
+                                        : isStartDay
+                                          ? "bg-[#003580] text-white font-black shadow-xs rounded-l-xl rounded-r-xs"
+                                          : isEndDay
+                                            ? "bg-[#003580] text-white font-black shadow-xs rounded-r-xl rounded-l-xs"
+                                            : isInBetweenRange
+                                              ? "bg-blue-100 text-blue-900 font-bold rounded-none"
+                                              : "hover:bg-blue-50 text-slate-800 rounded-xl"
                                     }`}
                                   >
                                     {format(dayItem, "d")}
@@ -858,7 +854,7 @@ export default function HomePage() {
                           <div
                             className={`${rentalType === "DAY" ? "sm:col-span-5" : "sm:col-span-6"} space-y-3.5`}
                           >
-                            {/* 🌟 1. NẾU LÀ THEO NGÀY: KHÔNG CÓ CHỌN GIỜ, CHỈ HIỂN THỊ TÓM TẮT & KHÁCH PHÒNG */}
+                            {/* 1. NẾU LÀ THEO NGÀY: TÓM TẮT THỜI GIAN */}
                             {rentalType === "DAY" ? (
                               <div className="space-y-3 pt-1">
                                 <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs space-y-1">
@@ -889,9 +885,8 @@ export default function HomePage() {
                                 </div>
                               </div>
                             ) : rentalType === "OVERNIGHT" ? (
-                              /* 🌟 2. NẾU LÀ QUA ĐÊM: CHIA 2 CA SÁNG / TỐI CHUẨN GO2JOY */
+                              /* 2. NẾU LÀ QUA ĐÊM: CHIA 2 CA SÁNG / TỐI */
                               <div className="space-y-3">
-                                {/* Ca Tối */}
                                 <div>
                                   <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 mb-1.5">
                                     <Moon
@@ -925,7 +920,6 @@ export default function HomePage() {
                                   </div>
                                 </div>
 
-                                {/* Ca Rạng Sáng */}
                                 <div>
                                   <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 mb-1.5">
                                     <Sun size={13} className="text-amber-500" />
@@ -959,7 +953,7 @@ export default function HomePage() {
                                 </div>
                               </div>
                             ) : (
-                              /* 🌟 3. NẾU LÀ THEO GIỜ: MỞ 1 - 10 GIỜ VÀ 24 KHUNG GIỜ */
+                              /* 3. NẾU LÀ THEO GIỜ: MỞ 1 - 10 GIỜ */
                               <div className="space-y-3">
                                 <div>
                                   <div className="flex items-center justify-between mb-1.5">
@@ -995,7 +989,6 @@ export default function HomePage() {
                                   </div>
                                 </div>
 
-                                {/* SỐ GIỜ SỬ DỤNG: TỪ 1 ĐẾN 10 GIỜ */}
                                 <div>
                                   <label className="text-xs font-black text-slate-800 block mb-1.5">
                                     Số giờ sử dụng (1 - 10 giờ)
