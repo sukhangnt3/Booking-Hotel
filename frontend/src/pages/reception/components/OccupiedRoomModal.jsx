@@ -11,10 +11,12 @@ import {
   CheckCircle2,
   X,
   Receipt,
+  Sunrise,
+  Sunset,
 } from "lucide-react";
 import apiClient from "@/services/apiClient";
 
-// 🌟 HÀM BÓC TÁCH NGÀY CHUẨN XÁC: TỰ ĐỘNG CỘNG LẠI MÚI GIỜ ĐỊA PHƯƠNG CHỐNG TỤT VỀ NGÀY HÔM QUA
+// Hàm bóc tách ngày chuẩn địa phương YYYY-MM-DD
 const parseLocalDateString = (val) => {
   if (!val) {
     const now = new Date();
@@ -82,13 +84,10 @@ export default function OccupiedRoomModal({
 
   const now = new Date();
 
-  // 🌟 ĐÃ SỬA: LUÔN GHÉP NGÀY + GIỜ NHẬN (18:00) - KHÔNG BAO GIỜ BỊ NHẢY VỀ 7H SÁNG
+  // 1. TÍNH TOÁN THỜI GIAN THỰC TẾ ĐÃ LƯU TRÚ
   const actualStayDuration = useMemo(() => {
     let checkinTime = null;
-
-    // 1. Luôn lấy 10 ký tự đầu YYYY-MM-DD
     const datePart = String(b.checkin_date || "").slice(0, 10);
-    // 2. Lấy đúng giờ nhận phòng (vd: "18:00")
     const timePart = b.checkin_time
       ? String(b.checkin_time).slice(0, 5)
       : "14:00";
@@ -118,62 +117,109 @@ export default function OccupiedRoomModal({
     return `${days} ngày`;
   }, [b, now]);
 
-  // 🌟 TÍNH CHÍNH XÁC GIỜ TRẢ DỰ KIẾN: KHÔNG BAO GIỜ BỊ LỆCH MÚI GIỜ VỀ NGÀY HÔM QUA
-  const scheduledCheckout = useMemo(() => {
+  // 2. 🌟 TÍNH TOÁN PHỤ THU: TÁCH BIỆT RÕ RÀNG NHẬN SỚM VÀ TRẢ MUỘN 🌟
+  const surchargeDetails = useMemo(() => {
     const isHourly = b.rental_type === "HOUR" || b.rental_type === "Giờ";
+    const isOvernight =
+      b.rental_type === "OVERNIGHT" || b.rental_type === "Đêm";
+
+    // ─── A. PHỤ THU NHẬN SỚM (EARLY CHECK-IN) ───
+    let earlyHours = 0;
+    let earlyFee = 0;
+    let earlyLabel = "";
+
+    if (!isHourly) {
+      const inDateStr = parseLocalDateString(
+        b.checkin_date || b.confirmed_at || b.created_at,
+      );
+      const standardInTimeStr = isOvernight ? "22:00" : "14:00";
+      const standardCheckinDate = new Date(
+        `${inDateStr}T${standardInTimeStr}:00`,
+      );
+
+      let actualCheckinDate = null;
+      if (b.checkin_time) {
+        actualCheckinDate = new Date(
+          `${inDateStr}T${String(b.checkin_time).slice(0, 5)}:00`,
+        );
+      } else if (b.confirmed_at) {
+        actualCheckinDate = new Date(b.confirmed_at);
+      }
+
+      if (
+        actualCheckinDate &&
+        !isNaN(actualCheckinDate.getTime()) &&
+        actualCheckinDate < standardCheckinDate
+      ) {
+        const diffEarlyMs =
+          standardCheckinDate.getTime() - actualCheckinDate.getTime();
+        const diffEarlyMins = Math.floor(diffEarlyMs / 60000);
+
+        if (diffEarlyMins > 15) {
+          // Quá 15 phút ân hạn mới tính
+          earlyHours = Math.ceil(diffEarlyMins / 60);
+          earlyFee = earlyHours * hourlyRate;
+          earlyLabel = `Nhận sớm ${earlyHours} giờ (Quy định: ${standardInTimeStr})`;
+        }
+      }
+    }
+
+    // ─── B. PHỤ THU TRẢ MUỘN (LATE CHECK-OUT) ───
+    let lateHours = 0;
+    let lateFee = 0;
+    let lateLabel = "";
+
+    let scheduledCheckoutDate = null;
 
     if (isHourly) {
       const inDStr = parseLocalDateString(
         b.checkin_date || b.confirmed_at || b.created_at,
       );
-      let inTStr = "14:00";
-      if (b.checkin_time) {
-        inTStr = String(b.checkin_time).slice(0, 5);
-      } else if (b.confirmed_at) {
-        const d = new Date(b.confirmed_at);
-        inTStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      }
-
+      const inTStr = b.checkin_time
+        ? String(b.checkin_time).slice(0, 5)
+        : "14:00";
       const inDateObj = new Date(`${inDStr}T${inTStr}:00`);
       let hoursToAdd = 1;
       if (b.stay_duration) {
         const m = String(b.stay_duration).match(/(\d+)\s*gi/);
         if (m) hoursToAdd = Number(m[1]);
       }
+      scheduledCheckoutDate = new Date(
+        inDateObj.getTime() + hoursToAdd * 3600000,
+      );
+    } else {
+      const outDStr = parseLocalDateString(b.checkout_date);
+      const outTStr = b.checkout_time
+        ? String(b.checkout_time).slice(0, 5)
+        : "12:00";
+      scheduledCheckoutDate = new Date(`${outDStr}T${outTStr}:00`);
+    }
 
-      if (!isNaN(inDateObj.getTime())) {
-        return new Date(inDateObj.getTime() + hoursToAdd * 3600000);
+    if (scheduledCheckoutDate && !isNaN(scheduledCheckoutDate.getTime())) {
+      const diffLateMs = now.getTime() - scheduledCheckoutDate.getTime();
+      const diffLateMins = Math.floor(diffLateMs / 60000);
+
+      if (diffLateMins > 15) {
+        // Quá 15 phút ân hạn mới tính
+        lateHours = Math.ceil(diffLateMins / 60);
+        lateFee = lateHours * hourlyRate;
+        lateLabel = `Quá giờ ${diffLateMins} phút (${lateHours} giờ x ${hourlyRate.toLocaleString("vi-VN")} ₫)`;
       }
     }
 
-    const outDStr = parseLocalDateString(b.checkout_date);
-    let outTStr = "12:00";
-    if (b.checkout_time) {
-      outTStr = String(b.checkout_time).slice(0, 5);
-    }
-
-    const d = new Date(`${outDStr}T${outTStr}:00`);
-    return !isNaN(d.getTime()) ? d : new Date(now.getTime() + 3600000);
-  }, [b, now]);
-
-  // CHỈ TÍNH QUÁ HẠN KHI GIỜ HIỆN TẠI THỰC SỰ VƯỢT QUÁ GIỜ TRẢ DỰ KIẾN TRÊN 15 PHÚT
-  const diffLateMs = now.getTime() - scheduledCheckout.getTime();
-  const lateMinutes = Math.max(0, Math.floor(diffLateMs / 60000));
-
-  let overtimeHours = 0;
-  let overtimeFee = 0;
-  let overtimeLabel = "";
-  let overtimeDisplayTime = "0 giờ";
-
-  if (lateMinutes > 15) {
-    overtimeHours = Math.ceil(lateMinutes / 60);
-    overtimeFee = overtimeHours * hourlyRate;
-    overtimeDisplayTime = `${overtimeHours} giờ`;
-    overtimeLabel = `Quá ${lateMinutes} phút (${overtimeHours} giờ x ${formatVND(hourlyRate)})`;
-  }
+    return {
+      earlyHours,
+      earlyFee,
+      earlyLabel,
+      lateHours,
+      lateFee,
+      lateLabel,
+      totalExtraFee: earlyFee + lateFee,
+    };
+  }, [b, now, hourlyRate]);
 
   const baseRoomPrice = Number(b.total_price || room.daily_price || 162500);
-  const totalBill = baseRoomPrice + overtimeFee;
+  const totalBill = baseRoomPrice + surchargeDetails.totalExtraFee;
 
   const isWalkInGuest =
     String(b.code || b.booking_code || "").startsWith("DP") ||
@@ -197,13 +243,21 @@ export default function OccupiedRoomModal({
 
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
   const [paymentMethod, setPaymentMethod] = useState("Tiền mặt");
-  const [note, setNote] = useState(
-    overtimeLabel ? `Phụ thu: ${overtimeLabel}` : "",
-  );
+
+  // Ghi chú chi tiết tự động tách dòng
+  const autoNote = useMemo(() => {
+    const notes = [];
+    if (surchargeDetails.earlyFee > 0) notes.push(surchargeDetails.earlyLabel);
+    if (surchargeDetails.lateFee > 0) notes.push(surchargeDetails.lateLabel);
+    return notes.join(" | ");
+  }, [surchargeDetails]);
+
+  const [note, setNote] = useState(autoNote);
 
   useEffect(() => {
     setGuestPayment(remainingAmount);
-  }, [remainingAmount]);
+    setNote(autoNote);
+  }, [remainingAmount, autoNote]);
 
   const currentDateStr = `${String(now.getDate()).padStart(2, "0")}/${String(
     now.getMonth() + 1,
@@ -220,7 +274,8 @@ export default function OccupiedRoomModal({
     try {
       if (onCheckOut) {
         await onCheckOut(currentBookingCode, {
-          overtimeFee: overtimeFee,
+          earlyFee: surchargeDetails.earlyFee,
+          overtimeFee: surchargeDetails.lateFee,
           totalBill: totalBill,
           paidAmount: remainingAmount === 0 ? 0 : guestPayment,
           paymentMethod: paymentMethod,
@@ -290,17 +345,17 @@ export default function OccupiedRoomModal({
 
         {/* NỘI DUNG TÍNH TIỀN */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1 bg-white">
-          {/* CỘT TRÁI: BẢNG TIỀN PHÒNG */}
+          {/* CỘT TRÁI: BẢNG CHI TIẾT CÁC KHOẢN TIỀN (GỒM TIỀN PHÒNG, NHẬN SỚM, TRẢ MUỘN) */}
           <div className="lg:col-span-7 space-y-4">
             <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 border-b border-gray-200 text-xs font-bold uppercase tracking-wider">
                     <th className="py-3 px-4 whitespace-nowrap">
-                      Thông tin phòng / Dịch vụ
+                      Thông tin phòng / Phụ thu phát sinh
                     </th>
                     <th className="py-3 px-4 text-center whitespace-nowrap">
-                      Thời gian đã ở
+                      Thời gian
                     </th>
                     <th className="py-3 px-4 text-right whitespace-nowrap">
                       Đơn giá
@@ -311,6 +366,7 @@ export default function OccupiedRoomModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-xs">
+                  {/* 1. TIỀN PHÒNG GỐC */}
                   <tr className="hover:bg-blue-50/40 transition">
                     <td className="py-3 px-4 whitespace-nowrap">
                       <div className="font-bold text-gray-900 text-xs">
@@ -320,9 +376,8 @@ export default function OccupiedRoomModal({
                         <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-100 font-bold text-[10px] text-[#003580]">
                           Phòng {room.room_number}
                         </span>
-
                         <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[#003580] font-bold text-[10px]">
-                          Đang sử dụng phòng
+                          Tiền phòng lưu trú
                         </span>
                       </div>
                     </td>
@@ -337,28 +392,56 @@ export default function OccupiedRoomModal({
                     </td>
                   </tr>
 
-                  {overtimeFee > 0 && (
-                    <tr className="bg-amber-50/60 text-amber-950 border-t border-amber-200">
+                  {/* 2. 🌟 DÒNG PHỤ THU NHẬN SỚM (NẾU CÓ) 🌟 */}
+                  {surchargeDetails.earlyFee > 0 && (
+                    <tr className="bg-amber-50/50 text-amber-950 border-t border-amber-200">
                       <td className="py-3 px-4 whitespace-nowrap">
                         <div className="font-bold text-xs flex items-center gap-1.5 text-amber-900">
-                          <AlertTriangle
-                            size={14}
+                          <Sunrise
+                            size={15}
                             className="text-amber-600 shrink-0"
                           />
-                          Phụ thu trả phòng muộn (Quá giờ)
+                          Phụ thu nhận phòng sớm
                         </div>
                         <div className="text-[10px] text-amber-700 mt-0.5 font-medium">
-                          {overtimeLabel}
+                          {surchargeDetails.earlyLabel}
                         </div>
                       </td>
                       <td className="py-3 px-4 text-center font-bold text-amber-900 whitespace-nowrap">
-                        {overtimeDisplayTime}
+                        {surchargeDetails.earlyHours} giờ
                       </td>
                       <td className="py-3 px-4 text-right font-medium text-amber-800 tabular-nums whitespace-nowrap">
                         {formatVND(hourlyRate)}
                       </td>
                       <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap">
-                        +{formatVND(overtimeFee)}
+                        +{formatVND(surchargeDetails.earlyFee)}
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* 3. 🌟 DÒNG PHỤ THU TRẢ MUỘN (NẾU CÓ) 🌟 */}
+                  {surchargeDetails.lateFee > 0 && (
+                    <tr className="bg-orange-50/50 text-orange-950 border-t border-orange-200">
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <div className="font-bold text-xs flex items-center gap-1.5 text-orange-900">
+                          <Sunset
+                            size={15}
+                            className="text-orange-600 shrink-0"
+                          />
+                          Phụ thu trả phòng muộn (Quá giờ)
+                        </div>
+                        <div className="text-[10px] text-orange-700 mt-0.5 font-medium">
+                          {surchargeDetails.lateLabel}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center font-bold text-orange-900 whitespace-nowrap">
+                        {surchargeDetails.lateHours} giờ
+                      </td>
+                      <td className="py-3 px-4 text-right font-medium text-orange-800 tabular-nums whitespace-nowrap">
+                        {formatVND(hourlyRate)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap">
+                        +{formatVND(surchargeDetails.lateFee)}
                       </td>
                     </tr>
                   )}
@@ -367,7 +450,7 @@ export default function OccupiedRoomModal({
             </div>
           </div>
 
-          {/* CỘT PHẢI: QUYẾT TOÁN TIỀN */}
+          {/* CỘT PHẢI: QUYẾT TOÁN TIỀN MINH BẠCH */}
           <div className="lg:col-span-5 border-l border-gray-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-gray-600 font-bold border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 text-xs">
@@ -379,28 +462,39 @@ export default function OccupiedRoomModal({
 
             <div className="space-y-2.5 pt-2 border-t border-gray-100">
               <div className="flex justify-between items-center text-gray-600 font-medium">
-                <span className="whitespace-nowrap">
-                  Tiền phòng (Tổng đơn):
-                </span>
+                <span className="whitespace-nowrap">Tiền phòng gốc:</span>
                 <span className="font-bold text-gray-900 tabular-nums whitespace-nowrap">
                   {formatVND(baseRoomPrice)}
                 </span>
               </div>
 
-              {overtimeFee > 0 && (
+              {surchargeDetails.earlyFee > 0 && (
                 <div className="flex justify-between items-center text-amber-800 font-medium">
-                  <span className="whitespace-nowrap">Phụ thu trả muộn:</span>
-                  <span className="font-bold tabular-nums whitespace-nowrap">
-                    +{formatVND(overtimeFee)}
+                  <span className="whitespace-nowrap">
+                    Phụ thu nhận sớm ({surchargeDetails.earlyHours}h):
+                  </span>
+                  <span className="font-bold tabular-nums whitespace-nowrap text-rose-600">
+                    +{formatVND(surchargeDetails.earlyFee)}
                   </span>
                 </div>
               )}
 
-              <div className="flex justify-between items-center text-gray-700 font-bold">
+              {surchargeDetails.lateFee > 0 && (
+                <div className="flex justify-between items-center text-orange-800 font-medium">
+                  <span className="whitespace-nowrap">
+                    Phụ thu trả muộn ({surchargeDetails.lateHours}h):
+                  </span>
+                  <span className="font-bold tabular-nums whitespace-nowrap text-rose-600">
+                    +{formatVND(surchargeDetails.lateFee)}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center text-gray-700 font-bold border-t border-gray-100 pt-2">
                 <span className="whitespace-nowrap">
-                  Tổng hoá đơn quyết toán:
+                  Tổng hoá đơn thanh toán:
                 </span>
-                <span className="font-black text-[#0a2540] tabular-nums whitespace-nowrap">
+                <span className="font-black text-[#0a2540] text-sm tabular-nums whitespace-nowrap">
                   {formatVND(totalBill)}
                 </span>
               </div>
@@ -422,7 +516,7 @@ export default function OccupiedRoomModal({
                   <span className="text-[10px] text-amber-800 font-medium">
                     {remainingAmount === 0
                       ? "(Hóa đơn đã thanh toán đủ 100%)"
-                      : "(Khách thanh toán nốt tiền phòng / phụ phí)"}
+                      : "(Bao gồm tiền phòng còn lại + phụ phí)"}
                   </span>
                 </div>
                 <span className="font-black text-base text-rose-600 tabular-nums whitespace-nowrap">
