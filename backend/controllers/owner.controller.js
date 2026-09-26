@@ -35,6 +35,7 @@ const bcrypt = safeRequire("bcryptjs") || safeRequire("bcrypt");
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC DEFAULT 0;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS guest_declarations jsonb DEFAULT '[]'::jsonb;
       ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMP WITHOUT TIME ZONE;
+      ALTER TABLE public.booking ADD COLUMN IF NOT EXISTS service_total NUMERIC DEFAULT 0;
 
       -- 2. Cột giờ & thông số định vị cho bảng hotel (Cơ sở lưu trú)
       ALTER TABLE public.hotel ADD COLUMN IF NOT EXISTS checkin_time TIME WITHOUT TIME ZONE DEFAULT '14:00:00';
@@ -147,7 +148,7 @@ function resolveDateRange(range) {
   );
 }
 
-// ─── 1. THỐNG KÊ DASHBOARD (ĐÃ TÍNH CHUẨN CÔNG SUẤT THEO KHU VỰC / TẦNG) ───
+// ─── 1. THỐNG KÊ DASHBOARD ───
 async function getOwnerStats(req, res, next) {
   try {
     const ownerId =
@@ -318,7 +319,6 @@ async function getOwnerStats(req, res, next) {
         occParams,
       ),
 
-      // 🌟 ĐÃ SỬA CÂU QUERY: NỐI ROOM_UNIT VỚI BOOKING ĐỂ TÍNH ĐÚNG CÔNG SUẤT THEO TẦNG / KHU VỰC
       pool.query(
         `
         SELECT 
@@ -440,7 +440,6 @@ async function getOwnerStats(req, res, next) {
       };
     });
 
-    // 🌟 TÍNH CÔNG SUẤT THỰC TẾ CHO TỪNG TẦNG / KHU VỰC
     const byArea = areaRes.rows.map((a) => {
       const cap = Number(a.total_units || 1) * occDates.dayCount;
       const bCount = Number(a.total_bookings || 0);
@@ -605,7 +604,7 @@ async function getOwnerBookings(req, res) {
   }
 }
 
-// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN (HỖ TRỢ ĐỦ 3 HÌNH THỨC: GIỜ, ĐÊM, NGÀY) ───
+// ─── 3. SƠ ĐỒ PHÒNG LỄ TÂN ───
 async function getRoomMapData(req, res) {
   try {
     const { hotel_id: hotelId } = req.query;
@@ -790,7 +789,6 @@ async function getRoomMapData(req, res) {
           checkout_date: outDate,
           checkin_time: inTime,
           checkout_time: outTime,
-          // 🌟 BỔ SUNG TRƯỜNG confirmed_at VÀ created_at ĐỂ THẺ PHÒNG KHỚP GIỜ TỪNG GIÂY
           confirmed_at: match.confirmed_at,
           created_at: match.created_at,
           rental_type: match.rental_type,
@@ -936,7 +934,7 @@ async function confirmAndAssignRoom(req, res) {
   }
 }
 
-// ─── 5. ĐẶT PHÒNG TẠI QUẦY (ĐÃ DỌN SẠCH BUỔI) ───
+// ─── 5. ĐẶT PHÒNG TẠI QUẦY ───
 async function createWalkInBooking(req, res) {
   const client = await pool.connect();
   try {
@@ -1242,18 +1240,12 @@ async function handleOwnerCheckIn(req, res) {
   }
 }
 
-// ─── 7. TRẢ PHÒNG ───
+// ─── 7. TRẢ PHÒNG (CHUẨN BOOKING.COM: KHÔNG ĐÁNH HOA HỒNG TRÊN PHỤ PHÍ NỘI BỘ) ───
 async function handleOwnerCheckOut(req, res) {
   const client = await pool.connect();
   try {
     const bookingId = req.params.id;
-    const {
-      late_fee = 0,
-      minibar_fee = 0,
-      other_fee = 0,
-      total_price,
-      paid_amount,
-    } = req.body || {};
+    const { late_fee = 0, minibar_fee = 0, other_fee = 0 } = req.body || {};
 
     await client.query("BEGIN");
 
@@ -1272,21 +1264,20 @@ async function handleOwnerCheckOut(req, res) {
     const overtimeFee = Number(late_fee || 0);
     const extraTotal =
       overtimeFee + Number(minibar_fee || 0) + Number(other_fee || 0);
-    const finalTotalPrice = total_price
-      ? Number(total_price)
-      : Number(booking.total_price || 0) + extraTotal;
 
+    // 🌟 CHUẨN QUY TẮC OTA:
+    // 1. total_price (tiền phòng gốc) ĐƯỢC GIỮ NGUYÊN để Admin chỉ ăn 18% hoa hồng trên tiền phòng.
+    // 2. Phụ phí nội bộ (minibar, trễ giờ) lưu vào cột service_total để khách sạn hưởng trọn 100%.
     const updateRes = await client.query(
       `
       UPDATE public.booking 
       SET status = 'checked_out'::public.booking_status_enum, 
           payment_status = 'paid'::public.booking_payment_status_enum,
-          total_price = $1::numeric,
-          subtotal = $1::numeric,
+          service_total = $1::numeric,
           updated_at = NOW()
       WHERE id = $2 RETURNING *
     `,
-      [finalTotalPrice, booking.id],
+      [extraTotal, booking.id],
     );
 
     if (booking.room_number && booking.hotel_id) {
@@ -1301,16 +1292,9 @@ async function handleOwnerCheckOut(req, res) {
 
     await client.query("COMMIT");
 
-    pool
-      .query(
-        `UPDATE public.payment SET paid_amount = $1::numeric, status = 'paid', updated_at = NOW() WHERE booking_id = $2`,
-        [finalTotalPrice, booking.id],
-      )
-      .catch(() => {});
-
     return res.json({
       success: true,
-      message: `✓ Trả phòng ${booking.room_number} thành công!`,
+      message: `✓ Trả phòng ${booking.room_number} thành công! Phụ phí ${extraTotal.toLocaleString("vi-VN")} ₫ được giữ lại 100% cho chỗ nghỉ.`,
       booking: updateRes.rows[0],
     });
   } catch (error) {
