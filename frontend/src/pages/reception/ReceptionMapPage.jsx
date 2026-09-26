@@ -129,7 +129,7 @@ const formatStayTimeRange = (b) => {
   return `${inDate}, ${inTime} - ${outDate}, ${outTime}`;
 };
 
-// 🌟 ĐÃ SỬA: BỎ TOÀN BỘ NGÀY CỨNG 19/09/2026, LẤY ĐÚNG THỜI GIAN THỰC CỦA ĐƠN
+// Đếm ngược thời gian nhận phòng theo thời gian thực
 const getCheckinCountdownText = (checkinDateStr, checkinTimeStr) => {
   if (!checkinDateStr) return "Sắp đến nhận phòng";
   const now = new Date();
@@ -241,6 +241,7 @@ export default function ReceptionMapPage() {
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN");
 
+  // 🌟 TÍNH TIỀN CHUẨN 3 HÌNH THỨC: GIỜ | ĐÊM | NGÀY (ĐÃ DỌN SẠCH BUỔI)
   const calculateDurationAndPrice = (
     checkinStr,
     checkoutStr,
@@ -264,12 +265,6 @@ export default function ReceptionMapPage() {
       price =
         Number(roomInfo.overnight_price || roomInfo.daily_price || 0) *
         diffDays;
-    } else if (rentalType === "Buổi" || rentalType === "HALF_DAY") {
-      durationLabel = "1 buổi";
-      price = Number(
-        roomInfo.half_day_price ||
-          Math.round(Number(roomInfo.daily_price || 0) * 0.8),
-      );
     } else {
       durationLabel = `${diffDays} ngày`;
       price = Number(roomInfo.daily_price || 0) * diffDays;
@@ -494,7 +489,6 @@ export default function ReceptionMapPage() {
     }
   };
 
-  // XÁC ĐỊNH CHUẨN SỐ TIỀN KHÁCH ĐÃ TRẢ THỰC TẾ
   const handleRoomCardClick = (room) => {
     const b = room.booking;
     const totalP = Number(b?.total_price || room.daily_price || 0);

@@ -260,14 +260,10 @@ export default function QuickBookingModal({
         0,
         5,
       ),
-      halfdayIn: String(firstRoom.halfday_checkin_time || "12:00").slice(0, 5),
-      halfdayOut: String(firstRoom.halfday_checkout_time || "21:00").slice(
-        0,
-        5,
-      ),
     };
   }, [rooms]);
 
+  // 🌟 ĐÃ BỎ BUỔI: CHỈ CÒN GIỜ, ĐÊM, NGÀY
   const getDefaultDatesForType = (rentalType, checkinMode = "Hiện tại") => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
@@ -277,21 +273,6 @@ export default function QuickBookingModal({
       return {
         checkin: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`,
         checkout: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`,
-      };
-    }
-
-    if (rentalType === "Buổi") {
-      const start = new Date(now);
-      if (checkinMode === "Quy định") {
-        const [h, m] = hotelPolicies.halfdayIn.split(":").map(Number);
-        start.setHours(h || 12, m || 0, 0, 0);
-      }
-      const end = new Date(start);
-      const [outH, outM] = hotelPolicies.halfdayOut.split(":").map(Number);
-      end.setHours(outH || 21, outM || 0, 0, 0);
-      return {
-        checkin: toStandardISO(start),
-        checkout: toStandardISO(end),
       };
     }
 
@@ -355,9 +336,6 @@ export default function QuickBookingModal({
     const hourlyPrice = Number(
       roomInfo?.hourly_price || Math.round(basePrice * 0.25) || 100000,
     );
-    const halfDayPrice = Number(
-      roomInfo?.half_day_price || Math.round(basePrice * 0.8) || 160000,
-    );
     const overnightPrice = Number(roomInfo?.overnight_price || basePrice);
 
     let earlyWarning = "";
@@ -369,22 +347,6 @@ export default function QuickBookingModal({
         price: hours * hourlyPrice,
         earlyWarning: "",
         lateWarning: "",
-      };
-    }
-
-    if (rentalType === "Buổi") {
-      const [stdH, stdM] = hotelPolicies.halfdayIn.split(":").map(Number);
-      const stdCheckin = new Date(checkin);
-      stdCheckin.setHours(stdH || 12, stdM || 0, 0, 0);
-      if (checkin < stdCheckin) {
-        const earlyH = Math.ceil((stdCheckin - checkin) / 3600000);
-        if (earlyH > 0) earlyWarning = `Nhận phòng sớm ${earlyH} giờ`;
-      }
-      return {
-        durationLabel: "1 buổi",
-        price: halfDayPrice,
-        earlyWarning,
-        lateWarning,
       };
     }
 
@@ -547,13 +509,10 @@ export default function QuickBookingModal({
     });
   };
 
-  // 🌟 NẾU BẤM "ĐẶT TRƯỚC" THÌ KHÁCH ĐÃ TRẢ MẶC ĐỊNH LÀ 0 (HOẶC SỐ TIỀN NHẬP THỰC TẾ)
   const handleExecuteConfirm = (isCheckInNow) => {
     const finalAdult = Number(tempGuestCount.adult || 2);
     const finalChildren = Number(tempGuestCount.children || 0);
 
-    // Nếu Check-in ngay: mặc định đã trả đủ nếu không nhập số khác
-    // Nếu Đặt trước: khách chưa trả thì ghi nhận = 0!
     const actualPaidAmount = isCheckInNow
       ? Number(customerPaid || totalAmount)
       : Number(customerPaid || 0);
@@ -561,7 +520,6 @@ export default function QuickBookingModal({
     const formattedRooms = (bookingData.rooms || []).map((r) => {
       let mappedType = "DAY";
       if (r.rental_type === "Giờ") mappedType = "HOUR";
-      else if (r.rental_type === "Buổi") mappedType = "HALF_DAY";
       else if (r.rental_type === "Đêm") mappedType = "OVERNIGHT";
 
       return {
@@ -680,6 +638,8 @@ export default function QuickBookingModal({
                       </span>
                     </div>
                   </th>
+
+                  {/* 🌟 HÌNH THỨC CHUẨN 3 LOẠI */}
                   <th className="py-3 px-3 whitespace-nowrap">Hình thức</th>
 
                   <th className="py-3 px-3 min-w-[210px] whitespace-nowrap">
@@ -755,6 +715,7 @@ export default function QuickBookingModal({
                       </select>
                     </td>
 
+                    {/* 🌟 CHỈ CÒN ĐÚNG 3 LỰA CHỌN GỌN GÀNG: Giờ | Đêm | Ngày */}
                     <td className="py-3.5 px-3 whitespace-nowrap">
                       <select
                         value={item.rental_type}
@@ -764,7 +725,6 @@ export default function QuickBookingModal({
                         className="border border-[#003580] rounded-xl px-2.5 py-1.5 outline-none font-bold text-gray-800 bg-white cursor-pointer min-w-[85px]"
                       >
                         <option value="Giờ">Giờ</option>
-                        <option value="Buổi">Buổi</option>
                         <option value="Đêm">Đêm</option>
                         <option value="Ngày">Ngày</option>
                       </select>

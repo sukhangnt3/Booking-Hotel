@@ -14,7 +14,6 @@ import {
   Sun,
   Clock,
   Moon,
-  Hourglass,
   Users,
 } from "lucide-react";
 
@@ -146,7 +145,7 @@ export const Step3RoomsAndPricing = ({
     });
   };
 
-  // 🌟 THÊM PHÒNG MỚI ĐẦY ĐỦ 4 LOẠI GIÁ
+  // 🌟 THÊM PHÒNG MỚI ĐẦY ĐỦ 3 LOẠI GIÁ CHUẨN GO2JOY (ĐÃ XÓA BUỔI)
   const handleAddRoom = () => {
     const nextIdx = rooms.length;
     const initialAmount = 2;
@@ -169,11 +168,10 @@ export const Step3RoomsAndPricing = ({
       bed_type: "1 Giường đôi lớn (King/Queen Size)",
       room_area: 28,
       capacity: 2,
-      // 🌟 ĐẦY ĐỦ 4 LOẠI GIÁ CHUẨN
+      // 🌟 3 LOẠI GIÁ CHUẨN
       base_price: 650000,
       hourly_price: 150000,
       overnight_price: 450000,
-      half_day_price: 350000,
       description: "Phòng nghỉ hiện đại, tiện nghi.",
       image: "",
       images: [],
@@ -325,11 +323,11 @@ export const Step3RoomsAndPricing = ({
           lập phòng & Bảng giá
         </div>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-          Chi tiết hạng phòng & Bảng giá đa dạng
+          Chi tiết hạng phòng & Bảng giá
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
           Thiết lập cấu hình phòng, tải ảnh thực tế và cài đặt giá cho các hình
-          thức thuê: theo ngày, theo giờ, qua đêm hoặc theo buổi.
+          thức thuê: theo ngày, theo giờ hoặc qua đêm.
         </p>
       </div>
 
@@ -636,7 +634,7 @@ export const Step3RoomsAndPricing = ({
                 </div>
               </div>
 
-              {/* 🌟🌟🌟 BẢNG THIẾT LẬP 4 LOẠI GIÁ (THEO NGÀY, GIỜ, ĐÊM, BUỔI) 🌟🌟🌟 */}
+              {/* 🌟🌟🌟 BẢNG THIẾT LẬP 3 LOẠI GIÁ CHUẨN GO2JOY (THEO NGÀY, THEO GIỜ, QUA ĐÊM) 🌟🌟🌟 */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-[#003580] uppercase tracking-wider flex items-center gap-1.5">
@@ -648,13 +646,14 @@ export const Step3RoomsAndPricing = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                  {/* 1. GIÁ THEO NGÀY (BẮT BUỘC) */}
+                {/* 🌟 CHIA 3 CỘT ĐỀU TĂM TẮP */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  {/* 1. GIÁ THEO NGÀY (MÀU CHỮ ĐỒNG BỘ text-slate-900) */}
                   <div
-                    className={`rounded-xl border p-3 bg-white ${
+                    className={`rounded-xl border p-3 bg-white shadow-2xs ${
                       errors[`room_${idx}_price`]
                         ? "border-rose-400 bg-rose-50/30"
-                        : "border-blue-200 shadow-2xs"
+                        : "border-slate-200"
                     }`}
                   >
                     <div className="flex items-center gap-1 text-[11px] font-black text-[#003580] mb-1">
@@ -673,7 +672,7 @@ export const Step3RoomsAndPricing = ({
                             base_price: Number(cleanDigits) || 0,
                           });
                         }}
-                        className="w-full text-sm font-black text-[#ff6a00] bg-transparent outline-none"
+                        className="w-full text-sm font-black text-slate-900 bg-transparent outline-none"
                       />
                       <span className="text-xs font-black text-slate-400 ml-1">
                         ₫
@@ -746,36 +745,6 @@ export const Step3RoomsAndPricing = ({
                     </div>
                     <span className="text-[10px] text-slate-400 block mt-1">
                       Nhận tối - trả sáng hôm sau
-                    </span>
-                  </div>
-
-                  {/* 4. GIÁ THEO BUỔI (NỬA NGÀY) */}
-                  <div className="rounded-xl border border-slate-200 p-3 bg-white shadow-2xs">
-                    <div className="flex items-center gap-1 text-[11px] font-black text-[#003580] mb-1">
-                      <Hourglass size={13} className="text-teal-600" />
-                      <span>Giá theo buổi</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <input
-                        type="text"
-                        value={Number(room.half_day_price || 0).toLocaleString(
-                          "vi-VN",
-                        )}
-                        onChange={(e) => {
-                          const cleanDigits = e.target.value.replace(/\D/g, "");
-                          handleUpdateRoom(room.id, {
-                            half_day_price: Number(cleanDigits) || 0,
-                          });
-                        }}
-                        placeholder="0"
-                        className="w-full text-sm font-black text-slate-900 bg-transparent outline-none"
-                      />
-                      <span className="text-xs font-black text-slate-400 ml-1">
-                        ₫
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 block mt-1">
-                      Lưu trú nửa ngày trong ngày
                     </span>
                   </div>
                 </div>

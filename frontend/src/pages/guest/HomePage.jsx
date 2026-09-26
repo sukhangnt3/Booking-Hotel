@@ -18,7 +18,6 @@ import {
   Users,
   Clock,
   Sun,
-  Hourglass,
   ChevronDown,
   Building,
   MapPin,
@@ -152,10 +151,9 @@ export default function HomePage() {
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [isSearchingDest, setIsSearchingDest] = useState(false);
 
-  // 🌟 HÌNH THỨC THUÊ
+  // 🌟 HÌNH THỨC THUÊ (CHỈ CÒN DAY, OVERNIGHT, HOUR)
   const [rentalType, setRentalType] = useState("DAY");
 
-  // Giờ mặc định lấy ngay khung giờ hiện tại
   const defaultHourTime = useMemo(() => {
     return `${String(currentRealHour).padStart(2, "0")}:00`;
   }, [currentRealHour]);
@@ -165,7 +163,7 @@ export default function HomePage() {
   const [checkInDate, setCheckInDate] = useState(today);
   const [checkOutDate, setCheckOutDate] = useState(addDays(today, 1));
 
-  // 🌟 SỐ GIỜ SỬ DỤNG: Mở rộng lên tới 10 giờ
+  // SỐ GIỜ SỬ DỤNG
   const [hoursCount, setHoursCount] = useState(2);
 
   // Calendar Popup & Tháng hiển thị
@@ -219,7 +217,7 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [destination]);
 
-  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY
+  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY (3 TAB)
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
@@ -236,18 +234,13 @@ export default function HomePage() {
         setCheckOutDate(addDays(checkInDate, 1));
       }
     } else if (type === "OVERNIGHT") {
-      // Qua đêm: Cố định 22:00 - 11:00, không chọn giờ
       setCheckInTime("22:00");
       setCheckOutTime("11:00");
       setCheckOutDate(addDays(checkInDate, 1));
-    } else if (type === "HALF_DAY") {
-      setCheckInTime("12:00");
-      setCheckOutTime("21:00");
-      setCheckOutDate(checkInDate);
     }
   };
 
-  // 🌟 TÍNH TOÁN THỜI GIAN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC (TỰ ĐỘNG SANG HÔM SAU NẾU QUA NỬA ĐÊM)
+  // 🌟 TÍNH TOÁN THỜI GIAN TRẢ PHÒNG CHUẨN GO2JOY
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -256,7 +249,7 @@ export default function HomePage() {
     let outDateTime = new Date(checkOutDate);
     let outTimeStr = checkOutTime;
 
-    // 1. THEO GIỜ (VÍ DỤ 22H + 2 TIẾNG = 00:00 NGÀY 27/09)
+    // 1. THEO GIỜ
     if (rentalType === "HOUR") {
       outDateTime = addHours(inDateTime, hoursCount);
       outTimeStr = `${String(outDateTime.getHours()).padStart(2, "0")}:${String(outDateTime.getMinutes()).padStart(2, "0")}`;
@@ -280,19 +273,7 @@ export default function HomePage() {
       };
     }
 
-    // 3. THEO BUỔI
-    if (rentalType === "HALF_DAY") {
-      outDateTime = new Date(checkInDate);
-      outDateTime.setHours(21, 0, 0, 0);
-      return {
-        badge: "1 Buổi",
-        inDateTime,
-        outDateTime,
-        outTimeStr: "21:00",
-      };
-    }
-
-    // 4. THEO NGÀY
+    // 3. THEO NGÀY
     const diffDays = Math.max(1, differenceInDays(checkOutDate, checkInDate));
     outDateTime = new Date(checkOutDate);
     outDateTime.setHours(12, 0, 0, 0);
@@ -312,7 +293,7 @@ export default function HomePage() {
     hoursCount,
   ]);
 
-  // 🌟 KHAI BÁO BỔ SUNG ĐỂ ĐỒNG BỘ 100% CẢ 2 TÊN BIẾN, KHÔNG BAO GIỜ BỊ LỖI "checkOutInfo is not defined":
+  // Alias chống lỗi undefined
   const checkOutInfo = durationSummary;
 
   useEffect(() => {
@@ -637,7 +618,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN GO2JOY (BỎ HOÀN TOÀN CỘT CHỌN GIỜ Ở QUA ĐÊM) 🌟 */}
+                    {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN 3 TABS GO2JOY 🌟 */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
@@ -647,58 +628,46 @@ export default function HomePage() {
                             : "w-full sm:w-[480px]"
                         }`}
                       >
-                        {/* 4 TABS HÌNH THỨC THUÊ */}
-                        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl">
+                        {/* 3 TABS HÌNH THỨC THUÊ (ĐÃ XÓA SẠCH BUỔI) */}
+                        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl">
                           <button
                             type="button"
                             onClick={() => handleTabChange("HOUR")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                            className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer ${
                               rentalType === "HOUR"
                                 ? "bg-[#003580] text-white shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
                             }`}
                           >
-                            <Clock size={14} /> <span>Theo giờ</span>
+                            <Clock size={15} /> <span>Theo giờ</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => handleTabChange("OVERNIGHT")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                            className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer ${
                               rentalType === "OVERNIGHT"
                                 ? "bg-[#003580] text-white shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
                             }`}
                           >
-                            <Moon size={14} /> <span>Qua đêm</span>
+                            <Moon size={15} /> <span>Qua đêm</span>
                           </button>
 
                           <button
                             type="button"
                             onClick={() => handleTabChange("DAY")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                            className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer ${
                               rentalType === "DAY"
                                 ? "bg-[#003580] text-white shadow-xs"
                                 : "text-slate-600 hover:text-slate-900"
                             }`}
                           >
-                            <Sun size={14} /> <span>Theo ngày</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleTabChange("HALF_DAY")}
-                            className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                              rentalType === "HALF_DAY"
-                                ? "bg-[#003580] text-white shadow-xs"
-                                : "text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            <Hourglass size={14} /> <span>Theo buổi</span>
+                            <Sun size={15} /> <span>Theo ngày</span>
                           </button>
                         </div>
 
-                        {/* 🌟 HỘP BÓNG ĐÈN GỢI Ý TINH TẾ CHUẨN GO2JOY (KHÔNG GHI SỐ GIỜ CỨNG) */}
+                        {/* 🌟 HỘP BÓNG ĐÈN GỢI Ý CHUẨN GO2JOY (KHÔNG GHI SỐ GIỜ CỨNG) */}
                         <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center gap-1.5">
                           <Lightbulb
                             size={15}
@@ -711,8 +680,6 @@ export default function HomePage() {
                               "Phù hợp nghỉ một đêm đến sáng hôm sau"}
                             {rentalType === "DAY" &&
                               "Phù hợp với lưu trú nhiều ngày"}
-                            {rentalType === "HALF_DAY" &&
-                              "Phù hợp với lưu trú nửa ngày"}
                           </span>
                         </div>
 
@@ -824,7 +791,7 @@ export default function HomePage() {
                                         setCheckInDate(dayItem);
                                         setCheckOutDate(addDays(dayItem, 1));
                                       } else {
-                                        // Theo giờ / Buổi
+                                        // Theo giờ
                                         setCheckInDate(dayItem);
                                         setCheckOutDate(dayItem);
                                       }

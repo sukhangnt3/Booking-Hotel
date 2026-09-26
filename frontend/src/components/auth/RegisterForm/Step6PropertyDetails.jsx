@@ -8,7 +8,6 @@ import {
   Sun,
   Clock,
   Moon,
-  Hourglass,
   ShieldCheck,
   Info,
 } from "lucide-react";
@@ -110,10 +109,6 @@ export const Step6PropertyDetails = ({
   const overnightCheckInTime = data?.overnight_checkin_time || "21:00";
   const overnightCheckOutTime = data?.overnight_checkout_time || "11:00";
 
-  // 🌟 4. MỐC GIỜ THUÊ THEO BUỔI (NỬA NGÀY - HALF-DAY)
-  const halfdayCheckInTime = data?.halfday_checkin_time || "12:00";
-  const halfdayCheckOutTime = data?.halfday_checkout_time || "21:00";
-
   const isInvalidCheckInTime =
     checkInFrom &&
     checkInTo &&
@@ -166,11 +161,11 @@ export const Step6PropertyDetails = ({
         </div>
       </div>
 
-      {/* 🌟 2. QUY ĐỊNH KHUNG GIỜ THEO ĐỦ 4 HÌNH THỨC THUÊ 🌟 */}
+      {/* 🌟 2. QUY ĐỊNH KHUNG GIỜ THEO 3 HÌNH THỨC THUÊ CHUẨN GO2JOY 🌟 */}
       <div className="space-y-4 pt-1">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-            Thời gian nhận - trả phòng theo từng hình thức (4 Hình thức)
+            Thời gian nhận - trả phòng theo từng hình thức (3 Hình thức)
           </h2>
           <span className="text-[11px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
             Hỗ trợ tìm kiếm thời gian thực 24/7
@@ -296,41 +291,6 @@ export const Step6PropertyDetails = ({
           <p className="text-[10px] text-slate-400">
             Ví dụ: Bắt đầu nhận phòng qua đêm từ 21:00 hoặc 22:00 tối và khách
             trả phòng trước 11:00 trưa hôm sau.
-          </p>
-        </div>
-
-        {/* 🌟 KHỐI 4: THEO BUỔI (NỬA NGÀY - HALF-DAY) 🌟 */}
-        <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-          <div className="flex items-center gap-2 text-xs font-black text-[#003580]">
-            <Hourglass size={16} className="text-teal-600" />
-            <span>4. Khung giờ nhận khách thuê theo buổi (Nửa ngày)</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <span className="block text-[10px] font-bold text-slate-500">
-                Nhận phòng từ
-              </span>
-              <TimePicker
-                value={halfdayCheckInTime}
-                onChange={(val) => onChange({ halfday_checkin_time: val })}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <span className="block text-[10px] font-bold text-slate-500">
-                Trả phòng trước
-              </span>
-              <TimePicker
-                value={halfdayCheckOutTime}
-                onChange={(val) => onChange({ halfday_checkout_time: val })}
-              />
-            </div>
-          </div>
-
-          <p className="text-[10px] text-slate-400">
-            Ví dụ: Nhận phòng lúc 12:00 trưa và trả phòng trước 21:00 tối cùng
-            ngày (lưu trú tối đa 9 tiếng trong ngày).
           </p>
         </div>
       </div>

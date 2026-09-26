@@ -24,7 +24,6 @@ import {
   Flame,
   Clock,
   Sun,
-  Hourglass,
   ChevronDown,
   Plus,
   Minus,
@@ -153,7 +152,9 @@ export default function HotelListPage() {
     searchParams.get("destination") || searchParams.get("search") || "";
   const initialCheckInStr = searchParams.get("checkIn") || "";
   const initialCheckOutStr = searchParams.get("checkOut") || "";
-  const initialRentalType = searchParams.get("rentalType") || "DAY";
+  const initialRentalParam = searchParams.get("rentalType");
+  const initialRentalType =
+    initialRentalParam === "HALF_DAY" ? "DAY" : initialRentalParam || "DAY";
 
   // Giờ mặc định lấy ngay khung giờ hiện tại
   const defaultInitialTime = useMemo(() => {
@@ -299,7 +300,6 @@ export default function HotelListPage() {
 
           let roomHourlyList = [];
           let roomOvernightList = [];
-          let roomHalfDayList = [];
           let roomDailyList = [];
 
           roomList.forEach((r) => {
@@ -320,11 +320,6 @@ export default function HotelListPage() {
             );
             if (ro > 0) roomOvernightList.push(ro);
 
-            const rhd = Number(
-              r.half_day_price ?? r.min_half_day_price ?? r.halfDayPrice ?? 0,
-            );
-            if (rhd > 0) roomHalfDayList.push(rhd);
-
             const rd = Number(r.base_price ?? r.sell_price ?? r.price ?? 0);
             if (rd > 0) roomDailyList.push(rd);
           });
@@ -340,19 +335,6 @@ export default function HotelListPage() {
             finalHourly = rawPrice;
           } else {
             finalHourly = rawPrice > 0 ? rawPrice : 80000;
-          }
-
-          let finalHalfDay = 0;
-          if (roomHalfDayList.length > 0) {
-            finalHalfDay = Math.min(...roomHalfDayList);
-          } else if (Number(h.half_day_price) > 0) {
-            finalHalfDay = Number(h.half_day_price);
-          } else if (Number(h.min_half_day_price) > 0) {
-            finalHalfDay = Number(h.min_half_day_price);
-          } else if (curRental === "HALF_DAY" && rawPrice > 0) {
-            finalHalfDay = rawPrice;
-          } else {
-            finalHalfDay = rawPrice > 0 ? rawPrice : 250000;
           }
 
           let finalOvernight = 0;
@@ -393,7 +375,6 @@ export default function HotelListPage() {
             salePrice: finalDaily,
             min_hourly_price: finalHourly,
             min_overnight_price: finalOvernight,
-            min_half_day_price: finalHalfDay,
             star_rating: Number(h.star_rating || 3),
             stars: Number(h.star_rating || 3),
             rating: Number(h.average_rating || 0),
@@ -422,7 +403,6 @@ export default function HotelListPage() {
           const allPrices = formattedList.map((h) => {
             if (curRental === "HOUR") return h.min_hourly_price;
             if (curRental === "OVERNIGHT") return h.min_overnight_price;
-            if (curRental === "HALF_DAY") return h.min_half_day_price;
             return h.salePrice;
           });
           const realMin = Math.min(...allPrices);
@@ -470,7 +450,7 @@ export default function HotelListPage() {
     setSearchParams(updated);
   };
 
-  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY
+  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY (3 TAB)
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
@@ -487,13 +467,10 @@ export default function HotelListPage() {
         setCheckOutDate(addDays(checkInDate, 1));
       }
     } else if (type === "OVERNIGHT") {
+      // Qua đêm: Cố định 22:00 - 11:00
       setCheckInTime("22:00");
       setCheckOutTime("11:00");
       setCheckOutDate(addDays(checkInDate, 1));
-    } else if (type === "HALF_DAY") {
-      setCheckInTime("12:00");
-      setCheckOutTime("21:00");
-      setCheckOutDate(checkInDate);
     }
   };
 
@@ -503,7 +480,7 @@ export default function HotelListPage() {
     setIsCalendarOpen(true);
   };
 
-  // 🌟 TÍNH TOÁN DỰ KIẾN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC
+  // 🌟 TÍNH TOÁN DỰ KIẾN TRẢ PHÒNG CHUẨN THỜI GIAN THỰC (3 HÌNH THỨC)
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -534,17 +511,6 @@ export default function HotelListPage() {
       };
     }
 
-    if (rentalType === "HALF_DAY") {
-      outDateTime = new Date(checkInDate);
-      outDateTime.setHours(21, 0, 0, 0);
-      return {
-        badge: "1 Buổi",
-        inDateTime,
-        outDateTime,
-        outTimeStr: "21:00",
-      };
-    }
-
     // THEO NGÀY (DAY): Cố định trả lúc 12:00
     const diffDays = Math.max(1, differenceInDays(checkOutDate, checkInDate));
     outDateTime = new Date(checkOutDate);
@@ -565,7 +531,7 @@ export default function HotelListPage() {
     hoursCount,
   ]);
 
-  // 🌟 KHAI BÁO BỔ SUNG ĐỂ ĐỒNG BỘ 100% CẢ 2 TÊN BIẾN, KHÔNG BAO GIỜ BỊ LỖI "checkOutInfo is not defined":
+  // Alias chống lỗi undefined
   const checkOutInfo = durationSummary;
 
   const handleSearchSubmit = (e) => {
@@ -669,8 +635,6 @@ export default function HotelListPage() {
         currentComparePrice = hotel.min_hourly_price;
       } else if (rentalType === "OVERNIGHT") {
         currentComparePrice = hotel.min_overnight_price;
-      } else if (rentalType === "HALF_DAY") {
-        currentComparePrice = hotel.min_half_day_price;
       }
 
       if (
@@ -888,7 +852,7 @@ export default function HotelListPage() {
                 </div>
               </div>
 
-              {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN GO2JOY (BỎ HOÀN TOÀN CỘT CHỌN GIỜ Ở QUA ĐÊM) 🌟 */}
+              {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN 3 TAB GO2JOY 🌟 */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
@@ -898,54 +862,42 @@ export default function HotelListPage() {
                       : "w-full sm:w-[480px]"
                   }`}
                 >
-                  {/* 4 TABS HÌNH THỨC THUÊ */}
-                  <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl">
+                  {/* 3 TABS HÌNH THỨC THUÊ (ĐÃ XÓA SẠCH BUỔI) */}
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl">
                     <button
                       type="button"
                       onClick={() => handleTabChange("HOUR")}
-                      className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer ${
                         rentalType === "HOUR"
                           ? "bg-[#003580] text-white shadow-xs"
                           : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
-                      <Clock size={14} /> <span>Theo giờ</span>
+                      <Clock size={15} /> <span>Theo giờ</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleTabChange("OVERNIGHT")}
-                      className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer ${
                         rentalType === "OVERNIGHT"
                           ? "bg-[#003580] text-white shadow-xs"
                           : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
-                      <Moon size={14} /> <span>Qua đêm</span>
+                      <Moon size={15} /> <span>Qua đêm</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleTabChange("DAY")}
-                      className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer ${
                         rentalType === "DAY"
                           ? "bg-[#003580] text-white shadow-xs"
                           : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
-                      <Sun size={14} /> <span>Theo ngày</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleTabChange("HALF_DAY")}
-                      className={`py-2 px-1 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                        rentalType === "HALF_DAY"
-                          ? "bg-[#003580] text-white shadow-xs"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                    >
-                      <Hourglass size={14} /> <span>Theo buổi</span>
+                      <Sun size={15} /> <span>Theo ngày</span>
                     </button>
                   </div>
 
@@ -958,8 +910,6 @@ export default function HotelListPage() {
                       {rentalType === "OVERNIGHT" &&
                         "Phù hợp nghỉ một đêm đến sáng hôm sau"}
                       {rentalType === "DAY" && "Phù hợp với lưu trú nhiều ngày"}
-                      {rentalType === "HALF_DAY" &&
-                        "Phù hợp với lưu trú nửa ngày"}
                     </span>
                   </div>
 
@@ -1062,7 +1012,7 @@ export default function HotelListPage() {
                                   setCheckInDate(dayItem);
                                   setCheckOutDate(addDays(dayItem, 1));
                                 } else {
-                                  // Theo giờ / Buổi
+                                  // Theo giờ
                                   setCheckInDate(dayItem);
                                   setCheckOutDate(dayItem);
                                 }
@@ -1617,10 +1567,6 @@ export default function HotelListPage() {
                     displayPrice = hotel.min_overnight_price;
                     priceLabel = "Giá qua đêm từ";
                     badgeRental = "🌙 Thuê qua đêm";
-                  } else if (rentalType === "HALF_DAY") {
-                    displayPrice = hotel.min_half_day_price;
-                    priceLabel = "Giá 1 buổi từ";
-                    badgeRental = "⏳ Thuê theo buổi";
                   }
 
                   const roomCount = Array.isArray(hotel.rooms)
@@ -1702,6 +1648,7 @@ export default function HotelListPage() {
                             )}
                           </div>
 
+                          {/* 🌟 NÚT GIÁ NHANH TRÊN THẺ (CHỈ CÒN 3 HÌNH THỨC CHUẨN GO2JOY: GIỜ | ĐÊM | NGÀY) */}
                           <div
                             className="flex items-center gap-1.5 flex-wrap pt-1 text-[11px]"
                             onClick={(e) => e.stopPropagation()}
@@ -1709,7 +1656,7 @@ export default function HotelListPage() {
                             <button
                               type="button"
                               onClick={() => handleTabChange("HOUR")}
-                              className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1 transition cursor-pointer ${
+                              className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1 transition cursor-pointer ${
                                 rentalType === "HOUR"
                                   ? "bg-blue-50 border-[#006ce4] text-[#006ce4] shadow-2xs scale-105"
                                   : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
@@ -1723,23 +1670,8 @@ export default function HotelListPage() {
 
                             <button
                               type="button"
-                              onClick={() => handleTabChange("HALF_DAY")}
-                              className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1 transition cursor-pointer ${
-                                rentalType === "HALF_DAY"
-                                  ? "bg-blue-50 border-[#006ce4] text-[#006ce4] shadow-2xs scale-105"
-                                  : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                              }`}
-                            >
-                              <span>⏳ Buổi:</span>
-                              <b className="text-gray-900">
-                                {formatVND(hotel.min_half_day_price)}
-                              </b>
-                            </button>
-
-                            <button
-                              type="button"
                               onClick={() => handleTabChange("OVERNIGHT")}
-                              className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1 transition cursor-pointer ${
+                              className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1 transition cursor-pointer ${
                                 rentalType === "OVERNIGHT"
                                   ? "bg-blue-50 border-[#006ce4] text-[#006ce4] shadow-2xs scale-105"
                                   : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
@@ -1754,7 +1686,7 @@ export default function HotelListPage() {
                             <button
                               type="button"
                               onClick={() => handleTabChange("DAY")}
-                              className={`px-2.5 py-1 rounded-lg border font-bold flex items-center gap-1 transition cursor-pointer ${
+                              className={`px-3 py-1 rounded-lg border font-bold flex items-center gap-1 transition cursor-pointer ${
                                 rentalType === "DAY"
                                   ? "bg-blue-50 border-[#006ce4] text-[#006ce4] shadow-2xs scale-105"
                                   : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"

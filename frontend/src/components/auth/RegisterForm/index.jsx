@@ -65,7 +65,7 @@ const initialFormData = {
   starRating: 3,
   description: "",
 
-  // 🌟 KHỞI TẠO ĐẦY ĐỦ CẢ 4 HÌNH THỨC VẬN HÀNH CHUẨN
+  // 🌟 KHỞI TẠO 3 HÌNH THỨC VẬN HÀNH CHUẨN GO2JOY (NGÀY, GIỜ, ĐÊM - ĐÃ BỎ BUỔI)
   checkInFrom: "14:00",
   checkInTo: "23:59",
   checkOutTo: "12:00",
@@ -73,8 +73,6 @@ const initialFormData = {
   hourly_end_time: "21:00",
   overnight_checkin_time: "21:00",
   overnight_checkout_time: "11:00",
-  halfday_checkin_time: "12:00",
-  halfday_checkout_time: "21:00",
   hourly_grace_minutes: 15,
   cancellation_deadline_hours: 24,
 
@@ -269,7 +267,7 @@ export const RegisterForm = () => {
     return match ? `${match[1].padStart(2, "0")}:${match[2]}:00` : defaultTime;
   };
 
-  // 🌟 ĐĂNG KÝ KHÁCH SẠN VÀ ĐỒNG BỘ ĐẦY ĐỦ 4 LOẠI GIÁ + 4 MỐC GIỜ VÀO DATABASE
+  // 🌟 ĐĂNG KÝ KHÁCH SẠN VÀ ĐỒNG BỘ 3 LOẠI GIÁ + 3 MỐC GIỜ VÀO DATABASE
   const handleFinalSubmit = async () => {
     if (!validateCurrentStep()) {
       setIsReviewOpen(false);
@@ -308,7 +306,7 @@ export const RegisterForm = () => {
         }
       }
 
-      // 2. 🌟 ĐÓNG GÓI HẠNG PHÒNG VỚI ĐỦ 4 LOẠI GIÁ
+      // 2. 🌟 ĐÓNG GÓI HẠNG PHÒNG VỚI 3 LOẠI GIÁ CHUẨN (ĐÃ XÓA BUỔI)
       const processedRooms = formData.rooms.map((r, rIdx) => {
         let numbers = [];
         if (r.roomNumbersText) {
@@ -334,11 +332,10 @@ export const RegisterForm = () => {
           id: r.id,
           name: r.name || `Phòng Hạng ${rIdx + 1}`,
           capacity: Number(r.capacity || 2),
-          // 🌟 4 LOẠI GIÁ PHÒNG LƯU VÀO DATABASE
+          // 🌟 3 LOẠI GIÁ PHÒNG LƯU VÀO DATABASE
           base_price: Number(r.base_price || 650000),
           hourly_price: Number(r.hourly_price || 0),
           overnight_price: Number(r.overnight_price || 0),
-          half_day_price: Number(r.half_day_price || 0),
           description: r.description || "Phòng nghỉ hiện đại, tiện nghi.",
           type: r.type || "Deluxe",
           room_view: r.room_view || "city_view",
@@ -382,7 +379,7 @@ export const RegisterForm = () => {
       const hotelCover =
         formData.hotelMainImage || propertyImages[0]?.path || "";
 
-      // 4. 🌟 PAYLOAD ĐẦY ĐỦ CẢ 4 MỐC THỜI GIAN VẬN HÀNH (NGÀY, GIỜ, ĐÊM, BUỔI)
+      // 4. 🌟 PAYLOAD CHUẨN 3 MỐC THỜI GIAN VẬN HÀNH (NGÀY, GIỜ, ĐÊM)
       const payload = {
         name: formData.hotelName || "Cơ sở lưu trú",
         property_type: formData.propertyType || "hotel",
@@ -398,7 +395,7 @@ export const RegisterForm = () => {
         description:
           formData.description ||
           `Tận hưởng kỳ nghỉ dưỡng tuyệt vời tại ${formData.hotelName} với dịch vụ chất lượng cao.`,
-        // 🌟 ĐẦY ĐỦ 4 HÌNH THỨC NHẬN - TRẢ PHÒNG LƯU VÀO DATABASE
+        // 🌟 3 HÌNH THỨC NHẬN - TRẢ PHÒNG LƯU VÀO DATABASE
         checkin_time: sanitizeTimeToPostgres(formData.checkInFrom, "14:00:00"),
         checkout_time: sanitizeTimeToPostgres(formData.checkOutTo, "12:00:00"),
         hourly_start_time: sanitizeTimeToPostgres(
@@ -416,14 +413,6 @@ export const RegisterForm = () => {
         overnight_checkout_time: sanitizeTimeToPostgres(
           formData.overnight_checkout_time,
           "11:00:00",
-        ),
-        halfday_checkin_time: sanitizeTimeToPostgres(
-          formData.halfday_checkin_time,
-          "12:00:00",
-        ),
-        halfday_checkout_time: sanitizeTimeToPostgres(
-          formData.halfday_checkout_time,
-          "21:00:00",
         ),
         hourly_grace_minutes: Number(formData.hourly_grace_minutes || 15),
         cancellation_deadline_hours: Number(

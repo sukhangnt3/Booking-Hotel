@@ -21,7 +21,6 @@ import {
   Eye,
   Moon,
   Sun,
-  Hourglass,
   RotateCcw,
   SlidersHorizontal,
 } from "lucide-react";
@@ -110,7 +109,7 @@ export default function HotelManagementPage() {
   const [apiError, setApiError] = useState("");
 
   const [editingHotel, setEditingHotel] = useState(null);
-  const [editTab, setEditTab] = useState("info"); // info | policies | bank | amenities
+  const [editTab, setEditTab] = useState("policies"); // info | policies | bank | amenities
 
   const [hotelForm, setHotelForm] = useState({
     name: "",
@@ -120,20 +119,17 @@ export default function HotelManagementPage() {
     city: "",
     phone: "",
     email: "",
-    // Khung giờ
+    // Khung giờ chuẩn 3 hình thức
     checkin_time: "14:00",
     checkout_time: "12:00",
     overnight_checkin_time: "22:00",
     overnight_checkout_time: "11:00",
-    halfday_checkin_time: "12:00",
-    halfday_checkout_time: "21:00",
     hourly_start_time: "08:00",
     hourly_end_time: "22:00",
     hourly_grace_minutes: 15,
     // Công tắc bật/tắt hình thức
     allow_hourly: true,
     allow_overnight: true,
-    allow_halfday: true,
     allow_daily: true,
     cancellation_deadline_hours: 24,
     bank_code: "VCB",
@@ -223,12 +219,6 @@ export default function HotelManagementPage() {
       overnight_checkout_time: hotel.overnight_checkout_time
         ? String(hotel.overnight_checkout_time).slice(0, 5)
         : "11:00",
-      halfday_checkin_time: hotel.halfday_checkin_time
-        ? String(hotel.halfday_checkin_time).slice(0, 5)
-        : "12:00",
-      halfday_checkout_time: hotel.halfday_checkout_time
-        ? String(hotel.halfday_checkout_time).slice(0, 5)
-        : "21:00",
       hourly_start_time: hotel.hourly_start_time
         ? String(hotel.hourly_start_time).slice(0, 5)
         : "08:00",
@@ -238,7 +228,6 @@ export default function HotelManagementPage() {
       hourly_grace_minutes: Number(hotel.hourly_grace_minutes ?? 15),
       allow_hourly: true,
       allow_overnight: true,
-      allow_halfday: true,
       allow_daily: true,
       cancellation_deadline_hours: Number(
         hotel.cancellation_deadline_hours ?? 24,
@@ -256,7 +245,7 @@ export default function HotelManagementPage() {
 
   const handleOpenEdit = async (hotel) => {
     setEditingHotel(hotel);
-    setEditTab("policies"); // Mở ngay vào Tab Khung giờ để Owner dễ thấy và chỉnh sửa
+    setEditTab("policies");
     const initialAmenities = Array.isArray(hotel.amenities)
       ? hotel.amenities
       : [];
@@ -286,12 +275,6 @@ export default function HotelManagementPage() {
           overnight_checkout_time: freshHotel.overnight_checkout_time
             ? String(freshHotel.overnight_checkout_time).slice(0, 5)
             : prev.overnight_checkout_time,
-          halfday_checkin_time: freshHotel.halfday_checkin_time
-            ? String(freshHotel.halfday_checkin_time).slice(0, 5)
-            : prev.halfday_checkin_time,
-          halfday_checkout_time: freshHotel.halfday_checkout_time
-            ? String(freshHotel.halfday_checkout_time).slice(0, 5)
-            : prev.halfday_checkout_time,
           hourly_start_time: freshHotel.hourly_start_time
             ? String(freshHotel.hourly_start_time).slice(0, 5)
             : prev.hourly_start_time,
@@ -312,7 +295,6 @@ export default function HotelManagementPage() {
     }
   };
 
-  // ĐẶT LẠI GIỜ CHUẨN CỦA NGÀNH KHÁCH SẠN
   const handleResetDefaultHours = () => {
     setHotelForm((prev) => ({
       ...prev,
@@ -320,8 +302,6 @@ export default function HotelManagementPage() {
       checkout_time: "12:00",
       overnight_checkin_time: "22:00",
       overnight_checkout_time: "11:00",
-      halfday_checkin_time: "12:00",
-      halfday_checkout_time: "21:00",
       hourly_start_time: "08:00",
       hourly_end_time: "22:00",
       hourly_grace_minutes: 15,
@@ -345,12 +325,6 @@ export default function HotelManagementPage() {
       const overnightOutVal = String(
         hotelForm.overnight_checkout_time || "11:00",
       ).slice(0, 5);
-      const halfdayInVal = String(
-        hotelForm.halfday_checkin_time || "12:00",
-      ).slice(0, 5);
-      const halfdayOutVal = String(
-        hotelForm.halfday_checkout_time || "21:00",
-      ).slice(0, 5);
       const hourlyStartVal = String(
         hotelForm.hourly_start_time || "08:00",
       ).slice(0, 5);
@@ -370,7 +344,7 @@ export default function HotelManagementPage() {
         phone: hotelForm.phone.trim(),
         email: hotelForm.email.trim(),
 
-        // Lưu đầy đủ giờ
+        // Lưu đầy đủ 3 loại giờ chuẩn (Đã bỏ buổi)
         checkin_time: checkInVal,
         check_in_time: checkInVal,
         checkout_time: checkOutVal,
@@ -378,8 +352,6 @@ export default function HotelManagementPage() {
 
         overnight_checkin_time: overnightInVal,
         overnight_checkout_time: overnightOutVal,
-        halfday_checkin_time: halfdayInVal,
-        halfday_checkout_time: halfdayOutVal,
 
         hourly_start_time: hourlyStartVal,
         hourly_end_time: hourlyEndVal,
@@ -421,8 +393,6 @@ export default function HotelManagementPage() {
                 checkout_time: payload.checkout_time,
                 overnight_checkin_time: payload.overnight_checkin_time,
                 overnight_checkout_time: payload.overnight_checkout_time,
-                halfday_checkin_time: payload.halfday_checkin_time,
-                halfday_checkout_time: payload.halfday_checkout_time,
                 hourly_start_time: payload.hourly_start_time,
                 hourly_end_time: payload.hourly_end_time,
                 hourly_grace_minutes: payload.hourly_grace_minutes,
@@ -654,7 +624,7 @@ export default function HotelManagementPage() {
         />
       )}
 
-      {/* 🌟 MODAL CHỈNH SỬA THÔNG MINH ĐƯỢC CHIA TABS RÕ RÀNG 🌟 */}
+      {/* 🌟 MODAL CHỈNH SỬA THÔNG MINH 🌟 */}
       {editingHotel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs font-sans">
           <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl border border-gray-200 flex flex-col text-xs max-h-[92vh] overflow-hidden my-auto">
@@ -733,7 +703,7 @@ export default function HotelManagementPage() {
               onSubmit={handleUpdateHotel}
               className="flex-1 overflow-y-auto p-6 space-y-5 bg-white"
             >
-              {/* 🌟 TAB 1: KHUNG GIỜ QUY ĐỊNH (THIẾT KẾ TRỰC QUAN, DỄ CHỈNH SỬA/XÓA) 🌟 */}
+              {/* 🌟 TAB 1: KHUNG GIỜ QUY ĐỊNH (CHUẨN 3 HÌNH THỨC - ĐÃ BỎ BUỔI) 🌟 */}
               {editTab === "policies" && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between bg-blue-50/60 p-3.5 rounded-2xl border border-blue-100">
@@ -755,7 +725,7 @@ export default function HotelManagementPage() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {/* 1. KHUNG GIỜ THEO NGÀY */}
                     <div className="p-4 rounded-2xl bg-amber-50/40 border border-amber-200/80 space-y-3">
                       <div className="flex items-center justify-between">
@@ -768,7 +738,7 @@ export default function HotelManagementPage() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
                         <div>
                           <label className="block text-[11px] font-bold text-gray-600 mb-1">
                             Nhận phòng (từ)
@@ -827,7 +797,7 @@ export default function HotelManagementPage() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
                         <div>
                           <label className="block text-[11px] font-bold text-gray-600 mb-1">
                             Nhận phòng (tối từ)
@@ -874,70 +844,11 @@ export default function HotelManagementPage() {
                       </div>
                     </div>
 
-                    {/* 3. KHUNG GIỜ THEO BUỔI */}
-                    <div className="p-4 rounded-2xl bg-teal-50/40 border border-teal-200/80 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="font-black text-teal-950 text-xs flex items-center gap-1.5">
-                          <Hourglass size={15} className="text-teal-600" /> 3.
-                          Theo Buổi (Nửa ngày)
-                        </span>
-                        <span className="text-[10px] font-bold text-teal-800 bg-teal-100 px-2 py-0.5 rounded-md">
-                          Trong ngày
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                            Nhận phòng (trưa từ)
-                          </label>
-                          <select
-                            value={hotelForm.halfday_checkin_time}
-                            onChange={(e) =>
-                              setHotelForm({
-                                ...hotelForm,
-                                halfday_checkin_time: e.target.value,
-                              })
-                            }
-                            className="w-full h-9 px-2.5 border border-gray-300 rounded-xl font-bold bg-white outline-none cursor-pointer focus:border-[#003580]"
-                          >
-                            {TIME_OPTIONS.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                            Trả phòng (tối cùng ngày)
-                          </label>
-                          <select
-                            value={hotelForm.halfday_checkout_time}
-                            onChange={(e) =>
-                              setHotelForm({
-                                ...hotelForm,
-                                halfday_checkout_time: e.target.value,
-                              })
-                            }
-                            className="w-full h-9 px-2.5 border border-gray-300 rounded-xl font-bold bg-white outline-none cursor-pointer focus:border-[#003580]"
-                          >
-                            {TIME_OPTIONS.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 4. KHUNG GIỜ THUÊ THEO GIỜ & ÂN HẠN */}
+                    {/* 3. KHUNG GIỜ THUÊ THEO GIỜ & ÂN HẠN */}
                     <div className="p-4 rounded-2xl bg-blue-50/40 border border-blue-200/80 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="font-black text-blue-950 text-xs flex items-center gap-1.5">
-                          <Clock size={15} className="text-blue-600" /> 4. Thuê
+                          <Clock size={15} className="text-blue-600" /> 3. Thuê
                           Theo Giờ (Hourly)
                         </span>
                         <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md">
@@ -945,49 +856,51 @@ export default function HotelManagementPage() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-gray-600 mb-1">
-                            Mở bán (từ)
-                          </label>
-                          <select
-                            value={hotelForm.hourly_start_time}
-                            onChange={(e) =>
-                              setHotelForm({
-                                ...hotelForm,
-                                hourly_start_time: e.target.value,
-                              })
-                            }
-                            className="w-full h-9 px-1.5 border border-gray-300 rounded-xl font-bold bg-white outline-none cursor-pointer focus:border-[#003580]"
-                          >
-                            {TIME_OPTIONS.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10.5px] font-bold text-gray-600 mb-1">
+                              Mở bán (từ)
+                            </label>
+                            <select
+                              value={hotelForm.hourly_start_time}
+                              onChange={(e) =>
+                                setHotelForm({
+                                  ...hotelForm,
+                                  hourly_start_time: e.target.value,
+                                })
+                              }
+                              className="w-full h-9 px-1.5 border border-gray-300 rounded-xl font-bold bg-white outline-none cursor-pointer focus:border-[#003580]"
+                            >
+                              {TIME_OPTIONS.map((t) => (
+                                <option key={t} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                        <div>
-                          <label className="block text-[10.5px] font-bold text-gray-600 mb-1">
-                            Đến trước (tối)
-                          </label>
-                          <select
-                            value={hotelForm.hourly_end_time}
-                            onChange={(e) =>
-                              setHotelForm({
-                                ...hotelForm,
-                                hourly_end_time: e.target.value,
-                              })
-                            }
-                            className="w-full h-9 px-1.5 border border-gray-300 rounded-xl font-bold bg-white outline-none cursor-pointer focus:border-[#003580]"
-                          >
-                            {TIME_OPTIONS.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
+                          <div>
+                            <label className="block text-[10.5px] font-bold text-gray-600 mb-1">
+                              Đến trước (tối)
+                            </label>
+                            <select
+                              value={hotelForm.hourly_end_time}
+                              onChange={(e) =>
+                                setHotelForm({
+                                  ...hotelForm,
+                                  hourly_end_time: e.target.value,
+                                })
+                              }
+                              className="w-full h-9 px-1.5 border border-gray-300 rounded-xl font-bold bg-white outline-none cursor-pointer focus:border-[#003580]"
+                            >
+                              {TIME_OPTIONS.map((t) => (
+                                <option key={t} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
 
                         <div>

@@ -108,13 +108,12 @@ export default function RoomTimeSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // 🌟 TOÀN BỘ CẤU HÌNH ĐẦY ĐỦ CHO CÁC HÌNH THỨC
+  // 🌟 CẤU HÌNH THỜI GIAN CHUẨN (ĐÃ XÓA BUỔI)
   const [timeSettings, setTimeSettings] = useState({
     // Bật tắt các hình thức
     enable_hourly: true,
     enable_daily: true,
     enable_overnight: true,
-    enable_halfday: true,
     enable_monthly: false,
 
     // Thuê theo giờ
@@ -123,7 +122,7 @@ export default function RoomTimeSettingsPage() {
     // Thuê ngày đêm
     daily_checkin: "14:00",
     daily_checkout: "12:00",
-    daily_grace_type: "late_only", // 'late_only' (Trả muộn quá) hoặc 'both' (Nhận sớm + Trả muộn quá)
+    daily_grace_type: "late_only",
     daily_grace_hours: 6,
 
     // Thuê qua đêm
@@ -131,10 +130,6 @@ export default function RoomTimeSettingsPage() {
     overnight_checkout: "12:00",
     overnight_enable_day_fee: false,
     overnight_grace_hours: 12,
-
-    // Thuê theo buổi
-    halfday_checkin: "12:00",
-    halfday_checkout: "21:00",
   });
 
   const [isDailyGraceDropdownOpen, setIsDailyGraceDropdownOpen] =
@@ -171,12 +166,6 @@ export default function RoomTimeSettingsPage() {
         overnight_checkout: h.overnight_checkout_time
           ? String(h.overnight_checkout_time).slice(0, 5)
           : "12:00",
-        halfday_checkin: h.halfday_checkin_time
-          ? String(h.halfday_checkin_time).slice(0, 5)
-          : "12:00",
-        halfday_checkout: h.halfday_checkout_time
-          ? String(h.halfday_checkout_time).slice(0, 5)
-          : "21:00",
         daily_checkin: h.checkin_time
           ? String(h.checkin_time).slice(0, 5)
           : "14:00",
@@ -212,7 +201,7 @@ export default function RoomTimeSettingsPage() {
     fetchMyHotels();
   }, [fetchMyHotels]);
 
-  // 2. LƯU THẲNG VÀO DATABASE QUA API
+  // 2. LƯU THẲNG VÀO DATABASE QUA API (ĐÃ BỎ BUỔI)
   const handleSaveSettings = async (e) => {
     if (e) e.preventDefault();
     try {
@@ -221,8 +210,6 @@ export default function RoomTimeSettingsPage() {
         checkout_time: `${timeSettings.daily_checkout}:00`,
         overnight_checkin_time: `${timeSettings.overnight_checkin}:00`,
         overnight_checkout_time: `${timeSettings.overnight_checkout}:00`,
-        halfday_checkin_time: `${timeSettings.halfday_checkin}:00`,
-        halfday_checkout_time: `${timeSettings.halfday_checkout}:00`,
         hourly_grace_minutes: Number(timeSettings.hourly_grace_minutes),
         daily_grace_hours: Number(timeSettings.daily_grace_hours),
       });
@@ -300,7 +287,7 @@ export default function RoomTimeSettingsPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {/* 🌟 DANH SÁCH KHỐI CÀI ĐẶT THIẾT KẾ Y HỆT 100% HÌNH ẢNH BẠN GỬI 🌟 */}
+      {/* 🌟 DANH SÁCH KHỐI CÀI ĐẶT THỜI GIAN CHUẨN (ĐÃ XÓA BUỔI) 🌟 */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       <div className="space-y-4 max-w-4xl">
         {/* KHỐI 1: THUÊ THEO GIỜ */}
@@ -421,7 +408,6 @@ export default function RoomTimeSettingsPage() {
                 • Tính thêm <b className="text-slate-900">1 ngày</b> khi
               </span>
 
-              {/* DROPDOWN VIỀN XANH DƯƠNG CHỨA CÁC LỰA CHỌN CÓ DẤU CHECK */}
               <div
                 className="relative inline-block"
                 ref={dailyGraceDropdownRef}
@@ -620,59 +606,7 @@ export default function RoomTimeSettingsPage() {
           </div>
         </div>
 
-        {/* KHỐI 4: THUÊ THEO BUỔI */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900">
-                Thuê theo buổi
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Khách nhận và trả phòng trong cùng một ngày
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                setTimeSettings((prev) => ({
-                  ...prev,
-                  enable_halfday: !prev.enable_halfday,
-                }))
-              }
-              className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
-                timeSettings.enable_halfday ? "bg-[#006ce4]" : "bg-slate-300"
-              }`}
-            >
-              <div
-                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                  timeSettings.enable_halfday
-                    ? "translate-x-5"
-                    : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 text-xs text-slate-700 flex items-center gap-2 flex-wrap">
-            <span>• Giờ nhận - trả quy định</span>
-            <TimePickerInput
-              value={timeSettings.halfday_checkin}
-              onChange={(val) =>
-                setTimeSettings((prev) => ({ ...prev, halfday_checkin: val }))
-              }
-            />
-            <span>đến</span>
-            <TimePickerInput
-              value={timeSettings.halfday_checkout}
-              onChange={(val) =>
-                setTimeSettings((prev) => ({ ...prev, halfday_checkout: val }))
-              }
-            />
-          </div>
-        </div>
-
-        {/* KHỐI 5: THUÊ THEO THÁNG */}
+        {/* KHỐI 4: THUÊ THEO THÁNG */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
           <div className="flex items-start justify-between">
             <div>

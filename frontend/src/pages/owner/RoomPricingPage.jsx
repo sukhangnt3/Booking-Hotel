@@ -169,28 +169,24 @@ export default function RoomPricingPage() {
 
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // 🌟 CẤU HÌNH THỜI GIAN THEO ĐÚNG HÌNH ẢNH (BẬT TẮT, GIỜ, BUỔI, ĐÊM, NGÀY, THÁNG)
+  // 🌟 CẤU HÌNH THỜI GIAN CHUẨN (ĐÃ XÓA BUỔI: CHỈ CÒN GIỜ, ĐÊM, NGÀY, THÁNG)
   const [timeSettings, setTimeSettings] = useState({
     enable_hourly: true,
     enable_daily: true,
     enable_overnight: true,
-    enable_halfday: true,
     enable_monthly: false,
 
     hourly_grace_minutes: 30,
 
     daily_checkin: "14:00",
     daily_checkout: "12:00",
-    daily_grace_type: "late_only", // 'late_only' (Trả muộn quá) hoặc 'both' (Nhận sớm + Trả muộn quá)
+    daily_grace_type: "late_only",
     daily_grace_hours: 6,
 
     overnight_checkin: "22:00",
     overnight_checkout: "12:00",
     overnight_enable_day_fee: false,
     overnight_grace_hours: 12,
-
-    halfday_checkin: "12:00",
-    halfday_checkout: "21:00",
   });
 
   const [isDailyGraceDropdownOpen, setIsDailyGraceDropdownOpen] =
@@ -234,12 +230,6 @@ export default function RoomPricingPage() {
         overnight_checkout: h.overnight_checkout_time
           ? String(h.overnight_checkout_time).slice(0, 5)
           : "12:00",
-        halfday_checkin: h.halfday_checkin_time
-          ? String(h.halfday_checkin_time).slice(0, 5)
-          : "12:00",
-        halfday_checkout: h.halfday_checkout_time
-          ? String(h.halfday_checkout_time).slice(0, 5)
-          : "21:00",
         daily_checkin: h.checkin_time
           ? String(h.checkin_time).slice(0, 5)
           : "14:00",
@@ -298,8 +288,6 @@ export default function RoomPricingPage() {
                       },
                     ],
               overnight_price: r.overnight_price || baseP,
-              half_day_price:
-                r.half_day_price || Math.round(baseP * 0.8) || 160000,
               daily_price: baseP,
             };
           }),
@@ -339,7 +327,6 @@ export default function RoomPricingPage() {
                 },
               ],
         overnight_price: r.overnight_price || baseP,
-        half_day_price: r.half_day_price || Math.round(baseP * 0.8) || 160000,
         daily_price: baseP,
       };
     });
@@ -375,7 +362,6 @@ export default function RoomPricingPage() {
           hourly_tiers: rp.hourly_tiers,
           hourly_price: rp.hourly_tiers?.[0]?.price || rp.hourly_price,
           overnight_price: rp.overnight_price,
-          half_day_price: rp.half_day_price,
           base_price: rp.daily_price,
         });
       }
@@ -434,7 +420,6 @@ export default function RoomPricingPage() {
               },
             ],
       overnight_price: room.overnight_price || baseP,
-      half_day_price: room.half_day_price || Math.round(baseP * 0.8) || 160000,
       daily_price: baseP,
     };
     setFormData((prev) => ({
@@ -511,7 +496,7 @@ export default function RoomPricingPage() {
     );
   }, [priceBooks, searchQuery]);
 
-  // 🌟 LƯU THẲNG CẤU HÌNH THỜI GIAN VÀO DATABASE QUA API
+  // 🌟 LƯU THẲNG CẤU HÌNH THỜI GIAN VÀO DATABASE (ĐÃ XÓA BUỔI)
   const handleSaveTimeSettings = async (e) => {
     if (e) e.preventDefault();
     try {
@@ -520,8 +505,6 @@ export default function RoomPricingPage() {
         checkout_time: `${timeSettings.daily_checkout}:00`,
         overnight_checkin_time: `${timeSettings.overnight_checkin}:00`,
         overnight_checkout_time: `${timeSettings.overnight_checkout}:00`,
-        halfday_checkin_time: `${timeSettings.halfday_checkin}:00`,
-        halfday_checkout_time: `${timeSettings.halfday_checkout}:00`,
         hourly_grace_minutes: Number(timeSettings.hourly_grace_minutes),
         daily_grace_hours: Number(timeSettings.daily_grace_hours),
       });
@@ -606,7 +589,7 @@ export default function RoomPricingPage() {
       </div>
 
       {currentTab === "pricing" ? (
-        /* TAB 1: BẢNG GIÁ PHÒNG */
+        /* TAB 1: BẢNG GIÁ PHÒNG (ĐÃ XÓA GIÁ BUỔI) */
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
           <div className="md:col-span-3 space-y-4">
             <div className="bg-white rounded-3xl border border-gray-200 p-5 shadow-xs space-y-2">
@@ -630,8 +613,8 @@ export default function RoomPricingPage() {
                   Danh Sách Bảng Giá
                 </h1>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Thiết lập các khung giá giờ, giá qua đêm, giá buổi và giá ngày
-                  theo từng mùa
+                  Thiết lập các khung giá giờ, giá qua đêm và giá ngày theo từng
+                  mùa
                 </p>
               </div>
 
@@ -842,9 +825,6 @@ export default function RoomPricingPage() {
                                                 <th className="py-3 px-4 font-bold text-right">
                                                   Giá đêm
                                                 </th>
-                                                <th className="py-3 px-4 font-bold text-right text-[#003580]">
-                                                  Giá buổi
-                                                </th>
                                                 <th className="py-3 px-4 font-bold text-right">
                                                   Giá ngày
                                                 </th>
@@ -877,13 +857,7 @@ export default function RoomPricingPage() {
                                                       )}{" "}
                                                       đ
                                                     </td>
-                                                    <td className="py-3 px-4 text-right font-bold text-[#003580] tabular-nums">
-                                                      {formatNumberWithDots(
-                                                        rp.half_day_price,
-                                                      )}{" "}
-                                                      đ
-                                                    </td>
-                                                    <td className="py-3 px-4 text-right font-bold text-[#ff6a00] tabular-nums">
+                                                    <td className="py-3 px-4 text-right font-bold text-slate-900 tabular-nums">
                                                       {formatNumberWithDots(
                                                         rp.daily_price,
                                                       )}{" "}
@@ -913,7 +887,7 @@ export default function RoomPricingPage() {
         </div>
       ) : (
         /* ═══════════════════════════════════════════════════════════════════════ */
-        /* 🌟 TAB 2: GIAO DIỆN CÁC KHỐI CARD THIẾT KẾ Y HỆT HÌNH ẢNH BẠN GỬI 🌟 */
+        /* 🌟 TAB 2: THIẾT LẬP THỜI GIAN SỬ DỤNG PHÒNG (ĐÃ BỎ HOÀN TOÀN BUỔI) 🌟 */
         /* ═══════════════════════════════════════════════════════════════════════ */
         <div className="space-y-4 max-w-4xl animate-in fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
@@ -1267,62 +1241,7 @@ export default function RoomPricingPage() {
             </div>
           </div>
 
-          {/* KHỐI 4: THUÊ THEO BUỔI */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900">
-                  Thuê theo buổi
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Khách nhận và trả phòng trong cùng một ngày
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setTimeSettings((prev) => ({
-                    ...prev,
-                    enable_halfday: !prev.enable_halfday,
-                  }))
-                }
-                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
-                  timeSettings.enable_halfday ? "bg-[#006ce4]" : "bg-slate-300"
-                }`}
-              >
-                <div
-                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                    timeSettings.enable_halfday
-                      ? "translate-x-5"
-                      : "translate-x-0"
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 text-xs text-slate-700 flex items-center gap-2 flex-wrap">
-              <span>• Giờ nhận - trả quy định</span>
-              <TimePickerInput
-                value={timeSettings.halfday_checkin}
-                onChange={(val) =>
-                  setTimeSettings((prev) => ({ ...prev, halfday_checkin: val }))
-                }
-              />
-              <span>đến</span>
-              <TimePickerInput
-                value={timeSettings.halfday_checkout}
-                onChange={(val) =>
-                  setTimeSettings((prev) => ({
-                    ...prev,
-                    halfday_checkout: val,
-                  }))
-                }
-              />
-            </div>
-          </div>
-
-          {/* KHỐI 5: THUÊ THEO THÁNG */}
+          {/* KHỐI 4: THUÊ THEO THÁNG */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
             <div className="flex items-start justify-between">
               <div>
@@ -1519,7 +1438,7 @@ export default function RoomPricingPage() {
                               <span className="font-bold text-gray-900">
                                 {r.code || r.name} - {r.name}
                               </span>
-                              <span className="text-[#ff6a00] font-black">
+                              <span className="text-slate-900 font-black">
                                 {formatNumberWithDots(r.base_price)} đ
                               </span>
                             </div>
@@ -1577,6 +1496,7 @@ export default function RoomPricingPage() {
                                 </div>
                               </td>
 
+                              {/* 🌟 CHỈ CÒN ĐÚNG 3 LOẠI GIÁ: GIÁ GIỜ, GIÁ ĐÊM, GIÁ NGÀY */}
                               <td className="py-3 px-4 text-gray-500 font-semibold">
                                 <div
                                   style={{
@@ -1587,10 +1507,9 @@ export default function RoomPricingPage() {
                                   Giá giờ
                                 </div>
                                 <div className="py-1.5">Giá đêm</div>
-                                <div className="py-1.5 text-[#003580] font-bold">
-                                  Giá buổi
+                                <div className="py-1.5 font-bold text-slate-800">
+                                  Giá ngày
                                 </div>
-                                <div className="py-1.5">Giá ngày</div>
                               </td>
 
                               <td className="py-3 px-4 space-y-2.5">
@@ -1701,34 +1620,6 @@ export default function RoomPricingPage() {
                                   <input
                                     type="text"
                                     inputMode="numeric"
-                                    value={formatNumberWithDots(
-                                      rp.half_day_price,
-                                    )}
-                                    onChange={(e) => {
-                                      const val = parseDotsToNumber(
-                                        e.target.value,
-                                      );
-                                      setFormData((prev) => ({
-                                        ...prev,
-                                        room_prices: prev.room_prices.map(
-                                          (item, i) =>
-                                            i === roomIdx
-                                              ? {
-                                                  ...item,
-                                                  half_day_price: val,
-                                                }
-                                              : item,
-                                        ),
-                                      }));
-                                    }}
-                                    className="w-28 text-right py-0.5 border-b border-[#003580] outline-none font-bold text-[#003580] text-xs"
-                                  />
-                                </div>
-
-                                <div>
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
                                     value={formatNumberWithDots(rp.daily_price)}
                                     onChange={(e) => {
                                       const val = parseDotsToNumber(
@@ -1744,7 +1635,7 @@ export default function RoomPricingPage() {
                                         ),
                                       }));
                                     }}
-                                    className="w-28 text-right py-0.5 border-b border-[#003580] outline-none text-[#ff6a00] font-black text-xs"
+                                    className="w-28 text-right py-0.5 border-b border-gray-300 outline-none focus:border-[#003580] font-bold text-slate-900 text-xs"
                                   />
                                 </div>
                               </td>
