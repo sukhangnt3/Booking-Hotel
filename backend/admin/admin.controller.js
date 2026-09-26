@@ -16,7 +16,7 @@ pool
   )
   .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
 
-// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & DOANH THU ĐỐI SOÁT CHUẨN XÁC ───
+// ─── 1. THỐNG KÊ DASHBOARD QUẢN TRỊ & ĐỐI SOÁT CHUẨN XÁC 100% ───
 async function getStats(req, res, next) {
   try {
     const dbStart = Date.now();
@@ -93,7 +93,7 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN ĐỐI SOÁT TOÁN HỌC CHUẨN XÁC TUYỆT ĐỐI (KHÔNG LỆCH 1 ĐỒNG)
+    // 🌟 TRUY VẤN ĐỐI SOÁT: TẤT CẢ CÁC CỘT ĐỀU ĐỒNG BỘ ĐƠN ĐÃ CHECK_OUT 🌟
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -111,30 +111,42 @@ async function getStats(req, res, next) {
         u.phone AS owner_phone,
         COUNT(b.id)::int AS total_bookings,
         COUNT(CASE WHEN b.status = 'checked_out' THEN 1 END)::int AS completed_bookings,
-        -- 1. TỔNG GIÁ TRỊ ĐƠN HÀNG (GMV)
-        COALESCE(SUM(b.total_price), 0)::bigint AS total_gmv,
+
+        -- 1. TỔNG GIÁ TRỊ CÁC ĐƠN ĐÃ HOÀN TẤT CHECK-OUT (GMV)
+        COALESCE(
+          SUM(CASE WHEN b.status = 'checked_out' THEN b.total_price ELSE 0 END),
+          0
+        )::bigint AS total_gmv,
         
-        -- 2. TỔNG SỐ TIỀN THỰC TẾ KHÁCH ĐÃ CHUYỂN QUA CỔNG THANH TOÁN (SEPAY / VIETQR)
+        -- 2. TIỀN SÀN ĐANG CẦM CỦA CÁC ĐƠN ĐÃ CHECK-OUT (CỌC 30% HOẶC TRẢ ĐỦ 100%)
         COALESCE(
           SUM(
             CASE 
-              WHEN b.payment_type = 'DEPOSIT_30' OR (COALESCE(b.deposit_amount, 0) > 0 AND COALESCE(b.deposit_amount, 0) < b.total_price)
-                THEN COALESCE(b.deposit_amount, ROUND(b.total_price * 0.3))
-              ELSE b.total_price
+              WHEN b.status = 'checked_out' THEN
+                CASE 
+                  WHEN b.payment_type = 'DEPOSIT_30' OR (COALESCE(b.deposit_amount, 0) > 0 AND COALESCE(b.deposit_amount, 0) < b.total_price)
+                    THEN COALESCE(b.deposit_amount, ROUND(b.total_price * 0.3))
+                  ELSE b.total_price
+                END
+              ELSE 0
             END
           ),
           0
         )::bigint AS total_online_collected,
 
-        -- 3. HOA HỒNG SÀN ADMIN THU CHUẨN XÁC: (GMV * % HOA HỒNG)
+        -- 3. HOA HỒNG SÀN ĐƯỢC HƯỞNG CỦA CÁC ĐƠN ĐÃ CHECK-OUT
         COALESCE(
           SUM(
-            ROUND(b.total_price * (COALESCE(h.commission_rate, 18.0) / 100.0))
+            CASE 
+              WHEN b.status = 'checked_out' THEN
+                ROUND(b.total_price * (COALESCE(h.commission_rate, 18.0) / 100.0))
+              ELSE 0
+            END
           ), 
           0
         )::bigint AS admin_commission,
 
-        -- 4. TIỀN CẦN QUYẾT TOÁN CHO KHÁCH SẠN = (TIỀN CỌC/TRẢ ĐỦ SÀN GIỮ) - (HOA HỒNG SÀN) - (ĐÃ QUYẾT TOÁN TRƯỚC ĐÓ)
+        -- 4. TIỀN CẦN QUYẾT TOÁN CHO KHÁCH SẠN = [SÀN CẦM] - [HOA HỒNG] - [ĐÃ TRẢ TRƯỚC ĐÓ]
         GREATEST(
           0,
           COALESCE(
