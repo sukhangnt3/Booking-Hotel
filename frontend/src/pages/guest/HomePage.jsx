@@ -155,10 +155,9 @@ export default function HomePage() {
   // 🌟 HÌNH THỨC THUÊ
   const [rentalType, setRentalType] = useState("DAY");
 
-  // Giờ check-in tự động tính theo thời gian thực
+  // 🌟 ĐÃ SỬA: MẶC ĐỊNH CHỌN NGAY KHUNG GIỜ HIỆN TẠI (VD 16:00 KHI ĐANG LÀ 16H17)
   const defaultHourTime = useMemo(() => {
-    const nextH = Math.min(23, currentRealHour + 1);
-    return `${String(nextH).padStart(2, "0")}:00`;
+    return `${String(currentRealHour).padStart(2, "0")}:00`;
   }, [currentRealHour]);
 
   const [checkInTime, setCheckInTime] = useState("14:00");
@@ -414,12 +413,14 @@ export default function HomePage() {
     navigate(`/hotels?${query.toString()}`);
   };
 
+  // 🌟 ĐÃ SỬA: DÙNG DẤU "<" THAY VÌ "<=" ĐỂ KHUNG 16H VẪN ĐƯỢC CHỌN KHI ĐANG LÀ 16H17!
   const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
     const isToday = isSameDay(checkInDate, today);
 
+    // Chỉ khóa các giờ hoàn toàn trong quá khứ (< currentRealHour)
     if (isToday) {
-      if (hourNum <= currentRealHour) return true;
+      if (hourNum < currentRealHour) return true;
     }
 
     return false;

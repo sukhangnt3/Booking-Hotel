@@ -154,7 +154,14 @@ export default function HotelListPage() {
   const initialCheckInStr = searchParams.get("checkIn") || "";
   const initialCheckOutStr = searchParams.get("checkOut") || "";
   const initialRentalType = searchParams.get("rentalType") || "DAY";
-  const initialCheckInTime = searchParams.get("checkInTime") || "14:00";
+
+  // 🌟 GIỜ MẶC ĐỊNH LẤY NGAY KHUNG GIỜ HIỆN TẠI (VD 16:00 KHI ĐANG LÀ 16H)
+  const defaultInitialTime = useMemo(() => {
+    return `${String(currentRealHour).padStart(2, "0")}:00`;
+  }, [currentRealHour]);
+
+  const initialCheckInTime =
+    searchParams.get("checkInTime") || defaultInitialTime;
   const initialCheckOutTime = searchParams.get("checkOutTime") || "12:00";
   const initialHours = Number(searchParams.get("hours")) || 2;
   const initialAdults = Number(searchParams.get("adults")) || 1;
@@ -463,12 +470,11 @@ export default function HotelListPage() {
     setSearchParams(updated);
   };
 
-  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY (KHÔNG GIẬT TRANG)
+  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY (MẶC ĐỊNH LẤY NGAY KHUNG GIỜ HIỆN TẠI)
   const handleTabChange = (type) => {
     setRentalType(type);
     if (type === "HOUR") {
-      const nextH = Math.min(23, currentRealHour + 1);
-      setCheckInTime(`${String(nextH).padStart(2, "0")}:00`);
+      setCheckInTime(`${String(currentRealHour).padStart(2, "0")}:00`);
       setHoursCount(2);
       setCheckOutDate(checkInDate);
     } else if (type === "DAY") {
@@ -729,12 +735,14 @@ export default function HotelListPage() {
     },
   ];
 
+  // 🌟 ĐÃ SỬA: DÙNG DẤU "<" THAY VÌ "<=" ĐỂ KHUNG 16H VẪN ĐƯỢC CHỌN KHI ĐANG LÀ 16H17!
   const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
     const isToday = isSameDay(checkInDate, today);
 
+    // Chỉ khóa các giờ hoàn toàn trong quá khứ (< currentRealHour)
     if (isToday) {
-      if (hourNum <= currentRealHour) return true;
+      if (hourNum < currentRealHour) return true;
     }
 
     return false;
@@ -1024,7 +1032,7 @@ export default function HotelListPage() {
                         }).map((dayItem) => {
                           const isPast = isBefore(dayItem, today);
 
-                          // 🌟 TỰ ĐỘNG BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM CHUẨN GO2JOY
+                          // TỰ ĐỘNG BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM CHUẨN GO2JOY
                           const isStartDay = isSameDay(dayItem, checkInDate);
                           const isEndDay =
                             isSameDay(dayItem, durationSummary.outDateTime) &&

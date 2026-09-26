@@ -170,8 +170,14 @@ export default function HotelDetailPage() {
   const [rentalType, setRentalType] = useState(
     searchParams.get("rentalType") || "DAY",
   );
+
+  // 🌟 GIỜ MẶC ĐỊNH CHO THEO GIỜ LẤY NGAY KHUNG GIỜ HIỆN TẠI (VD 16:00 KHI ĐANG LÀ 16H17)
+  const defaultInitialTime = useMemo(() => {
+    return `${String(currentRealHour).padStart(2, "0")}:00`;
+  }, [currentRealHour]);
+
   const [checkInTime, setCheckInTime] = useState(
-    searchParams.get("checkInTime") || "14:00",
+    searchParams.get("checkInTime") || defaultInitialTime,
   );
   const [checkOutTime, setCheckOutTime] = useState(
     searchParams.get("checkOutTime") || "12:00",
@@ -356,8 +362,8 @@ export default function HotelDetailPage() {
     (type) => {
       setRentalType(type);
       if (type === "HOUR") {
-        const nextH = Math.min(23, currentRealHour + 1);
-        setCheckInTime(`${String(nextH).padStart(2, "0")}:00`);
+        // Mặc định chọn ngay khung giờ hiện tại (16:00 khi đang là 16h)
+        setCheckInTime(`${String(currentRealHour).padStart(2, "0")}:00`);
         setHoursCount(2);
         setCheckOutDate(checkInDate);
       } else if (type === "DAY") {
@@ -415,7 +421,7 @@ export default function HotelDetailPage() {
     [id, checkInTime, checkOutTime, rentalType, checkOutInfo],
   );
 
-  // 🌟 ĐÃ SỬA: CHỈ TẢI THÔNG TIN KHÁCH SẠN 1 LẦN DUY NHẤT (BỎ rentalType KHỎI DEPENDENCY ĐỂ CHỐNG GIẬT TRANG)
+  // 🌟 CHỈ TẢI THÔNG TIN KHÁCH SẠN 1 LẦN DUY NHẤT (CHỐNG GIẬT TRANG)
   const fetchAllData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -706,11 +712,13 @@ export default function HotelDetailPage() {
     }
   };
 
+  // 🌟 ĐÃ SỬA: CHỈ KHÓA CÁC GIỜ HOÀN TOÀN TRONG QUÁ KHỨ (< currentRealHour), GIỮ NGUYÊN KHUNG 16H KHI ĐANG LÀ 16H17!
   const isTimeSlotDisabled = (timeStr) => {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
 
+    // Dùng dấu "<" thay vì "<=" để khung giờ hiện tại VẪN ĐƯỢC CHỌN!
     if (isSameDay(checkInDate, today)) {
-      if (hourNum <= currentRealHour) return true;
+      if (hourNum < currentRealHour) return true;
     }
 
     if (rentalType === "HOUR") {
@@ -1201,7 +1209,7 @@ export default function HotelDetailPage() {
                         }).map((dayItem) => {
                           const isPast = isBefore(dayItem, today);
 
-                          // 🌟 ĐỒNG BỘ CHUẨN GO2JOY: BÔI MÀU CẢ 2 NGÀY NẾU THUÊ QUA ĐÊM HOẶC THUÊ THEO GIỜ LẤN SANG HÔM SAU
+                          // BÔI MÀU CẢ 2 NGÀY NẾU THUÊ QUA ĐÊM HOẶC THUÊ THEO GIỜ LẤN SANG HÔM SAU
                           const isStartDay = isSameDay(dayItem, checkInDate);
                           const isEndDay =
                             isSameDay(dayItem, checkOutInfo.outDateTime) &&
@@ -1210,9 +1218,6 @@ export default function HotelDetailPage() {
                             !isPast &&
                             isBefore(checkInDate, dayItem) &&
                             isBefore(dayItem, checkOutInfo.outDateTime);
-
-                          const isHighlighted =
-                            isStartDay || isEndDay || isInBetweenRange;
 
                           return (
                             <button
@@ -1232,7 +1237,7 @@ export default function HotelDetailPage() {
                                     setCheckOutDate(dayItem);
                                   }
                                 } else if (rentalType === "OVERNIGHT") {
-                                  // Qua đêm: Bấm ngày nào tự động chọn luôn ngày hôm sau
+                                  // Qua đêm: Bấm ngày nào tự động chọn ngày hôm sau
                                   setCheckInDate(dayItem);
                                   setCheckOutDate(addDays(dayItem, 1));
                                 } else {
