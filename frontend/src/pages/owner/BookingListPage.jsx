@@ -6,14 +6,12 @@ import {
   AlertCircle,
   RefreshCw,
   Clock,
-  Key,
-  LogOut,
+  Trash2,
   X,
   Plus,
   ArrowUpDown,
   MoreHorizontal,
   Download,
-  Upload,
   Calendar as CalendarIcon,
   ChevronDown,
   User,
@@ -22,13 +20,16 @@ import {
   DoorOpen,
   Info,
   Building2,
+  Eye,
+  FileText,
+  Printer,
 } from "lucide-react";
 import { LoadingSpinner, EmptyState } from "@/components/common";
 import apiClient from "@/services/apiClient";
 import QuickBookingModal from "../reception/components/QuickBookingModal";
 import ConfirmCheckInModal from "../reception/components/ConfirmCheckInModal";
 
-// 🌟 HÀM TÍNH TOÁN TIỀN PHÒNG & TIỀN CỌC 30% CHUẨN XÁC CHỐNG THẤT THOÁT
+// 🌟 HÀM TÍNH TOÁN TIỀN PHÒNG & TIỀN CỌC 30% CHUẨN XÁC
 const resolveBookingPaymentDetails = (b) => {
   const totalPrice = Number(b?.total_price || 0);
   const isWalkIn =
@@ -48,7 +49,6 @@ const resolveBookingPaymentDetails = (b) => {
       );
     }
   } else {
-    // Đơn đặt online qua GoStay
     const depAmt = Number(b?.deposit_amount || 0);
     const pdAmt = Number(b?.paid_amount || 0);
 
@@ -85,10 +85,9 @@ export default function BookingListPage() {
   const [apiError, setApiError] = useState("");
   const [pageSize, setPageSize] = useState(20);
 
-  // Dropdown thao tác 3 chấm
   const [activeMenuId, setActiveMenuId] = useState(null);
 
-  // Modal Đặt phòng nhanh (+ Đặt phòng)
+  // Modal Đặt phòng nhanh
   const [isQuickBookingOpen, setIsQuickBookingOpen] = useState(false);
   const [quickBookingData, setQuickBookingData] = useState({
     customer_name: "",
@@ -105,7 +104,7 @@ export default function BookingListPage() {
     checkin_mode: "Giờ đặt",
     checkin_time: "",
     checkout_time: "",
-    duration_label: "1 giờ",
+    duration_label: "2 giờ",
   });
   const [checkInGuestCount, setCheckInGuestCount] = useState({
     adult: 1,
@@ -115,7 +114,7 @@ export default function BookingListPage() {
 
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
 
-  const formatPMSDateTime = (dateVal, timeVal) => {
+  const formatPMSDateTimeShort = (dateVal, timeVal) => {
     if (!dateVal) return "---";
     const dateStr = String(dateVal).slice(0, 10);
     const parts = dateStr.split("-");
@@ -127,7 +126,7 @@ export default function BookingListPage() {
     } else if (String(dateVal).includes("T")) {
       t = String(dateVal).split("T")[1].slice(0, 5);
     }
-    return `${d} Thg ${m}, ${t}`;
+    return `${t} ${d}/${m}`;
   };
 
   const formatCreationTime = (isoStr) => {
@@ -136,10 +135,44 @@ export default function BookingListPage() {
     if (isNaN(d.getTime())) return "";
     const day = String(d.getDate()).padStart(2, "0");
     const month = String(d.getMonth() + 1).padStart(2, "0");
-    const year = d.getFullYear();
     const hours = String(d.getHours()).padStart(2, "0");
     const mins = String(d.getMinutes()).padStart(2, "0");
-    return `${day}/${month}/${year} ${hours}:${mins}`;
+    return `${hours}:${mins} ${day}/${month}`;
+  };
+
+  // 🌟 TÍNH CHUẨN XÁC SỐ TIẾNG (VD: 18:00 ĐẾN 20:00 = 2 TIẾNG, HẾT BỊ LỖI 1 TIẾNG)
+  const calculateExactStayDuration = (b) => {
+    const isHourly = b.rental_type === "HOUR" || b.rental_type === "Giờ";
+    if (isHourly) {
+      let hours = null;
+      if (b.checkin_time && b.checkout_time) {
+        const inDate = String(b.checkin_date || "").slice(0, 10);
+        const outDate = String(b.checkout_date || inDate).slice(0, 10);
+        const inT = String(b.checkin_time).slice(0, 5);
+        const outT = String(b.checkout_time).slice(0, 5);
+        const diffMs =
+          new Date(`${outDate}T${outT}:00`) - new Date(`${inDate}T${inT}:00`);
+        if (diffMs > 0) {
+          hours = Math.round(diffMs / 3600000);
+        }
+      }
+      if (!hours && b.stay_duration) {
+        const m = String(b.stay_duration).match(/\d+/);
+        if (m) hours = Number(m[0]);
+      }
+      return `${hours && hours > 0 ? hours : 2} giờ`;
+    }
+
+    if (b.rental_type === "OVERNIGHT") return "1 đêm";
+
+    // Theo ngày
+    const inDate = String(b.checkin_date || "").slice(0, 10);
+    const outDate = String(b.checkout_date || inDate).slice(0, 10);
+    const days = Math.max(
+      1,
+      Math.round((new Date(outDate) - new Date(inDate)) / 86400000),
+    );
+    return `${days} đêm`;
   };
 
   const fetchMyHotels = useCallback(async () => {
@@ -212,17 +245,7 @@ export default function BookingListPage() {
       pending: bookings.filter((b) => b.status === "pending").length,
       checked_out: bookings.filter((b) => b.status === "checked_out").length,
       confirmed: bookings.filter((b) => b.status === "confirmed").length,
-      incoming_soon: bookings.filter((b) => b.status === "confirmed").length,
       occupied: bookings.filter((b) => b.status === "checked_in").length,
-      checkout_soon: bookings.filter((b) => b.status === "checked_in").length,
-      overdue: bookings.filter((b) => {
-        if (b.status !== "checked_in") return false;
-        const outDate = String(b.checkout_date).slice(0, 10);
-        const outTime = String(b.checkout_time || "12:00").slice(0, 5);
-        return new Date(`${outDate}T${outTime}:00`) < now;
-      }).length,
-      invoice_waiting: bookings.filter((b) => b.status === "checked_out")
-        .length,
     };
   }, [bookings]);
 
@@ -232,8 +255,6 @@ export default function BookingListPage() {
       if (activeTab === "checked_out" && b.status !== "checked_out")
         return false;
       if (activeTab === "confirmed" && b.status !== "confirmed") return false;
-      if (activeTab === "incoming_soon" && b.status !== "confirmed")
-        return false;
       if (activeTab === "occupied" && b.status !== "checked_in") return false;
 
       if (search.trim()) {
@@ -256,13 +277,7 @@ export default function BookingListPage() {
     const inTime = String(booking.checkin_time || "14:00").slice(0, 5);
     const outTime = String(booking.checkout_time || "12:00").slice(0, 5);
 
-    const diffMs = Math.max(
-      0,
-      new Date(`${outDate}T${outTime}:00`) - new Date(`${inDate}T${inTime}:00`),
-    );
-    const hours = Math.max(1, Math.round(diffMs / 36e5));
-    const durationLabel =
-      booking.rental_type === "HOUR" ? `${hours} giờ` : "1 đêm";
+    const durationLabel = calculateExactStayDuration(booking);
 
     setConfirmCheckInRoom({
       room_number: booking.room_number || "111",
@@ -319,7 +334,7 @@ export default function BookingListPage() {
     const now = new Date();
     const start = new Date(now);
     const end = new Date(start);
-    end.setHours(end.getHours() + 1);
+    end.setHours(end.getHours() + 2);
 
     const pad = (n) => String(n).padStart(2, "0");
     const toISO = (d) =>
@@ -339,7 +354,7 @@ export default function BookingListPage() {
           checkin_mode: "Hiện tại",
           checkin_date: toISO(start),
           checkout_date: toISO(end),
-          duration_label: "1 giờ",
+          duration_label: "2 giờ",
           price: Number(targetRoom.hourly_price || 100000),
         },
       ],
@@ -385,17 +400,17 @@ export default function BookingListPage() {
     }
   };
 
-  // 🌟 XUẤT EXCEL CHUẨN XÁC: Tính đúng tiền cọc và tiền còn nợ
   const handleExportExcel = () => {
     if (filteredBookings.length === 0)
       return alert("Không có dữ liệu để xuất!");
     let csv =
-      "STT,Ma Dat Phong,Khach Hang,SDT,Phong,Hang Phong,Gio Nhan,Gio Tra,Thoi Gian,Tong Cong,Khach Da Tra,Con Lai\n";
+      "STT,Ma Dat Phong,Khach Hang,SDT,Phong,Hang Phong,Thoi Gian,Tong Cong,Khach Da Tra,Con Lai\n";
     filteredBookings.forEach((b, idx) => {
       const { totalPrice, paidAmount, remainingAmount } =
         resolveBookingPaymentDetails(b);
+      const stayDuration = calculateExactStayDuration(b);
 
-      csv += `${idx + 1},"${b.booking_code}","${b.customer_name || ""}","${b.guest_phone || ""}","${b.room_number || ""}","${b.room_name || ""}","${b.checkin_date} ${b.checkin_time}","${b.checkout_date} ${b.checkout_time}","${b.rental_type}",${totalPrice},${paidAmount},${remainingAmount}\n`;
+      csv += `${idx + 1},"${b.booking_code}","${b.customer_name || ""}","${b.guest_phone || ""}","${b.room_number || ""}","${b.room_name || ""}","${stayDuration} (${b.checkin_time} - ${b.checkout_time})",${totalPrice},${paidAmount},${remainingAmount}\n`;
     });
 
     const blob = new Blob(["\uFEFF" + csv], {
@@ -411,24 +426,11 @@ export default function BookingListPage() {
   return (
     <div className="w-full pb-20 bg-[#f4f6f8] font-sans text-gray-900 min-h-screen p-3 sm:p-5 space-y-3">
       {/* TOOLBAR TÌM KIẾM & CHỌN CƠ SỞ */}
-      <div className="bg-white p-3.5 rounded-3xl border border-gray-200 shadow-2xs flex items-center justify-between gap-3 flex-wrap">
+      <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-2xs flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-1 min-w-[300px]">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="px-3.5 py-1.5 bg-[#003580] text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-2xs cursor-pointer"
-            >
-              <span>📰 Danh Sách</span>
-            </button>
-            <div className="flex items-center border border-gray-200 rounded-xl p-1 bg-white text-gray-500">
-              <button type="button" className="p-1 hover:text-gray-900">
-                ☰
-              </button>
-              <button type="button" className="p-1 hover:text-gray-900">
-                ▦
-              </button>
-            </div>
-          </div>
+          <span className="px-3.5 py-1.5 bg-[#003580] text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-2xs select-none">
+            <span>📰 Danh Sách Đơn</span>
+          </span>
 
           <div className="flex items-center border border-gray-200 rounded-xl px-3 py-1.5 bg-white focus-within:border-[#003580] shadow-2xs flex-1 max-w-md">
             <Search size={15} className="text-gray-400 mr-2 shrink-0" />
@@ -436,21 +438,9 @@ export default function BookingListPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm kiếm khách hàng, mã đặt phòng,..."
+              placeholder="Tìm theo mã đơn, tên khách, số phòng, SĐT..."
               className="w-full outline-none text-xs text-gray-900 bg-transparent placeholder:text-gray-400 font-medium"
             />
-            <button
-              type="button"
-              className="p-0.5 text-gray-400 hover:text-gray-600"
-            >
-              <SlidersHorizontal size={14} />
-            </button>
-            <button
-              type="button"
-              className="p-0.5 text-gray-400 hover:text-gray-600 ml-1"
-            >
-              <QrCode size={14} />
-            </button>
           </div>
         </div>
 
@@ -472,10 +462,14 @@ export default function BookingListPage() {
             </div>
           )}
 
-          <div className="flex items-center border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-xs text-gray-700 font-semibold cursor-pointer shadow-2xs">
-            <span>Thời gian lưu trú</span>
-            <ChevronDown size={14} className="ml-1 text-gray-400" />
-          </div>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="px-3.5 py-1.5 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 cursor-pointer transition shadow-2xs text-xs flex items-center gap-1"
+          >
+            <Download size={13} />
+            <span>Xuất Excel</span>
+          </button>
 
           <button
             type="button"
@@ -483,7 +477,7 @@ export default function BookingListPage() {
             className="px-4 py-2 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
           >
             <Plus size={16} strokeWidth={2.5} />
-            <span>Đặt phòng</span>
+            <span>+ Đặt phòng</span>
           </button>
         </div>
       </div>
@@ -498,32 +492,16 @@ export default function BookingListPage() {
               label: `● Chờ xác nhận${counts.pending ? ` (${counts.pending})` : ""}`,
             },
             {
-              id: "checked_out",
-              label: `● Đã trả${counts.checked_out ? ` (${counts.checked_out})` : ""}`,
-            },
-            {
               id: "confirmed",
               label: `● Đã đặt trước${counts.confirmed ? ` (${counts.confirmed})` : ""}`,
             },
             {
-              id: "incoming_soon",
-              label: `● Sắp nhận${counts.incoming_soon ? ` (${counts.incoming_soon})` : ""}`,
-            },
-            {
               id: "occupied",
-              label: `● Đang sử dụng${counts.occupied ? ` (${counts.occupied})` : ""}`,
+              label: `● Đang ở${counts.occupied ? ` (${counts.occupied})` : ""}`,
             },
             {
-              id: "checkout_soon",
-              label: `● Sắp trả${counts.checkout_soon ? ` (${counts.checkout_soon})` : ""}`,
-            },
-            {
-              id: "overdue",
-              label: `● Quá giờ trả${counts.overdue ? ` (${counts.overdue})` : ""}`,
-            },
-            {
-              id: "invoice_waiting",
-              label: `● Chờ tạo hóa đơn${counts.invoice_waiting ? ` (${counts.invoice_waiting})` : ""}`,
+              id: "checked_out",
+              label: `● Đã trả${counts.checked_out ? ` (${counts.checked_out})` : ""}`,
             },
           ].map((tab) => (
             <button
@@ -560,53 +538,33 @@ export default function BookingListPage() {
         </div>
       )}
 
-      {/* BẢNG DANH SÁCH ĐƠN PHÒNG */}
-      <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-2xs">
+      {/* 🌟 BẢNG DANH SÁCH ĐƠN PHÒNG ĐÃ THIẾT KẾ LẠI GỌN GÀNG, VỪA KHÍT 1 MÀN HÌNH 🌟 */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-2xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-blue-50/70 text-gray-800 border-b border-blue-100 font-bold whitespace-nowrap uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-3 text-center w-12">STT</th>
-                <th className="py-3 px-4">Mã đặt phòng</th>
-                <th className="py-3 px-4">Kênh bán</th>
-                <th className="py-3 px-4">Thông tin khách</th>
-                <th className="py-3 px-3">
-                  <div className="flex items-center gap-1 cursor-pointer">
-                    <span>Giờ nhận</span>
-                    <ArrowUpDown size={12} className="text-gray-400" />
-                  </div>
+                <th className="py-2.5 px-3 text-center w-10">STT</th>
+                <th className="py-2.5 px-3 min-w-[150px]">Mã đơn & Phòng</th>
+                <th className="py-2.5 px-3 min-w-[150px]">Khách hàng</th>
+                <th className="py-2.5 px-3 min-w-[180px]">Thời gian lưu trú</th>
+                <th className="py-2.5 px-3 text-right min-w-[100px]">
+                  Tổng tiền
                 </th>
-                <th className="py-3 px-3">
-                  <div className="flex items-center gap-1 cursor-pointer">
-                    <span>Giờ trả</span>
-                    <ArrowUpDown size={12} className="text-gray-400" />
-                  </div>
+                <th className="py-2.5 px-3 text-right min-w-[140px]">
+                  Thanh toán
                 </th>
-                <th className="py-3 px-3">Lưu trú</th>
-                <th className="py-3 px-4 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <span>Giá tiền</span>
-                    <Info size={12} className="text-gray-400" />
-                  </div>
+                <th className="py-2.5 px-3 text-center min-w-[110px]">
+                  Trạng thái
                 </th>
-                <th className="py-3 px-4 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <span>Tổng cộng</span>
-                    <Info size={12} className="text-gray-400" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 text-right">Khách đã trả</th>
-                <th className="py-3 px-4 text-right text-rose-600">
-                  Còn cần trả
-                </th>
-                <th className="py-3 px-4 text-center w-32">Thao tác</th>
+                <th className="py-2.5 px-3 text-center w-28">Thao tác</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-100 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="py-20 text-center">
+                  <td colSpan={8} className="py-16 text-center">
                     <LoadingSpinner
                       size="md"
                       label="Đang tải danh sách đặt phòng..."
@@ -616,16 +574,14 @@ export default function BookingListPage() {
               ) : filteredBookings.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={12}
-                    className="py-16 text-center text-gray-400 italic"
+                    colSpan={8}
+                    className="py-14 text-center text-gray-400 italic"
                   >
-                    Không tìm thấy đơn đặt phòng nào phù hợp. Bấm{" "}
-                    <b>+ Đặt phòng</b> ở góc trên để tạo đơn mới!
+                    Không tìm thấy đơn đặt phòng nào phù hợp.
                   </td>
                 </tr>
               ) : (
                 filteredBookings.map((b, idx) => {
-                  // 🌟 TÍNH TOÁN TIỀN PHÒNG CHUẨN XÁC CHỐNG THẤT THOÁT
                   const {
                     totalPrice,
                     paidAmount,
@@ -634,12 +590,8 @@ export default function BookingListPage() {
                     isWalkIn,
                   } = resolveBookingPaymentDetails(b);
 
-                  const isHourly =
-                    b.rental_type === "HOUR" || b.rental_type === "Giờ";
-                  const durationText = isHourly
-                    ? `${b.stay_duration || 1} giờ`
-                    : "1 đêm";
-                  const unitLabel = isHourly ? "/giờ" : "/đêm";
+                  // 🌟 TÍNH ĐÚNG 2 TIẾNG TỪ 18:00 ĐẾN 20:00
+                  const stayDurationBadge = calculateExactStayDuration(b);
 
                   return (
                     <tr
@@ -647,139 +599,145 @@ export default function BookingListPage() {
                       className="hover:bg-blue-50/30 transition"
                     >
                       {/* 1. STT */}
-                      <td className="py-3.5 px-3 text-center text-gray-500 font-semibold">
+                      <td className="py-2.5 px-3 text-center text-gray-400 text-xs">
                         {idx + 1}
                       </td>
 
-                      {/* 2. MÃ ĐẶT PHÒNG */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="font-bold text-[#003580] text-xs block cursor-pointer hover:underline font-mono">
-                          {b.booking_code || `DP00000${idx + 9}`}
-                        </span>
-                        <span className="text-[11px] text-gray-400 font-normal block mt-0.5">
-                          {formatCreationTime(b.created_at || new Date())}
-                        </span>
-                        <span className="text-[11px] text-gray-500 font-medium block mt-0.5">
-                          {b.quantity || 1} phòng
-                        </span>
-                      </td>
-
-                      {/* 3. KÊNH BÁN */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1 text-gray-800 font-medium text-xs">
-                          <span>{isWalkIn ? "🚶" : "🌐"}</span>
-                          <span>
-                            {isWalkIn
-                              ? "Khách đến trực tiếp"
-                              : "Khách đặt online"}
+                      {/* 2. GỘP MÃ ĐƠN & SỐ PHÒNG */}
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-[#003580] text-xs font-mono hover:underline cursor-pointer">
+                            #{b.booking_code || `DP00${idx + 10}`}
+                          </span>
+                          <span className="text-[10px] text-gray-400">
+                            ({formatCreationTime(b.created_at)})
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="px-2 py-0.5 bg-[#f57c00] text-white font-black text-[10px] rounded">
-                            {b.room_number || "111"}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="px-1.5 py-0.2 bg-amber-500 text-white font-black text-[10px] rounded">
+                            {b.room_number || "P.101"}
                           </span>
-                          <span className="text-gray-600 font-bold text-[11px]">
-                            {b.room_name || "DELUXE"}
+                          <span
+                            className="text-gray-700 font-bold text-[11px] truncate max-w-[110px]"
+                            title={b.room_name}
+                          >
+                            {b.room_name || "Phòng Deluxe"}
                           </span>
                         </div>
                       </td>
 
-                      {/* 4. THÔNG TIN KHÁCH */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <strong className="text-[#003580] font-bold text-xs block">
+                      {/* 3. KHÁCH HÀNG */}
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <strong
+                          className="text-gray-900 font-bold text-xs block truncate max-w-[140px]"
+                          title={b.customer_name}
+                        >
                           {b.customer_name || "Khách hàng"}
                         </strong>
-                        <span className="text-gray-500 text-[11px] block mt-0.5 font-normal">
-                          {b.adult_total || 2} người lớn,{" "}
-                          {b.children_total || 0} trẻ em
-                        </span>
+                        <div className="text-gray-400 text-[11px] flex items-center gap-1 mt-0.5">
+                          <span>{b.guest_phone || "---"}</span>
+                          <span>•</span>
+                          <span>
+                            {b.adult_total || 1}L
+                            {b.children_total > 0
+                              ? `, ${b.children_total}T`
+                              : ""}
+                          </span>
+                        </div>
                       </td>
 
-                      {/* 5. GIỜ NHẬN */}
-                      <td className="py-3.5 px-3 whitespace-nowrap text-gray-800 text-xs">
-                        {formatPMSDateTime(b.checkin_date, b.checkin_time)}
+                      {/* 4. GỘP THỜI GIAN LƯU TRÚ (HIỆN CHUẨN 2 GIỜ) */}
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <div className="text-gray-800 text-[11px] font-semibold flex items-center gap-1">
+                          <span>
+                            {formatPMSDateTimeShort(
+                              b.checkin_date,
+                              b.checkin_time,
+                            )}
+                          </span>
+                          <span className="text-gray-400">→</span>
+                          <span>
+                            {formatPMSDateTimeShort(
+                              b.checkout_date,
+                              b.checkout_time,
+                            )}
+                          </span>
+                        </div>
+                        <div className="mt-0.5">
+                          <span className="inline-block px-2 py-0.2 bg-blue-50 text-[#003580] font-black text-[10px] rounded-md border border-blue-200">
+                            ⏱️ {stayDurationBadge}
+                          </span>
+                        </div>
                       </td>
 
-                      {/* 6. GIỜ TRẢ */}
-                      <td className="py-3.5 px-3 whitespace-nowrap text-gray-800 text-xs">
-                        {formatPMSDateTime(b.checkout_date, b.checkout_time)}
+                      {/* 5. TỔNG TIỀN */}
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap font-black text-gray-900 text-xs tabular-nums">
+                        {formatNumber(totalPrice)} ₫
                       </td>
 
-                      {/* 7. LƯU TRÚ */}
-                      <td className="py-3.5 px-3 whitespace-nowrap font-medium text-gray-700">
-                        {durationText}
+                      {/* 6. GỘP THANH TOÁN (ĐÃ TRẢ VÀ CÒN THIẾU) */}
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap tabular-nums">
+                        <div className="font-bold text-xs">
+                          <span className="text-gray-500 font-normal text-[10px]">
+                            Đã trả:{" "}
+                          </span>
+                          <span
+                            className={
+                              isDeposit
+                                ? "text-emerald-700 font-black"
+                                : "text-gray-900"
+                            }
+                          >
+                            {formatNumber(paidAmount)} ₫
+                          </span>
+                        </div>
+                        <div className="text-[11px] mt-0.5">
+                          {remainingAmount === 0 ? (
+                            <span className="text-emerald-600 font-bold text-[10px]">
+                              ✓ Đủ 100%
+                            </span>
+                          ) : (
+                            <span className="text-rose-600 font-black">
+                              Còn nợ: {formatNumber(remainingAmount)} ₫
+                            </span>
+                          )}
+                        </div>
                       </td>
 
-                      {/* 8. GIÁ TIỀN */}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <span className="font-bold text-gray-900 block tabular-nums">
-                          {formatNumber(totalPrice)}
-                        </span>
-                        <span className="text-gray-400 text-[10px] block">
-                          {unitLabel}
-                        </span>
-                      </td>
-
-                      {/* 9. TỔNG CỘNG */}
-                      <td className="py-3.5 px-4 text-right font-black text-gray-900 tabular-nums whitespace-nowrap">
-                        {formatNumber(totalPrice)}
-                      </td>
-
-                      {/* 10. KHÁCH ĐÃ TRẢ (HIỂN THỊ ĐÚNG SỐ TIỀN THỰC TẾ) */}
-                      <td className="py-3.5 px-4 text-right font-bold text-gray-700 tabular-nums whitespace-nowrap">
-                        <span
-                          className={
-                            isDeposit
-                              ? "text-emerald-700 font-black"
-                              : "text-gray-900"
-                          }
-                        >
-                          {formatNumber(paidAmount)}
-                        </span>
-                        {isDeposit && (
-                          <span className="text-[10px] text-emerald-600 block font-normal">
-                            (Cọc 30%)
+                      {/* 7. TRẠNG THÁI */}
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        {b.status === "confirmed" ? (
+                          <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-md font-bold text-[10px]">
+                            Đã đặt
+                          </span>
+                        ) : b.status === "checked_in" ? (
+                          <span className="px-2 py-0.5 bg-blue-50 text-[#003580] border border-blue-200 rounded-md font-bold text-[10px]">
+                            Đang ở
+                          </span>
+                        ) : b.status === "checked_out" ? (
+                          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-md font-medium text-[10px]">
+                            Đã trả
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
+                            Chờ duyệt
                           </span>
                         )}
                       </td>
 
-                      {/* 11. CÒN CẦN TRẢ (BÁO ĐỎ CHÍNH XÁC KHOẢN TIỀN CÒN THIẾU CẦN THU) */}
-                      <td className="py-3.5 px-4 text-right font-black tabular-nums whitespace-nowrap">
-                        {remainingAmount === 0 ? (
-                          <span className="text-gray-400 font-bold">0</span>
-                        ) : (
-                          <div className="space-y-0.5">
-                            <span className="text-rose-600 text-xs block">
-                              {formatNumber(remainingAmount)}
-                            </span>
-                            <span className="text-[10px] text-rose-500 font-medium block">
-                              (Thu tại quầy)
-                            </span>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 12. THAO TÁC */}
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-1.5 relative">
+                      {/* 8. THAO TÁC */}
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1 relative">
                           {b.status === "confirmed" ||
                           b.status === "pending" ? (
                             <button
                               type="button"
                               onClick={() => handleOpenCheckIn(b)}
-                              className="px-3.5 py-1.5 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-xl text-xs cursor-pointer transition shadow-2xs active:scale-95"
+                              className="px-2.5 py-1 bg-[#003580] hover:bg-blue-900 text-white font-bold rounded-lg text-[11px] cursor-pointer shadow-2xs transition active:scale-95"
                             >
                               Nhận phòng
                             </button>
-                          ) : b.status === "checked_in" ? (
-                            <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl font-bold text-[11px]">
-                              Đang ở
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-xl font-bold text-[11px]">
-                              Đã trả
-                            </span>
-                          )}
+                          ) : null}
 
                           <button
                             type="button"
@@ -789,15 +747,15 @@ export default function BookingListPage() {
                                 activeMenuId === b.id ? null : b.id,
                               );
                             }}
-                            className="p-1 border border-gray-200 hover:bg-gray-100 rounded-xl text-gray-600 cursor-pointer"
+                            className="p-1 border border-gray-200 hover:bg-gray-100 rounded-lg text-gray-500 cursor-pointer"
                           >
-                            <MoreHorizontal size={15} />
+                            <MoreHorizontal size={14} />
                           </button>
 
                           {activeMenuId === b.id && (
                             <div
                               onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 top-8 z-30 bg-white border border-gray-200 rounded-2xl shadow-xl py-1 w-36 text-xs text-left divide-y divide-gray-100 animate-fadeIn"
+                              className="absolute right-0 top-7 z-30 bg-white border border-gray-200 rounded-xl shadow-xl py-1 w-32 text-xs text-left divide-y divide-gray-100 animate-fadeIn"
                             >
                               <button
                                 type="button"
@@ -805,7 +763,7 @@ export default function BookingListPage() {
                                   alert(`Chi tiết đơn #${b.booking_code}`);
                                   setActiveMenuId(null);
                                 }}
-                                className="w-full px-3.5 py-2 hover:bg-blue-50 text-gray-700 font-medium cursor-pointer"
+                                className="w-full px-3 py-1.5 hover:bg-blue-50 text-gray-700 font-medium cursor-pointer"
                               >
                                 Xem chi tiết
                               </button>
@@ -815,7 +773,7 @@ export default function BookingListPage() {
                                   alert(`In hóa đơn đơn #${b.booking_code}`);
                                   setActiveMenuId(null);
                                 }}
-                                className="w-full px-3.5 py-2 hover:bg-blue-50 text-gray-700 font-medium cursor-pointer"
+                                className="w-full px-3 py-1.5 hover:bg-blue-50 text-gray-700 font-medium cursor-pointer"
                               >
                                 In hóa đơn
                               </button>
@@ -831,39 +789,13 @@ export default function BookingListPage() {
           </table>
         </div>
 
-        {/* PHÂN TRANG VÀ XUẤT EXCEL */}
-        <div className="px-4 py-3 bg-white border-t border-gray-100 flex items-center justify-between gap-4 flex-wrap text-xs">
-          <div className="flex items-center gap-2 text-gray-600">
-            <span>Hiển thị</span>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="border border-gray-200 rounded-xl px-2.5 py-1 bg-white outline-none cursor-pointer"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-            </select>
-            <span>
-              trên tổng số <b>{filteredBookings.length}</b> đặt phòng
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => alert("Chức năng Import file Excel")}
-              className="px-3.5 py-1.5 border border-[#003580] text-[#003580] font-bold rounded-xl hover:bg-blue-50 cursor-pointer transition shadow-2xs"
-            >
-              Import
-            </button>
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              className="px-3.5 py-1.5 border border-[#003580] text-[#003580] font-bold rounded-xl hover:bg-blue-50 cursor-pointer transition shadow-2xs"
-            >
-              Xuất file Excel
-            </button>
+        {/* PHÂN TRANG */}
+        <div className="px-4 py-2.5 bg-white border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 flex-wrap gap-2">
+          <span>
+            Tổng cộng: <b>{filteredBookings.length}</b> đơn đặt phòng
+          </span>
+          <div className="flex items-center gap-1">
+            <span>Hiển thị tối đa 20 đơn / trang</span>
           </div>
         </div>
       </div>
