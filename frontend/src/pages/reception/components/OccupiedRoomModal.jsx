@@ -117,13 +117,13 @@ export default function OccupiedRoomModal({
     return `${days} ngày`;
   }, [b, now]);
 
-  // 2. TÍNH TOÁN PHỤ THU: TÁCH BIỆT RÕ RÀNG NHẬN SỚM VÀ TRẢ MUỘN
+  // 2. TÍNH TOÁN PHỤ THU
   const surchargeDetails = useMemo(() => {
     const isHourly = b.rental_type === "HOUR" || b.rental_type === "Giờ";
     const isOvernight =
       b.rental_type === "OVERNIGHT" || b.rental_type === "Đêm";
 
-    // ─── A. PHỤ THU NHẬN SỚM (EARLY CHECK-IN) ───
+    // A. Phụ thu nhận sớm
     let earlyHours = 0;
     let earlyFee = 0;
     let earlyLabel = "";
@@ -163,7 +163,7 @@ export default function OccupiedRoomModal({
       }
     }
 
-    // ─── B. PHỤ THU TRẢ MUỘN (LATE CHECK-OUT) ───
+    // B. Phụ thu trả muộn
     let lateHours = 0;
     let lateFee = 0;
     let lateLabel = "";
@@ -286,7 +286,7 @@ export default function OccupiedRoomModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-      <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl border border-gray-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col text-gray-900">
+      <div className="bg-white rounded-3xl w-full max-w-6xl shadow-2xl border border-gray-200 overflow-hidden text-xs font-sans animate-scaleUp max-h-[92vh] flex flex-col text-gray-900">
         {/* HEADER MODAL */}
         <div className="flex justify-between items-center px-6 py-4 bg-[#003580] text-white shadow-xs shrink-0 flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
@@ -340,25 +340,24 @@ export default function OccupiedRoomModal({
           </button>
         </div>
 
-        {/* NỘI DUNG TÍNH TIỀN */}
+        {/* NỘI DUNG TÍNH TIỀN: CHIA LẠI TỶ LỆ 8-4 CHO RỘNG RÃI */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1 bg-white">
-          {/* CỘT TRÁI: BẢNG CHI TIẾT CÁC KHOẢN TIỀN */}
-          <div className="lg:col-span-7 space-y-4">
+          {/* CỘT TRÁI: BẢNG CHI TIẾT CÁC KHOẢN TIỀN (RỘNG RÃI lg:col-span-8) */}
+          <div className="lg:col-span-8 space-y-4">
             <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 border-b border-gray-200 text-xs font-bold uppercase tracking-wider">
-                    <th className="py-3 px-4 whitespace-nowrap">
+                    <th className="py-3.5 px-4 whitespace-nowrap">
                       Thông tin phòng / Phụ thu phát sinh
                     </th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap">
+                    <th className="py-3.5 px-3 text-center whitespace-nowrap w-28">
                       Thời gian
                     </th>
-                    <th className="py-3 px-4 text-right whitespace-nowrap">
+                    <th className="py-3.5 px-3 text-right whitespace-nowrap w-24">
                       Đơn giá
                     </th>
-                    {/* 🌟 MỞ RỘNG CỘT THÀNH TIỀN KHÔNG BAO GIỜ BỊ DẤU BA CHẤM 🌟 */}
-                    <th className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">
+                    <th className="py-3.5 px-4 text-right whitespace-nowrap w-32">
                       Thành tiền
                     </th>
                   </tr>
@@ -366,7 +365,7 @@ export default function OccupiedRoomModal({
                 <tbody className="divide-y divide-gray-100 text-xs">
                   {/* 1. TIỀN PHÒNG GỐC */}
                   <tr className="hover:bg-blue-50/40 transition">
-                    <td className="py-3 px-4 whitespace-nowrap">
+                    <td className="py-3.5 px-4">
                       <div className="font-bold text-gray-900 text-xs">
                         {room.type_name}
                       </div>
@@ -379,14 +378,13 @@ export default function OccupiedRoomModal({
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-center font-bold text-[#003580] whitespace-nowrap">
+                    <td className="py-3.5 px-3 text-center font-bold text-[#003580] whitespace-nowrap">
                       {actualStayDuration}
                     </td>
-                    <td className="py-3 px-4 text-right font-medium text-gray-600 tabular-nums whitespace-nowrap">
+                    <td className="py-3.5 px-3 text-right font-medium text-gray-600 tabular-nums whitespace-nowrap">
                       {formatVND(baseRoomPrice)}
                     </td>
-                    {/* Hiển thị số tiền rõ ràng đầy đủ */}
-                    <td className="py-3 px-4 text-right font-bold text-gray-900 tabular-nums whitespace-nowrap min-w-[120px]">
+                    <td className="py-3.5 px-4 text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">
                       {formatVND(baseRoomPrice)}
                     </td>
                   </tr>
@@ -394,7 +392,7 @@ export default function OccupiedRoomModal({
                   {/* 2. DÒNG PHỤ THU NHẬN SỚM (NẾU CÓ) */}
                   {surchargeDetails.earlyFee > 0 && (
                     <tr className="bg-amber-50/50 text-amber-950 border-t border-amber-200">
-                      <td className="py-3 px-4 whitespace-nowrap">
+                      <td className="py-3.5 px-4">
                         <div className="font-bold text-xs flex items-center gap-1.5 text-amber-900">
                           <Sunrise
                             size={15}
@@ -406,13 +404,13 @@ export default function OccupiedRoomModal({
                           {surchargeDetails.earlyLabel}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center font-bold text-amber-900 whitespace-nowrap">
+                      <td className="py-3.5 px-3 text-center font-bold text-amber-900 whitespace-nowrap">
                         {surchargeDetails.earlyHours} giờ
                       </td>
-                      <td className="py-3 px-4 text-right font-medium text-amber-800 tabular-nums whitespace-nowrap">
+                      <td className="py-3.5 px-3 text-right font-medium text-amber-800 tabular-nums whitespace-nowrap">
                         {formatVND(hourlyRate)}
                       </td>
-                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap min-w-[120px]">
+                      <td className="py-3.5 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap">
                         +{formatVND(surchargeDetails.earlyFee)}
                       </td>
                     </tr>
@@ -421,7 +419,7 @@ export default function OccupiedRoomModal({
                   {/* 3. DÒNG PHỤ THU TRẢ MUỘN (NẾU CÓ) */}
                   {surchargeDetails.lateFee > 0 && (
                     <tr className="bg-orange-50/50 text-orange-950 border-t border-orange-200">
-                      <td className="py-3 px-4 whitespace-nowrap">
+                      <td className="py-3.5 px-4">
                         <div className="font-bold text-xs flex items-center gap-1.5 text-orange-900">
                           <Sunset
                             size={15}
@@ -433,13 +431,13 @@ export default function OccupiedRoomModal({
                           {surchargeDetails.lateLabel}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center font-bold text-orange-900 whitespace-nowrap">
+                      <td className="py-3.5 px-3 text-center font-bold text-orange-900 whitespace-nowrap">
                         {surchargeDetails.lateHours} giờ
                       </td>
-                      <td className="py-3 px-4 text-right font-medium text-orange-800 tabular-nums whitespace-nowrap">
+                      <td className="py-3.5 px-3 text-right font-medium text-orange-800 tabular-nums whitespace-nowrap">
                         {formatVND(hourlyRate)}
                       </td>
-                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap min-w-[120px]">
+                      <td className="py-3.5 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap">
                         +{formatVND(surchargeDetails.lateFee)}
                       </td>
                     </tr>
@@ -449,8 +447,8 @@ export default function OccupiedRoomModal({
             </div>
           </div>
 
-          {/* CỘT PHẢI: QUYẾT TOÁN TIỀN MINH BẠCH */}
-          <div className="lg:col-span-5 border-l border-gray-200 lg:pl-6 space-y-3.5">
+          {/* CỘT PHẢI: QUYẾT TOÁN TIỀN (GỌN GÀNG lg:col-span-4) */}
+          <div className="lg:col-span-4 border-l border-gray-200 lg:pl-6 space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-gray-600 font-bold border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 text-xs">
                 <Calendar size={13} className="text-[#006ce4]" />
@@ -470,7 +468,7 @@ export default function OccupiedRoomModal({
               {surchargeDetails.earlyFee > 0 && (
                 <div className="flex justify-between items-center text-amber-800 font-medium">
                   <span className="whitespace-nowrap">
-                    Phụ thu nhận sớm ({surchargeDetails.earlyHours}h):
+                    Nhận sớm ({surchargeDetails.earlyHours}h):
                   </span>
                   <span className="font-bold tabular-nums whitespace-nowrap text-rose-600">
                     +{formatVND(surchargeDetails.earlyFee)}
@@ -481,7 +479,7 @@ export default function OccupiedRoomModal({
               {surchargeDetails.lateFee > 0 && (
                 <div className="flex justify-between items-center text-orange-800 font-medium">
                   <span className="whitespace-nowrap">
-                    Phụ thu trả muộn ({surchargeDetails.lateHours}h):
+                    Trả muộn ({surchargeDetails.lateHours}h):
                   </span>
                   <span className="font-bold tabular-nums whitespace-nowrap text-rose-600">
                     +{formatVND(surchargeDetails.lateFee)}
@@ -514,8 +512,8 @@ export default function OccupiedRoomModal({
                   </span>
                   <span className="text-[10px] text-amber-800 font-medium">
                     {remainingAmount === 0
-                      ? "(Hóa đơn đã thanh toán đủ 100%)"
-                      : "(Bao gồm tiền phòng còn lại + phụ phí)"}
+                      ? "(Đã thanh toán đủ 100%)"
+                      : "(Tiền phòng còn lại + phụ phí)"}
                   </span>
                 </div>
                 <span className="font-black text-base text-rose-600 tabular-nums whitespace-nowrap">
@@ -527,7 +525,7 @@ export default function OccupiedRoomModal({
                 <div className="space-y-2.5 pt-2">
                   <div className="flex justify-between items-center">
                     <span className="font-black text-[#0a2540] flex items-center gap-1.5 whitespace-nowrap">
-                      Lễ tân thu số tiền còn lại:
+                      Lễ tân thu số tiền:
                       <CreditCard size={14} className="text-[#006ce4]" />
                     </span>
                     <input
@@ -546,8 +544,8 @@ export default function OccupiedRoomModal({
                     />
                   </div>
 
-                  <div className="flex items-center justify-start gap-6 pt-1 text-gray-700 font-bold">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="flex items-center justify-start gap-4 pt-1 text-gray-700 font-bold flex-wrap">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
                       <input
                         type="radio"
                         name="checkout_pay_method"
@@ -558,7 +556,7 @@ export default function OccupiedRoomModal({
                       <span>Tiền mặt</span>
                     </label>
 
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
                       <input
                         type="radio"
                         name="checkout_pay_method"
@@ -584,7 +582,7 @@ export default function OccupiedRoomModal({
             </div>
 
             {/* NÚT HOÀN THÀNH & TRẢ PHÒNG */}
-            <div className="pt-3 flex items-center gap-3">
+            <div className="pt-3 flex items-center gap-2.5">
               <button
                 type="button"
                 disabled={isSubmitting}
@@ -594,8 +592,8 @@ export default function OccupiedRoomModal({
                 {isSubmitting ? "Đang xử lý..." : "Hoàn thành & Trả phòng"}
               </button>
 
-              <div className="p-2 border border-gray-200 rounded-xl bg-gray-50 text-gray-700 flex items-center justify-center">
-                <QrCode size={26} />
+              <div className="p-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-700 flex items-center justify-center shrink-0">
+                <QrCode size={22} />
               </div>
             </div>
           </div>
