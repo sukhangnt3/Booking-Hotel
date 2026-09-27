@@ -88,7 +88,7 @@ const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   return `${y}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}`;
 };
 
-// 🌟 BỘ CHỌN NGÀY VÀ GIỜ MỚI: DỄ BẤM, KHÓA NGÀY TRẢ PHÒNG CHUẨN XÁC 🌟
+// 🌟 BỘ CHỌN NGÀY VÀ GIỜ: KHÔNG BỊ CHE KHUẤT, BUNG MENU NỔI TUYỆT ĐỐI 🌟
 function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
   const dateInputRef = useRef(null);
   const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
@@ -153,7 +153,7 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
 
   return (
     <div
-      className={`flex items-center gap-1.5 p-1 rounded-2xl bg-white transition border shadow-2xs ${
+      className={`flex items-center gap-1.5 p-1 rounded-2xl bg-white transition border shadow-2xs relative ${
         hasWarning
           ? "border-amber-400 bg-amber-50/20"
           : "border-gray-200 hover:border-[#003580]"
@@ -187,7 +187,7 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
 
       <span className="text-gray-300 font-normal">|</span>
 
-      {/* 2. DROPDOWN CHỌN GIỜ TIỆN LỢI */}
+      {/* 2. NÚT CHỌN GIỜ: CÓ Z-INDEX 9999 NỔI LÊN TRÊN HẾT, KHÔNG BỊ CHE KHUẤT */}
       <div className="relative" ref={timeDropdownRef}>
         <button
           type="button"
@@ -200,12 +200,12 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
         </button>
 
         {isTimeDropdownOpen && (
-          <div className="absolute right-0 top-full mt-1.5 w-32 bg-white border border-gray-200 rounded-2xl shadow-xl py-1 z-50 max-h-48 overflow-y-auto animate-in fade-in">
+          <div className="fixed sm:absolute right-auto sm:right-0 top-auto mt-1.5 w-32 bg-white border border-gray-200 rounded-2xl shadow-2xl py-1.5 z-[9999] max-h-52 overflow-y-auto animate-in fade-in">
             {commonTimes.map((t) => (
               <div
                 key={t}
                 onClick={() => handleTimeSelect(t)}
-                className={`px-3.5 py-1.5 flex items-center justify-between text-xs cursor-pointer font-mono font-bold transition ${
+                className={`px-3.5 py-2 flex items-center justify-between text-xs cursor-pointer font-mono font-bold transition ${
                   t === timePart
                     ? "bg-blue-50 text-[#003580]"
                     : "text-gray-700 hover:bg-gray-50"
@@ -330,7 +330,7 @@ export default function QuickBookingModal({
       start.setHours(h || 14, m || 0, 0, 0);
     }
     const end = new Date(start);
-    end.setDate(start.getDate() + 1); // +1 ngày
+    end.setDate(start.getDate() + 1);
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     end.setHours(outH || 12, outM || 0, 0, 0);
 
@@ -598,9 +598,9 @@ export default function QuickBookingModal({
 
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-      <div className="bg-white rounded-3xl w-full max-w-7xl shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
+      <div className="bg-white rounded-3xl w-full max-w-7xl shadow-2xl border border-gray-200 text-xs text-gray-900 animate-scaleUp my-auto flex flex-col max-h-[92vh]">
         {/* HEADER MODAL */}
-        <div className="flex justify-between items-center px-8 py-5 bg-[#003580] text-white shadow-xs">
+        <div className="flex justify-between items-center px-8 py-5 bg-[#003580] text-white shadow-xs shrink-0 rounded-t-3xl">
           <div className="flex items-center gap-2.5">
             <h2 className="font-black text-lg text-white tracking-tight leading-none">
               Đặt/Nhận phòng nhanh
@@ -619,7 +619,7 @@ export default function QuickBookingModal({
         </div>
 
         {/* THANH TÌM KIẾM & BỘ ĐẾM SỐ KHÁCH */}
-        <div className="p-8 space-y-6">
+        <div className="p-8 space-y-6 overflow-y-visible flex-1">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 flex-1 min-w-[280px]">
               <div className="flex items-center border border-gray-300 rounded-xl px-4 py-2.5 bg-white focus-within:border-[#003580] shadow-2xs flex-1 max-w-lg">
@@ -671,8 +671,8 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* BẢNG PHÒNG CHỌN */}
-          <div className="border border-blue-100 rounded-2xl bg-white shadow-2xs overflow-hidden">
+          {/* 🌟 BẢNG PHÒNG CHỌN: ĐÃ BỎ OVERFLOW-HIDDEN ĐỂ DROPDOWN GIỜ BUNG TỰ DO 🌟 */}
+          <div className="border border-blue-100 rounded-2xl bg-white shadow-2xs">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-blue-50/70 text-gray-800 border-b border-blue-100 text-xs font-bold uppercase tracking-wider">
@@ -742,7 +742,6 @@ export default function QuickBookingModal({
 
               <tbody className="divide-y divide-gray-100 text-xs">
                 {(bookingData.rooms || []).map((item, idx) => {
-                  // 🌟 TÍNH BIẾN MIN-DATE BẰNG JS THUẦN (KHÔNG DÙNG HOOK TRONG LOOP NỮA) 🌟
                   let minCheckoutDate = undefined;
                   if (
                     (item.rental_type === "Ngày" ||
@@ -750,7 +749,7 @@ export default function QuickBookingModal({
                     item.checkin_date
                   ) {
                     const d = new Date(String(item.checkin_date).slice(0, 10));
-                    d.setDate(d.getDate() + 1); // Khóa cứng từ ngày mai trở đi
+                    d.setDate(d.getDate() + 1);
                     minCheckoutDate = d.toISOString().slice(0, 10);
                   }
 
@@ -790,6 +789,7 @@ export default function QuickBookingModal({
                         </select>
                       </td>
 
+                      {/* Ô CHỌN NGÀY NHẬN */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
@@ -811,6 +811,7 @@ export default function QuickBookingModal({
                         </div>
                       </td>
 
+                      {/* Ô CHỌN NGÀY TRẢ CÓ KHÓA MINDATE */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
@@ -839,6 +840,7 @@ export default function QuickBookingModal({
                         </span>
                       </td>
 
+                      {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
                       <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
                         {formatNumber(item.price)} ₫
                       </td>
@@ -923,7 +925,7 @@ export default function QuickBookingModal({
         </div>
 
         {/* FOOTER */}
-        <div className="px-8 py-5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+        <div className="px-8 py-5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0 rounded-b-3xl">
           <button
             type="button"
             onClick={() => handleExecuteConfirm(false)}
@@ -1843,7 +1845,7 @@ export default function QuickBookingModal({
               </div>
 
               {/* FOOTER */}
-              <div className="flex items-center justify-end pt-4 border-t border-gray-100 gap-3">
+              <div className="flex items-center justify-end pt-4 border-t border-gray-100 gap-3 shrink-0 rounded-b-3xl">
                 <button
                   type="button"
                   onClick={() => setIsAddCustomerOpen(false)}
