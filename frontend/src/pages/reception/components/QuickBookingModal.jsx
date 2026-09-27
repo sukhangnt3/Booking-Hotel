@@ -88,8 +88,14 @@ const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   return `${y}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}`;
 };
 
-// 🌟 BỘ CHỌN NGÀY VÀ GIỜ: KHÓA CHẶT QUÁ KHỨ VÀ NGÀY TRẢ LÙI 🌟
-function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
+// 🌟 BỘ CHỌN NGÀY VÀ GIỜ: KHÓA CHẶT CẢ NGÀY LẪN GIỜ QUÁ KHỨ 🌟
+function CustomDateTimePicker({
+  value,
+  onChange,
+  minDate,
+  minTime,
+  hasWarning,
+}) {
   const dateInputRef = useRef(null);
   const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
   const timeDropdownRef = useRef(null);
@@ -128,17 +134,25 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
     return datePart;
   }, [datePart]);
 
+  // 🌟 LỌC BỎ CÁC MỐC GIỜ QUÁ KHỨ DỰA TRÊN minTime (KHÔNG CHO CHỌN GIỜ ĐI LÙI) 🌟
   const commonTimes = useMemo(() => {
     const list = [];
     for (let h = 0; h < 24; h++) {
       for (let m = 0; m < 60; m += 30) {
-        list.push(
-          `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
-        );
+        const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+
+        // Nếu có minTime yêu cầu (ví dụ sau 19:45), chỉ lấy các mốc >= minTime
+        if (minTime) {
+          if (timeStr >= minTime) {
+            list.push(timeStr);
+          }
+        } else {
+          list.push(timeStr);
+        }
       }
     }
     return list;
-  }, []);
+  }, [minTime]);
 
   const handleDateSelect = (e) => {
     const newD = e.target.value;
@@ -159,7 +173,7 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
           : "border-gray-200 hover:border-[#003580]"
       }`}
     >
-      {/* 1. NÚT CHỌN NGÀY CÓ THUỘC TÍNH MIN KHÓA CHẶT NGÀY */}
+      {/* 1. NÚT CHỌN NGÀY CÓ KHÓA MINDATE */}
       <div
         onClick={() => {
           if (dateInputRef.current) {
@@ -187,7 +201,7 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
 
       <span className="text-gray-300 font-normal">|</span>
 
-      {/* 2. DROPDOWN CHỌN GIỜ TIỆN LỢI */}
+      {/* 2. DROPDOWN CHỌN GIỜ ĐÃ LỌC BỎ CÁC GIỜ QUÁ KHỨ */}
       <div className="relative" ref={timeDropdownRef}>
         <button
           type="button"
@@ -201,22 +215,32 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
 
         {isTimeDropdownOpen && (
           <div className="fixed sm:absolute right-auto sm:right-0 top-auto mt-1.5 w-32 bg-white border border-gray-200 rounded-2xl shadow-2xl py-1.5 z-[9999] max-h-52 overflow-y-auto animate-in fade-in">
-            {commonTimes.map((t) => (
-              <div
-                key={t}
-                onClick={() => handleTimeSelect(t)}
-                className={`px-3.5 py-2 flex items-center justify-between text-xs cursor-pointer font-mono font-bold transition ${
-                  t === timePart
-                    ? "bg-blue-50 text-[#003580]"
-                    : "text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                <span>{t}</span>
-                {t === timePart && (
-                  <Check size={13} className="text-[#003580]" strokeWidth={3} />
-                )}
+            {commonTimes.length === 0 ? (
+              <div className="px-3 py-2 text-[11px] text-gray-400 italic text-center">
+                Không còn giờ hợp lệ
               </div>
-            ))}
+            ) : (
+              commonTimes.map((t) => (
+                <div
+                  key={t}
+                  onClick={() => handleTimeSelect(t)}
+                  className={`px-3.5 py-2 flex items-center justify-between text-xs cursor-pointer font-mono font-bold transition ${
+                    t === timePart
+                      ? "bg-blue-50 text-[#003580]"
+                      : "text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <span>{t}</span>
+                  {t === timePart && (
+                    <Check
+                      size={13}
+                      className="text-[#003580]"
+                      strokeWidth={3}
+                    />
+                  )}
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -234,12 +258,11 @@ export default function QuickBookingModal({
 }) {
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
 
-  // 🌟 NGÀY HÔM NAY (ĐỊNH DẠNG YYYY-MM-DD ĐỂ KHÓA QUÁ KHỨ)
-  const todayDateStr = useMemo(() => {
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  }, []);
+  // Ngày và Giờ hiện tại của máy tính
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const todayDateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const currentTimeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState({
@@ -302,22 +325,21 @@ export default function QuickBookingModal({
   }, [rooms]);
 
   const getDefaultDatesForType = (rentalType, checkinMode = "Hiện tại") => {
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
+    const nowDate = new Date();
 
     if (rentalType === "Giờ") {
-      const end = new Date(now.getTime() + 3600000);
+      const end = new Date(nowDate.getTime() + 3600000); // Mặc định 1 giờ
       return {
-        checkin: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`,
+        checkin: `${nowDate.getFullYear()}-${pad(nowDate.getMonth() + 1)}-${pad(nowDate.getDate())}T${pad(nowDate.getHours())}:${pad(nowDate.getMinutes())}`,
         checkout: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`,
       };
     }
 
     if (rentalType === "Đêm") {
-      const start = new Date(now);
+      const start = new Date(nowDate);
       const [inH, inM] = hotelPolicies.overnightIn.split(":").map(Number);
       if (checkinMode === "Quy định") {
-        if (now.getHours() < 12) start.setDate(start.getDate() - 1);
+        if (nowDate.getHours() < 12) start.setDate(start.getDate() - 1);
         start.setHours(inH || 22, inM || 0, 0, 0);
       }
       const end = new Date(start);
@@ -331,7 +353,7 @@ export default function QuickBookingModal({
     }
 
     // THUÊ THEO NGÀY: NGÀY TRẢ LUÔN LÀ NGÀY MAI (+1 NGÀY)
-    const start = new Date(now);
+    const start = new Date(nowDate);
     if (checkinMode === "Quy định") {
       const [h, m] = hotelPolicies.dailyIn.split(":").map(Number);
       start.setHours(h || 14, m || 0, 0, 0);
@@ -543,6 +565,23 @@ export default function QuickBookingModal({
         item.checkout_date = dates.checkout;
       }
 
+      // Đảm bảo nếu ngày trả phòng bị trước ngày nhận phòng thì tự đẩy lên
+      if (new Date(item.checkout_date) <= new Date(item.checkin_date)) {
+        if (item.rental_type === "Giờ") {
+          const inDt = new Date(item.checkin_date);
+          item.checkout_date = toStandardISO(
+            inDt,
+            null,
+            inDt.getHours() + 1,
+            inDt.getMinutes(),
+          );
+        } else {
+          const inDt = new Date(item.checkin_date);
+          inDt.setDate(inDt.getDate() + 1);
+          item.checkout_date = toStandardISO(inDt, null, 12, 0);
+        }
+      }
+
       const calc = calculateDurationAndPriceLogic(
         item.checkin_date,
         item.checkout_date,
@@ -749,30 +788,45 @@ export default function QuickBookingModal({
 
               <tbody className="divide-y divide-gray-100 text-xs font-sans">
                 {(bookingData.rooms || []).map((item, idx) => {
-                  // 🌟 KHÓA NGÀY TRẢ PHÒNG CHUẨN XÁC:
-                  // 1. Nếu thuê Ngày/Đêm: Phải từ Ngày nhận + 1 trở đi
-                  // 2. Nếu thuê Giờ: Phải từ Ngày nhận (hoặc hôm nay) trở đi, TUYỆT ĐỐI KHÔNG CHỌN QUÁ KHỨ
-                  let minCheckoutDate = undefined;
-                  const pad = (n) => String(n).padStart(2, "0");
+                  const inDatePart = item.checkin_date
+                    ? String(item.checkin_date).slice(0, 10)
+                    : todayDateStr;
+                  const inTimePart =
+                    item.checkin_date && String(item.checkin_date).includes("T")
+                      ? String(item.checkin_date).split("T")[1].slice(0, 5)
+                      : "14:00";
 
+                  const outDatePart = item.checkout_date
+                    ? String(item.checkout_date).slice(0, 10)
+                    : todayDateStr;
+
+                  // 🌟 TÍNH MIN-TIME CHO Ô GIỜ TRẢ PHÒNG (NẾU CÙNG NGÀY THÌ PHẢI SAU GIỜ NHẬN) 🌟
+                  let minOutTime = undefined;
+                  if (inDatePart === outDatePart) {
+                    minOutTime = inTimePart; // Không cho chọn giờ trả nhỏ hơn giờ nhận
+                  }
+
+                  // 🌟 TÍNH MIN-TIME CHO Ô GIỜ NHẬN PHÒNG (NẾU LÀ HÔM NAY THÌ KHÔNG CHỌN GIỜ ĐÃ QUA) 🌟
+                  let minInTime = undefined;
+                  if (
+                    inDatePart === todayDateStr &&
+                    item.checkin_mode === "Hiện tại"
+                  ) {
+                    minInTime = currentTimeStr;
+                  }
+
+                  // 🌟 KHÓA NGÀY TRẢ: NẾU THUÊ NGÀY/ĐÊM THÌ BẮT BUỘC TỪ NGÀY NHẬN + 1
+                  let minCheckoutDate = undefined;
                   if (
                     item.rental_type === "Ngày" ||
                     item.rental_type === "Đêm"
                   ) {
-                    if (item.checkin_date) {
-                      const d = new Date(
-                        String(item.checkin_date).slice(0, 10),
-                      );
-                      d.setDate(d.getDate() + 1);
-                      minCheckoutDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-                    } else {
-                      minCheckoutDate = todayDateStr;
-                    }
+                    const d = new Date(inDatePart);
+                    d.setDate(d.getDate() + 1);
+                    minCheckoutDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
                   } else {
-                    // Thuê theo Giờ: Tối thiểu phải là Ngày nhận phòng (hoặc Hôm nay)
-                    minCheckoutDate = item.checkin_date
-                      ? String(item.checkin_date).slice(0, 10)
-                      : todayDateStr;
+                    // Thuê Giờ: Bắt buộc từ Ngày nhận (hoặc Hôm nay) trở đi
+                    minCheckoutDate = inDatePart;
                   }
 
                   return (
@@ -811,12 +865,13 @@ export default function QuickBookingModal({
                         </select>
                       </td>
 
-                      {/* Ô CHỌN NGÀY NHẬN: KHÓA TOÀN BỘ NGÀY QUÁ KHỨ */}
+                      {/* 🌟 Ô CHỌN NGÀY & GIỜ NHẬN: ĐÃ KHÓA NGÀY VÀ GIỜ ĐÃ QUA 🌟 */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
                             value={item.checkin_date}
                             minDate={todayDateStr}
+                            minTime={minInTime}
                             hasWarning={Boolean(item.early_warning)}
                             onChange={(val) =>
                               handleUpdateRoom(idx, "checkin_date", val)
@@ -834,12 +889,13 @@ export default function QuickBookingModal({
                         </div>
                       </td>
 
-                      {/* 🌟 Ô CHỌN NGÀY TRẢ: ĐÃ KHÓA CHẶT QUÁ KHỨ CHO CẢ THUÊ GIỜ, ĐÊM, NGÀY 🌟 */}
+                      {/* 🌟 Ô CHỌN NGÀY & GIỜ TRẢ: ĐÃ KHÓA NGÀY LÙI VÀ GIỜ TRƯỚC GIỜ NHẬN 🌟 */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
                             value={item.checkout_date}
                             minDate={minCheckoutDate}
+                            minTime={minOutTime}
                             hasWarning={Boolean(item.late_warning)}
                             onChange={(val) =>
                               handleUpdateRoom(idx, "checkout_date", val)
@@ -863,7 +919,6 @@ export default function QuickBookingModal({
                         </span>
                       </td>
 
-                      {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
                       <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
                         {formatNumber(item.price)} ₫
                       </td>
@@ -1393,7 +1448,7 @@ export default function QuickBookingModal({
                           birthday: e.target.value,
                         })
                       }
-                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 outline-none bg-white text-gray-700 font-bold"
+                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 outline-none bg-white text-gray-800 font-bold"
                     />
                   </div>
 
