@@ -87,7 +87,7 @@ const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   return `${y}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}`;
 };
 
-function EasyDateTimePicker({ value, onChange, hasWarning, minDate }) {
+function EasyDateTimePicker({ value, onChange, hasWarning }) {
   const dateInputRef = useRef(null);
   const timeInputRef = useRef(null);
 
@@ -165,7 +165,6 @@ function EasyDateTimePicker({ value, onChange, hasWarning, minDate }) {
         <input
           ref={dateInputRef}
           type="date"
-          min={minDate}
           value={datePart}
           onChange={(e) => handleDateChange(e.target.value)}
           className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
@@ -264,7 +263,6 @@ export default function QuickBookingModal({
     };
   }, [rooms]);
 
-  // 🌟 NGÀY TRẢ PHÒNG KHI THUÊ NGÀY LUÔN TỰ ĐỘNG LÀ NGÀY HÔM SAU (+1 NGÀY)
   const getDefaultDatesForType = (rentalType, checkinMode = "Hiện tại") => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
@@ -294,14 +292,14 @@ export default function QuickBookingModal({
       };
     }
 
-    // 🌟 THUÊ NGÀY: NGÀY TRẢ BẮT BUỘC LÀ NGÀY HÔM SAU
+    // THUÊ NGÀY: Mặc định trả vào ngày hôm sau (+1 ngày)
     const start = new Date(now);
     if (checkinMode === "Quy định") {
       const [h, m] = hotelPolicies.dailyIn.split(":").map(Number);
       start.setHours(h || 14, m || 0, 0, 0);
     }
     const end = new Date(start);
-    end.setDate(start.getDate() + 1); // Cộng 1 ngày
+    end.setDate(start.getDate() + 1);
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     end.setHours(outH || 12, outM || 0, 0, 0);
 
@@ -311,6 +309,7 @@ export default function QuickBookingModal({
     };
   };
 
+  // 🌟 LOGIC TÍNH TIỀN THÔNG MINH (NẾU CHỌN CÙNG NGÀY THÌ TÍNH THEO GIỜ, KHÔNG PHẠT VÔ LÝ)
   const calculateDurationAndPriceLogic = (
     checkinStr,
     checkoutStr,
@@ -342,6 +341,7 @@ export default function QuickBookingModal({
     let earlyWarning = "";
     let lateWarning = "";
 
+    // 1. THUÊ THEO GIỜ
     if (rentalType === "Giờ") {
       return {
         durationLabel: `${hours} giờ`,
@@ -351,6 +351,7 @@ export default function QuickBookingModal({
       };
     }
 
+    // 2. THUÊ QUA ĐÊM
     if (rentalType === "Đêm") {
       const [inH, inM] = hotelPolicies.overnightIn.split(":").map(Number);
       const [outH, outM] = hotelPolicies.overnightOut.split(":").map(Number);
@@ -381,10 +382,7 @@ export default function QuickBookingModal({
       };
     }
 
-    // THEO NGÀY
-    const [inH, inM] = hotelPolicies.dailyIn.split(":").map(Number);
-    const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
-
+    // 3. 🌟 THUÊ THEO NGÀY: XỬ LÝ TRƯỜNG HỢP CỐ TÌNH CHỌN CÙNG NGÀY
     const inDateOnly = new Date(
       checkin.getFullYear(),
       checkin.getMonth(),
@@ -395,10 +393,23 @@ export default function QuickBookingModal({
       checkout.getMonth(),
       checkout.getDate(),
     );
-    const daysDiff = Math.max(
-      1,
-      Math.round((outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24)),
+    const daysDiff = Math.round(
+      (outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24),
     );
+
+    // NẾU CHỌN TRẢ CÙNG NGÀY (daysDiff = 0): Tự động tính như thuê theo giờ thực tế
+    if (daysDiff <= 0) {
+      return {
+        durationLabel: `${hours} giờ (Trong ngày)`,
+        price: hours * hourlyPrice,
+        earlyWarning: "",
+        lateWarning: "",
+      };
+    }
+
+    // NẾU Ở QUA ĐÊM BÌNH THƯỜNG (daysDiff >= 1)
+    const [inH, inM] = hotelPolicies.dailyIn.split(":").map(Number);
+    const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
 
     const stdCheckin = new Date(checkin);
     stdCheckin.setHours(inH || 14, inM || 0, 0, 0);
@@ -569,14 +580,15 @@ export default function QuickBookingModal({
 
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-      <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
+      {/* 🌟 MỞ RỘNG CHIỀU NGANG MODAL THÀNH max-w-7xl CHO CỰC KỲ RỘNG RÃI VÀ THOÁNG 🌟 */}
+      <div className="bg-white rounded-3xl w-full max-w-7xl shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
         {/* HEADER MODAL */}
-        <div className="flex justify-between items-center px-7 py-4.5 bg-[#003580] text-white shadow-xs">
+        <div className="flex justify-between items-center px-8 py-5 bg-[#003580] text-white shadow-xs">
           <div className="flex items-center gap-2.5">
             <h2 className="font-black text-lg text-white tracking-tight leading-none">
               Đặt/Nhận phòng nhanh
             </h2>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white border border-white/20">
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-white/20 text-white border border-white/20">
               WALK-IN
             </span>
           </div>
@@ -590,10 +602,10 @@ export default function QuickBookingModal({
         </div>
 
         {/* THANH TÌM KIẾM & BỘ ĐẾM SỐ KHÁCH */}
-        <div className="p-7 space-y-5">
+        <div className="p-8 space-y-6">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-              <div className="flex items-center border border-gray-300 rounded-xl px-3.5 py-2 bg-white focus-within:border-[#003580] shadow-2xs flex-1 max-w-md">
+              <div className="flex items-center border border-gray-300 rounded-xl px-4 py-2.5 bg-white focus-within:border-[#003580] shadow-2xs flex-1 max-w-lg">
                 <Search size={16} className="text-gray-400 mr-2 shrink-0" />
                 <input
                   type="text"
@@ -627,7 +639,7 @@ export default function QuickBookingModal({
 
               <div
                 onClick={() => setIsGuestStayListOpen(true)}
-                className="flex items-center gap-2.5 border border-gray-300 rounded-xl px-4 py-2 bg-white text-gray-700 font-bold select-none cursor-pointer hover:border-[#003580] hover:bg-blue-50/50 shadow-2xs transition"
+                className="flex items-center gap-3 border border-gray-300 rounded-xl px-4 py-2.5 bg-white text-gray-700 font-bold select-none cursor-pointer hover:border-[#003580] hover:bg-blue-50/50 shadow-2xs transition"
                 title="Bấm để xem & quản lý khách lưu trú"
               >
                 <Users size={15} className="text-[#006ce4]" />
@@ -642,13 +654,13 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* 🌟 BẢNG PHÒNG CHỌN: CHO PHÉP SCROLL NGANG NẾU CẦN ĐỂ KHÔNG BỊ CẮT CỘT THÀNH TIỀN 🌟 */}
-          <div className="border border-blue-100 rounded-2xl overflow-x-auto bg-white shadow-2xs">
-            <table className="w-full text-left border-collapse min-w-[850px]">
+          {/* 🌟 BẢNG PHÒNG CHỌN: RỘNG RÃI, CỘT THÀNH TIỀN THẲNG TẮP VÀ KHÔNG BAO GIỜ BỊ CHE 🌟 */}
+          <div className="border border-blue-100 rounded-2xl bg-white shadow-2xs overflow-hidden">
+            <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-blue-50/70 text-gray-800 border-b border-blue-100 text-xs font-bold uppercase tracking-wider">
-                  <th className="py-3 px-4 whitespace-nowrap">Hạng phòng</th>
-                  <th className="py-3 px-3 whitespace-nowrap">
+                  <th className="py-3.5 px-4 whitespace-nowrap">Hạng phòng</th>
+                  <th className="py-3.5 px-3 whitespace-nowrap w-36">
                     <div className="flex items-center gap-1.5">
                       <span>Phòng</span>
                       <span className="bg-[#003580] text-white px-2 py-0.2 rounded-full text-[10px] font-black">
@@ -657,9 +669,11 @@ export default function QuickBookingModal({
                     </div>
                   </th>
 
-                  <th className="py-3 px-3 whitespace-nowrap">Hình thức</th>
+                  <th className="py-3.5 px-3 whitespace-nowrap w-28">
+                    Hình thức
+                  </th>
 
-                  <th className="py-3 px-3 min-w-[200px] whitespace-nowrap">
+                  <th className="py-3.5 px-3 whitespace-nowrap w-64">
                     <div className="flex items-center gap-1.5">
                       <span className="whitespace-nowrap">Nhận</span>
                       <button
@@ -691,39 +705,39 @@ export default function QuickBookingModal({
                     </div>
                   </th>
 
-                  <th className="py-3 px-3 min-w-[200px] whitespace-nowrap">
+                  <th className="py-3.5 px-3 whitespace-nowrap w-64">
                     Trả phòng
                   </th>
 
-                  <th className="py-3 px-3 text-center whitespace-nowrap min-w-[90px]">
+                  <th className="py-3.5 px-3 text-center whitespace-nowrap w-36">
                     Dự kiến
                   </th>
 
-                  {/* 🌟 CỘT THÀNH TIỀN ĐƯỢC ƯU TIÊN HIỂN THỊ RÕ RÀNG 🌟 */}
-                  <th className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">
+                  {/* CỘT THÀNH TIỀN ĐƯỢC DÀNH ĐỦ KHÔNG GIAN */}
+                  <th className="py-3.5 px-6 text-right whitespace-nowrap w-44">
                     <div className="flex items-center justify-end gap-1">
                       <span>Thành tiền</span>
                       <Info size={13} className="text-gray-400" />
                     </div>
                   </th>
-                  <th className="py-3 px-2 w-8 text-center"></th>
+                  <th className="py-3.5 px-3 w-10 text-center"></th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-gray-100 text-xs">
                 {(bookingData.rooms || []).map((item, idx) => (
                   <tr key={idx} className="hover:bg-blue-50/40 transition">
-                    <td className="py-3.5 px-4 font-bold text-gray-900 whitespace-nowrap">
+                    <td className="py-4 px-4 font-bold text-gray-900 whitespace-nowrap">
                       {item.type_name || "DELUXE"}
                     </td>
 
-                    <td className="py-3.5 px-3 whitespace-nowrap">
+                    <td className="py-4 px-3 whitespace-nowrap">
                       <select
                         value={item.room_id}
                         onChange={(e) =>
                           handleUpdateRoom(idx, "room_id", e.target.value)
                         }
-                        className="border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none font-black text-[#003580] bg-white hover:border-[#003580] cursor-pointer min-w-[90px]"
+                        className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none font-black text-[#003580] bg-white hover:border-[#003580] cursor-pointer"
                       >
                         {rooms.map((r) => (
                           <option key={r.id} value={r.id}>
@@ -733,13 +747,13 @@ export default function QuickBookingModal({
                       </select>
                     </td>
 
-                    <td className="py-3.5 px-3 whitespace-nowrap">
+                    <td className="py-4 px-3 whitespace-nowrap">
                       <select
                         value={item.rental_type}
                         onChange={(e) =>
                           handleUpdateRoom(idx, "rental_type", e.target.value)
                         }
-                        className="border border-[#003580] rounded-xl px-2.5 py-1.5 outline-none font-bold text-gray-800 bg-white cursor-pointer min-w-[85px]"
+                        className="w-full border border-[#003580] rounded-xl px-2.5 py-1.5 outline-none font-bold text-gray-800 bg-white cursor-pointer"
                       >
                         <option value="Giờ">Giờ</option>
                         <option value="Đêm">Đêm</option>
@@ -747,7 +761,7 @@ export default function QuickBookingModal({
                       </select>
                     </td>
 
-                    <td className="py-3.5 px-3">
+                    <td className="py-4 px-3">
                       <div className="space-y-1">
                         <EasyDateTimePicker
                           value={item.checkin_date}
@@ -768,15 +782,10 @@ export default function QuickBookingModal({
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-3">
+                    <td className="py-4 px-3">
                       <div className="space-y-1">
                         <EasyDateTimePicker
                           value={item.checkout_date}
-                          minDate={
-                            item.rental_type === "Ngày" && item.checkin_date
-                              ? String(item.checkin_date).slice(0, 10)
-                              : undefined
-                          }
                           hasWarning={Boolean(item.late_warning)}
                           onChange={(val) =>
                             handleUpdateRoom(idx, "checkout_date", val)
@@ -794,18 +803,18 @@ export default function QuickBookingModal({
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-3 text-center font-bold text-[#003580] whitespace-nowrap">
-                      <span className="bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100 inline-block whitespace-nowrap">
+                    <td className="py-4 px-3 text-center font-bold text-[#003580] whitespace-nowrap">
+                      <span className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 inline-block whitespace-nowrap font-bold">
                         {item.duration_label || "1 giờ"}
                       </span>
                     </td>
 
-                    {/* HIỂN THỊ ĐẦY ĐỦ TIỀN CỦA TỪNG PHÒNG */}
-                    <td className="py-3.5 px-4 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap min-w-[120px]">
+                    {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
+                    <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
                       {formatNumber(item.price)} ₫
                     </td>
 
-                    <td className="py-3.5 px-2 text-center">
+                    <td className="py-4 px-3 text-center">
                       <button
                         type="button"
                         onClick={() => {
@@ -814,7 +823,7 @@ export default function QuickBookingModal({
                             rooms: prev.rooms.filter((_, i) => i !== idx),
                           }));
                         }}
-                        className="text-gray-400 hover:text-rose-600 p-1 cursor-pointer transition"
+                        className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer transition"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -831,13 +840,13 @@ export default function QuickBookingModal({
               <button
                 type="button"
                 onClick={handleAddMoreRoom}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#003580] text-[#003580] font-bold hover:bg-blue-50 cursor-pointer transition shadow-2xs active:scale-95 whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-[#003580] text-[#003580] font-bold hover:bg-blue-50 cursor-pointer transition shadow-2xs active:scale-95 whitespace-nowrap"
               >
                 <PlusCircle size={15} />
                 <span>Chọn thêm phòng</span>
               </button>
 
-              <div className="flex items-center gap-2 max-w-md">
+              <div className="flex items-center gap-2 max-w-lg">
                 <span className="font-bold text-gray-700 shrink-0">
                   Ghi chú:
                 </span>
@@ -847,17 +856,17 @@ export default function QuickBookingModal({
                     setBookingData({ ...bookingData, note: e.target.value })
                   }
                   placeholder="Nhập ghi chú khách hàng, biển số xe..."
-                  className="flex-1 border-b border-gray-300 py-1 outline-none text-gray-800 text-xs focus:border-[#003580] bg-transparent"
+                  className="flex-1 border-b border-gray-300 py-1.5 outline-none text-gray-800 text-xs focus:border-[#003580] bg-transparent"
                 />
               </div>
             </div>
 
-            <div className="w-80 p-4.5 bg-blue-50/60 rounded-2xl border border-blue-200 space-y-3">
+            <div className="w-96 p-5 bg-blue-50/60 rounded-2xl border border-blue-200 space-y-3.5">
               <div className="flex justify-between items-center text-xs">
                 <span className="font-bold text-gray-700 whitespace-nowrap">
                   Khách cần trả
                 </span>
-                <span className="font-black text-base text-[#003580] tabular-nums whitespace-nowrap">
+                <span className="font-black text-lg text-[#003580] tabular-nums whitespace-nowrap">
                   {formatNumber(totalAmount)} ₫
                 </span>
               </div>
@@ -866,7 +875,7 @@ export default function QuickBookingModal({
                 <span className="text-gray-700 font-bold whitespace-nowrap">
                   Khách thanh toán
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     value={customerPaid ? formatNumber(customerPaid) : "0"}
@@ -874,7 +883,7 @@ export default function QuickBookingModal({
                       const raw = e.target.value.replace(/\D/g, "");
                       setCustomerPaid(raw ? Number(raw) : 0);
                     }}
-                    className="w-28 text-right border-b border-gray-400 focus:border-[#003580] py-0.5 outline-none font-black text-gray-900 bg-transparent tabular-nums"
+                    className="w-32 text-right border-b border-gray-400 focus:border-[#003580] py-0.5 outline-none font-black text-gray-900 bg-transparent tabular-nums text-sm"
                   />
                   <span className="font-bold text-gray-700">₫</span>
                 </div>
@@ -884,7 +893,7 @@ export default function QuickBookingModal({
         </div>
 
         {/* FOOTER */}
-        <div className="px-7 py-4.5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+        <div className="px-8 py-5 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={() => handleExecuteConfirm(false)}
@@ -896,7 +905,7 @@ export default function QuickBookingModal({
           <button
             type="button"
             onClick={() => handleExecuteConfirm(true)}
-            className="px-6 py-2.5 bg-[#003580] hover:bg-[#00224f] text-white font-black rounded-xl text-xs shadow-xs cursor-pointer transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
+            className="px-7 py-2.5 bg-[#003580] hover:bg-[#00224f] text-white font-black rounded-xl text-xs shadow-xs cursor-pointer transition active:scale-95 flex items-center gap-1.5 whitespace-nowrap"
           >
             <CheckCircle2 size={16} />
             <span>Nhận phòng ngay</span>
