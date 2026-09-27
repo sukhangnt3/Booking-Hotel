@@ -553,6 +553,7 @@ export default function ReceptionMapPage() {
     }
   };
 
+  // 🌟 ĐÃ SỬA CHUẨN XÁC: KHI MỞ MODAL THUÊ NGÀY, NGÀY TRẢ BẮT BUỘC LÀ NGÀY HÔM SAU (+1 NGÀY) 🌟
   const handleOpenQuickBooking = (room = null) => {
     const targetRoom =
       room || rooms.find((r) => r.status === "available") || rooms[0];
@@ -560,6 +561,8 @@ export default function ReceptionMapPage() {
 
     const today = new Date();
     today.setHours(14, 0, 0, 0);
+
+    // Bắt buộc ngày trả phòng là ngày hôm sau (+1 ngày) lúc 12:00 trưa
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
     tomorrow.setHours(12, 0, 0, 0);
@@ -587,7 +590,7 @@ export default function ReceptionMapPage() {
           rental_type: "Ngày",
           checkin_mode: "Quy định",
           checkin_date: checkinVal,
-          checkout_date: checkoutVal,
+          checkout_date: checkoutVal, // 🌟 Chuẩn ngày hôm sau
           duration_label: durationLabel,
           price: price,
         },

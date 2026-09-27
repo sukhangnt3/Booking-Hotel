@@ -264,21 +264,19 @@ export default function QuickBookingModal({
     };
   }, [rooms]);
 
-  // 🌟 ĐÃ SỬA CHUẨN XÁC NGHIỆP VỤ: THUÊ NGÀY LUÔN TỰ ĐỘNG NHẢY SANG NGÀY HÔM SAU (+1 NGÀY)
+  // 🌟 NGÀY TRẢ PHÒNG KHI THUÊ NGÀY LUÔN TỰ ĐỘNG LÀ NGÀY HÔM SAU (+1 NGÀY)
   const getDefaultDatesForType = (rentalType, checkinMode = "Hiện tại") => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
 
-    // 1. THUÊ THEO GIỜ
     if (rentalType === "Giờ") {
-      const end = new Date(now.getTime() + 3600000); // Mặc định 1 giờ
+      const end = new Date(now.getTime() + 3600000);
       return {
         checkin: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`,
         checkout: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`,
       };
     }
 
-    // 2. THUÊ QUA ĐÊM
     if (rentalType === "Đêm") {
       const start = new Date(now);
       const [inH, inM] = hotelPolicies.overnightIn.split(":").map(Number);
@@ -296,16 +294,14 @@ export default function QuickBookingModal({
       };
     }
 
-    // 3. 🌟 THUÊ THEO NGÀY: NGÀY TRẢ PHÒNG BẮT BUỘC PHẢI LÀ NGÀY HÔM SAU (+1 NGÀY) 🌟
+    // 🌟 THUÊ NGÀY: NGÀY TRẢ BẮT BUỘC LÀ NGÀY HÔM SAU
     const start = new Date(now);
     if (checkinMode === "Quy định") {
       const [h, m] = hotelPolicies.dailyIn.split(":").map(Number);
       start.setHours(h || 14, m || 0, 0, 0);
     }
-
-    // Tự động cộng thêm 1 ngày cho ngày trả phòng
     const end = new Date(start);
-    end.setDate(start.getDate() + 1);
+    end.setDate(start.getDate() + 1); // Cộng 1 ngày
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     end.setHours(outH || 12, outM || 0, 0, 0);
 
@@ -346,7 +342,6 @@ export default function QuickBookingModal({
     let earlyWarning = "";
     let lateWarning = "";
 
-    // A. THUÊ THEO GIỜ
     if (rentalType === "Giờ") {
       return {
         durationLabel: `${hours} giờ`,
@@ -356,7 +351,6 @@ export default function QuickBookingModal({
       };
     }
 
-    // B. THUÊ QUA ĐÊM
     if (rentalType === "Đêm") {
       const [inH, inM] = hotelPolicies.overnightIn.split(":").map(Number);
       const [outH, outM] = hotelPolicies.overnightOut.split(":").map(Number);
@@ -387,11 +381,10 @@ export default function QuickBookingModal({
       };
     }
 
-    // C. 🌟 THUÊ THEO NGÀY
+    // THEO NGÀY
     const [inH, inM] = hotelPolicies.dailyIn.split(":").map(Number);
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
 
-    // Tính số ngày chênh lệch thực tế giữa ngày trả và ngày nhận
     const inDateOnly = new Date(
       checkin.getFullYear(),
       checkin.getMonth(),
@@ -407,7 +400,6 @@ export default function QuickBookingModal({
       Math.round((outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24)),
     );
 
-    // 1. Kiểm tra nhận sớm so với 14:00 ngày nhận
     const stdCheckin = new Date(checkin);
     stdCheckin.setHours(inH || 14, inM || 0, 0, 0);
 
@@ -417,7 +409,6 @@ export default function QuickBookingModal({
       if (earlyHours > 0) earlyWarning = `Nhận sớm ${earlyHours}h`;
     }
 
-    // 2. Kiểm tra trả muộn so với 12:00 ngày trả
     let lateHours = 0;
     const stdCheckout = new Date(checkout);
     stdCheckout.setHours(outH || 12, outM || 0, 0, 0);
@@ -651,9 +642,9 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* BẢNG PHÒNG CHỌN */}
-          <div className="border border-blue-100 rounded-2xl overflow-hidden bg-white shadow-2xs">
-            <table className="w-full text-left border-collapse">
+          {/* 🌟 BẢNG PHÒNG CHỌN: CHO PHÉP SCROLL NGANG NẾU CẦN ĐỂ KHÔNG BỊ CẮT CỘT THÀNH TIỀN 🌟 */}
+          <div className="border border-blue-100 rounded-2xl overflow-x-auto bg-white shadow-2xs">
+            <table className="w-full text-left border-collapse min-w-[850px]">
               <thead>
                 <tr className="bg-blue-50/70 text-gray-800 border-b border-blue-100 text-xs font-bold uppercase tracking-wider">
                   <th className="py-3 px-4 whitespace-nowrap">Hạng phòng</th>
@@ -666,10 +657,9 @@ export default function QuickBookingModal({
                     </div>
                   </th>
 
-                  {/* HÌNH THỨC CHUẨN 3 LOẠI */}
                   <th className="py-3 px-3 whitespace-nowrap">Hình thức</th>
 
-                  <th className="py-3 px-3 min-w-[210px] whitespace-nowrap">
+                  <th className="py-3 px-3 min-w-[200px] whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
                       <span className="whitespace-nowrap">Nhận</span>
                       <button
@@ -701,15 +691,15 @@ export default function QuickBookingModal({
                     </div>
                   </th>
 
-                  <th className="py-3 px-3 min-w-[210px] whitespace-nowrap">
+                  <th className="py-3 px-3 min-w-[200px] whitespace-nowrap">
                     Trả phòng
                   </th>
 
-                  <th className="py-3 px-3 text-center whitespace-nowrap min-w-[95px]">
+                  <th className="py-3 px-3 text-center whitespace-nowrap min-w-[90px]">
                     Dự kiến
                   </th>
 
-                  {/* 🌟 ĐÃ MỞ RỘNG CỘT THÀNH TIỀN KHÔNG BAO GIỜ BỊ CHE KHUẤT 🌟 */}
+                  {/* 🌟 CỘT THÀNH TIỀN ĐƯỢC ƯU TIÊN HIỂN THỊ RÕ RÀNG 🌟 */}
                   <th className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">
                     <div className="flex items-center justify-end gap-1">
                       <span>Thành tiền</span>
@@ -810,7 +800,7 @@ export default function QuickBookingModal({
                       </span>
                     </td>
 
-                    {/* HIỂN THỊ RÕ RÀNG TIỀN PHÒNG */}
+                    {/* HIỂN THỊ ĐẦY ĐỦ TIỀN CỦA TỪNG PHÒNG */}
                     <td className="py-3.5 px-4 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap min-w-[120px]">
                       {formatNumber(item.price)} ₫
                     </td>
@@ -1118,10 +1108,11 @@ export default function QuickBookingModal({
                             )}
                           </td>
                           <td className="py-3 px-4 text-gray-600 whitespace-nowrap">
-                            {g.gender === "male" ? "Nam" : "Nữ"}
-                            {g.id_number
-                              ? ` • ${g.id_type}: ${g.id_number}`
-                              : ""}
+                            {g.gender === "male" ? "Nam" : "Nữ"} •{" "}
+                            {g.birthday || "---"}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-gray-800 whitespace-nowrap">
+                            {g.id_type}: {g.id_number || "---"}
                           </td>
                           <td className="py-3 px-4 font-black text-[#003580] whitespace-nowrap">
                             P.{g.room_number || "111"}
