@@ -128,7 +128,6 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
     return datePart;
   }, [datePart]);
 
-  // Danh sách các mốc giờ cách nhau 30 phút
   const commonTimes = useMemo(() => {
     const list = [];
     for (let h = 0; h < 24; h++) {
@@ -176,7 +175,6 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
         <Calendar size={14} className="shrink-0 text-[#003580]" />
         <span className="text-xs whitespace-nowrap">{displayDateText}</span>
 
-        {/* Input date ẩn có minDate khóa cứng ngày */}
         <input
           ref={dateInputRef}
           type="date"
@@ -296,7 +294,6 @@ export default function QuickBookingModal({
     };
   }, [rooms]);
 
-  // 🌟 KHÓA NGÀY: THUÊ NGÀY LUÔN BẮT BUỘC TRẢ PHÒNG VÀO NGÀY HÔM SAU
   const getDefaultDatesForType = (rentalType, checkinMode = "Hiện tại") => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
@@ -674,7 +671,7 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* BẢNG PHÒNG CHỌN RỘNG RÃI */}
+          {/* BẢNG PHÒNG CHỌN */}
           <div className="border border-blue-100 rounded-2xl bg-white shadow-2xs overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -745,19 +742,17 @@ export default function QuickBookingModal({
 
               <tbody className="divide-y divide-gray-100 text-xs">
                 {(bookingData.rooms || []).map((item, idx) => {
-                  // 🌟 TÍNH MIN DATE KHÓA CỨNG: NẾU THUÊ NGÀY THÌ PHẢI TỪ NGÀY MAI TRỞ ĐI
-                  const minCheckoutDate = useMemo(() => {
-                    if (item.rental_type === "Ngày" && item.checkin_date) {
-                      const d = new Date(
-                        String(item.checkin_date).slice(0, 10),
-                      );
-                      d.setDate(d.getDate() + 1); // Bắt buộc từ ngày mai
-                      return d.toISOString().slice(0, 10);
-                    }
-                    return item.checkin_date
-                      ? String(item.checkin_date).slice(0, 10)
-                      : undefined;
-                  }, [item.rental_type, item.checkin_date]);
+                  // 🌟 TÍNH BIẾN MIN-DATE BẰNG JS THUẦN (KHÔNG DÙNG HOOK TRONG LOOP NỮA) 🌟
+                  let minCheckoutDate = undefined;
+                  if (
+                    (item.rental_type === "Ngày" ||
+                      item.rental_type === "Đêm") &&
+                    item.checkin_date
+                  ) {
+                    const d = new Date(String(item.checkin_date).slice(0, 10));
+                    d.setDate(d.getDate() + 1); // Khóa cứng từ ngày mai trở đi
+                    minCheckoutDate = d.toISOString().slice(0, 10);
+                  }
 
                   return (
                     <tr key={idx} className="hover:bg-blue-50/40 transition">
@@ -795,7 +790,6 @@ export default function QuickBookingModal({
                         </select>
                       </td>
 
-                      {/* Ô CHỌN NGÀY NHẬN */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
@@ -817,7 +811,6 @@ export default function QuickBookingModal({
                         </div>
                       </td>
 
-                      {/* 🌟 Ô CHỌN NGÀY TRẢ CÓ KHÓA MINDATE 🌟 */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
@@ -846,7 +839,6 @@ export default function QuickBookingModal({
                         </span>
                       </td>
 
-                      {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
                       <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
                         {formatNumber(item.price)} ₫
                       </td>
