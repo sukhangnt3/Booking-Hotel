@@ -749,17 +749,30 @@ export default function QuickBookingModal({
 
               <tbody className="divide-y divide-gray-100 text-xs font-sans">
                 {(bookingData.rooms || []).map((item, idx) => {
-                  // 🌟 KHÓA CỨNG NGÀY TRẢ: NẾU THUÊ NGÀY/ĐÊM THÌ BẮT BUỘC TỪ NGÀY NHẬN + 1
+                  // 🌟 KHÓA NGÀY TRẢ PHÒNG CHUẨN XÁC:
+                  // 1. Nếu thuê Ngày/Đêm: Phải từ Ngày nhận + 1 trở đi
+                  // 2. Nếu thuê Giờ: Phải từ Ngày nhận (hoặc hôm nay) trở đi, TUYỆT ĐỐI KHÔNG CHỌN QUÁ KHỨ
                   let minCheckoutDate = undefined;
+                  const pad = (n) => String(n).padStart(2, "0");
+
                   if (
-                    (item.rental_type === "Ngày" ||
-                      item.rental_type === "Đêm") &&
-                    item.checkin_date
+                    item.rental_type === "Ngày" ||
+                    item.rental_type === "Đêm"
                   ) {
-                    const d = new Date(String(item.checkin_date).slice(0, 10));
-                    d.setDate(d.getDate() + 1);
-                    const pad = (n) => String(n).padStart(2, "0");
-                    minCheckoutDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                    if (item.checkin_date) {
+                      const d = new Date(
+                        String(item.checkin_date).slice(0, 10),
+                      );
+                      d.setDate(d.getDate() + 1);
+                      minCheckoutDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                    } else {
+                      minCheckoutDate = todayDateStr;
+                    }
+                  } else {
+                    // Thuê theo Giờ: Tối thiểu phải là Ngày nhận phòng (hoặc Hôm nay)
+                    minCheckoutDate = item.checkin_date
+                      ? String(item.checkin_date).slice(0, 10)
+                      : todayDateStr;
                   }
 
                   return (
@@ -798,7 +811,7 @@ export default function QuickBookingModal({
                         </select>
                       </td>
 
-                      {/* 🌟 Ô CHỌN NGÀY NHẬN: ĐÃ KHÓA TOÀN BỘ NGÀY QUÁ KHỨ (minDate = todayDateStr) 🌟 */}
+                      {/* Ô CHỌN NGÀY NHẬN: KHÓA TOÀN BỘ NGÀY QUÁ KHỨ */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
@@ -821,7 +834,7 @@ export default function QuickBookingModal({
                         </div>
                       </td>
 
-                      {/* 🌟 Ô CHỌN NGÀY TRẢ: ĐÃ KHÓA TOÀN BỘ CÁC NGÀY TRƯỚC NGÀY MAI 🌟 */}
+                      {/* 🌟 Ô CHỌN NGÀY TRẢ: ĐÃ KHÓA CHẶT QUÁ KHỨ CHO CẢ THUÊ GIỜ, ĐÊM, NGÀY 🌟 */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
@@ -850,6 +863,7 @@ export default function QuickBookingModal({
                         </span>
                       </td>
 
+                      {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
                       <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
                         {formatNumber(item.price)} ₫
                       </td>
@@ -1379,7 +1393,7 @@ export default function QuickBookingModal({
                           birthday: e.target.value,
                         })
                       }
-                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 outline-none bg-white text-gray-800 font-bold"
+                      className="flex-1 border border-gray-300 rounded-xl px-3 py-2 outline-none bg-white text-gray-700 font-bold"
                     />
                   </div>
 
