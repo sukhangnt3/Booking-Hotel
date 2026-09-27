@@ -88,7 +88,7 @@ const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   return `${y}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}`;
 };
 
-// 🌟 BỘ CHỌN NGÀY VÀ GIỜ: DỄ BẤM, KHÓA NGÀY TRẢ PHÒNG CHUẨN XÁC 🌟
+// 🌟 BỘ CHỌN NGÀY VÀ GIỜ: KHÓA CHẶT QUÁ KHỨ VÀ NGÀY TRẢ LÙI 🌟
 function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
   const dateInputRef = useRef(null);
   const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
@@ -159,7 +159,7 @@ function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
           : "border-gray-200 hover:border-[#003580]"
       }`}
     >
-      {/* 1. NÚT CHỌN NGÀY CÓ KHÓA MINDATE */}
+      {/* 1. NÚT CHỌN NGÀY CÓ THUỘC TÍNH MIN KHÓA CHẶT NGÀY */}
       <div
         onClick={() => {
           if (dateInputRef.current) {
@@ -233,6 +233,13 @@ export default function QuickBookingModal({
   onConfirmBooking,
 }) {
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
+
+  // 🌟 NGÀY HÔM NAY (ĐỊNH DẠNG YYYY-MM-DD ĐỂ KHÓA QUÁ KHỨ)
+  const todayDateStr = useMemo(() => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }, []);
 
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
   const [customerForm, setCustomerForm] = useState({
@@ -421,18 +428,10 @@ export default function QuickBookingModal({
       checkout.getMonth(),
       checkout.getDate(),
     );
-    const daysDiff = Math.round(
-      (outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24),
+    const daysDiff = Math.max(
+      1,
+      Math.round((outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24)),
     );
-
-    if (daysDiff <= 0) {
-      return {
-        durationLabel: `${hours} giờ (Trong ngày)`,
-        price: hours * hourlyPrice,
-        earlyWarning: "",
-        lateWarning: "",
-      };
-    }
 
     const [inH, inM] = hotelPolicies.dailyIn.split(":").map(Number);
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
@@ -679,13 +678,12 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* BẢNG PHÒNG CHỌN: ĐÃ MỞ RỘNG CỘT PHÒNG KHÔNG BỊ CHE SỐ */}
+          {/* BẢNG PHÒNG CHỌN */}
           <div className="border border-blue-100 rounded-2xl bg-white shadow-2xs">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-blue-50/70 text-gray-800 border-b border-blue-100 text-xs font-black uppercase tracking-wider font-sans">
                   <th className="py-3.5 px-4 whitespace-nowrap">Hạng phòng</th>
-                  {/* 🌟 MỞ RỘNG CỘT PHÒNG LÊN min-w-[170px] ĐỂ KHÔNG BỊ CẮT CHỮ 🌟 */}
                   <th className="py-3.5 px-3 whitespace-nowrap min-w-[170px]">
                     <div className="flex items-center gap-1.5">
                       <span>Phòng</span>
@@ -751,6 +749,7 @@ export default function QuickBookingModal({
 
               <tbody className="divide-y divide-gray-100 text-xs font-sans">
                 {(bookingData.rooms || []).map((item, idx) => {
+                  // 🌟 KHÓA CỨNG NGÀY TRẢ: NẾU THUÊ NGÀY/ĐÊM THÌ BẮT BUỘC TỪ NGÀY NHẬN + 1
                   let minCheckoutDate = undefined;
                   if (
                     (item.rental_type === "Ngày" ||
@@ -759,7 +758,8 @@ export default function QuickBookingModal({
                   ) {
                     const d = new Date(String(item.checkin_date).slice(0, 10));
                     d.setDate(d.getDate() + 1);
-                    minCheckoutDate = d.toISOString().slice(0, 10);
+                    const pad = (n) => String(n).padStart(2, "0");
+                    minCheckoutDate = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
                   }
 
                   return (
@@ -768,7 +768,6 @@ export default function QuickBookingModal({
                         {item.type_name || "DELUXE"}
                       </td>
 
-                      {/* 🌟 Ô CHỌN SỐ PHÒNG RỘNG RÃI, HIỆN RÕ "Phòng P.102" 🌟 */}
                       <td className="py-4 px-3 whitespace-nowrap min-w-[170px]">
                         <select
                           value={item.room_id}
@@ -799,11 +798,12 @@ export default function QuickBookingModal({
                         </select>
                       </td>
 
-                      {/* Ô CHỌN NGÀY NHẬN */}
+                      {/* 🌟 Ô CHỌN NGÀY NHẬN: ĐÃ KHÓA TOÀN BỘ NGÀY QUÁ KHỨ (minDate = todayDateStr) 🌟 */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
                             value={item.checkin_date}
+                            minDate={todayDateStr}
                             hasWarning={Boolean(item.early_warning)}
                             onChange={(val) =>
                               handleUpdateRoom(idx, "checkin_date", val)
@@ -821,7 +821,7 @@ export default function QuickBookingModal({
                         </div>
                       </td>
 
-                      {/* Ô CHỌN NGÀY TRẢ CÓ KHÓA MINDATE */}
+                      {/* 🌟 Ô CHỌN NGÀY TRẢ: ĐÃ KHÓA TOÀN BỘ CÁC NGÀY TRƯỚC NGÀY MAI 🌟 */}
                       <td className="py-4 px-3">
                         <div className="space-y-1">
                           <CustomDateTimePicker
@@ -850,7 +850,6 @@ export default function QuickBookingModal({
                         </span>
                       </td>
 
-                      {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
                       <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
                         {formatNumber(item.price)} ₫
                       </td>
