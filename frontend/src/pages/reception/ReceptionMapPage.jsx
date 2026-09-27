@@ -129,7 +129,6 @@ const formatStayTimeRange = (b) => {
   return `${inDate}, ${inTime} - ${outDate}, ${outTime}`;
 };
 
-// Đếm ngược thời gian nhận phòng theo thời gian thực
 const getCheckinCountdownText = (checkinDateStr, checkinTimeStr) => {
   if (!checkinDateStr) return "Sắp đến nhận phòng";
   const now = new Date();
@@ -241,7 +240,6 @@ export default function ReceptionMapPage() {
 
   const formatVND = (num) => Number(num || 0).toLocaleString("vi-VN");
 
-  // 🌟 TÍNH TIỀN CHUẨN 3 HÌNH THỨC: GIỜ | ĐÊM | NGÀY (ĐÃ DỌN SẠCH BUỔI)
   const calculateDurationAndPrice = (
     checkinStr,
     checkoutStr,
@@ -665,6 +663,7 @@ export default function ReceptionMapPage() {
           hotel_id: selectedHotelId,
           mode: mode,
           new_total_price: newTotalPrice,
+          newTotalPrice: newTotalPrice,
           room_legs: roomLegs,
         },
       );
@@ -792,6 +791,7 @@ export default function ReceptionMapPage() {
     }
   };
 
+  // 🌟 TRUYỀN ĐỦ CẢ EARLY_FEE VÀ LATE_FEE KHI CHECK-OUT
   const handleCompleteCheckOut = async (bookingCode, checkoutData = {}) => {
     const code = bookingCode || activeRoomData?.booking?.code;
     const room = rooms.find((r) => r.booking?.code === code) || activeRoomData;
@@ -799,6 +799,7 @@ export default function ReceptionMapPage() {
 
     try {
       await apiClient.post(`/owner/bookings/${room.booking.id}/checkout`, {
+        early_fee: checkoutData.earlyFee || 0,
         late_fee: checkoutData.overtimeFee || 0,
         total_price: checkoutData.totalBill,
         paid_amount: checkoutData.paidAmount,
@@ -812,6 +813,29 @@ export default function ReceptionMapPage() {
       await fetchRoomMap();
     } catch (err) {
       alert("Lỗi trả phòng: " + (err.response?.data?.message || err.message));
+    }
+  };
+
+  // 🌟 HÀM HỦY ĐƠN ĐẶT PHÒNG THẬT SỰ TRÊN DATABASE CHO LỄ TÂN
+  const handleCancelIncomingBooking = async (bookingId) => {
+    if (!bookingId) return;
+    try {
+      await apiClient
+        .post(`/owner/bookings/${bookingId}/cancel`, {
+          reason: "Khách bùng phòng / Hủy đơn tại quầy",
+        })
+        .catch(() =>
+          apiClient.patch(`/owner/bookings/${bookingId}/cancel`, {
+            reason: "Khách bùng phòng / Hủy đơn tại quầy",
+          }),
+        );
+
+      alert("✓ Đã hủy đơn đặt phòng và giải phóng phòng thành công!");
+      setActiveModalType(null);
+      setActiveRoomData(null);
+      await Promise.all([fetchRoomMap(), fetchPendingBookings()]);
+    } catch (err) {
+      alert("Lỗi khi hủy đơn: " + (err.response?.data?.message || err.message));
     }
   };
 
@@ -1300,7 +1324,6 @@ export default function ReceptionMapPage() {
                   <span className="px-2.5 py-1 rounded-md bg-blue-50 text-[#003580] font-bold text-xs border border-blue-200">
                     {(() => {
                       if (assigningBooking.rental_type === "HOUR") {
-                        // 1. Thử bóc tách số giờ nếu có
                         let h = null;
                         if (assigningBooking.stay_duration) {
                           const match = String(
@@ -1309,7 +1332,6 @@ export default function ReceptionMapPage() {
                           if (match) h = Number(match[0]);
                         }
 
-                        // 2. Nếu không có số hợp lệ, tự lấy Giờ trả trừ Giờ nhận
                         if (
                           !h &&
                           assigningBooking.checkin_time &&
@@ -1393,6 +1415,7 @@ export default function ReceptionMapPage() {
         }}
         onOpenConfirmCheckIn={handleOpenConfirmCheckIn}
         onOpenChangeRoom={handleOpenChangeRoom}
+        onCancelBooking={handleCancelIncomingBooking}
       />
 
       {/* MODAL BƯỚC 1: PHÒNG NHẬN */}

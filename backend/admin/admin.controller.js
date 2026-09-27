@@ -1,3 +1,4 @@
+// backend/controllers/admin.controller.js
 const pool = require("../config/database");
 const bcrypt = require("bcryptjs");
 
@@ -93,7 +94,7 @@ async function getStats(req, res, next) {
       `;
     }
 
-    // 🌟 TRUY VẤN ĐỐI SOÁT: TẤT CẢ CÁC CỘT ĐỀU ĐỒNG BỘ ĐƠN ĐÃ CHECK_OUT 🌟
+    // 🌟 TRUY VẤN ĐỐI SOÁT: TẤT CẢ CÁC CỘT ĐỀU ĐỒNG BỘ ĐƠN ĐÃ CHECK_OUT VÀ CHƯA TẤT TOÁN (IS_SETTLED = FALSE) 🌟
     const hotelRevenueQuery = `
       SELECT 
         h.id AS hotel_id,
@@ -109,20 +110,20 @@ async function getStats(req, res, next) {
         u.full_name AS owner_name,
         u.email AS owner_email,
         u.phone AS owner_phone,
-        COUNT(b.id)::int AS total_bookings,
-        COUNT(CASE WHEN b.status = 'checked_out' THEN 1 END)::int AS completed_bookings,
+        COUNT(CASE WHEN b.booking_code LIKE 'BK%' THEN 1 END)::int AS total_bookings,
+        COUNT(CASE WHEN b.booking_code LIKE 'BK%' AND b.status = 'checked_out' THEN 1 END)::int AS completed_bookings,
 
-        -- 1. TỔNG GIÁ TRỊ CÁC ĐƠN ĐÃ HOÀN TẤT CHECK-OUT (GMV)
+        -- 1. TỔNG GIÁ TRỊ CÁC ĐƠN ĐÃ HOÀN TẤT CHECK-OUT CHỜ TẤT TOÁN (GMV)
         COALESCE(
-          SUM(CASE WHEN b.status = 'checked_out' THEN b.total_price ELSE 0 END),
+          SUM(CASE WHEN b.status = 'checked_out' AND COALESCE(b.is_settled, false) = false THEN b.total_price ELSE 0 END),
           0
         )::bigint AS total_gmv,
         
-        -- 2. TIỀN SÀN ĐANG CẦM CỦA CÁC ĐƠN ĐÃ CHECK-OUT (CỌC 30% HOẶC TRẢ ĐỦ 100%)
+        -- 2. TIỀN SÀN ĐANG CẦM CỦA CÁC ĐƠN ĐÃ CHECK-OUT CHỜ TẤT TOÁN
         COALESCE(
           SUM(
             CASE 
-              WHEN b.status = 'checked_out' THEN
+              WHEN b.status = 'checked_out' AND COALESCE(b.is_settled, false) = false THEN
                 CASE 
                   WHEN b.payment_type = 'DEPOSIT_30' OR (COALESCE(b.deposit_amount, 0) > 0 AND COALESCE(b.deposit_amount, 0) < b.total_price)
                     THEN COALESCE(b.deposit_amount, ROUND(b.total_price * 0.3))
@@ -134,11 +135,11 @@ async function getStats(req, res, next) {
           0
         )::bigint AS total_online_collected,
 
-        -- 3. HOA HỒNG SÀN ĐƯỢC HƯỞNG CỦA CÁC ĐƠN ĐÃ CHECK-OUT
+        -- 3. HOA HỒNG SÀN ĐƯỢC HƯỞNG CỦA CÁC ĐƠN ĐÃ CHECK-OUT CHỜ TẤT TOÁN
         COALESCE(
           SUM(
             CASE 
-              WHEN b.status = 'checked_out' THEN
+              WHEN b.status = 'checked_out' AND COALESCE(b.is_settled, false) = false THEN
                 ROUND(b.total_price * (COALESCE(h.commission_rate, 18.0) / 100.0))
               ELSE 0
             END
@@ -146,13 +147,13 @@ async function getStats(req, res, next) {
           0
         )::bigint AS admin_commission,
 
-        -- 4. TIỀN CẦN QUYẾT TOÁN CHO KHÁCH SẠN = [SÀN CẦM] - [HOA HỒNG] - [ĐÃ TRẢ TRƯỚC ĐÓ]
+        -- 4. TIỀN CẦN QUYẾT TOÁN CHO KHÁCH SẠN = [SÀN CẦM] - [HOA HỒNG]
         GREATEST(
           0,
           COALESCE(
             SUM(
               CASE 
-                WHEN b.status = 'checked_out' THEN 
+                WHEN b.status = 'checked_out' AND COALESCE(b.is_settled, false) = false THEN 
                   CASE 
                     -- Đơn cọc 30%: Tiền sàn trả = (Cọc 30% sàn cầm) - (Hoa hồng sàn ăn trên 100% đơn)
                     WHEN b.payment_type = 'DEPOSIT_30' OR (COALESCE(b.deposit_amount, 0) > 0 AND COALESCE(b.deposit_amount, 0) < b.total_price) THEN 
@@ -168,7 +169,7 @@ async function getStats(req, res, next) {
               END
             ), 
             0
-          ) - COALESCE((SELECT SUM(amount) FROM public.payout_settlement ps WHERE ps.hotel_id::text = h.id::text), 0)
+          )
         )::bigint AS owner_payout
       FROM public.hotel h
       LEFT JOIN public.users u ON u.id = h.owner_id
@@ -250,8 +251,9 @@ async function getStats(req, res, next) {
   }
 }
 
-// ─── 2. XÁC NHẬN CHUYỂN TIỀN QUYẾT TOÁN CHO CHỦ CƠ SỞ ───
+// ─── 2. 🌟 XÁC NHẬN CHUYỂN TIỀN: LƯU LỊCH SỬ VÀ ĐÁNH DẤU IS_SETTLED = TRUE CHO CÁC ĐƠN 🌟 ───
 async function confirmPayout(req, res) {
+  const client = await pool.connect();
   try {
     const { hotel_id, hotelId, amount, note } = req.body;
     const targetHotelId = hotel_id || hotelId;
@@ -264,19 +266,41 @@ async function confirmPayout(req, res) {
       });
     }
 
-    await pool.query(
+    await client.query("BEGIN");
+
+    // 1. Lưu vào bảng lịch sử quyết toán
+    await client.query(
       `INSERT INTO public.payout_settlement (hotel_id, amount, note, created_at)
        VALUES ($1, $2, $3, NOW())`,
-      [String(targetHotelId), payoutAmount, note || "Quyết toán chu kỳ GoStay"],
+      [
+        String(targetHotelId),
+        payoutAmount,
+        note || "Thanh toán định kỳ GoStay",
+      ],
     );
+
+    // 2. 🌟 ĐÁNH DẤU TẤT CẢ CÁC ĐƠN ĐÃ CHECK_OUT CỦA KHÁCH SẠN NÀY LÀ ĐÃ THANH TOÁN XONG
+    await client.query(
+      `UPDATE public.booking 
+       SET is_settled = true, settled_at = NOW(), updated_at = NOW()
+       WHERE hotel_id::text = $1::text 
+         AND status = 'checked_out'
+         AND COALESCE(is_settled, false) = false`,
+      [String(targetHotelId)],
+    );
+
+    await client.query("COMMIT");
 
     return res.json({
       success: true,
-      message: `Đã ghi nhận quyết toán thành công ${payoutAmount.toLocaleString("vi-VN")} ₫ cho khách sạn!`,
+      message: `✓ Đã thanh toán thành công ${payoutAmount.toLocaleString("vi-VN")} ₫ cho khách sạn! Công nợ kỳ này đã xóa sạch.`,
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("❌ LỖI CONFIRM_PAYOUT:", error);
     return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    client.release();
   }
 }
 

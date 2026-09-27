@@ -63,6 +63,18 @@ safeRoute(
   ownerController.handleOwnerCheckOut,
 );
 
+// 🌟 API LỄ TÂN / CHỦ KHÁCH SẠN HỦY ĐƠN & MỞ LẠI PHÒNG (BÙNG PHÒNG / NO-SHOW) 🌟
+safeRoute(
+  "post",
+  "/bookings/:id/cancel",
+  ownerController.handleOwnerCancelBooking,
+);
+safeRoute(
+  "patch",
+  "/bookings/:id/cancel",
+  ownerController.handleOwnerCancelBooking,
+);
+
 // Lễ tân xác nhận ĐÃ DỌN PHÒNG (Cleaned)
 safeRoute("post", "/rooms/mark-cleaned", ownerController.markRoomCleaned);
 

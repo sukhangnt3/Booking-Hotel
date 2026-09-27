@@ -2,7 +2,7 @@
 import React, { useMemo } from "react";
 import { X, Trash2, MoreHorizontal, Edit3 } from "lucide-react";
 
-// 🌟 HÀM PARSE DATETIME AN TOÀN TUYỆT ĐỐI (KHÔNG HARDCODE NGÀY 19/09/2026)
+// Hàm parse ngày giờ an toàn
 const parseDateTimeSafe = (dateVal, timeVal, defaultHour = 14) => {
   if (!dateVal) return null;
   const now = new Date();
@@ -71,6 +71,7 @@ export default function IncomingRoomModal({
   onClose,
   onOpenConfirmCheckIn,
   onOpenChangeRoom,
+  onCancelBooking,
 }) {
   if (!isOpen || !room) return null;
 
@@ -86,7 +87,7 @@ export default function IncomingRoomModal({
 
   const totalPrice = Number(b.total_price || room.daily_price || 100000);
 
-  // 🌟 XÁC ĐỊNH CHUẨN XÁC: SỐ TIỀN KHÁCH ĐÃ TRẢ (NẾU ĐẶT TRƯỚC CHƯA TRẢ THÌ = 0)
+  // XÁC ĐỊNH CHUẨN XÁC: SỐ TIỀN KHÁCH ĐÃ TRẢ
   let paidAmount = 0;
   if (isWalkIn) {
     if (b.payment_status === "paid") {
@@ -97,7 +98,6 @@ export default function IncomingRoomModal({
       );
     }
   } else {
-    // Đơn đặt online GoStay
     if (b.payment_type === "DEPOSIT_30" || b.is_deposit) {
       paidAmount = Number(
         b.deposit_amount || b.paid_amount || Math.round(totalPrice * 0.3),
@@ -141,6 +141,19 @@ export default function IncomingRoomModal({
     b.guest_declarations?.length || b.id_cards || 0
   } giấy tờ`;
 
+  // 🌟 HÀM HỦY ĐƠN VÀ GIẢI PHÓNG PHÒNG THẬT SỰ QUA CALLBACK 🌟
+  const handleExecuteCancel = () => {
+    if (
+      window.confirm(
+        `Bạn có chắc chắn muốn hủy đơn đặt phòng #${bookingCode} của khách ${customerName} và mở phòng lại không?`,
+      )
+    ) {
+      if (onCancelBooking) {
+        onCancelBooking(b.id || b.booking_id || bookingCode);
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-5 bg-black/50 backdrop-blur-xs animate-fadeIn font-sans">
       <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
@@ -160,18 +173,9 @@ export default function IncomingRoomModal({
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Bạn có chắc chắn muốn hủy đơn #${bookingCode}?`,
-                  )
-                ) {
-                  alert("✓ Đã hủy đơn đặt phòng!");
-                  onClose();
-                }
-              }}
+              onClick={handleExecuteCancel}
               className="hover:text-rose-600 p-1 cursor-pointer transition"
-              title="Hủy đơn"
+              title="Hủy đơn và mở lại phòng"
             >
               <Trash2 size={16} />
             </button>

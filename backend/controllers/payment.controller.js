@@ -2,19 +2,30 @@
 require("dotenv").config();
 const pool = require("../config/database");
 
-// Khởi tạo bảng quyết toán nếu chưa có
-pool
-  .query(
-    `
-  CREATE TABLE IF NOT EXISTS public.payout_settlement (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    hotel_id TEXT NOT NULL,
-    amount NUMERIC NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-  );
-`,
-  )
-  .catch((err) => console.error("Lỗi init payout_settlement:", err.message));
+// Tự động khởi tạo bảng quyết toán và bảng chống bắn lặp giao dịch (Idempotency)
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.payout_settlement (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        hotel_id TEXT NOT NULL,
+        amount NUMERIC NOT NULL,
+        note TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS public.processed_transactions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        transaction_id TEXT UNIQUE NOT NULL,
+        booking_code TEXT NOT NULL,
+        amount NUMERIC NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+  } catch (err) {
+    console.error("Lỗi init bảng thanh toán:", err.message);
+  }
+})();
 
 const DEFAULT_PLATFORM_BANK = {
   bankId: "MB",
@@ -90,7 +101,6 @@ async function checkPaymentStatus(req, res) {
     const pStatus = String(row.payment_status || "").toLowerCase();
     const bStatus = String(row.status || "").toLowerCase();
 
-    // 🌟 ĐÃ THANH TOÁN (FULL HOẶC CỌC 30% ĐỀU TÍNH LÀ THÀNH CÔNG ĐỂ CHUYỂN TRANG)
     const isPaid =
       pStatus === "paid" ||
       pStatus === "partially_paid" ||
@@ -112,8 +122,9 @@ async function checkPaymentStatus(req, res) {
   }
 }
 
-// ─── 3. WEBHOOK SEPAY (TỰ ĐỘNG CHUYỂN SANG CONFIRMED KHI NHẬN TIỀN) ───
+// ─── 3. WEBHOOK SEPAY (TỰ ĐỘNG CHUYỂN SANG CONFIRMED ĐỂ ĐẨY VÀO CHỜ XÁC NHẬN) ───
 async function handleBankWebhook(req, res) {
+  const client = await pool.connect();
   try {
     const body = req.body || {};
     const content = String(
@@ -127,16 +138,34 @@ async function handleBankWebhook(req, res) {
 
     const transferAmount = Number(body.transferAmount || body.amount || 0);
 
-    console.log("🔔 [SEPAY WEBHOOK]:", { content, transferAmount });
+    const rawTxId =
+      body.id || body.referenceCode || body.transaction_id || body.trans_id;
+    const txId = rawTxId ? String(rawTxId).trim() : null;
+
+    console.log("🔔 [SEPAY WEBHOOK]:", { txId, content, transferAmount });
+
+    if (txId) {
+      const checkTx = await client.query(
+        `SELECT id FROM public.processed_transactions WHERE transaction_id = $1 LIMIT 1`,
+        [txId],
+      );
+      if (checkTx.rows.length > 0) {
+        console.warn(`⚠️ [BỎ QUA]: Giao dịch ${txId} đã được xử lý trước đó!`);
+        client.release();
+        return res.json({
+          success: true,
+          message: "Transaction already processed",
+        });
+      }
+    }
 
     let matchedBooking = null;
 
-    // 1. Quét mã cụ thể BK hoặc DP trong nội dung chuyển khoản
     const matchSpecific = content.match(/(BK\s*\d+|DP\s*\d+)/i);
     if (matchSpecific) {
       const extractedCode = matchSpecific[0].replace(/\s+/g, "").toUpperCase();
-      const bRes = await pool.query(
-        `SELECT id, booking_code, hotel_id, total_price, payment_type 
+      const bRes = await client.query(
+        `SELECT id, booking_code, hotel_id, total_price, payment_type, payment_status, status 
          FROM public.booking 
          WHERE booking_code ILIKE $1 LIMIT 1`,
         [extractedCode],
@@ -146,10 +175,9 @@ async function handleBankWebhook(req, res) {
       }
     }
 
-    // 2. Fallback tìm theo chuỗi nếu ngân hàng thêm tiền tố/hậu tố
     if (!matchedBooking) {
-      const pendingRes = await pool.query(
-        `SELECT id, booking_code, hotel_id, total_price, payment_type 
+      const pendingRes = await client.query(
+        `SELECT id, booking_code, hotel_id, total_price, payment_type, payment_status, status 
          FROM public.booking 
          WHERE (payment_status IS NULL OR payment_status NOT IN ('paid', 'partially_paid'))
            AND status NOT IN ('cancelled', 'checked_out')
@@ -173,17 +201,33 @@ async function handleBankWebhook(req, res) {
     }
 
     if (matchedBooking) {
+      await client.query("BEGIN");
+
+      const lockRes = await client.query(
+        `SELECT id, total_price, payment_status FROM public.booking WHERE id = $1 FOR UPDATE`,
+        [matchedBooking.id],
+      );
+      const lockedBooking = lockRes.rows[0];
+
+      if (lockedBooking && lockedBooking.payment_status === "paid") {
+        await client.query("ROLLBACK");
+        client.release();
+        return res.json({
+          success: true,
+          message: "Booking already fully paid",
+        });
+      }
+
       const totalP = Number(matchedBooking.total_price || 0);
       const isDeposit = transferAmount > 0 && transferAmount < totalP;
       const payStatus = isDeposit ? "partially_paid" : "paid";
 
-      // 🌟 TỰ ĐỘNG CHUYỂN SANG CONFIRMED ĐỂ KHÓA GIỮ PHÒNG CHÍNH THỨC
-      await pool.query(
+      // Cập nhật trạng thái sang confirmed để đẩy vào danh sách chờ xác nhận
+      await client.query(
         `UPDATE public.booking 
          SET payment_status = $2, 
              status = 'confirmed'::public.booking_status_enum,
              receptionist_assigned = false,
-             room_number = NULL,
              payment_type = $3,
              deposit_amount = $4,
              confirmed_at = NOW(),
@@ -197,32 +241,45 @@ async function handleBankWebhook(req, res) {
         ],
       );
 
-      await pool
+      await client
         .query(
           `UPDATE public.payment 
-           SET status = 'paid', 
-               paid_amount = $1, 
-               paid_at = NOW(), 
-               updated_at = NOW() 
-           WHERE booking_id = $2`,
+         SET status = 'paid', 
+             paid_amount = $1, 
+             paid_at = NOW(), 
+             updated_at = NOW() 
+         WHERE booking_id = $2`,
           [transferAmount || totalP, matchedBooking.id],
         )
         .catch(() => {});
 
-      // Dọn dẹp lock tạm thời
-      await pool
+      if (txId) {
+        await client.query(
+          `INSERT INTO public.processed_transactions (transaction_id, booking_code, amount, created_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (transaction_id) DO NOTHING`,
+          [txId, matchedBooking.booking_code, transferAmount],
+        );
+      }
+
+      await client
         .query(`DELETE FROM public.temporary_locks WHERE booking_id = $1`, [
           matchedBooking.id,
         ])
         .catch(() => {});
 
+      await client.query("COMMIT");
+
       console.log(
-        `✅ [SEPAY THÀNH CÔNG]: Đơn ${matchedBooking.booking_code} đã được XÁC NHẬN GIỮ CHỖ! (${isDeposit ? `CỌC ${transferAmount} ₫` : "TRẢ ĐỦ 100%"})`,
+        `✅ [SEPAY THÀNH CÔNG]: Đơn ${matchedBooking.booking_code} đã được XÁC NHẬN GIỮ CHỖ! (${isDeposit ? `CỌC ${transferAmount.toLocaleString("vi-VN")} ₫` : "TRẢ ĐỦ 100%"})`,
       );
     }
 
+    client.release();
     return res.json({ success: true });
   } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    client.release();
     console.error("❌ Lỗi SePay Webhook:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -251,7 +308,6 @@ async function confirmManualPayment(req, res) {
        SET payment_status = $2, 
            status = 'confirmed'::public.booking_status_enum,
            receptionist_assigned = false,
-           room_number = NULL,
            payment_type = CASE WHEN $3 THEN 'DEPOSIT_30' ELSE 'FULL' END,
            deposit_amount = COALESCE($4, deposit_amount),
            confirmed_at = NOW(),
@@ -278,7 +334,7 @@ async function confirmManualPayout(req, res) {
     }
 
     await pool.query(
-      `INSERT INTO public.payout_settlement (hotel_id, amount) VALUES ($1, $2)`,
+      `INSERT INTO public.payout_settlement (hotel_id, amount, created_at) VALUES ($1, $2, NOW())`,
       [targetHotelId, Number(amount || 0)],
     );
 

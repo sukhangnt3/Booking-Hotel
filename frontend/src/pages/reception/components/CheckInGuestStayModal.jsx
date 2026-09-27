@@ -47,33 +47,15 @@ export default function CheckInGuestStayModal({
   const formatNumber = (num) => Number(num || 0).toLocaleString("vi-VN");
   const totalPrice = Number(b.total_price || room.daily_price || 100000);
 
-  // 🌟 XÁC ĐỊNH CHUẨN XÁC: SỐ TIỀN KHÁCH ĐÃ TRẢ THỰC TẾ
-  const isWalkIn =
-    String(bookingCode).startsWith("DP") ||
-    b.source === "counter" ||
-    b.booking_type === "walk_in";
-
+  // 🌟 ĐÃ SỬA: LẤY CHUẨN XÁC SỐ TIỀN KHÁCH ĐÃ TRẢ THỰC TẾ TRONG DATABASE (KHÔNG BỊ ÉP VỀ 30% NỮA)
   let alreadyPaid = 0;
-  if (isWalkIn) {
-    // Với đơn đặt tại quầy: nếu chưa thanh toán (unpaid) thì đã trả = 0, chỉ lấy khi có customer_paid > 0 thật sự
-    if (b.payment_status === "paid") {
-      alreadyPaid = Number(b.customer_paid ?? b.paid_amount ?? totalPrice);
-    } else {
-      alreadyPaid = Number(
-        b.customer_paid || b.paid_amount || b.deposit_amount || 0,
-      );
-    }
+  if (b.payment_status === "paid") {
+    alreadyPaid = totalPrice;
   } else {
-    // Đơn đặt online qua GoStay
-    if (b.payment_type === "DEPOSIT_30" || b.is_deposit) {
-      alreadyPaid = Number(
-        b.deposit_amount || b.paid_amount || Math.round(totalPrice * 0.3),
-      );
-    } else if (b.payment_status === "paid") {
-      alreadyPaid = totalPrice;
-    } else {
-      alreadyPaid = Number(b.paid_amount || 0);
-    }
+    // Nếu có tiền cọc hoặc tiền trả trước thì lấy đúng con số đó
+    alreadyPaid = Number(
+      b.deposit_amount || b.paid_amount || b.customer_paid || 0,
+    );
   }
 
   // Khách thanh toán lúc này (mặc định = Cần trả - Đã trả)
