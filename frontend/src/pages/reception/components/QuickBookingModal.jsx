@@ -21,9 +21,10 @@ import {
   Edit2,
   Scan,
   CheckCircle2,
+  Check,
 } from "lucide-react";
 
-// Hàm chuẩn hóa ngày giờ an toàn tuyệt đối
+// Hàm chuẩn hóa ngày giờ an toàn
 const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   const pad = (n) => String(n).padStart(2, "0");
 
@@ -87,13 +88,15 @@ const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   return `${y}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}`;
 };
 
-function EasyDateTimePicker({ value, onChange, hasWarning }) {
+// 🌟 BỘ CHỌN NGÀY VÀ GIỜ MỚI: DỄ BẤM, KHÓA NGÀY TRẢ PHÒNG CHUẨN XÁC 🌟
+function CustomDateTimePicker({ value, onChange, minDate, hasWarning }) {
   const dateInputRef = useRef(null);
-  const timeInputRef = useRef(null);
+  const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
+  const timeDropdownRef = useRef(null);
 
   const rawIso = value ? String(value) : "";
   let datePart = "";
-  let timePart = "14:00";
+  let timePart = "12:00";
 
   if (rawIso.includes("T")) {
     const [d, t] = rawIso.split("T");
@@ -102,6 +105,19 @@ function EasyDateTimePicker({ value, onChange, hasWarning }) {
   } else if (rawIso) {
     datePart = rawIso.slice(0, 10);
   }
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (
+        timeDropdownRef.current &&
+        !timeDropdownRef.current.contains(e.target)
+      ) {
+        setIsTimeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const displayDateText = useMemo(() => {
     if (!datePart) return "--/--";
@@ -112,82 +128,99 @@ function EasyDateTimePicker({ value, onChange, hasWarning }) {
     return datePart;
   }, [datePart]);
 
-  const handleDateChange = (newDate) => {
-    if (!newDate) return;
-    onChange(`${newDate}T${timePart || "14:00"}`);
-  };
-
-  const handleTimeChange = (newTime) => {
-    if (!newTime) return;
-    onChange(`${datePart || new Date().toISOString().slice(0, 10)}T${newTime}`);
-  };
-
-  const triggerDatePicker = () => {
-    if (dateInputRef.current) {
-      if (typeof dateInputRef.current.showPicker === "function") {
-        dateInputRef.current.showPicker();
-      } else {
-        dateInputRef.current.focus();
+  // Danh sách các mốc giờ cách nhau 30 phút
+  const commonTimes = useMemo(() => {
+    const list = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        list.push(
+          `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+        );
       }
     }
+    return list;
+  }, []);
+
+  const handleDateSelect = (e) => {
+    const newD = e.target.value;
+    if (!newD) return;
+    onChange(`${newD}T${timePart}`);
   };
 
-  const triggerTimePicker = () => {
-    if (timeInputRef.current) {
-      if (typeof timeInputRef.current.showPicker === "function") {
-        timeInputRef.current.showPicker();
-      } else {
-        timeInputRef.current.focus();
-      }
-    }
+  const handleTimeSelect = (t) => {
+    onChange(`${datePart || new Date().toISOString().slice(0, 10)}T${t}`);
+    setIsTimeDropdownOpen(false);
   };
 
   return (
     <div
-      className={`flex items-center gap-1.5 p-1 rounded-xl bg-white transition border ${
+      className={`flex items-center gap-1.5 p-1 rounded-2xl bg-white transition border shadow-2xs ${
         hasWarning
-          ? "border-amber-400 bg-amber-50/30"
-          : "border-gray-200 hover:border-[#003580] shadow-2xs"
+          ? "border-amber-400 bg-amber-50/20"
+          : "border-gray-200 hover:border-[#003580]"
       }`}
     >
+      {/* 1. NÚT CHỌN NGÀY CÓ KHÓA MINDATE */}
       <div
-        onClick={triggerDatePicker}
-        className={`relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg font-bold cursor-pointer transition select-none flex-1 justify-center ${
-          hasWarning
-            ? "bg-amber-100/60 text-amber-900 hover:bg-amber-100"
-            : "bg-blue-50/50 hover:bg-blue-100/70 text-[#003580]"
-        }`}
-        title="Bấm để chọn Ngày"
+        onClick={() => {
+          if (dateInputRef.current) {
+            if (typeof dateInputRef.current.showPicker === "function") {
+              dateInputRef.current.showPicker();
+            } else {
+              dateInputRef.current.focus();
+            }
+          }
+        }}
+        className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50/60 hover:bg-blue-100/70 text-[#003580] font-bold cursor-pointer transition select-none flex-1 justify-center"
       >
-        <Calendar size={13} className="shrink-0" />
+        <Calendar size={14} className="shrink-0 text-[#003580]" />
         <span className="text-xs whitespace-nowrap">{displayDateText}</span>
 
+        {/* Input date ẩn có minDate khóa cứng ngày */}
         <input
           ref={dateInputRef}
           type="date"
+          min={minDate}
           value={datePart}
-          onChange={(e) => handleDateChange(e.target.value)}
+          onChange={handleDateSelect}
           className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
         />
       </div>
 
       <span className="text-gray-300 font-normal">|</span>
 
-      <div
-        onClick={triggerTimePicker}
-        className="relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-gray-800 font-bold cursor-pointer transition select-none flex-1 justify-center"
-        title="Bấm để chọn Giờ"
-      >
-        <Clock size={13} className="text-gray-500 shrink-0" />
-        <span className="text-xs font-mono whitespace-nowrap">{timePart}</span>
+      {/* 2. DROPDOWN CHỌN GIỜ TIỆN LỢI */}
+      <div className="relative" ref={timeDropdownRef}>
+        <button
+          type="button"
+          onClick={() => setIsTimeDropdownOpen(!isTimeDropdownOpen)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold font-mono text-xs cursor-pointer transition select-none"
+        >
+          <Clock size={13} className="text-gray-500 shrink-0" />
+          <span>{timePart}</span>
+          <ChevronDown size={12} className="text-gray-400" />
+        </button>
 
-        <input
-          ref={timeInputRef}
-          type="time"
-          value={timePart}
-          onChange={(e) => handleTimeChange(e.target.value)}
-          className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
-        />
+        {isTimeDropdownOpen && (
+          <div className="absolute right-0 top-full mt-1.5 w-32 bg-white border border-gray-200 rounded-2xl shadow-xl py-1 z-50 max-h-48 overflow-y-auto animate-in fade-in">
+            {commonTimes.map((t) => (
+              <div
+                key={t}
+                onClick={() => handleTimeSelect(t)}
+                className={`px-3.5 py-1.5 flex items-center justify-between text-xs cursor-pointer font-mono font-bold transition ${
+                  t === timePart
+                    ? "bg-blue-50 text-[#003580]"
+                    : "text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <span>{t}</span>
+                {t === timePart && (
+                  <Check size={13} className="text-[#003580]" strokeWidth={3} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -263,6 +296,7 @@ export default function QuickBookingModal({
     };
   }, [rooms]);
 
+  // 🌟 KHÓA NGÀY: THUÊ NGÀY LUÔN BẮT BUỘC TRẢ PHÒNG VÀO NGÀY HÔM SAU
   const getDefaultDatesForType = (rentalType, checkinMode = "Hiện tại") => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
@@ -292,14 +326,14 @@ export default function QuickBookingModal({
       };
     }
 
-    // THUÊ NGÀY: Mặc định trả vào ngày hôm sau (+1 ngày)
+    // THUÊ THEO NGÀY: NGÀY TRẢ LUÔN LÀ NGÀY MAI (+1 NGÀY)
     const start = new Date(now);
     if (checkinMode === "Quy định") {
       const [h, m] = hotelPolicies.dailyIn.split(":").map(Number);
       start.setHours(h || 14, m || 0, 0, 0);
     }
     const end = new Date(start);
-    end.setDate(start.getDate() + 1);
+    end.setDate(start.getDate() + 1); // +1 ngày
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     end.setHours(outH || 12, outM || 0, 0, 0);
 
@@ -309,7 +343,6 @@ export default function QuickBookingModal({
     };
   };
 
-  // 🌟 LOGIC TÍNH TIỀN THÔNG MINH (NẾU CHỌN CÙNG NGÀY THÌ TÍNH THEO GIỜ, KHÔNG PHẠT VÔ LÝ)
   const calculateDurationAndPriceLogic = (
     checkinStr,
     checkoutStr,
@@ -341,7 +374,6 @@ export default function QuickBookingModal({
     let earlyWarning = "";
     let lateWarning = "";
 
-    // 1. THUÊ THEO GIỜ
     if (rentalType === "Giờ") {
       return {
         durationLabel: `${hours} giờ`,
@@ -351,7 +383,6 @@ export default function QuickBookingModal({
       };
     }
 
-    // 2. THUÊ QUA ĐÊM
     if (rentalType === "Đêm") {
       const [inH, inM] = hotelPolicies.overnightIn.split(":").map(Number);
       const [outH, outM] = hotelPolicies.overnightOut.split(":").map(Number);
@@ -382,7 +413,7 @@ export default function QuickBookingModal({
       };
     }
 
-    // 3. 🌟 THUÊ THEO NGÀY: XỬ LÝ TRƯỜNG HỢP CỐ TÌNH CHỌN CÙNG NGÀY
+    // THUÊ THEO NGÀY
     const inDateOnly = new Date(
       checkin.getFullYear(),
       checkin.getMonth(),
@@ -393,21 +424,11 @@ export default function QuickBookingModal({
       checkout.getMonth(),
       checkout.getDate(),
     );
-    const daysDiff = Math.round(
-      (outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24),
+    const daysDiff = Math.max(
+      1,
+      Math.round((outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24)),
     );
 
-    // NẾU CHỌN TRẢ CÙNG NGÀY (daysDiff = 0): Tự động tính như thuê theo giờ thực tế
-    if (daysDiff <= 0) {
-      return {
-        durationLabel: `${hours} giờ (Trong ngày)`,
-        price: hours * hourlyPrice,
-        earlyWarning: "",
-        lateWarning: "",
-      };
-    }
-
-    // NẾU Ở QUA ĐÊM BÌNH THƯỜNG (daysDiff >= 1)
     const [inH, inM] = hotelPolicies.dailyIn.split(":").map(Number);
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
 
@@ -580,7 +601,6 @@ export default function QuickBookingModal({
 
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-      {/* 🌟 MỞ RỘNG CHIỀU NGANG MODAL THÀNH max-w-7xl CHO CỰC KỲ RỘNG RÃI VÀ THOÁNG 🌟 */}
       <div className="bg-white rounded-3xl w-full max-w-7xl shadow-2xl border border-gray-200 overflow-hidden text-xs text-gray-900 animate-scaleUp my-auto">
         {/* HEADER MODAL */}
         <div className="flex justify-between items-center px-8 py-5 bg-[#003580] text-white shadow-xs">
@@ -654,7 +674,7 @@ export default function QuickBookingModal({
             </div>
           </div>
 
-          {/* 🌟 BẢNG PHÒNG CHỌN: RỘNG RÃI, CỘT THÀNH TIỀN THẲNG TẮP VÀ KHÔNG BAO GIỜ BỊ CHE 🌟 */}
+          {/* BẢNG PHÒNG CHỌN RỘNG RÃI */}
           <div className="border border-blue-100 rounded-2xl bg-white shadow-2xs overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -713,7 +733,6 @@ export default function QuickBookingModal({
                     Dự kiến
                   </th>
 
-                  {/* CỘT THÀNH TIỀN ĐƯỢC DÀNH ĐỦ KHÔNG GIAN */}
                   <th className="py-3.5 px-6 text-right whitespace-nowrap w-44">
                     <div className="flex items-center justify-end gap-1">
                       <span>Thành tiền</span>
@@ -725,111 +744,130 @@ export default function QuickBookingModal({
               </thead>
 
               <tbody className="divide-y divide-gray-100 text-xs">
-                {(bookingData.rooms || []).map((item, idx) => (
-                  <tr key={idx} className="hover:bg-blue-50/40 transition">
-                    <td className="py-4 px-4 font-bold text-gray-900 whitespace-nowrap">
-                      {item.type_name || "DELUXE"}
-                    </td>
+                {(bookingData.rooms || []).map((item, idx) => {
+                  // 🌟 TÍNH MIN DATE KHÓA CỨNG: NẾU THUÊ NGÀY THÌ PHẢI TỪ NGÀY MAI TRỞ ĐI
+                  const minCheckoutDate = useMemo(() => {
+                    if (item.rental_type === "Ngày" && item.checkin_date) {
+                      const d = new Date(
+                        String(item.checkin_date).slice(0, 10),
+                      );
+                      d.setDate(d.getDate() + 1); // Bắt buộc từ ngày mai
+                      return d.toISOString().slice(0, 10);
+                    }
+                    return item.checkin_date
+                      ? String(item.checkin_date).slice(0, 10)
+                      : undefined;
+                  }, [item.rental_type, item.checkin_date]);
 
-                    <td className="py-4 px-3 whitespace-nowrap">
-                      <select
-                        value={item.room_id}
-                        onChange={(e) =>
-                          handleUpdateRoom(idx, "room_id", e.target.value)
-                        }
-                        className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none font-black text-[#003580] bg-white hover:border-[#003580] cursor-pointer"
-                      >
-                        {rooms.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            Phòng {r.room_number}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
+                  return (
+                    <tr key={idx} className="hover:bg-blue-50/40 transition">
+                      <td className="py-4 px-4 font-bold text-gray-900 whitespace-nowrap">
+                        {item.type_name || "DELUXE"}
+                      </td>
 
-                    <td className="py-4 px-3 whitespace-nowrap">
-                      <select
-                        value={item.rental_type}
-                        onChange={(e) =>
-                          handleUpdateRoom(idx, "rental_type", e.target.value)
-                        }
-                        className="w-full border border-[#003580] rounded-xl px-2.5 py-1.5 outline-none font-bold text-gray-800 bg-white cursor-pointer"
-                      >
-                        <option value="Giờ">Giờ</option>
-                        <option value="Đêm">Đêm</option>
-                        <option value="Ngày">Ngày</option>
-                      </select>
-                    </td>
-
-                    <td className="py-4 px-3">
-                      <div className="space-y-1">
-                        <EasyDateTimePicker
-                          value={item.checkin_date}
-                          hasWarning={Boolean(item.early_warning)}
-                          onChange={(val) =>
-                            handleUpdateRoom(idx, "checkin_date", val)
+                      <td className="py-4 px-3 whitespace-nowrap">
+                        <select
+                          value={item.room_id}
+                          onChange={(e) =>
+                            handleUpdateRoom(idx, "room_id", e.target.value)
                           }
-                        />
-                        {item.early_warning && (
-                          <div className="flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-2 py-0.5 w-fit whitespace-nowrap">
-                            <AlertTriangle
-                              size={12}
-                              className="text-amber-600 shrink-0"
-                            />
-                            <span>{item.early_warning}</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                          className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none font-black text-[#003580] bg-white hover:border-[#003580] cursor-pointer"
+                        >
+                          {rooms.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              Phòng {r.room_number}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
 
-                    <td className="py-4 px-3">
-                      <div className="space-y-1">
-                        <EasyDateTimePicker
-                          value={item.checkout_date}
-                          hasWarning={Boolean(item.late_warning)}
-                          onChange={(val) =>
-                            handleUpdateRoom(idx, "checkout_date", val)
+                      <td className="py-4 px-3 whitespace-nowrap">
+                        <select
+                          value={item.rental_type}
+                          onChange={(e) =>
+                            handleUpdateRoom(idx, "rental_type", e.target.value)
                           }
-                        />
-                        {item.late_warning && (
-                          <div className="flex items-center gap-1 text-[11px] font-bold text-rose-800 bg-rose-50 border border-rose-300 rounded-lg px-2 py-0.5 w-fit whitespace-nowrap">
-                            <AlertTriangle
-                              size={12}
-                              className="text-rose-600 shrink-0"
-                            />
-                            <span>{item.late_warning}</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                          className="w-full border border-[#003580] rounded-xl px-2.5 py-1.5 outline-none font-bold text-gray-800 bg-white cursor-pointer"
+                        >
+                          <option value="Giờ">Giờ</option>
+                          <option value="Đêm">Đêm</option>
+                          <option value="Ngày">Ngày</option>
+                        </select>
+                      </td>
 
-                    <td className="py-4 px-3 text-center font-bold text-[#003580] whitespace-nowrap">
-                      <span className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 inline-block whitespace-nowrap font-bold">
-                        {item.duration_label || "1 giờ"}
-                      </span>
-                    </td>
+                      {/* Ô CHỌN NGÀY NHẬN */}
+                      <td className="py-4 px-3">
+                        <div className="space-y-1">
+                          <CustomDateTimePicker
+                            value={item.checkin_date}
+                            hasWarning={Boolean(item.early_warning)}
+                            onChange={(val) =>
+                              handleUpdateRoom(idx, "checkin_date", val)
+                            }
+                          />
+                          {item.early_warning && (
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-2 py-0.5 w-fit whitespace-nowrap">
+                              <AlertTriangle
+                                size={12}
+                                className="text-amber-600 shrink-0"
+                              />
+                              <span>{item.early_warning}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
 
-                    {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
-                    <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
-                      {formatNumber(item.price)} ₫
-                    </td>
+                      {/* 🌟 Ô CHỌN NGÀY TRẢ CÓ KHÓA MINDATE 🌟 */}
+                      <td className="py-4 px-3">
+                        <div className="space-y-1">
+                          <CustomDateTimePicker
+                            value={item.checkout_date}
+                            minDate={minCheckoutDate}
+                            hasWarning={Boolean(item.late_warning)}
+                            onChange={(val) =>
+                              handleUpdateRoom(idx, "checkout_date", val)
+                            }
+                          />
+                          {item.late_warning && (
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-rose-800 bg-rose-50 border border-rose-300 rounded-lg px-2 py-0.5 w-fit whitespace-nowrap">
+                              <AlertTriangle
+                                size={12}
+                                className="text-rose-600 shrink-0"
+                              />
+                              <span>{item.late_warning}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
 
-                    <td className="py-4 px-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBookingData((prev) => ({
-                            ...prev,
-                            rooms: prev.rooms.filter((_, i) => i !== idx),
-                          }));
-                        }}
-                        className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer transition"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="py-4 px-3 text-center font-bold text-[#003580] whitespace-nowrap">
+                        <span className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 inline-block whitespace-nowrap font-bold">
+                          {item.duration_label || "1 ngày"}
+                        </span>
+                      </td>
+
+                      {/* HIỂN THỊ ĐẦY ĐỦ TIỀN PHÒNG */}
+                      <td className="py-4 px-6 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
+                        {formatNumber(item.price)} ₫
+                      </td>
+
+                      <td className="py-4 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBookingData((prev) => ({
+                              ...prev,
+                              rooms: prev.rooms.filter((_, i) => i !== idx),
+                            }));
+                          }}
+                          className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer transition"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
