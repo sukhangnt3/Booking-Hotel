@@ -117,7 +117,7 @@ export default function OccupiedRoomModal({
     return `${days} ngày`;
   }, [b, now]);
 
-  // 2. 🌟 TÍNH TOÁN PHỤ THU: TÁCH BIỆT RÕ RÀNG NHẬN SỚM VÀ TRẢ MUỘN 🌟
+  // 2. TÍNH TOÁN PHỤ THU: TÁCH BIỆT RÕ RÀNG NHẬN SỚM VÀ TRẢ MUỘN
   const surchargeDetails = useMemo(() => {
     const isHourly = b.rental_type === "HOUR" || b.rental_type === "Giờ";
     const isOvernight =
@@ -156,7 +156,6 @@ export default function OccupiedRoomModal({
         const diffEarlyMins = Math.floor(diffEarlyMs / 60000);
 
         if (diffEarlyMins > 15) {
-          // Quá 15 phút ân hạn mới tính
           earlyHours = Math.ceil(diffEarlyMins / 60);
           earlyFee = earlyHours * hourlyRate;
           earlyLabel = `Nhận sớm ${earlyHours} giờ (Quy định: ${standardInTimeStr})`;
@@ -200,7 +199,6 @@ export default function OccupiedRoomModal({
       const diffLateMins = Math.floor(diffLateMs / 60000);
 
       if (diffLateMins > 15) {
-        // Quá 15 phút ân hạn mới tính
         lateHours = Math.ceil(diffLateMins / 60);
         lateFee = lateHours * hourlyRate;
         lateLabel = `Quá giờ ${diffLateMins} phút (${lateHours} giờ x ${hourlyRate.toLocaleString("vi-VN")} ₫)`;
@@ -244,7 +242,6 @@ export default function OccupiedRoomModal({
   const [guestPayment, setGuestPayment] = useState(remainingAmount);
   const [paymentMethod, setPaymentMethod] = useState("Tiền mặt");
 
-  // Ghi chú chi tiết tự động tách dòng
   const autoNote = useMemo(() => {
     const notes = [];
     if (surchargeDetails.earlyFee > 0) notes.push(surchargeDetails.earlyLabel);
@@ -345,7 +342,7 @@ export default function OccupiedRoomModal({
 
         {/* NỘI DUNG TÍNH TIỀN */}
         <div className="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto flex-1 bg-white">
-          {/* CỘT TRÁI: BẢNG CHI TIẾT CÁC KHOẢN TIỀN (GỒM TIỀN PHÒNG, NHẬN SỚM, TRẢ MUỘN) */}
+          {/* CỘT TRÁI: BẢNG CHI TIẾT CÁC KHOẢN TIỀN */}
           <div className="lg:col-span-7 space-y-4">
             <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left border-collapse">
@@ -360,7 +357,8 @@ export default function OccupiedRoomModal({
                     <th className="py-3 px-4 text-right whitespace-nowrap">
                       Đơn giá
                     </th>
-                    <th className="py-3 px-4 text-right whitespace-nowrap">
+                    {/* 🌟 MỞ RỘNG CỘT THÀNH TIỀN KHÔNG BAO GIỜ BỊ DẤU BA CHẤM 🌟 */}
+                    <th className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">
                       Thành tiền
                     </th>
                   </tr>
@@ -387,12 +385,13 @@ export default function OccupiedRoomModal({
                     <td className="py-3 px-4 text-right font-medium text-gray-600 tabular-nums whitespace-nowrap">
                       {formatVND(baseRoomPrice)}
                     </td>
-                    <td className="py-3 px-4 text-right font-bold text-gray-900 tabular-nums whitespace-nowrap">
+                    {/* Hiển thị số tiền rõ ràng đầy đủ */}
+                    <td className="py-3 px-4 text-right font-bold text-gray-900 tabular-nums whitespace-nowrap min-w-[120px]">
                       {formatVND(baseRoomPrice)}
                     </td>
                   </tr>
 
-                  {/* 2. 🌟 DÒNG PHỤ THU NHẬN SỚM (NẾU CÓ) 🌟 */}
+                  {/* 2. DÒNG PHỤ THU NHẬN SỚM (NẾU CÓ) */}
                   {surchargeDetails.earlyFee > 0 && (
                     <tr className="bg-amber-50/50 text-amber-950 border-t border-amber-200">
                       <td className="py-3 px-4 whitespace-nowrap">
@@ -413,13 +412,13 @@ export default function OccupiedRoomModal({
                       <td className="py-3 px-4 text-right font-medium text-amber-800 tabular-nums whitespace-nowrap">
                         {formatVND(hourlyRate)}
                       </td>
-                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap">
+                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap min-w-[120px]">
                         +{formatVND(surchargeDetails.earlyFee)}
                       </td>
                     </tr>
                   )}
 
-                  {/* 3. 🌟 DÒNG PHỤ THU TRẢ MUỘN (NẾU CÓ) 🌟 */}
+                  {/* 3. DÒNG PHỤ THU TRẢ MUỘN (NẾU CÓ) */}
                   {surchargeDetails.lateFee > 0 && (
                     <tr className="bg-orange-50/50 text-orange-950 border-t border-orange-200">
                       <td className="py-3 px-4 whitespace-nowrap">
@@ -440,7 +439,7 @@ export default function OccupiedRoomModal({
                       <td className="py-3 px-4 text-right font-medium text-orange-800 tabular-nums whitespace-nowrap">
                         {formatVND(hourlyRate)}
                       </td>
-                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap">
+                      <td className="py-3 px-4 text-right font-black text-rose-600 tabular-nums whitespace-nowrap min-w-[120px]">
                         +{formatVND(surchargeDetails.lateFee)}
                       </td>
                     </tr>

@@ -87,7 +87,7 @@ const toStandardISO = (dateVal, timeVal, defaultHour = 14, defaultMin = 0) => {
   return `${y}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}`;
 };
 
-function EasyDateTimePicker({ value, onChange, hasWarning }) {
+function EasyDateTimePicker({ value, onChange, hasWarning, minDate }) {
   const dateInputRef = useRef(null);
   const timeInputRef = useRef(null);
 
@@ -165,6 +165,7 @@ function EasyDateTimePicker({ value, onChange, hasWarning }) {
         <input
           ref={dateInputRef}
           type="date"
+          min={minDate}
           value={datePart}
           onChange={(e) => handleDateChange(e.target.value)}
           className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
@@ -263,19 +264,21 @@ export default function QuickBookingModal({
     };
   }, [rooms]);
 
-  // 🌟 ĐÃ BỎ BUỔI: CHỈ CÒN GIỜ, ĐÊM, NGÀY
+  // 🌟 ĐÃ SỬA CHUẨN XÁC NGHIỆP VỤ: THUÊ NGÀY LUÔN TỰ ĐỘNG NHẢY SANG NGÀY HÔM SAU (+1 NGÀY)
   const getDefaultDatesForType = (rentalType, checkinMode = "Hiện tại") => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
 
+    // 1. THUÊ THEO GIỜ
     if (rentalType === "Giờ") {
-      const end = new Date(now.getTime() + 3600000);
+      const end = new Date(now.getTime() + 3600000); // Mặc định 1 giờ
       return {
         checkin: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`,
         checkout: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`,
       };
     }
 
+    // 2. THUÊ QUA ĐÊM
     if (rentalType === "Đêm") {
       const start = new Date(now);
       const [inH, inM] = hotelPolicies.overnightIn.split(":").map(Number);
@@ -293,16 +296,19 @@ export default function QuickBookingModal({
       };
     }
 
-    // THEO NGÀY
+    // 3. 🌟 THUÊ THEO NGÀY: NGÀY TRẢ PHÒNG BẮT BUỘC PHẢI LÀ NGÀY HÔM SAU (+1 NGÀY) 🌟
     const start = new Date(now);
     if (checkinMode === "Quy định") {
       const [h, m] = hotelPolicies.dailyIn.split(":").map(Number);
       start.setHours(h || 14, m || 0, 0, 0);
     }
+
+    // Tự động cộng thêm 1 ngày cho ngày trả phòng
     const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    end.setDate(start.getDate() + 1);
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     end.setHours(outH || 12, outM || 0, 0, 0);
+
     return {
       checkin: toStandardISO(start),
       checkout: toStandardISO(end),
@@ -328,7 +334,6 @@ export default function QuickBookingModal({
     const diffMs = Math.max(0, checkout - checkin);
     const totalMinutes = Math.round(diffMs / (1000 * 60));
     const hours = Math.max(1, Math.ceil(totalMinutes / 60));
-    const days = Math.max(1, Math.round(totalMinutes / (24 * 60)));
 
     const basePrice = Number(
       roomInfo?.base_price || roomInfo?.daily_price || 200000,
@@ -341,6 +346,7 @@ export default function QuickBookingModal({
     let earlyWarning = "";
     let lateWarning = "";
 
+    // A. THUÊ THEO GIỜ
     if (rentalType === "Giờ") {
       return {
         durationLabel: `${hours} giờ`,
@@ -350,6 +356,7 @@ export default function QuickBookingModal({
       };
     }
 
+    // B. THUÊ QUA ĐÊM
     if (rentalType === "Đêm") {
       const [inH, inM] = hotelPolicies.overnightIn.split(":").map(Number);
       const [outH, outM] = hotelPolicies.overnightOut.split(":").map(Number);
@@ -380,8 +387,27 @@ export default function QuickBookingModal({
       };
     }
 
-    // THEO NGÀY
+    // C. 🌟 THUÊ THEO NGÀY
     const [inH, inM] = hotelPolicies.dailyIn.split(":").map(Number);
+    const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
+
+    // Tính số ngày chênh lệch thực tế giữa ngày trả và ngày nhận
+    const inDateOnly = new Date(
+      checkin.getFullYear(),
+      checkin.getMonth(),
+      checkin.getDate(),
+    );
+    const outDateOnly = new Date(
+      checkout.getFullYear(),
+      checkout.getMonth(),
+      checkout.getDate(),
+    );
+    const daysDiff = Math.max(
+      1,
+      Math.round((outDateOnly - inDateOnly) / (1000 * 60 * 60 * 24)),
+    );
+
+    // 1. Kiểm tra nhận sớm so với 14:00 ngày nhận
     const stdCheckin = new Date(checkin);
     stdCheckin.setHours(inH || 14, inM || 0, 0, 0);
 
@@ -391,8 +417,8 @@ export default function QuickBookingModal({
       if (earlyHours > 0) earlyWarning = `Nhận sớm ${earlyHours}h`;
     }
 
+    // 2. Kiểm tra trả muộn so với 12:00 ngày trả
     let lateHours = 0;
-    const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     const stdCheckout = new Date(checkout);
     stdCheckout.setHours(outH || 12, outM || 0, 0, 0);
     if (checkout > stdCheckout) {
@@ -401,11 +427,12 @@ export default function QuickBookingModal({
     }
 
     const finalPrice =
-      days * basePrice + (earlyHours + lateHours) * hourlyPrice;
+      daysDiff * basePrice + (earlyHours + lateHours) * hourlyPrice;
+
     const durationLabel =
       earlyHours > 0 || lateHours > 0
-        ? `${days} ngày ${earlyHours + lateHours} giờ`
-        : `${days} ngày`;
+        ? `${daysDiff} ngày ${earlyHours + lateHours} giờ`
+        : `${daysDiff} ngày`;
 
     return { durationLabel, price: finalPrice, earlyWarning, lateWarning };
   };
@@ -639,7 +666,7 @@ export default function QuickBookingModal({
                     </div>
                   </th>
 
-                  {/* 🌟 HÌNH THỨC CHUẨN 3 LOẠI */}
+                  {/* HÌNH THỨC CHUẨN 3 LOẠI */}
                   <th className="py-3 px-3 whitespace-nowrap">Hình thức</th>
 
                   <th className="py-3 px-3 min-w-[210px] whitespace-nowrap">
@@ -682,7 +709,8 @@ export default function QuickBookingModal({
                     Dự kiến
                   </th>
 
-                  <th className="py-3 px-4 text-right whitespace-nowrap">
+                  {/* 🌟 ĐÃ MỞ RỘNG CỘT THÀNH TIỀN KHÔNG BAO GIỜ BỊ CHE KHUẤT 🌟 */}
+                  <th className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">
                     <div className="flex items-center justify-end gap-1">
                       <span>Thành tiền</span>
                       <Info size={13} className="text-gray-400" />
@@ -715,7 +743,6 @@ export default function QuickBookingModal({
                       </select>
                     </td>
 
-                    {/* 🌟 CHỈ CÒN ĐÚNG 3 LỰA CHỌN GỌN GÀNG: Giờ | Đêm | Ngày */}
                     <td className="py-3.5 px-3 whitespace-nowrap">
                       <select
                         value={item.rental_type}
@@ -755,6 +782,11 @@ export default function QuickBookingModal({
                       <div className="space-y-1">
                         <EasyDateTimePicker
                           value={item.checkout_date}
+                          minDate={
+                            item.rental_type === "Ngày" && item.checkin_date
+                              ? String(item.checkin_date).slice(0, 10)
+                              : undefined
+                          }
                           hasWarning={Boolean(item.late_warning)}
                           onChange={(val) =>
                             handleUpdateRoom(idx, "checkout_date", val)
@@ -778,7 +810,8 @@ export default function QuickBookingModal({
                       </span>
                     </td>
 
-                    <td className="py-3.5 px-4 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap">
+                    {/* HIỂN THỊ RÕ RÀNG TIỀN PHÒNG */}
+                    <td className="py-3.5 px-4 font-black text-right text-gray-900 text-sm tabular-nums whitespace-nowrap min-w-[120px]">
                       {formatNumber(item.price)} ₫
                     </td>
 
