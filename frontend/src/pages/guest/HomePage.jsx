@@ -151,7 +151,7 @@ export default function HomePage() {
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [isSearchingDest, setIsSearchingDest] = useState(false);
 
-  // 🌟 HÌNH THỨC THUÊ (CHỈ CÒN DAY, OVERNIGHT, HOUR)
+  // Hình thức thuê
   const [rentalType, setRentalType] = useState("DAY");
 
   const defaultHourTime = useMemo(() => {
@@ -163,7 +163,11 @@ export default function HomePage() {
   const [checkInDate, setCheckInDate] = useState(today);
   const [checkOutDate, setCheckOutDate] = useState(addDays(today, 1));
 
-  // SỐ GIỜ SỬ DỤNG
+  // Biến cờ theo dõi bước chọn Ngày nhận / Ngày trả & Ngày đang rê chuột
+  const [isSelectingCheckOut, setIsSelectingCheckOut] = useState(false);
+  const [hoverDate, setHoverDate] = useState(null);
+
+  // Số giờ sử dụng
   const [hoursCount, setHoursCount] = useState(2);
 
   // Calendar Popup & Tháng hiển thị
@@ -217,9 +221,11 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [destination]);
 
-  // 🌟 CHUYỂN TAB MƯỢT MÀ CHUẨN GO2JOY (3 TAB)
+  // Chuyển tab mượt mà
   const handleTabChange = (type) => {
     setRentalType(type);
+    setIsSelectingCheckOut(false);
+    setHoverDate(null);
     if (type === "HOUR") {
       setCheckInTime(defaultHourTime);
       setHoursCount(2);
@@ -240,7 +246,7 @@ export default function HomePage() {
     }
   };
 
-  // 🌟 TÍNH TOÁN THỜI GIAN TRẢ PHÒNG CHUẨN GO2JOY
+  // Tính toán thời gian trả phòng
   const durationSummary = useMemo(() => {
     const [inH, inM] = checkInTime.split(":").map(Number);
     const inDateTime = new Date(checkInDate);
@@ -249,7 +255,6 @@ export default function HomePage() {
     let outDateTime = new Date(checkOutDate);
     let outTimeStr = checkOutTime;
 
-    // 1. THEO GIỜ
     if (rentalType === "HOUR") {
       outDateTime = addHours(inDateTime, hoursCount);
       outTimeStr = `${String(outDateTime.getHours()).padStart(2, "0")}:${String(outDateTime.getMinutes()).padStart(2, "0")}`;
@@ -261,7 +266,6 @@ export default function HomePage() {
       };
     }
 
-    // 2. QUA ĐÊM (CỐ ĐỊNH TỰ ĐỘNG SANG HÔM SAU)
     if (rentalType === "OVERNIGHT") {
       outDateTime = addDays(new Date(checkInDate), 1);
       outDateTime.setHours(11, 0, 0, 0);
@@ -273,7 +277,6 @@ export default function HomePage() {
       };
     }
 
-    // 3. THEO NGÀY
     const diffDays = Math.max(1, differenceInDays(checkOutDate, checkInDate));
     outDateTime = new Date(checkOutDate);
     outDateTime.setHours(12, 0, 0, 0);
@@ -283,6 +286,7 @@ export default function HomePage() {
       inDateTime,
       outDateTime,
       outTimeStr: "12:00",
+      diffDays,
     };
   }, [
     rentalType,
@@ -293,7 +297,6 @@ export default function HomePage() {
     hoursCount,
   ]);
 
-  // Alias chống lỗi undefined
   const checkOutInfo = durationSummary;
 
   useEffect(() => {
@@ -367,6 +370,8 @@ export default function HomePage() {
         setIsDestDropdownOpen(false);
       if (calendarRef.current && !calendarRef.current.contains(e.target)) {
         setIsCalendarOpen(false);
+        setIsSelectingCheckOut(false);
+        setHoverDate(null);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -391,6 +396,8 @@ export default function HomePage() {
     query.append("rooms", rooms.toString());
 
     setIsCalendarOpen(false);
+    setIsSelectingCheckOut(false);
+    setHoverDate(null);
     navigate(`/hotels?${query.toString()}`);
   };
 
@@ -398,7 +405,6 @@ export default function HomePage() {
     const hourNum = parseInt(timeStr.slice(0, 2), 10);
     const isToday = isSameDay(checkInDate, today);
 
-    // Chỉ khóa các giờ hoàn toàn trong quá khứ (< currentRealHour)
     if (isToday) {
       if (hourNum < currentRealHour) return true;
     }
@@ -411,7 +417,6 @@ export default function HomePage() {
     (_, i) => `${String(i).padStart(2, "0")}:00`,
   );
   const HOURLY_DURATIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-
   const cardTranslatePercentage = 100 / visibleCount;
 
   return (
@@ -553,7 +558,11 @@ export default function HomePage() {
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
                   <div ref={calendarRef} className="relative md:col-span-9">
                     <div
-                      onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                      onClick={() => {
+                        setIsCalendarOpen(!isCalendarOpen);
+                        setIsSelectingCheckOut(false);
+                        setHoverDate(null);
+                      }}
                       className="bg-white rounded-xl shadow-lg border border-gray-200 px-3 py-2 h-13 cursor-pointer flex items-center justify-between hover:border-blue-600 transition select-none gap-2 flex-wrap sm:flex-nowrap"
                     >
                       {/* KHỐI 1: NHẬN PHÒNG */}
@@ -618,7 +627,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN 3 TABS GO2JOY 🌟 */}
+                    {/* POPUP CHỌN GIỜ & PHÒNG */}
                     {isCalendarOpen && (
                       <div
                         onClick={(e) => e.stopPropagation()}
@@ -628,7 +637,7 @@ export default function HomePage() {
                             : "w-full sm:w-[480px]"
                         }`}
                       >
-                        {/* 3 TABS HÌNH THỨC THUÊ (ĐÃ XÓA SẠCH BUỔI) */}
+                        {/* 3 TABS HÌNH THỨC THUÊ */}
                         <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl">
                           <button
                             type="button"
@@ -667,21 +676,59 @@ export default function HomePage() {
                           </button>
                         </div>
 
-                        {/* 🌟 HỘP BÓNG ĐÈN GỢI Ý CHUẨN GO2JOY (KHÔNG GHI SỐ GIỜ CỨNG) */}
-                        <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center gap-1.5">
-                          <Lightbulb
-                            size={15}
-                            className="text-[#006ce4] shrink-0"
-                          />
-                          <span>
-                            {rentalType === "HOUR" &&
-                              "Phù hợp khi bạn chỉ cần nghỉ vài giờ"}
-                            {rentalType === "OVERNIGHT" &&
-                              "Phù hợp nghỉ một đêm đến sáng hôm sau"}
-                            {rentalType === "DAY" &&
-                              "Phù hợp với lưu trú nhiều ngày"}
-                          </span>
+                        {/* HỘP BÓNG ĐÈN GỢI Ý & SỐ ĐÊM LƯU TRÚ */}
+                        <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Lightbulb
+                              size={15}
+                              className="text-[#006ce4] shrink-0"
+                            />
+                            <span>
+                              {rentalType === "HOUR" &&
+                                "Phù hợp khi bạn chỉ cần nghỉ vài giờ"}
+                              {rentalType === "OVERNIGHT" &&
+                                "Phù hợp nghỉ một đêm đến sáng hôm sau"}
+                              {rentalType === "DAY" &&
+                                "Chọn ngày nhận và ngày trả phòng tùy thích"}
+                            </span>
+                          </div>
+                          {rentalType === "DAY" && (
+                            <span className="font-black text-[#003580] bg-white px-2 py-0.5 rounded-md border border-blue-200">
+                              {durationSummary.diffDays} đêm lưu trú
+                            </span>
+                          )}
                         </div>
+
+                        {/* 🌟 NÚT CHỌN NHANH SỐ ĐÊM (CHỌN 1 PHÁT ĐƯỢC NGAY NHIỀU NGÀY) */}
+                        {rentalType === "DAY" && (
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] font-bold">
+                            <span className="text-slate-400 font-medium shrink-0">
+                              Chọn nhanh:
+                            </span>
+                            {[
+                              { label: "+1 đêm", days: 1 },
+                              { label: "+2 đêm", days: 2 },
+                              { label: "+3 đêm", days: 3 },
+                              { label: "+5 đêm", days: 5 },
+                              { label: "+1 tuần", days: 7 },
+                            ].map((preset) => (
+                              <button
+                                key={preset.days}
+                                type="button"
+                                onClick={() => {
+                                  setCheckOutDate(
+                                    addDays(checkInDate, preset.days),
+                                  );
+                                  setIsSelectingCheckOut(false);
+                                  setHoverDate(null);
+                                }}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-[#003580] text-slate-700 rounded-lg border border-slate-200 transition shrink-0 cursor-pointer"
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         <div
                           className={`grid grid-cols-1 gap-5 pt-1 ${rentalType === "HOUR" ? "sm:grid-cols-12" : ""}`}
@@ -691,9 +738,12 @@ export default function HomePage() {
                             className={`${rentalType === "HOUR" ? "sm:col-span-6 border-r border-slate-100 pr-0 sm:pr-4" : "w-full"} space-y-2`}
                           >
                             <div className="flex justify-between items-center mb-1">
+                              {/* HƯỚNG DẪN BƯỚC BẤM CHUẨN XÁC */}
                               <span className="text-xs font-black text-slate-800">
                                 {rentalType === "DAY"
-                                  ? "Chọn Ngày Nhận & Trả: "
+                                  ? isSelectingCheckOut
+                                    ? "👉 Bước 2: Bấm chọn Ngày Trả phòng: "
+                                    : "👉 Bước 1: Bấm chọn Ngày Nhận phòng: "
                                   : "Chọn ngày nhận: "}
                                 {format(calendarMonth, "'Tháng' MM, yyyy", {
                                   locale: vi,
@@ -747,51 +797,73 @@ export default function HomePage() {
                               }).map((dayItem) => {
                                 const isPast = isBefore(dayItem, today);
 
-                                // BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM CHUẨN GO2JOY
                                 const isStartDay = isSameDay(
                                   dayItem,
                                   checkInDate,
                                 );
+
+                                // Mục tiêu trả phòng: nếu đang rê chuột (hover) thì lấy ngày hover, ngược lại lấy checkOutDate
+                                const effectiveOutDate =
+                                  isSelectingCheckOut &&
+                                  hoverDate &&
+                                  isBefore(checkInDate, hoverDate)
+                                    ? hoverDate
+                                    : durationSummary.outDateTime;
+
                                 const isEndDay =
-                                  isSameDay(
-                                    dayItem,
-                                    durationSummary.outDateTime,
-                                  ) &&
-                                  !isSameDay(
-                                    checkInDate,
-                                    durationSummary.outDateTime,
-                                  );
+                                  isSameDay(dayItem, effectiveOutDate) &&
+                                  !isSameDay(checkInDate, effectiveOutDate);
+
                                 const isInBetweenRange =
                                   !isPast &&
                                   isBefore(checkInDate, dayItem) &&
-                                  isBefore(
-                                    dayItem,
-                                    durationSummary.outDateTime,
-                                  );
+                                  isBefore(dayItem, effectiveOutDate);
 
                                 return (
                                   <button
                                     key={dayItem.toISOString()}
                                     type="button"
                                     disabled={isPast}
+                                    onMouseEnter={() => {
+                                      if (
+                                        rentalType === "DAY" &&
+                                        isSelectingCheckOut
+                                      ) {
+                                        setHoverDate(dayItem);
+                                      }
+                                    }}
                                     onClick={() => {
                                       if (rentalType === "DAY") {
-                                        // Theo ngày: Bấm lần 1 chọn nhận, lần 2 chọn trả
-                                        if (
-                                          isSameDay(dayItem, checkInDate) ||
-                                          isBefore(dayItem, checkInDate)
-                                        ) {
+                                        if (!isSelectingCheckOut) {
+                                          // BƯỚC 1: Chọn ngày nhận phòng (bất kỳ ngày nào)
                                           setCheckInDate(dayItem);
                                           setCheckOutDate(addDays(dayItem, 1));
+                                          setIsSelectingCheckOut(true);
+                                          setHoverDate(null);
                                         } else {
-                                          setCheckOutDate(dayItem);
+                                          // BƯỚC 2: Chọn ngày trả phòng (cho phép chọn cách nhiều ngày/tuần)
+                                          if (
+                                            isBefore(dayItem, checkInDate) ||
+                                            isSameDay(dayItem, checkInDate)
+                                          ) {
+                                            // Nếu bấm lùi về quá khứ -> coi như chọn lại ngày nhận mới
+                                            setCheckInDate(dayItem);
+                                            setCheckOutDate(
+                                              addDays(dayItem, 1),
+                                            );
+                                            setIsSelectingCheckOut(true);
+                                            setHoverDate(null);
+                                          } else {
+                                            // Hợp lệ: Chọn ngày trả phòng thành công!
+                                            setCheckOutDate(dayItem);
+                                            setIsSelectingCheckOut(false);
+                                            setHoverDate(null);
+                                          }
                                         }
                                       } else if (rentalType === "OVERNIGHT") {
-                                        // 🌟 QUA ĐÊM: BẤM NGÀY NÀO TỰ ĐỘNG CHỌN NGÀY HÔM SAU LUÔN!
                                         setCheckInDate(dayItem);
                                         setCheckOutDate(addDays(dayItem, 1));
                                       } else {
-                                        // Theo giờ
                                         setCheckInDate(dayItem);
                                         setCheckOutDate(dayItem);
                                       }
@@ -814,7 +886,7 @@ export default function HomePage() {
                               })}
                             </div>
 
-                            {/* NẾU LÀ QUA ĐÊM HOẶC NGÀY: HIỂN THỊ LUÔN BỘ ĐẾM VÀ NÚT ÁP DỤNG DƯỚI LỊCH */}
+                            {/* BỘ ĐẾM VÀ NÚT ÁP DỤNG */}
                             {rentalType !== "HOUR" && (
                               <div className="space-y-3 pt-3 border-t border-slate-100">
                                 <div className="grid grid-cols-3 gap-2">
@@ -906,17 +978,19 @@ export default function HomePage() {
                                   type="button"
                                   onClick={() => {
                                     setIsCalendarOpen(false);
+                                    setIsSelectingCheckOut(false);
+                                    setHoverDate(null);
                                     handleSearchSubmit();
                                   }}
                                   className="w-full h-10 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-md transition active:scale-98 cursor-pointer"
                                 >
-                                  Áp dụng
+                                  Áp dụng ({durationSummary.diffDays} đêm)
                                 </button>
                               </div>
                             )}
                           </div>
 
-                          {/* CỘT PHẢI: CHỈ HIỂN THỊ KHI CHỌN "THEO GIỜ" */}
+                          {/* CỘT PHẢI KHI CHỌN "THEO GIỜ" */}
                           {rentalType === "HOUR" && (
                             <div className="sm:col-span-6 space-y-3.5">
                               <div>
@@ -1083,6 +1157,8 @@ export default function HomePage() {
                                   type="button"
                                   onClick={() => {
                                     setIsCalendarOpen(false);
+                                    setIsSelectingCheckOut(false);
+                                    setHoverDate(null);
                                     handleSearchSubmit();
                                   }}
                                   className="w-full h-10 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-md transition active:scale-98 cursor-pointer"

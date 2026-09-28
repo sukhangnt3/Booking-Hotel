@@ -165,7 +165,7 @@ export default function HotelDetailPage() {
   const today = useMemo(() => startOfToday(), []);
   const currentRealHour = useMemo(() => new Date().getHours(), []);
 
-  // 1. STATE BỘ LỌC TÌM KIẾM (CHỈ CÒN DAY, OVERNIGHT, HOUR)
+  // 1. STATE BỘ LỌC TÌM KIẾM
   const initialRentalParam = searchParams.get("rentalType");
   const [rentalType, setRentalType] = useState(
     initialRentalParam === "HALF_DAY" ? "DAY" : initialRentalParam || "DAY",
@@ -196,6 +196,10 @@ export default function HotelDetailPage() {
 
   const [checkInDate, setCheckInDate] = useState(appliedCheckIn);
   const [checkOutDate, setCheckOutDate] = useState(appliedCheckOut);
+
+  // 🌟 NÂNG CẤP CHỌN KHOẢNG NGÀY & RÊ CHUỘT
+  const [isSelectingCheckOut, setIsSelectingCheckOut] = useState(false);
+  const [hoverDate, setHoverDate] = useState(null);
 
   // GUESTS & ROOMS
   const [rooms, setRooms] = useState(Number(searchParams.get("rooms")) || 1);
@@ -261,7 +265,7 @@ export default function HotelDetailPage() {
     };
   }, [hotel]);
 
-  // 🌟 TÍNH TOÁN DỰ KIẾN TRẢ PHÒNG CHUẨN GO2JOY (3 HÌNH THỨC)
+  // Tính toán dự kiến trả phòng
   const checkOutInfo = useMemo(() => {
     const [hStr, mStr] = checkInTime.split(":");
     const inHour = parseInt(hStr || "14", 10);
@@ -273,7 +277,6 @@ export default function HotelDetailPage() {
     let outDateTime = new Date(checkOutDate);
     let outTimeStr = checkOutTime;
 
-    // 1. THEO GIỜ
     if (rentalType === "HOUR") {
       outDateTime = addHours(inDateTime, hoursCount);
       outTimeStr = `${String(outDateTime.getHours()).padStart(2, "0")}:${String(outDateTime.getMinutes()).padStart(2, "0")}`;
@@ -287,7 +290,6 @@ export default function HotelDetailPage() {
       };
     }
 
-    // 2. QUA ĐÊM (CỐ ĐỊNH TỰ ĐỘNG SANG HÔM SAU)
     if (rentalType === "OVERNIGHT") {
       const [oH, oM] = hotelPolicies.overnightOut.split(":").map(Number);
       outDateTime = addDays(new Date(checkInDate), 1);
@@ -304,7 +306,6 @@ export default function HotelDetailPage() {
       };
     }
 
-    // 3. THEO NGÀY
     const [outH, outM] = hotelPolicies.dailyOut.split(":").map(Number);
     outDateTime = new Date(checkOutDate);
     outDateTime.setHours(outH || 12, outM || 0, 0, 0);
@@ -329,13 +330,13 @@ export default function HotelDetailPage() {
     hotelPolicies,
   ]);
 
-  // Alias chống lỗi undefined
   const durationSummary = checkOutInfo;
 
-  // 🌟 CHUYỂN TAB MƯỢT MÀ TỨC THÌ (3 TAB CHUẨN)
   const handleTabChange = useCallback(
     (type) => {
       setRentalType(type);
+      setIsSelectingCheckOut(false);
+      setHoverDate(null);
       if (type === "HOUR") {
         setCheckInTime(`${String(currentRealHour).padStart(2, "0")}:00`);
         setHoursCount(2);
@@ -463,6 +464,8 @@ export default function HotelDetailPage() {
     const handleClickOutside = (e) => {
       if (calendarRef.current && !calendarRef.current.contains(e.target)) {
         setIsCalendarOpen(false);
+        setIsSelectingCheckOut(false);
+        setHoverDate(null);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -487,6 +490,8 @@ export default function HotelDetailPage() {
     setAppliedCheckIn(finalIn);
     setAppliedCheckOut(finalOut);
     setIsCalendarOpen(false);
+    setIsSelectingCheckOut(false);
+    setHoverDate(null);
 
     setSearchParams({
       checkIn: safeFormatDate(finalIn, "yyyy-MM-dd"),
@@ -958,7 +963,11 @@ export default function HotelDetailPage() {
             {/* Ô 2: Lịch mở Popup */}
             <div ref={calendarRef} className="relative md:col-span-7">
               <div
-                onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                onClick={() => {
+                  setIsCalendarOpen(!isCalendarOpen);
+                  setIsSelectingCheckOut(false);
+                  setHoverDate(null);
+                }}
                 className="bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 px-3 py-2 h-12 cursor-pointer flex items-center justify-between hover:border-[#003580] transition select-none gap-2"
               >
                 {/* KHỐI NHẬN */}
@@ -1013,7 +1022,7 @@ export default function HotelDetailPage() {
                 </div>
               </div>
 
-              {/* 🌟 POPUP CHỌN GIỜ & PHÒNG CHUẨN 3 TAB GO2JOY 🌟 */}
+              {/* POPUP CHỌN GIỜ & PHÒNG */}
               {isCalendarOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
@@ -1023,7 +1032,7 @@ export default function HotelDetailPage() {
                       : "w-full sm:w-[480px]"
                   }`}
                 >
-                  {/* 3 TABS HÌNH THỨC THUÊ CHUẨN GO2JOY (ĐÃ XÓA BUỔI, CÂN XỨNG TUYỆT ĐỐI) */}
+                  {/* 3 TABS HÌNH THỨC THUÊ */}
                   <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl">
                     <button
                       type="button"
@@ -1062,17 +1071,57 @@ export default function HotelDetailPage() {
                     </button>
                   </div>
 
-                  {/* 🌟 HỘP BÓNG ĐÈN GỢI Ý CHUẨN GO2JOY (KHÔNG GHI SỐ GIỜ CỨNG) */}
-                  <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center gap-1.5">
-                    <Lightbulb size={15} className="text-[#006ce4] shrink-0" />
-                    <span>
-                      {rentalType === "HOUR" &&
-                        "Phù hợp khi bạn chỉ cần nghỉ vài giờ"}
-                      {rentalType === "OVERNIGHT" &&
-                        "Phù hợp nghỉ một đêm đến sáng hôm sau"}
-                      {rentalType === "DAY" && "Phù hợp với lưu trú nhiều ngày"}
-                    </span>
+                  {/* HỘP BÓNG ĐÈN GỢI Ý & SỐ ĐÊM LƯU TRÚ */}
+                  <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Lightbulb
+                        size={15}
+                        className="text-[#006ce4] shrink-0"
+                      />
+                      <span>
+                        {rentalType === "HOUR" &&
+                          "Phù hợp khi bạn chỉ cần nghỉ vài giờ"}
+                        {rentalType === "OVERNIGHT" &&
+                          "Phù hợp nghỉ một đêm đến sáng hôm sau"}
+                        {rentalType === "DAY" &&
+                          "Chọn ngày nhận và ngày trả phòng tùy thích"}
+                      </span>
+                    </div>
+                    {rentalType === "DAY" && (
+                      <span className="font-black text-[#003580] bg-white px-2 py-0.5 rounded-md border border-blue-200">
+                        {durationSummary.diffDays} đêm lưu trú
+                      </span>
+                    )}
                   </div>
+
+                  {/* NÚT CHỌN NHANH SỐ ĐÊM */}
+                  {rentalType === "DAY" && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] font-bold">
+                      <span className="text-slate-400 font-medium shrink-0">
+                        Chọn nhanh:
+                      </span>
+                      {[
+                        { label: "+1 đêm", days: 1 },
+                        { label: "+2 đêm", days: 2 },
+                        { label: "+3 đêm", days: 3 },
+                        { label: "+5 đêm", days: 5 },
+                        { label: "+1 tuần", days: 7 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.days}
+                          type="button"
+                          onClick={() => {
+                            setCheckOutDate(addDays(checkInDate, preset.days));
+                            setIsSelectingCheckOut(false);
+                            setHoverDate(null);
+                          }}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-[#003580] text-slate-700 rounded-lg border border-slate-200 transition shrink-0 cursor-pointer"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   <div
                     className={`grid grid-cols-1 gap-5 pt-1 ${rentalType === "HOUR" ? "sm:grid-cols-12" : ""}`}
@@ -1084,7 +1133,9 @@ export default function HotelDetailPage() {
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs font-black text-slate-800">
                           {rentalType === "DAY"
-                            ? "Chọn Ngày Nhận & Trả: "
+                            ? isSelectingCheckOut
+                              ? "👉 Bước 2: Bấm chọn Ngày Trả phòng: "
+                              : "👉 Bước 1: Bấm chọn Ngày Nhận phòng: "
                             : "Chọn ngày nhận: "}
                           {format(calendarMonth, "'Tháng' MM, yyyy", {
                             locale: vi,
@@ -1138,39 +1189,63 @@ export default function HotelDetailPage() {
                         }).map((dayItem) => {
                           const isPast = isBefore(dayItem, today);
 
-                          // BÔI MÀU CẢ 2 NGÀY NẾU QUA NỬA ĐÊM HOẶC QUA ĐÊM CHUẨN GO2JOY
                           const isStartDay = isSameDay(dayItem, checkInDate);
+
+                          const effectiveOutDate =
+                            isSelectingCheckOut &&
+                            hoverDate &&
+                            isBefore(checkInDate, hoverDate)
+                              ? hoverDate
+                              : checkOutInfo.outDateTime;
+
                           const isEndDay =
-                            isSameDay(dayItem, checkOutInfo.outDateTime) &&
-                            !isSameDay(checkInDate, checkOutInfo.outDateTime);
+                            isSameDay(dayItem, effectiveOutDate) &&
+                            !isSameDay(checkInDate, effectiveOutDate);
+
                           const isInBetweenRange =
                             !isPast &&
                             isBefore(checkInDate, dayItem) &&
-                            isBefore(dayItem, checkOutInfo.outDateTime);
+                            isBefore(dayItem, effectiveOutDate);
 
                           return (
                             <button
                               key={dayItem.toISOString()}
                               type="button"
                               disabled={isPast}
+                              onMouseEnter={() => {
+                                if (
+                                  rentalType === "DAY" &&
+                                  isSelectingCheckOut
+                                ) {
+                                  setHoverDate(dayItem);
+                                }
+                              }}
                               onClick={() => {
                                 if (rentalType === "DAY") {
-                                  // Theo ngày: Bấm lần 1 chọn nhận, lần 2 chọn trả
-                                  if (
-                                    isSameDay(dayItem, checkInDate) ||
-                                    isBefore(dayItem, checkInDate)
-                                  ) {
+                                  if (!isSelectingCheckOut) {
                                     setCheckInDate(dayItem);
                                     setCheckOutDate(addDays(dayItem, 1));
+                                    setIsSelectingCheckOut(true);
+                                    setHoverDate(null);
                                   } else {
-                                    setCheckOutDate(dayItem);
+                                    if (
+                                      isBefore(dayItem, checkInDate) ||
+                                      isSameDay(dayItem, checkInDate)
+                                    ) {
+                                      setCheckInDate(dayItem);
+                                      setCheckOutDate(addDays(dayItem, 1));
+                                      setIsSelectingCheckOut(true);
+                                      setHoverDate(null);
+                                    } else {
+                                      setCheckOutDate(dayItem);
+                                      setIsSelectingCheckOut(false);
+                                      setHoverDate(null);
+                                    }
                                   }
                                 } else if (rentalType === "OVERNIGHT") {
-                                  // 🌟 QUA ĐÊM: BẤM NGÀY NÀO TỰ ĐỘNG CHỌN NGÀY HÔM SAU LUÔN!
                                   setCheckInDate(dayItem);
                                   setCheckOutDate(addDays(dayItem, 1));
                                 } else {
-                                  // Theo giờ
                                   setCheckInDate(dayItem);
                                   setCheckOutDate(dayItem);
                                 }
@@ -1193,10 +1268,9 @@ export default function HotelDetailPage() {
                         })}
                       </div>
 
-                      {/* NẾU LÀ QUA ĐÊM HOẶC NGÀY: HIỂN THỊ LUÔN BỘ ĐẾM VÀ NÚT ÁP DỤNG DƯỚI LỊCH */}
+                      {/* BỘ ĐẾM VÀ NÚT ÁP DỤNG */}
                       {rentalType !== "HOUR" && (
                         <div className="space-y-3 pt-3 border-t border-slate-100">
-                          {/* BỘ ĐẾM: NGƯỜI LỚN, TRẺ EM, SỐ PHÒNG */}
                           <div className="grid grid-cols-3 gap-2">
                             <div className="space-y-1">
                               <span className="text-[10px] font-bold text-slate-600 block">
@@ -1284,17 +1358,19 @@ export default function HotelDetailPage() {
                             type="button"
                             onClick={() => {
                               setIsCalendarOpen(false);
+                              setIsSelectingCheckOut(false);
+                              setHoverDate(null);
                               handleApplySearch();
                             }}
                             className="w-full h-10 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-md transition active:scale-98 cursor-pointer"
                           >
-                            Áp dụng
+                            Áp dụng ({durationSummary.diffDays} đêm)
                           </button>
                         </div>
                       )}
                     </div>
 
-                    {/* CỘT PHẢI: CHỈ HIỂN THỊ KHI CHỌN "THEO GIỜ" */}
+                    {/* CỘT PHẢI KHI CHỌN "THEO GIỜ" */}
                     {rentalType === "HOUR" && (
                       <div className="sm:col-span-6 space-y-3.5">
                         <div>
@@ -1459,6 +1535,8 @@ export default function HotelDetailPage() {
                             type="button"
                             onClick={() => {
                               setIsCalendarOpen(false);
+                              setIsSelectingCheckOut(false);
+                              setHoverDate(null);
                               handleSearchSubmit();
                             }}
                             className="w-full h-10 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-md transition active:scale-98 cursor-pointer"
@@ -1816,7 +1894,7 @@ export default function HotelDetailPage() {
           </div>
         </section>
 
-        {/* CHÍNH SÁCH NHẬN - TRẢ PHÒNG ĐỒNG BỘ (3 HÌNH THỨC CÂN ĐỐI) */}
+        {/* CHÍNH SÁCH NHẬN - TRẢ PHÒNG ĐỒNG BỘ */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4 mb-8">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
