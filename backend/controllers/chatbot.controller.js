@@ -26,6 +26,8 @@ const CITY_ALIASES = [
   ["sapa", "sa pa"],
   ["cần thơ", "can tho"],
   ["ninh bình", "ninh binh"],
+  ["ninh thuận", "ninh thuan"],
+  ["phan rang", "phan rang"],
 ];
 
 function normalizeText(value) {
@@ -57,12 +59,11 @@ function getThisWeekendVN() {
   const today = getNowVN();
   const dayOfWeek = today.getDay(); // 0: CN, 6: T7
 
-  // Nếu hôm nay là Thứ 7 (6) hoặc CN (0) thì lấy chính cuối tuần này
   let daysUntilSaturday = 0;
   if (dayOfWeek === 6) {
-    daysUntilSaturday = 0; // Hôm nay là Thứ 7 luôn
+    daysUntilSaturday = 0;
   } else if (dayOfWeek === 0) {
-    daysUntilSaturday = -1; // Hôm nay là Chủ Nhật
+    daysUntilSaturday = -1;
   } else {
     daysUntilSaturday = 6 - dayOfWeek;
   }
@@ -473,7 +474,6 @@ function extractFilters(text) {
     normalizedText.includes("thue") ||
     normalizedText.includes("dat");
 
-  // Nguyên tắc: có thành phố, có từ khóa phòng, có kiểu thuê -> SEARCH_HOTEL
   if (
     Boolean(filter.city) ||
     Boolean(filter.rentalType) ||
@@ -539,7 +539,6 @@ async function getMergedContext(sessionId, currentFilter) {
           currentFilter.rawText.includes("tim phong") ||
           currentFilter.rawText.includes("cho nghi")));
 
-    // Xóa toàn bộ tiện ích cũ nếu câu tìm kiếm mới không nhắc lại
     if (isNewExplicitSearch) {
       if (!currentFilter.is_beachfront) delete previousFilter.is_beachfront;
       if (!currentFilter.near_center) delete previousFilter.near_center;
@@ -550,7 +549,7 @@ async function getMergedContext(sessionId, currentFilter) {
       delete previousFilter.checkAmenityLabel;
     }
 
-    // 3. Nếu chuyển thành phố mới -> Xóa toàn bộ thông tin khách sạn cũ và tiện ích cũ
+    // 3. Nếu chuyển thành phố mới -> Xóa thông tin khách sạn và tiện ích cũ
     if (
       currentFilter.city &&
       previousFilter.city &&
@@ -607,7 +606,7 @@ async function handleChatMessage(req, res, next) {
 
     if (extractedFilter.intent === "UNKNOWN") {
       const unknownReply =
-        "Dạ mình chưa hiểu rõ yêu cầu của bạn nè. Bạn có thể cho mình biết bạn muốn tìm phòng ở thành phố nào (VD: Sài Gòn, Vũng Tàu, Đà Nẵng...) hoặc cần thuê theo giờ hay qua đêm để mình hỗ trợ nhé! 😊";
+        "Dạ mình chưa hiểu rõ yêu cầu của bạn nè. Bạn có thể cho mình biết bạn muốn tìm phòng ở thành phố nào (VD: Vũng Tàu, Đà Nẵng, Nha Trang, Sài Gòn...) hoặc cần thuê theo giờ hay qua đêm để mình hỗ trợ nhé! 😊";
       await logTurn(
         userId,
         session_id,
@@ -623,7 +622,7 @@ async function handleChatMessage(req, res, next) {
       });
     }
 
-    // 1. Quét tìm khách sạn từ database (chỉ chọn cột thực sự có trong bảng hotel)
+    // 1. Quét tìm khách sạn từ database
     const allHotelsRes = await pool.query(
       `SELECT h.id, h.name, h.address, h.city, h.phone, h.star_rating, 
               COALESCE(h.average_rating, 0) AS average_rating, 
@@ -1066,7 +1065,7 @@ async function handleChatMessage(req, res, next) {
         extractedFilter.adults > 1
           ? ` cho **${extractedFilter.adults} người**`
           : "";
-      const askCityReply = `Dạ bạn muốn tìm phòng${guestText} ở **thành phố nào** ạ (VD: Sài Gòn, Vũng Tàu, Đà Nẵng, Nha Trang, Đà Lạt...)? Bạn cho mình biết thêm ngày nhận phòng để mình lọc giá tốt nhất cho bạn nhé! 😊`;
+      const askCityReply = `Dạ bạn muốn tìm phòng${guestText} ở **thành phố nào** ạ (VD: Vũng Tàu, Đà Nẵng, Nha Trang, Sài Gòn, Phú Quốc, Đà Lạt...)? Bạn cho mình biết thêm ngày nhận phòng để mình lọc giá tốt nhất cho bạn nhé! 😊`;
 
       await logTurn(
         userId,
@@ -1125,17 +1124,13 @@ async function handleChatMessage(req, res, next) {
       extractedFilter.checkOut ||
       (extractedFilter.rentalType === "HOUR" ? checkIn : getRelativeDateVN(1));
 
+    // 🌟 ĐÃ SỬA CHẶT CHẼ: CHẶN VĨNH VIỄN CÁC THÀNH PHỐ NÚI / NỘI ĐỊA KHÔNG CÓ BIỂN (ĐÀ LẠT, HÀ NỘI, HCM)
     const isBeachfrontCondition = `
       (
         COALESCE(h.is_beachfront, false) = true
         OR ar.room_view = 'sea_view'
-        OR LOWER(h.name) LIKE '%song%' OR LOWER(h.name) LIKE '%sóng%'
-        OR LOWER(h.name) LIKE '%beach%' OR LOWER(h.name) LIKE '%sea%' 
-        OR LOWER(h.address) LIKE '%thuy van%' OR LOWER(h.address) LIKE '%thùy vân%' 
-        OR LOWER(h.address) LIKE '%ha long%' OR LOWER(h.address) LIKE '%hạ long%' 
-        OR LOWER(h.address) LIKE '%tran phu%' OR LOWER(h.address) LIKE '%trần phú%' 
-        OR LOWER(h.address) LIKE '%vo nguyen giap%' OR LOWER(h.address) LIKE '%võ nguyên giáp%'
       )
+      AND LOWER(h.city) NOT IN ('đà lạt', 'da lat', 'hà nội', 'ha noi', 'hồ chí minh', 'ho chi minh', 'hcm', 'sài gòn', 'sai gon', 'cần thơ', 'can tho', 'tây ninh', 'tay ninh', 'đồng tháp', 'dong thap')
     `;
 
     const poolCondition = `
@@ -1156,7 +1151,6 @@ async function handleChatMessage(req, res, next) {
       )
     `;
 
-    // Công thức tính giá: linh hoạt không bắt buộc r.hourly_price > 0 để tránh loại trừ nhầm dữ liệu test
     let priceColumnFormula = "r.base_price";
     if (extractedFilter.rentalType === "HOUR") {
       priceColumnFormula =
@@ -1346,7 +1340,7 @@ async function handleChatMessage(req, res, next) {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // XÂY DỰNG CÂU TRẢ LỜI TỰ ĐỘNG BIẾN HÓA THEO ĐÚNG NGỮ CẢNH
+    // XÂY DỰNG CÂU TRẢ LỜI TỰ ĐỘNG THEO NGỮ CẢNH
     // ─────────────────────────────────────────────────────────────
     const contextFeatures = [];
     if (extractedFilter.is_beachfront && extractedFilter.near_center) {
@@ -1447,7 +1441,7 @@ async function handleChatMessage(req, res, next) {
     return res.json({
       success: true,
       reply:
-        "Dạ tôi đã ghi nhận yêu cầu của bạn. Bạn có thể thử tìm theo thành phố (VD: Sài Gòn, Vũng Tàu, Đà Nẵng) hoặc bấm vào các gợi ý bên dưới nhé!",
+        "Dạ tôi đã ghi nhận yêu cầu của bạn. Bạn có thể thử tìm theo thành phố (VD: Vũng Tàu, Đà Nẵng, Nha Trang, Sài Gòn) hoặc bấm vào các gợi ý bên dưới nhé!",
       suggestions: [],
       filter: {},
     });
