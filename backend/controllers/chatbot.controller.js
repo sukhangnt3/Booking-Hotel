@@ -1124,7 +1124,7 @@ async function handleChatMessage(req, res, next) {
       extractedFilter.checkOut ||
       (extractedFilter.rentalType === "HOUR" ? checkIn : getRelativeDateVN(1));
 
-    // 🌟 ĐÃ SỬA CHẶT CHẼ: CHẶN VĨNH VIỄN CÁC THÀNH PHỐ NÚI / NỘI ĐỊA KHÔNG CÓ BIỂN (ĐÀ LẠT, HÀ NỘI, HCM)
+    // 🌟 1. ĐIỀU KIỆN SÁT BIỂN: CHẶN VĨNH VIỄN CÁC THÀNH PHỐ NÚI / NỘI ĐỊA KHÔNG CÓ BIỂN
     const isBeachfrontCondition = `
       (
         COALESCE(h.is_beachfront, false) = true
@@ -1133,21 +1133,33 @@ async function handleChatMessage(req, res, next) {
       AND LOWER(h.city) NOT IN ('đà lạt', 'da lat', 'hà nội', 'ha noi', 'hồ chí minh', 'ho chi minh', 'hcm', 'sài gòn', 'sai gon', 'cần thơ', 'can tho', 'tây ninh', 'tay ninh', 'đồng tháp', 'dong thap')
     `;
 
+    // 🌟 2. ĐIỀU KIỆN HỒ BƠI: QUÉT CẢ TÊN PHÒNG LẪN BẢNG TIỆN NGHI HOTEL_AMENITY
     const poolCondition = `
       (
         ar.room_view = 'pool_view'
         OR LOWER(ar.room_name) LIKE '%ho boi%' OR LOWER(ar.room_name) LIKE '%pool%'
         OR LOWER(h.description) LIKE '%ho boi%' OR LOWER(h.description) LIKE '%hồ bơi%'
         OR LOWER(h.name) LIKE '%pool%' OR LOWER(h.name) LIKE '%resort%'
+        OR EXISTS (
+          SELECT 1 FROM public.hotel_amenity ha 
+          JOIN public.amenity a ON a.id = ha.amenity_id 
+          WHERE ha.hotel_id = h.id AND a.name IN ('pool_outdoor', 'pool_indoor', 'pool')
+        )
       )
     `;
 
+    // 🌟 3. ĐIỀU KIỆN BỒN TẮM: QUÉT CẢ TÊN PHÒNG LẪN BẢNG TIỆN NGHI ROOM_AMENITY
     const bathtubCondition = `
       (
         ar.room_view = 'bathtub'
         OR LOWER(ar.room_name) LIKE '%bon tam%' OR LOWER(ar.room_name) LIKE '%bồn tắm%'
         OR LOWER(ar.room_name) LIKE '%bathtub%'
         OR LOWER(h.description) LIKE '%bon tam%' OR LOWER(h.description) LIKE '%bồn tắm%'
+        OR EXISTS (
+          SELECT 1 FROM public.room_amenity ra 
+          JOIN public.amenity a ON a.id = ra.amenity_id 
+          WHERE ra.room_id = ar.room_id AND a.name = 'bathtub'
+        )
       )
     `;
 
