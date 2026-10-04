@@ -1,6 +1,13 @@
 // backend/controllers/chatbot.controller.js
 const pool = require("../config/database");
 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || "")
+  .split(",")
+  .map((model) => model.trim())
+  .filter(Boolean);
+
 const CITY_ALIASES = [
   ["hồ chí minh", "ho chi minh"],
   ["sài gòn", "ho chi minh"],
@@ -29,6 +36,79 @@ const CITY_ALIASES = [
   ["ninh thuận", "ninh thuan"],
   ["phan rang", "phan rang"],
 ];
+
+function normalizeGeminiFilter(value) {
+  if (!value || typeof value !== "object") return {};
+  const filter = { aiSource: "gemini" };
+  const normalizedCity = normalizeText(value.city);
+  const city = CITY_ALIASES.find(([display, query]) =>
+    normalizedCity === normalizeText(display) || normalizedCity === query,
+  );
+  if (city) {
+    filter.city = city[0];
+    filter.cityQuery = [city[1], city[0]];
+    filter.hasExplicitCity = true;
+  } else if (normalizedCity) {
+    filter.city = String(value.city).trim();
+    filter.cityQuery = [normalizedCity, filter.city];
+    filter.hasExplicitCity = true;
+  }
+
+  for (const key of ["minPrice", "maxPrice", "adults", "capacity"]) {
+    const number = Number(value[key]);
+    if (Number.isFinite(number) && number > 0) filter[key] = number;
+  }
+  for (const key of ["checkIn", "checkOut"]) {
+    if (typeof value[key] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value[key])) {
+      filter[key] = value[key];
+    }
+  }
+  if (value.rentalType === "HOUR" || value.rentalType === "OVERNIGHT") {
+    filter.rentalType = value.rentalType;
+  }
+  if (value.beachfront === true) filter.is_beachfront = true;
+  if (value.nearCenter === true) filter.near_center = true;
+  if (value.cheap === true) filter.sortByCheapest = true;
+  if (value.amenities?.includes?.("pool")) filter.amenity_pool = true;
+  if (value.amenities?.includes?.("bathtub")) filter.amenity_bathtub = true;
+  if (value.amenities?.includes?.("air_conditioner")) filter.amenity_ac = true;
+  return filter;
+}
+
+async function analyzeWithGemini(message, previousFilter) {
+  if (!GEMINI_API_KEY || typeof fetch !== "function") return {};
+  const prompt = `Phân tích yêu cầu tìm phòng và chỉ trả JSON hợp lệ, không markdown.
+Schema: {"city":"","minPrice":0,"maxPrice":0,"checkIn":"","checkOut":"","adults":0,"capacity":0,"rentalType":"DAY","beachfront":false,"nearCenter":false,"cheap":false,"amenities":[]}
+amenities hợp lệ: pool, bathtub, air_conditioner. Giá là VND/đêm. '3 sao' không cần xử lý.
+Ngày dùng YYYY-MM-DD. Câu hiện tại: ${message}
+Bộ lọc trước (chỉ dùng cho câu nối tiếp): ${JSON.stringify(previousFilter || {})}`;
+  const models = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS].filter(
+    (model, index, list) => list.indexOf(model) === index,
+  );
+  for (const model of models) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(10000),
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0, responseMimeType: "application/json" },
+          }),
+        },
+      );
+      if (!response.ok) continue;
+      const payload = await response.json();
+      const text = payload.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      return normalizeGeminiFilter(JSON.parse(text));
+    } catch (error) {
+      console.warn(`Gemini ${model} unavailable; trying fallback.`);
+    }
+  }
+  return { aiSource: "local" };
+}
 
 function normalizeText(value) {
   return String(value || "")
@@ -601,7 +681,14 @@ async function handleChatMessage(req, res, next) {
 
   try {
     const rawFilter = extractFilters(message.trim());
-    const extractedFilter = await getMergedContext(session_id, rawFilter);
+    const aiFilter = await analyzeWithGemini(message.trim(), rawFilter);
+    const combinedFilter = {
+      ...rawFilter,
+      ...aiFilter,
+      intent: rawFilter.intent || "SEARCH_HOTEL",
+      rawText: rawFilter.rawText,
+    };
+    const extractedFilter = await getMergedContext(session_id, combinedFilter);
     const normMsg = normalizeText(message.trim());
 
     if (extractedFilter.intent === "UNKNOWN") {
