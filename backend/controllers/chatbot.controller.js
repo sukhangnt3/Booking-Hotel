@@ -1,6 +1,7 @@
 // backend/controllers/chatbot.controller.js
 const pool = require("../config/database");
-
+const { GoogleGenAI } = require("@google/genai");
+const genai = new GoogleGenAI(process.env.GEMINI_API_KEY);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || "")
@@ -76,39 +77,44 @@ function normalizeGeminiFilter(value) {
 }
 
 async function analyzeWithGemini(message, previousFilter) {
-  if (!GEMINI_API_KEY || typeof fetch !== "function") return {};
+  // Thay vì check fetch, ta check biến genai đã được khởi tạo thành công chưa
+  if (!genai || !GEMINI_API_KEY) return {};
+
   const prompt = `Phân tích yêu cầu tìm phòng và chỉ trả JSON hợp lệ, không markdown.
 Schema: {"city":"","minPrice":0,"maxPrice":0,"checkIn":"","checkOut":"","adults":0,"capacity":0,"rentalType":"DAY","beachfront":false,"nearCenter":false,"cheap":false,"amenities":[]}
 amenities hợp lệ: pool, bathtub, air_conditioner. Giá là VND/đêm. '3 sao' không cần xử lý.
 Ngày dùng YYYY-MM-DD. Câu hiện tại: ${message}
 Bộ lọc trước (chỉ dùng cho câu nối tiếp): ${JSON.stringify(previousFilter || {})}`;
+
+  // Lọc trùng danh sách model như code cũ của bạn
   const models = [GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS].filter(
     (model, index, list) => list.indexOf(model) === index,
   );
+
   for (const model of models) {
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(10000),
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0, responseMimeType: "application/json" },
-          }),
-        },
-      );
-      if (!response.ok) continue;
-      const payload = await response.json();
-      const text = payload.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      // DÙNG SDK CHÍNH THỨC thay vì dùng fetch() thủ công
+      const response = await genai.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+          // Bỏ bớt temperature nếu gặp lỗi, ép kiểu trả về JSON chuẩn
+          responseMimeType: "application/json",
+        }
+      });
+
+      // Lấy chuỗi JSON trả về từ cấu trúc dữ liệu của SDK mới
+      const text = response.text || "{}";
       return normalizeGeminiFilter(JSON.parse(text));
     } catch (error) {
+      // In hẳn lỗi chi tiết ra xem Google phản hồi gì (thay vì chỉ đoán unavailable)
+      console.warn(`Lỗi model ${model}:`, error.message || error);
       console.warn(`Gemini ${model} unavailable; trying fallback.`);
     }
   }
   return { aiSource: "local" };
 }
+
 
 function normalizeText(value) {
   return String(value || "")
