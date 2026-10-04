@@ -13,6 +13,7 @@ const pool = require("./config/database");
 const apiRoutes = require("./routes");
 const swaggerSpec = require("./swagger");
 const paymentRoutes = require("./routes/payment.routes");
+const chatbotRoutes = require("./routes/chatbot.routes"); // 🌟 TÍCH HỢP ROUTE CHATBOT AI
 const bookingController = require("./controllers/booking.controller");
 const reviewController = require("./controllers/review.controller");
 const { requireAuth } = require("./middleware/auth.middleware");
@@ -179,6 +180,9 @@ app.post(
 app.post("/api/reviews", requireAuth, reviewController.createReview);
 app.patch("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
 app.post("/api/reviews/:id/reply", requireAuth, reviewController.replyReview);
+
+// 🌟 ROUTE CHATBOT AI (Gắn trực tiếp tránh lỗi 404)
+app.use("/api/chatbot", chatbotRoutes);
 
 // Main API Routes
 app.use("/api", apiRoutes);
