@@ -16,6 +16,35 @@ const jwt = safeRequire("jsonwebtoken");
 
 const PUBLIC_HOTEL_STATUS = "h.status = 'active'";
 
+// ============================================================
+// 🌟 CƠ CHẾ CACHING HIỆU NĂNG CAO ĐỐI PHÓ PEAK TRAFFIC (CLOUD SCALING)
+// ============================================================
+const memoryCache = new Map();
+const CACHE_TTL_MS = 60 * 1000; // Lưu đệm trong 60 giây đối với các truy vấn đọc
+
+function getFromCache(key) {
+  const item = memoryCache.get(key);
+  if (!item) return null;
+  if (Date.now() - item.timestamp > CACHE_TTL_MS) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+function setToCache(key, data) {
+  // Giới hạn bộ đệm tối đa 500 truy vấn để chống tràn RAM trên các cloud node nhỏ
+  if (memoryCache.size > 500) {
+    const firstKey = memoryCache.keys().next().value;
+    memoryCache.delete(firstKey);
+  }
+  memoryCache.set(key, { data, timestamp: Date.now() });
+}
+
+function invalidateHotelCache() {
+  memoryCache.clear();
+}
+
 const AMENITY_LABEL_MAP = {
   wifi: "Wi-Fi miễn phí toàn khuôn viên",
   parking: "Bãi đỗ xe ô tô tại chỗ nghỉ",
@@ -60,7 +89,6 @@ const parseAmenityArray = (raw) => {
     : [];
 };
 
-// 🌟 ĐÃ SỬA: LƯU BASE64 RA FILE ĐĨA AN TOÀN, TRÁNH RÒ RỈ BỘ NHỚ RAM
 const saveBase64ToFile = (rawString) => {
   if (
     !rawString ||
@@ -371,9 +399,16 @@ const ROOM_BASE_SELECT = `
   FROM public.room r
 `;
 
-// ─── 1. DANH SÁCH KHÁCH SẠN ───
+// ─── 1. DANH SÁCH KHÁCH SẠN (CÓ BỘ ĐỆM CACHE CHỐNG NGHẼN DATABASE) ───
 async function listHotels(req, res, next) {
   try {
+    const cacheKey = `listHotels_${JSON.stringify(req.query)}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      res.setHeader("X-Cache", "HIT");
+      return res.json(cached);
+    }
+
     const destination = (
       req.query.destination ||
       req.query.city ||
@@ -462,6 +497,8 @@ async function listHotels(req, res, next) {
     `;
 
     const result = await pool.query(sql, params);
+    setToCache(cacheKey, result.rows);
+    res.setHeader("X-Cache", "MISS");
     return res.json(result.rows);
   } catch (error) {
     return next(error);
@@ -473,6 +510,13 @@ async function getHotelById(req, res, next) {
   try {
     const rawId = String(req.params.id || "").trim();
     if (!rawId) return res.status(400).json({ message: "Thiếu ID khách sạn." });
+
+    const cacheKey = `hotelDetail_${rawId}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      res.setHeader("X-Cache", "HIT");
+      return res.json({ success: true, data: cached, hotel: cached });
+    }
 
     const [hotelRes, imagesRes, roomsRes, amenitiesRes] = await Promise.all([
       pool.query(
@@ -508,13 +552,15 @@ async function getHotelById(req, res, next) {
     hotel.rooms = roomsRes.rows;
     hotel.amenities = amenitiesRes.rows.map((r) => r.name);
 
+    setToCache(cacheKey, hotel);
+    res.setHeader("X-Cache", "MISS");
     return res.json({ success: true, data: hotel, hotel });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
 }
 
-// ─── 3. CHECK PHÒNG TRỐNG (ĐÃ ĐỒNG BỘ 100% THỜI GIAN VỆ SINH DỌN PHÒNG) ───
+// ─── 3. CHECK PHÒNG TRỐNG THEO NGÀY GIỜ ───
 async function listHotelRoomAvailability(req, res) {
   const { id: hotelId } = req.params;
   const targetRoomId = req.query.room_id || null;
@@ -532,12 +578,10 @@ async function listHotelRoomAvailability(req, res) {
   const outTime = checkOutTime.length === 5 ? `${checkOutTime}:00` : "14:00:00";
 
   try {
-    // 1. Dọn dẹp lock tạm thời đã hết hạn
     await pool
       .query(`DELETE FROM public.temporary_locks WHERE expires_at < NOW()`)
       .catch(() => {});
 
-    // 2. Tự động hủy đơn pending quá 15 phút NHƯNG TUYỆT ĐỐI KHÔNG HỦY ĐƠN ĐÃ CỌC HOẶC ĐÃ THANH TOÁN
     await pool
       .query(
         `
@@ -559,7 +603,6 @@ async function listHotelRoomAvailability(req, res) {
       roomCondition = ` AND r.id::text = $${queryParams.length}`;
     }
 
-    // 🌟 ĐÃ SỬA: CỘNG THỜI GIAN VỆ SINH DỌN PHÒNG ĐỒNG BỘ 100% VỚI CREATE_BOOKING
     const query = `
       SELECT r.*,
         COALESCE(NULLIF((SELECT COUNT(ru.id)::int FROM public.room_unit ru WHERE ru.room_id = r.id), 0), r.amount, 1)::int AS total_stock,
@@ -952,6 +995,7 @@ async function registerHotel(req, res) {
     }
 
     await client.query("COMMIT");
+    invalidateHotelCache(); // 🌟 Xóa cache để cập nhật dữ liệu mới
 
     const freshToken = jwt
       ? jwt.sign(
@@ -1015,15 +1059,29 @@ async function getMyHotels(req, res, next) {
   }
 }
 
-// ─── 7. ĐIỂM ĐẾN PHỔ BIẾN ───
+// ─── 7. ĐIỂM ĐẾN PHỔ BIẾN (CACHE 5 PHÚT) ───
 async function listTrendingDestinations(req, res, next) {
   try {
+    const cacheKey = "trendingDestinations";
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      res.setHeader("X-Cache", "HIT");
+      return res.json({
+        success: true,
+        data: cached,
+        trendingDestinations: cached,
+      });
+    }
+
     const result = await pool.query(`
       SELECT h.city AS title, h.city AS name, COUNT(*)::int AS hotelCount,
         COALESCE((SELECT img.path FROM public.image img JOIN public.hotel h2 ON h2.id = img.hotel_id WHERE h2.city = h.city AND img.room_id IS NULL LIMIT 1), 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800') AS image
       FROM public.hotel h WHERE h.status = 'active' AND h.city IS NOT NULL
       GROUP BY h.city ORDER BY hotelCount DESC LIMIT 8
     `);
+
+    setToCache(cacheKey, result.rows);
+    res.setHeader("X-Cache", "MISS");
     return res.json({
       success: true,
       data: result.rows,
@@ -1163,6 +1221,8 @@ async function updateHotel(req, res, next) {
     }
 
     await client.query("COMMIT");
+    invalidateHotelCache(); // 🌟 Xóa cache để khách hàng thấy ngay thông tin mới cập nhật
+
     return res.json({
       success: true,
       message: "Cập nhật thành công.",

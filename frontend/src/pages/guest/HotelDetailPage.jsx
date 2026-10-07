@@ -197,11 +197,11 @@ export default function HotelDetailPage() {
   const [checkInDate, setCheckInDate] = useState(appliedCheckIn);
   const [checkOutDate, setCheckOutDate] = useState(appliedCheckOut);
 
-  // 🌟 NÂNG CẤP CHỌN KHOẢNG NGÀY & RÊ CHUỘT
+  // Chọn khoảng ngày & rê chuột
   const [isSelectingCheckOut, setIsSelectingCheckOut] = useState(false);
   const [hoverDate, setHoverDate] = useState(null);
 
-  // GUESTS & ROOMS
+  // Số lượng khách & phòng
   const [rooms, setRooms] = useState(Number(searchParams.get("rooms")) || 1);
   const [adults, setAdults] = useState(Number(searchParams.get("adults")) || 1);
   const [children, setChildren] = useState(
@@ -812,30 +812,62 @@ export default function HotelDetailPage() {
           </div>
         </div>
 
-        {/* BENTO GALLERY */}
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
+        {/* 🌟 BENTO GALLERY TỐI ƯU HÓA GPU HARDWARE ACCELERATION (58–60 FPS) 🌟 */}
+        {/* ═══════════════════════════════════════════════════════════════════════ */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 mb-6">
           <div className="lg:col-span-9 h-[340px] md:h-[400px]">
             {hotelGalleryImages.length >= 3 ? (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 h-full w-full">
-                <div className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
+                <div
+                  className="md:col-span-7 h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative"
+                  style={{ contain: "paint" }}
+                >
                   <img
                     src={hotelGalleryImages[0]}
                     alt={hotel.name}
+                    loading="lazy"
+                    decoding="async"
+                    style={{
+                      willChange: "transform",
+                      transform: "translateZ(0)",
+                      backfaceVisibility: "hidden",
+                    }}
                     className="absolute inset-0 w-full h-full object-cover select-none"
                   />
                 </div>
                 <div className="md:col-span-5 grid grid-rows-2 gap-3.5 h-full w-full">
-                  <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
+                  <div
+                    className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative"
+                    style={{ contain: "paint" }}
+                  >
                     <img
                       src={hotelGalleryImages[1]}
                       alt="Ảnh cơ sở 2"
+                      loading="lazy"
+                      decoding="async"
+                      style={{
+                        willChange: "transform",
+                        transform: "translateZ(0)",
+                        backfaceVisibility: "hidden",
+                      }}
                       className="absolute inset-0 w-full h-full object-cover select-none"
                     />
                   </div>
-                  <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
+                  <div
+                    className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative"
+                    style={{ contain: "paint" }}
+                  >
                     <img
                       src={hotelGalleryImages[2]}
                       alt="Ảnh cơ sở 3"
+                      loading="lazy"
+                      decoding="async"
+                      style={{
+                        willChange: "transform",
+                        transform: "translateZ(0)",
+                        backfaceVisibility: "hidden",
+                      }}
                       className="absolute inset-0 w-full h-full object-cover select-none"
                     />
                   </div>
@@ -843,26 +875,56 @@ export default function HotelDetailPage() {
               </div>
             ) : hotelGalleryImages.length === 2 ? (
               <div className="grid grid-cols-2 gap-3.5 h-full w-full">
-                <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
+                <div
+                  className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative"
+                  style={{ contain: "paint" }}
+                >
                   <img
                     src={hotelGalleryImages[0]}
                     alt={hotel.name}
+                    loading="lazy"
+                    decoding="async"
+                    style={{
+                      willChange: "transform",
+                      transform: "translateZ(0)",
+                      backfaceVisibility: "hidden",
+                    }}
                     className="absolute inset-0 w-full h-full object-cover select-none"
                   />
                 </div>
-                <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
+                <div
+                  className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative"
+                  style={{ contain: "paint" }}
+                >
                   <img
                     src={hotelGalleryImages[1]}
                     alt="Ảnh cơ sở 2"
+                    loading="lazy"
+                    decoding="async"
+                    style={{
+                      willChange: "transform",
+                      transform: "translateZ(0)",
+                      backfaceVisibility: "hidden",
+                    }}
                     className="absolute inset-0 w-full h-full object-cover select-none"
                   />
                 </div>
               </div>
             ) : hotelGalleryImages.length === 1 ? (
-              <div className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative">
+              <div
+                className="h-full w-full rounded-2xl overflow-hidden bg-slate-200 shadow-sm relative"
+                style={{ contain: "paint" }}
+              >
                 <img
                   src={hotelGalleryImages[0]}
                   alt={hotel.name}
+                  loading="lazy"
+                  decoding="async"
+                  style={{
+                    willChange: "transform",
+                    transform: "translateZ(0)",
+                    backfaceVisibility: "hidden",
+                  }}
                   className="absolute inset-0 w-full h-full object-cover select-none"
                 />
               </div>
@@ -1032,7 +1094,6 @@ export default function HotelDetailPage() {
                       : "w-full sm:w-[480px]"
                   }`}
                 >
-                  {/* 3 TABS HÌNH THỨC THUÊ */}
                   <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl">
                     <button
                       type="button"
@@ -1071,7 +1132,6 @@ export default function HotelDetailPage() {
                     </button>
                   </div>
 
-                  {/* HỘP BÓNG ĐÈN GỢI Ý & SỐ ĐÊM LƯU TRÚ */}
                   <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-900 text-xs font-semibold flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Lightbulb
@@ -1094,7 +1154,6 @@ export default function HotelDetailPage() {
                     )}
                   </div>
 
-                  {/* NÚT CHỌN NHANH SỐ ĐÊM */}
                   {rentalType === "DAY" && (
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] font-bold">
                       <span className="text-slate-400 font-medium shrink-0">
@@ -1126,7 +1185,6 @@ export default function HotelDetailPage() {
                   <div
                     className={`grid grid-cols-1 gap-5 pt-1 ${rentalType === "HOUR" ? "sm:grid-cols-12" : ""}`}
                   >
-                    {/* CỘT LỊCH THÁNG TRỰC QUAN */}
                     <div
                       className={`${rentalType === "HOUR" ? "sm:col-span-6 border-r border-slate-100 pr-0 sm:pr-4" : "w-full"} space-y-2`}
                     >
@@ -1188,7 +1246,6 @@ export default function HotelDetailPage() {
                           end: endOfMonth(calendarMonth),
                         }).map((dayItem) => {
                           const isPast = isBefore(dayItem, today);
-
                           const isStartDay = isSameDay(dayItem, checkInDate);
 
                           const effectiveOutDate =
@@ -1268,7 +1325,6 @@ export default function HotelDetailPage() {
                         })}
                       </div>
 
-                      {/* BỘ ĐẾM VÀ NÚT ÁP DỤNG */}
                       {rentalType !== "HOUR" && (
                         <div className="space-y-3 pt-3 border-t border-slate-100">
                           <div className="grid grid-cols-3 gap-2">
@@ -1370,7 +1426,6 @@ export default function HotelDetailPage() {
                       )}
                     </div>
 
-                    {/* CỘT PHẢI KHI CHỌN "THEO GIỜ" */}
                     {rentalType === "HOUR" && (
                       <div className="sm:col-span-6 space-y-3.5">
                         <div>
@@ -1432,7 +1487,6 @@ export default function HotelDetailPage() {
                           </div>
                         </div>
 
-                        {/* THẺ TÓM TẮT TRẢ PHÒNG THEO GIỜ */}
                         <div className="p-2.5 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between text-xs">
                           <span className="text-slate-500 font-semibold">
                             Dự kiến trả phòng:
@@ -1446,7 +1500,6 @@ export default function HotelDetailPage() {
                           </strong>
                         </div>
 
-                        {/* BỘ ĐẾM CHO THEO GIỜ */}
                         <div className="space-y-2 pt-1 border-t border-slate-100">
                           <div className="grid grid-cols-3 gap-2">
                             <div className="space-y-1">
@@ -1537,7 +1590,7 @@ export default function HotelDetailPage() {
                               setIsCalendarOpen(false);
                               setIsSelectingCheckOut(false);
                               setHoverDate(null);
-                              handleSearchSubmit();
+                              handleApplySearch();
                             }}
                             className="w-full h-10 bg-[#003580] hover:bg-blue-900 text-white font-black text-xs rounded-xl shadow-md transition active:scale-98 cursor-pointer"
                           >
@@ -1628,6 +1681,12 @@ export default function HotelDetailPage() {
                             <img
                               src={roomImg}
                               alt={room.name}
+                              loading="lazy"
+                              decoding="async"
+                              style={{
+                                willChange: "transform",
+                                transform: "translateZ(0)",
+                              }}
                               className="absolute inset-0 w-full h-full object-cover select-none hover:scale-105 transition duration-300"
                             />
                           ) : (

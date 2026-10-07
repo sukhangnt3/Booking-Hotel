@@ -9,14 +9,21 @@ const { GoogleGenAI } = require("@google/genai");
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
   ? process.env.GEMINI_API_KEY.trim()
   : null;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+
+// 🌟 DANH SÁCH CÁC MODEL GEMINI DỰ PHÒNG TỰ ĐỘNG CHUYỂN KHI BỊ 503 QUÁ TẢI
+const CANDIDATE_MODELS = [
+  process.env.GEMINI_MODEL || "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+  "gemini-2.0-flash",
+  "gemini-1.5-pro",
+];
 
 let genai = null;
 if (GEMINI_API_KEY) {
   try {
     genai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   } catch (err) {
-    console.warn("⚠️ Chưa có GoogleGenAI SDK:", err.message);
+    console.warn("⚠️ Chưa thể khởi tạo GoogleGenAI SDK:", err.message);
   }
 }
 
@@ -71,56 +78,86 @@ function buildCityQuery(cityName, startIdx = 1) {
   return { sql: `(${clauses.join(" OR ")})`, params };
 }
 
-// 🛡️ HÀM GỌI GEMINI - ĐÃ TẮT SUY NGHĨ NGẦM ĐỂ DÀNH TRỌN TOKEN CHO CÂU TRẢ LỜI
+// 🌟 HÀM GỌI GEMINI THÔNG MINH: TỰ ĐỘNG CHUYỂN MODEL KHI BỊ 503 (OVERLOAD) HOẶC 429
 async function callGemini(prompt, config = {}) {
   if (!genai || !GEMINI_API_KEY) return null;
 
-  try {
-    const res = await genai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: prompt,
-      config: {
-        thinkingConfig: { thinkingBudget: 0 }, // 👈 Tắt suy nghĩ ngầm để tránh tốn token
-        maxOutputTokens: 1000, // 👈 1000 tokens đảm bảo viết trọn vẹn câu
-        ...config,
-      },
-    });
-    if (res && res.text) return res.text.trim();
-  } catch (err) {
-    if (err.status === 429 || err.code === 429) {
-      console.log(
-        `ℹ️ [GoStay AI] Model ${GEMINI_MODEL} đã chạm hạn mức miễn phí trong ngày (20/20).`,
-      );
+  for (const modelName of CANDIDATE_MODELS) {
+    try {
+      const res = await genai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          thinkingConfig: { thinkingBudget: 0 },
+          maxOutputTokens: 1000,
+          ...config,
+        },
+      });
+
+      if (res && res.text) {
+        return res.text.trim();
+      }
+    } catch (err) {
+      const errStr = JSON.stringify(err);
+      const isOverloaded =
+        err.status === 503 ||
+        err.code === 503 ||
+        errStr.includes("503") ||
+        errStr.includes("high demand") ||
+        errStr.includes("UNAVAILABLE");
+
+      if (isOverloaded) {
+        console.warn(
+          `⚠️ Model [${modelName}] của Google đang quá tải (503). Tự động chuyển sang model tiếp theo...`,
+        );
+        // Đợi 300ms rồi thử model tiếp theo trong danh sách
+        await new Promise((r) => setTimeout(r, 300));
+        continue;
+      }
+
+      if (err.status === 429 || err.code === 429) {
+        console.warn(
+          `⚠️ Model [${modelName}] chạm rate-limit. Đang thử model khác...`,
+        );
+        continue;
+      }
+
+      console.error(`❌ Lỗi tại model [${modelName}]:`, err.message);
     }
   }
 
+  console.warn(
+    "⚠️ Tất cả các model Gemini đều đang bận. Kích hoạt chế độ dự phòng nội bộ!",
+  );
   return null;
 }
 
 // ============================================================
-// BƯỚC 1: AI ĐỌC TIN NHẮN & PHÂN TÍCH TIÊU CHÍ (100% AI)
+// 1. PHÂN TÍCH TRUY VẤN PHỨC TẠP BẰNG GEMINI NLU
 // ============================================================
 async function aiAnalyzeRequest(userMessage, conversationHistory) {
   const prompt = `
-Bạn là GoStay AI. Đọc lịch sử trò chuyện và tin nhắn mới nhất để phân loại yêu cầu.
-Lịch sử:
+Bạn là GoStay AI - Trợ lý tìm kiếm phòng khách sạn thông minh. Nhiệm vụ của bạn là phân tích tin nhắn người dùng và trích xuất TOÀN BỘ các điều kiện tìm kiếm phức tạp.
+Lịch sử trò chuyện:
 ${conversationHistory || "Chưa có"}
 
-Tin nhắn: "${userMessage}"
+Tin nhắn mới: "${userMessage}"
 
-QUY TẮC:
-1. Nếu khách hỏi kiến thức/địa lý/thời tiết (Sài Gòn có biển không, Đà Lạt ăn gì):
+QUY TẮC BÓC TÁCH THÔNG TIN:
+1. Nếu khách hỏi thông tin địa lý, du lịch, hỏi thăm thông thường:
    - isSearch: false
-   - directReply: Tự viết câu trả lời đầy đủ, thân thiện, dí dỏm.
-2. Nếu tìm phòng:
+   - directReply: Tự viết câu trả lời thân thiện, dí dỏm, đầy đủ.
+2. Nếu khách có nhu cầu tìm phòng (hỗ trợ câu truy vấn phức tạp nhiều ràng buộc):
    - isSearch: true
-   - city: Tên thành phố chuẩn ('Hồ Chí Minh', 'Vũng Tàu', 'Đà Nẵng'...). Nếu khách nói 'ở đâu cũng được', 'sao cũng được' thì để null.
+   - city: Tên thành phố chuẩn ('Hồ Chí Minh', 'Vũng Tàu', 'Đà Nẵng', 'Hà Nội', 'Đà Lạt', 'Nha Trang') hoặc null nếu khách không chỉ định.
    - rentalType: 'HOUR', 'OVERNIGHT', hoặc 'DAY'.
-   - maxPrice: Số tiền tối đa (VND) hoặc null.
-   - isBeachfront: true nếu muốn gần biển.
-   - nearCenter: true nếu muốn gần trung tâm.
+   - maxPrice: Mức giá trần dạng số nguyên VND (ví dụ: 1500000) hoặc null.
+   - isBeachfront: true nếu yêu cầu sát biển, view biển, gần bãi tắm.
+   - nearCenter: true nếu yêu cầu gần trung tâm thành phố.
+   - minStars: Số sao tối thiểu (từ 1 đến 5) hoặc null nếu không đề cập.
+   - requiredAmenities: Mảng danh sách các tiện nghi được yêu cầu (ví dụ: ["bathtub", "pool_outdoor", "wifi", "parking", "restaurant"]) hoặc [].
 
-Trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown backticks):
+TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ (KHÔNG KÈM KÝ TỰ MARKDOWN BACKTICKS):
 {
   "isSearch": boolean,
   "city": string | null,
@@ -128,13 +165,15 @@ Trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown backticks):
   "maxPrice": number | null,
   "isBeachfront": boolean,
   "nearCenter": boolean,
+  "minStars": number | null,
+  "requiredAmenities": string[],
   "directReply": string | null
 }
 `;
 
   const rawJson = await callGemini(prompt, {
     responseMimeType: "application/json",
-    temperature: 0.2,
+    temperature: 0.1,
   });
 
   if (rawJson) {
@@ -145,22 +184,28 @@ Trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown backticks):
         .replace(/```$/, "")
         .trim();
       return JSON.parse(clean);
-    } catch (e) {}
+    } catch (e) {
+      console.warn(
+        "⚠️ Không thể parse JSON từ Gemini, chuyển sang fallback regex",
+      );
+    }
   }
 
-  // Dự phòng an toàn nếu Google nghẽn mạng
+  // Fallback Rule-based dự phòng nếu Google nghẽn
   const norm = removeAccents(userMessage);
   let city = null;
   if (
     norm.includes("sai gon") ||
     norm.includes("ho chi minh") ||
     norm.includes("hcm")
-  )
+  ) {
     city = "Hồ Chí Minh";
+  }
   if (norm.includes("vung tau")) city = "Vũng Tàu";
   if (norm.includes("da nang")) city = "Đà Nẵng";
   if (norm.includes("ha noi")) city = "Hà Nội";
   if (norm.includes("da lat")) city = "Đà Lạt";
+  if (norm.includes("nha trang")) city = "Nha Trang";
 
   let maxPrice = null;
   const priceMatch = norm.match(
@@ -173,8 +218,19 @@ Trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown backticks):
     if (num > 10000) maxPrice = Math.round(num);
   }
 
+  const amenities = [];
+  if (norm.includes("ho boi") || norm.includes("be boi"))
+    amenities.push("pool_outdoor");
+  if (norm.includes("bon tam")) amenities.push("bathtub");
+  if (norm.includes("do xe") || norm.includes("bai xe"))
+    amenities.push("parking");
+
+  let minStars = null;
+  const starMatch = norm.match(/(\d)\s*sao/);
+  if (starMatch) minStars = parseInt(starMatch[1], 10);
+
   return {
-    isSearch: !norm.includes("co bien ko"),
+    isSearch: !norm.includes("co bien ko") && !norm.includes("thoi tiet"),
     city,
     rentalType: norm.includes("gio")
       ? "HOUR"
@@ -184,30 +240,32 @@ Trả về DUY NHẤT một chuỗi JSON hợp lệ (không markdown backticks):
     maxPrice,
     isBeachfront: norm.includes("bien"),
     nearCenter: norm.includes("trung tam"),
+    minStars,
+    requiredAmenities: amenities,
     directReply: norm.includes("co bien ko")
-      ? "Dạ Sài Gòn (TP.HCM) cơ bản không có bãi biển du lịch tắm được bạn nhé (chỉ có biển Cần Giờ là bãi phù sa rừng ngập mặn). Nếu bạn muốn tắm biển gần Sài Gòn nhất, GoStay gợi ý bạn nên ghé Vũng Tàu hoặc Hồ Tràm nè! 🌊"
+      ? "Sài Gòn (TP.HCM) không có bãi biển du lịch tắm được (chỉ có bãi bùn phù sa Cần Giờ). Nếu bạn muốn tắm biển, GoStay gợi ý bạn nên ghé Vũng Tàu hoặc Long Hải nhé! 🌊"
       : null,
   };
 }
 
 // ============================================================
-// BƯỚC 2: AI ĐỌC DATABASE & TỰ VIẾT CÂU TRẢ LỜI ĐẦY ĐỦ 100%
+// 2. SINH CÂU TRẢ LỜI TỰ NHIÊN DỰA TRÊN DỮ LIỆU THỰC TẾ
 // ============================================================
 async function aiGenerateResponse(userMessage, hotels, filterParams) {
   let context = "";
   if (hotels.length > 0) {
     context =
-      "Dữ liệu khách sạn thực tế tìm thấy từ Database:\n" +
+      "Danh sách phòng thực tế tìm thấy trong cơ sở dữ liệu:\n" +
       hotels
         .map((h, i) => {
           const details = [
-            h.city ? `Thành phố: ${h.city}` : null,
-            `Phòng: ${h.room_name}`,
+            h.city ? `TP: ${h.city}` : null,
+            `Hạng phòng: ${h.room_name}`,
             `Giá: ${Number(h.price).toLocaleString("vi-VN")} đ`,
             h.distance_to_center
               ? `Cách trung tâm: ${h.distance_to_center} km`
               : null,
-            h.is_beachfront ? "Sát biển" : null,
+            h.is_beachfront ? "Sát bờ biển" : null,
             `${h.star_rating || 3} sao`,
           ]
             .filter(Boolean)
@@ -217,47 +275,123 @@ async function aiGenerateResponse(userMessage, hotels, filterParams) {
         })
         .join("\n");
   } else {
-    context = "Không có khách sạn nào trong hệ thống khớp với tiêu chí.";
+    context =
+      "Không có khách sạn nào khớp chính xác với tất cả các tiêu chí trên.";
   }
 
   const prompt = `
-Bạn là GoStay AI. Khách hàng vừa hỏi: "${userMessage}".
+Bạn là GoStay AI. Khách hàng đã gửi yêu cầu: "${userMessage}".
 Tiêu chí tìm kiếm: ${JSON.stringify(filterParams)}
 ${context}
 
-YÊU CẦU QUAN TRỌNG:
-1. Đọc dữ liệu trên và tự viết câu trả lời tự nhiên 100%:
-   - Nếu khách hỏi thuê theo giờ / giá rẻ: Hãy nêu rõ mức giá khởi điểm thấp nhất tìm thấy (Ví dụ: "chỉ từ 80.000 đ/giờ"). Luôn viết ĐẦY ĐỦ số tiền và đơn vị tính (đ/giờ hoặc đ/đêm), tuyệt đối không bỏ dở giữa chừng.
-   - Nếu khách hỏi gần trung tâm: Khen vị trí đắc địa (nêu số km thực tế cách trung tâm).
-   - Nếu khách nói ở đâu cũng được: Chào đón và giới thiệu danh sách tiêu biểu.
-2. Nếu không có phòng: Gợi ý khách nâng nhẹ giá hoặc đổi ngày.
-3. Viết trọn vẹn 2-3 câu súc tích, hoàn chỉnh ngữ pháp, có emoji sinh động, mời khách xem các thẻ phòng bên dưới.
+HƯỚNG DẪN TRẢ LỜI:
+1. Trả lời súc tích, văn phong lịch sự, nhiệt tình, có gắn emoji.
+2. Nếu tìm thấy phòng: Nêu bật các ưu điểm (giá khởi điểm tốt nhất, vị trí sát biển hoặc gần trung tâm) và mời khách tham khảo các thẻ phòng chi tiết bên dưới.
+3. Nếu không tìm thấy: Đưa ra lời khuyên nới lỏng ngân sách hoặc chọn ngày khác.
 `;
 
   const aiReply = await callGemini(prompt, {
-    thinkingConfig: { thinkingBudget: 0 },
     temperature: 0.7,
-    maxOutputTokens: 1000, // 👈 Đảm bảo không bao giờ bị cắt ngắn giữa câu
+    maxOutputTokens: 1000,
   });
 
   if (aiReply) return aiReply;
 
-  // Dự phòng an toàn nếu mất mạng
+  // Fallback phản hồi ngay cả khi toàn bộ AI của Google quá tải
   if (hotels.length > 0) {
-    if (filterParams.nearCenter) {
-      return `Dạ GoStay gợi ý cho bạn các khách sạn nằm ngay sát trung tâm thành phố (chỉ cách từ ${hotels[0].distance_to_center} km) cực kỳ thuận tiện đi lại ăn uống nè! Mời bạn tham khảo bên dưới nhé 👇`;
-    }
     const lowestPrice = Number(hotels[0].price).toLocaleString("vi-VN");
     const rentalSuffix =
       filterParams.rentalType === "HOUR" ? " đ/giờ" : " đ/đêm";
-    return `GoStay đã tìm thấy các phòng phù hợp với mức giá cực tốt, chỉ từ **${lowestPrice}${rentalSuffix}** thôi nè! Mời bạn xem chi tiết các phòng bên dưới nhé 👇`;
+    return `GoStay đã tìm thấy ${hotels.length} lựa chọn phù hợp nhất với yêu cầu của bạn, giá chỉ từ **${lowestPrice}${rentalSuffix}**. Mời bạn tham khảo danh sách bên dưới nhé! 👇`;
   }
 
-  return "Dạ hiện tại hệ thống chưa tìm thấy phòng nào phù hợp hoàn toàn tiêu chí này. Bạn thử điều chỉnh nhẹ mức giá hoặc đổi ngày xem sao nhé! 😊";
+  return "Rất tiếc hiện tại hệ thống chưa tìm thấy phòng nào phù hợp hoàn toàn với tất cả tiêu chí của bạn. Bạn hãy thử nới lỏng ngân sách hoặc đổi ngày lưu trú xem sao nhé! 😊";
 }
 
 // ============================================================
-// CONTROLLER CHÍNH
+// 3. AN TOÀN BẢO MẬT: BỘ LỌC DỮ LIỆU TÀI CHÍNH (DATA MASKING)
+// ============================================================
+function sanitizeFinancialDataForPrompt(rawFinancialData) {
+  if (!rawFinancialData) return {};
+
+  return {
+    period: rawFinancialData.period || "this_month",
+    totalRevenue: Number(
+      rawFinancialData.revenueTotal || rawFinancialData.totalRevenue || 0,
+    ),
+    occupancyRate: `${rawFinancialData.occupancyCurrent?.rate || 0}%`,
+    totalOccupiedRooms: rawFinancialData.occupancyCurrent?.occupied || 0,
+    totalAvailableRooms: rawFinancialData.occupancyCurrent?.vacant || 0,
+    unpaidBookingCount: Array.isArray(
+      rawFinancialData.automationSummary?.paymentAlerts,
+    )
+      ? rawFinancialData.automationSummary.paymentAlerts.length
+      : 0,
+    totalUnpaidAmount: Number(
+      rawFinancialData.automationSummary?.totalUnpaidAmount || 0,
+    ),
+    potentialLeakCount: Array.isArray(
+      rawFinancialData.automationSummary?.leakAlerts,
+    )
+      ? rawFinancialData.automationSummary.leakAlerts.length
+      : 0,
+    potentialLeakAmount: Number(
+      rawFinancialData.automationSummary?.potentialLeakTotal || 0,
+    ),
+  };
+}
+
+// ============================================================
+// 4. API TƯ VẤN TÀI CHÍNH DÀNH CHO QUẢN TRỊ VIÊN / CHỦ KHÁCH SẠN
+// ============================================================
+async function handleOwnerFinancialAdvice(req, res) {
+  const { question, statsData } = req.body || {};
+
+  if (!question || !question.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "Vui lòng nhập câu hỏi cần tư vấn tài chính.",
+    });
+  }
+
+  try {
+    const sanitizedStats = sanitizeFinancialDataForPrompt(statsData);
+
+    const prompt = `
+Bạn là Cố vấn Tài chính Khách sạn cấp cao của nền tảng GoStay.
+Dưới đây là số liệu kinh doanh tổng hợp đã được khử định danh (bảo vệ quyền riêng tư):
+${JSON.stringify(sanitizedStats, null, 2)}
+
+Câu hỏi của chủ cơ sở: "${question}"
+
+YÊU CẦU:
+1. Đưa ra phân tích chuyên sâu dựa trên các số liệu thực tế trên (doanh thu, tỷ lệ lấp đầy, công nợ chưa thu, phụ phí thất thoát).
+2. Đưa ra từ 2 - 3 giải pháp hành động cụ thể nhằm tối ưu hóa dòng tiền và kiểm soát thất thoát.
+3. Tuyệt đối không suy đoán các thông tin cá nhân khách hàng.
+`;
+
+    const advice = await callGemini(prompt, {
+      temperature: 0.3,
+      maxOutputTokens: 1200,
+    });
+
+    return res.json({
+      success: true,
+      advice:
+        advice ||
+        `Hệ thống ghi nhận tổng doanh thu kỳ này là ${sanitizedStats.totalRevenue.toLocaleString("vi-VN")} đ với công suất ${sanitizedStats.occupancyRate}. Bạn nên rà soát lại ${sanitizedStats.unpaidBookingCount} phòng chưa hoàn tất thanh toán để tối ưu dòng tiền.`,
+    });
+  } catch (error) {
+    console.error("❌ Lỗi tư vấn tài chính AI:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Không thể phân tích dữ liệu tài chính lúc này.",
+    });
+  }
+}
+
+// ============================================================
+// 5. CONTROLLER TÌM KIẾM PHÒNG KHÁCH HÀNG
 // ============================================================
 async function handleChatMessage(req, res) {
   const userId = req.user?.id || req.auth?.sub || null;
@@ -266,7 +400,7 @@ async function handleChatMessage(req, res) {
   if (!message.trim()) {
     return res.json({
       success: true,
-      reply: "Bạn cần GoStay hỗ trợ gì nè? 😊",
+      reply: "Bạn cần GoStay hỗ trợ tìm kiếm phòng như thế nào nè? 😊",
       suggestions: [],
     });
   }
@@ -274,7 +408,6 @@ async function handleChatMessage(req, res) {
   try {
     const rawMsg = message.trim();
 
-    // 1. LẤY LỊCH SỬ CHAT ĐỂ CÓ BỘ NHỚ LIÊN TỤC
     let conversationHistory = "";
     try {
       const historyRes = await pool.query(
@@ -291,7 +424,6 @@ async function handleChatMessage(req, res) {
       }
     } catch (e) {}
 
-    // 2. PHÂN TÍCH NHU CẦU
     const analysis = await aiAnalyzeRequest(rawMsg, conversationHistory);
 
     if (!analysis.isSearch && analysis.directReply) {
@@ -310,7 +442,6 @@ async function handleChatMessage(req, res) {
       });
     }
 
-    // 3. TRUY VẤN DATABASE LẤY PHÒNG THỰC TẾ
     let hotels = [];
     try {
       let priceColumn =
@@ -337,7 +468,7 @@ async function handleChatMessage(req, res) {
           ) AS hotel_image
         FROM public.room r
         JOIN public.hotel h ON h.id = r.hotel_id
-        WHERE 1=1
+        WHERE COALESCE(r.is_active, true) = true AND h.status = 'active'
       `;
 
       if (analysis.city) {
@@ -352,9 +483,28 @@ async function handleChatMessage(req, res) {
         sql += ` AND COALESCE(h.distance_to_center, 1.2) <= 3.5`;
       }
 
+      if (analysis.minStars && Number(analysis.minStars) > 0) {
+        params.push(analysis.minStars);
+        sql += ` AND h.star_rating >= $${params.length}`;
+      }
+
       if (analysis.maxPrice && Number(analysis.maxPrice) > 0) {
         params.push(analysis.maxPrice);
         sql += ` AND ${priceColumn} <= $${params.length}`;
+      }
+
+      if (
+        Array.isArray(analysis.requiredAmenities) &&
+        analysis.requiredAmenities.length > 0
+      ) {
+        for (const amenityKey of analysis.requiredAmenities) {
+          params.push(`%${amenityKey}%`);
+          sql += ` AND EXISTS (
+            SELECT 1 FROM public.room_amenity ra 
+            JOIN public.amenity a ON a.id = ra.amenity_id 
+            WHERE ra.room_id = r.id AND LOWER(a.name) LIKE $${params.length}
+          )`;
+        }
       }
 
       if (analysis.nearCenter) {
@@ -378,7 +528,8 @@ async function handleChatMessage(req, res) {
                  'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600' AS hotel_image
           FROM public.room r
           JOIN public.hotel h ON h.id = r.hotel_id
-          ${analysis.city ? `WHERE ${cityFilter.sql}` : ""}
+          WHERE COALESCE(r.is_active, true) = true AND h.status = 'active'
+          ${analysis.city ? `AND ${cityFilter.sql}` : ""}
           ORDER BY h.distance_to_center ASC LIMIT 4
         `;
         const expandRes = await pool.query(
@@ -388,10 +539,9 @@ async function handleChatMessage(req, res) {
         hotels = expandRes.rows;
       }
     } catch (dbErr) {
-      console.error("❌ Lỗi Query Database:", dbErr.message);
+      console.error("❌ Lỗi truy vấn cơ sở dữ liệu:", dbErr.message);
     }
 
-    // 4. AI ĐỌC DỮ LIỆU DATABASE VÀ TỰ VIẾT CÂU TRẢ LỜI 100%
     const aiFinalReply = await aiGenerateResponse(rawMsg, hotels, analysis);
 
     logTurnBackground(userId, session_id, rawMsg, analysis, aiFinalReply);
@@ -403,10 +553,10 @@ async function handleChatMessage(req, res) {
       filter: analysis,
     });
   } catch (error) {
-    console.error("❌ Lỗi Tổng Chatbot Controller:", error);
+    console.error("❌ Lỗi tổng quan Chatbot Controller:", error);
     return res.json({
       success: true,
-      reply: "Dạ GoStay có thể hỗ trợ gì cho bạn nè? 😊",
+      reply: "GoStay có thể hỗ trợ gì cho kế hoạch du lịch của bạn nè? 😊",
       suggestions: [],
       filter: {},
     });
@@ -446,5 +596,6 @@ async function getChatHistory(req, res) {
 
 module.exports = {
   handleChatMessage,
+  handleOwnerFinancialAdvice,
   getChatHistory,
 };
